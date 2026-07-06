@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState, useEffect } from 'react';
@@ -590,39 +589,57 @@ function HistorialAjustes({ state }: { state: AppState }) {
     ['ajuste_entrada', 'ajuste_salida', 'consumo', 'colaboracion', 'compra'].includes(m.tipo)
   ).sort((a, b) => b.fecha.localeCompare(a.fecha));
 
+  const efectoNetoUSD = ajustes.reduce((acc, m) => {
+    const p = state.productos.find(prod => prod.id === m.productoId);
+    const costo = p?.costoUSD || 0;
+    const esEntrada = m.tipo.includes('entrada') || m.tipo === 'compra' || m.tipo === 'devolucion';
+    return acc + (esEntrada ? (m.cantidad * costo) : -(m.cantidad * costo));
+  }, 0);
+
   return (
-    <div className="card animate-in fade-in slide-in-from-bottom-2">
-      <div className="card-head"><h3>Historial de Ajustes e Ingresos (CPP)</h3></div>
-      <div className="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Fecha</th>
-              <th>Producto</th>
-              <th>Tipo</th>
-              <th>Cant.</th>
-              <th>Antes</th>
-              <th>Después</th>
-              <th>Referencia</th>
-            </tr>
-          </thead>
-          <tbody>
-            {ajustes.map(m => {
-              const p = state.productos.find(prod => prod.id === m.productoId);
-              return (
-                <tr key={m.id}>
-                  <td>{m.fecha.replace('T', ' ').slice(0, 16)}</td>
-                  <td className="font-medium">{p?.nombre || 'Producto Eliminado'}</td>
-                  <td><span className={`badge ${m.tipo.includes('entrada') || m.tipo === 'compra' ? 'badge-ok' : 'badge-err'}`}>{m.tipo}</span></td>
-                  <td className="mono font-bold">{m.cantidad}</td>
-                  <td className="mono opacity-60">{m.stockAntes}</td>
-                  <td className="mono font-bold">{m.stockDespues}</td>
-                  <td className="text-xs">{m.referencia}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+    <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className={`kpi ${efectoNetoUSD >= 0 ? 'amber' : 'red'}`}>
+          <div className="kpi-icon"><History /></div>
+          <div className="kpi-label">Efecto Neto en Inventario</div>
+          <div className="kpi-value">{Utils.fmtUSD(efectoNetoUSD)}</div>
+          <div className="kpi-sub">{Utils.fmtBS(efectoNetoUSD * state.tasa)}</div>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="card-head"><h3>Historial de Ajustes e Ingresos (CPP)</h3></div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Producto</th>
+                <th>Tipo</th>
+                <th>Cant.</th>
+                <th>Antes</th>
+                <th>Después</th>
+                <th>Referencia</th>
+              </tr>
+            </thead>
+            <tbody>
+              {ajustes.map(m => {
+                const p = state.productos.find(prod => prod.id === m.productoId);
+                return (
+                  <tr key={m.id}>
+                    <td>{m.fecha.replace('T', ' ').slice(0, 16)}</td>
+                    <td className="font-medium">{p?.nombre || 'Producto Eliminado'}</td>
+                    <td><span className={`badge ${m.tipo.includes('entrada') || m.tipo === 'compra' ? 'badge-ok' : 'badge-err'}`}>{m.tipo}</span></td>
+                    <td className="mono font-bold">{m.cantidad}</td>
+                    <td className="mono opacity-60">{m.stockAntes}</td>
+                    <td className="mono font-bold">{m.stockDespues}</td>
+                    <td className="text-xs">{m.referencia}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
