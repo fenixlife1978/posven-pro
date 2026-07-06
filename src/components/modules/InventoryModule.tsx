@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { AppState, Product, Movimiento } from '@/lib/types';
 import { Utils, Store } from '@/lib/db-store';
-import { Plus, Search, Edit2, PackagePlus, Trash2, FileText, BarChart3, History, Gift, Boxes, X, ArrowUpRight } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, Boxes, X, BarChart3, FileText, History, Gift } from 'lucide-react';
 
 export default function InventoryModule({ state, updateState }: { state: AppState, updateState: (s: Partial<AppState>) => void }) {
   const [activeTab, setActiveTab] = useState('productos');
@@ -12,6 +12,7 @@ export default function InventoryModule({ state, updateState }: { state: AppStat
   
   // Modales
   const [showAjuste, setShowAjuste] = useState<string | null>(null);
+  const [showProducto, setShowProducto] = useState<string | null | 'nuevo'>(null);
   
   const prods = state.productos.filter(p => 
     p.activo && 
@@ -40,7 +41,7 @@ export default function InventoryModule({ state, updateState }: { state: AppStat
                 {Array.from(new Set(state.productos.map(p => p.categoria))).map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
-            <button className="btn btn-primary"><Plus className="w-4 h-4" /> Nuevo Producto</button>
+            <button className="btn btn-primary" onClick={() => setShowProducto('nuevo')}><Plus className="w-4 h-4" /> Nuevo Producto</button>
           </div>
 
           <div className="card">
@@ -51,7 +52,7 @@ export default function InventoryModule({ state, updateState }: { state: AppStat
                     <th>Cod.</th>
                     <th>Nombre</th>
                     <th>Cat.</th>
-                    <th>CPP USD</th>
+                    <th>Costo USD</th>
                     <th>P. Venta USD</th>
                     <th>P. Venta BS</th>
                     <th>Stock</th>
@@ -60,29 +61,33 @@ export default function InventoryModule({ state, updateState }: { state: AppStat
                   </tr>
                 </thead>
                 <tbody>
-                  {prods.map(p => (
-                    <tr key={p.id}>
-                      <td className="mono opacity-60 text-xs">{p.codigo}</td>
-                      <td className="font-medium">{p.nombre}</td>
-                      <td><span className="badge badge-neutral">{p.categoria}</span></td>
-                      <td className="mono">{Utils.fmtUSD(p.costoUSD)}</td>
-                      <td className="mono text-[#c8952e]">{Utils.fmtUSD(p.precioUSD)}</td>
-                      <td className="mono opacity-60">{Utils.fmtBS(p.precioUSD * state.tasa)}</td>
-                      <td>
-                        <span className={`badge ${p.stock <= p.stockMinimo ? 'badge-err' : 'badge-ok'}`}>
-                          {p.stock}
-                        </span>
-                      </td>
-                      <td className="opacity-50">{p.stockMinimo}</td>
-                      <td>
-                        <div className="flex gap-1">
-                          <button className="btn-icon text-[#c8952e]" title="Editar"><Edit2 className="w-3.5 h-3.5" /></button>
-                          <button className="btn-icon text-[#3a9bdc]" title="Ajustes de Stock (CPP)" onClick={() => setShowAjuste(p.id)}><Boxes className="w-3.5 h-3.5" /></button>
-                          <button className="btn-icon text-[#e04848]" onClick={() => eliminar(p.id)} title="Eliminar"><Trash2 className="w-3.5 h-3.5" /></button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                  {prods.length === 0 ? (
+                    <tr><td colSpan={9} className="text-center py-10 opacity-30">No se encontraron productos</td></tr>
+                  ) : (
+                    prods.map(p => (
+                      <tr key={p.id}>
+                        <td className="mono opacity-60 text-xs">{p.codigo}</td>
+                        <td className="font-medium">{p.nombre}</td>
+                        <td><span className="badge badge-neutral">{p.categoria}</span></td>
+                        <td className="mono">{Utils.fmtUSD(p.costoUSD)}</td>
+                        <td className="mono text-[#c8952e]">{Utils.fmtUSD(p.precioUSD)}</td>
+                        <td className="mono opacity-60">{Utils.fmtBS(p.precioUSD * state.tasa)}</td>
+                        <td>
+                          <span className={`badge ${p.stock <= p.stockMinimo ? 'badge-err' : 'badge-ok'}`}>
+                            {p.stock}
+                          </span>
+                        </td>
+                        <td className="opacity-50">{p.stockMinimo}</td>
+                        <td>
+                          <div className="flex gap-1">
+                            <button className="btn-icon text-[#c8952e]" title="Editar" onClick={() => setShowProducto(p.id)}><Edit2 className="w-3.5 h-3.5" /></button>
+                            <button className="btn-icon text-[#3a9bdc]" title="Ajustes de Stock" onClick={() => setShowAjuste(p.id)}><Boxes className="w-3.5 h-3.5" /></button>
+                            <button className="btn-icon text-[#e04848]" onClick={() => eliminar(p.id)} title="Eliminar"><Trash2 className="w-3.5 h-3.5" /></button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
@@ -109,6 +114,45 @@ export default function InventoryModule({ state, updateState }: { state: AppStat
 
       {renderContent()}
 
+      {showProducto && (
+        <ModalProducto 
+          producto={showProducto === 'nuevo' ? undefined : state.productos.find(p => p.id === showProducto)}
+          onClose={() => setShowProducto(null)}
+          onSave={(datos) => {
+            let nuevosProds;
+            if (showProducto === 'nuevo') {
+              const nuevo: Product = {
+                ...datos,
+                id: Store.uid(),
+                fechaCreacion: Utils.hoy(),
+                activo: true
+              };
+              nuevosProds = [...state.productos, nuevo];
+              // Si el nuevo producto tiene stock inicial, registrar movimiento
+              if (nuevo.stock > 0) {
+                const mov: Movimiento = {
+                  id: Store.uid(),
+                  productoId: nuevo.id,
+                  tipo: 'compra',
+                  cantidad: nuevo.stock,
+                  stockAntes: 0,
+                  stockDespues: nuevo.stock,
+                  fecha: Utils.ahora(),
+                  referencia: 'Stock inicial'
+                };
+                updateState({ productos: nuevosProds, movimientos: [...state.movimientos, mov] });
+              } else {
+                updateState({ productos: nuevosProds });
+              }
+            } else {
+              nuevosProds = state.productos.map(p => p.id === showProducto ? { ...p, ...datos } : p);
+              updateState({ productos: nuevosProds });
+            }
+            setShowProducto(null);
+          }}
+        />
+      )}
+
       {showAjuste && (
         <ModalAjuste 
           producto={state.productos.find(p => p.id === showAjuste)!} 
@@ -117,7 +161,6 @@ export default function InventoryModule({ state, updateState }: { state: AppStat
             const nuevosProds = state.productos.map(p => {
               if (p.id === mov.productoId) {
                 let finalCosto = p.costoUSD;
-                // Lógica de CPP (Costo Promedio Ponderado)
                 if (mov.tipo === 'ajuste_entrada' || mov.tipo === 'compra') {
                   const stockActual = p.stock;
                   const cantidadNueva = mov.cantidad;
@@ -136,6 +179,97 @@ export default function InventoryModule({ state, updateState }: { state: AppStat
           }}
         />
       )}
+    </div>
+  );
+}
+
+function ModalProducto({ producto, onClose, onSave }: { producto?: Product, onClose: () => void, onSave: (p: any) => void }) {
+  const [datos, setDatos] = useState({
+    codigo: producto?.codigo || '',
+    nombre: producto?.nombre || '',
+    categoria: producto?.categoria || 'Whisky',
+    cantidad: producto?.cantidad || '750ml',
+    marca: producto?.marca || '',
+    costoUSD: producto?.costoUSD || 0,
+    precioUSD: producto?.precioUSD || 0,
+    stock: producto?.stock || 0,
+    stockMinimo: producto?.stockMinimo || 3,
+    proveedor: producto?.proveedor || ''
+  });
+
+  const cats = ['Whisky','Ron','Vino','Cerveza','Tequila','Champagne','Vodka','Gin','Licores','Cerveza Artesanal','Sin Alcohol','Otros'];
+
+  const handleSubmit = () => {
+    if (!datos.nombre || !datos.codigo) return alert('Nombre y Código son requeridos');
+    if (datos.precioUSD <= 0) return alert('El precio debe ser mayor a 0');
+    onSave(datos);
+  };
+
+  return (
+    <div className="modal show">
+      <div className="modal-bg" onClick={onClose}></div>
+      <div className="modal-box">
+        <div className="modal-head">
+          <h3>{producto ? 'Editar Producto' : 'Nuevo Producto'}</h3>
+          <button className="btn-icon" onClick={onClose}><X className="w-4 h-4" /></button>
+        </div>
+        <div className="modal-body space-y-4">
+          <div className="form-row grid grid-cols-2 gap-4">
+            <div className="form-group">
+              <label className="form-label">Código</label>
+              <input className="form-input" value={datos.codigo} onChange={e => setDatos({...datos, codigo: e.target.value})} placeholder="Ej: WH-001" />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Categoría</label>
+              <select className="form-select" value={datos.categoria} onChange={e => setDatos({...datos, categoria: e.target.value})}>
+                {cats.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="form-group">
+            <label className="form-label">Nombre del producto</label>
+            <input className="form-input" value={datos.nombre} onChange={e => setDatos({...datos, nombre: e.target.value})} placeholder="Ej: Johnnie Walker Black Label" />
+          </div>
+          <div className="form-row grid grid-cols-2 gap-4">
+            <div className="form-group">
+              <label className="form-label">Presentación</label>
+              <input className="form-input" value={datos.cantidad} onChange={e => setDatos({...datos, cantidad: e.target.value})} placeholder="Ej: 750ml" />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Marca</label>
+              <input className="form-input" value={datos.marca} onChange={e => setDatos({...datos, marca: e.target.value})} placeholder="Ej: Johnnie Walker" />
+            </div>
+          </div>
+          <div className="form-row grid grid-cols-2 gap-4">
+            <div className="form-group">
+              <label className="form-label">Costo USD</label>
+              <input className="form-input" type="number" step="0.01" value={datos.costoUSD} onChange={e => setDatos({...datos, costoUSD: parseFloat(e.target.value) || 0})} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Precio Venta USD</label>
+              <input className="form-input" type="number" step="0.01" value={datos.precioUSD} onChange={e => setDatos({...datos, precioUSD: parseFloat(e.target.value) || 0})} />
+            </div>
+          </div>
+          <div className="form-row grid grid-cols-2 gap-4">
+            <div className="form-group">
+              <label className="form-label">Stock Actual</label>
+              <input className="form-input" type="number" value={datos.stock} onChange={e => setDatos({...datos, stock: parseInt(e.target.value) || 0})} disabled={!!producto} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Stock Mínimo</label>
+              <input className="form-input" type="number" value={datos.stockMinimo} onChange={e => setDatos({...datos, stockMinimo: parseInt(e.target.value) || 0})} />
+            </div>
+          </div>
+          <div className="form-group">
+            <label className="form-label">Proveedor</label>
+            <input className="form-input" value={datos.proveedor} onChange={e => setDatos({...datos, proveedor: e.target.value})} placeholder="Nombre del proveedor" />
+          </div>
+        </div>
+        <div className="modal-foot">
+          <button className="btn btn-secondary" onClick={onClose}>Cancelar</button>
+          <button className="btn btn-primary" onClick={handleSubmit}>{producto ? 'Actualizar' : 'Crear producto'}</button>
+        </div>
+      </div>
     </div>
   );
 }
