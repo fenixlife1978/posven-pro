@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState } from 'react';
@@ -51,33 +52,34 @@ export default function InventoryModule({ state, updateState }: { state: AppStat
                   <tr>
                     <th>Cod.</th>
                     <th>Nombre</th>
-                    <th>Cat.</th>
+                    <th>Cat. / Dep.</th>
                     <th>Costo USD</th>
                     <th>P. Venta USD</th>
-                    <th>P. Venta BS</th>
                     <th>Stock</th>
-                    <th>Min.</th>
                     <th>Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
                   {prods.length === 0 ? (
-                    <tr><td colSpan={9} className="text-center py-10 opacity-30">No se encontraron productos</td></tr>
+                    <tr><td colSpan={7} className="text-center py-10 opacity-30">No se encontraron productos</td></tr>
                   ) : (
                     prods.map(p => (
                       <tr key={p.id}>
                         <td className="mono opacity-60 text-xs">{p.codigo}</td>
                         <td className="font-medium">{p.nombre}</td>
-                        <td><span className="badge badge-neutral">{p.categoria}</span></td>
+                        <td>
+                          <div className="flex flex-col">
+                            <span className="badge badge-neutral mb-1">{p.categoria}</span>
+                            <span className="text-[0.65rem] text-[#5a5650] uppercase">{p.departamento || 'Sin Dept.'}</span>
+                          </div>
+                        </td>
                         <td className="mono">{Utils.fmtUSD(p.costoUSD)}</td>
                         <td className="mono text-[#c8952e]">{Utils.fmtUSD(p.precioUSD)}</td>
-                        <td className="mono opacity-60">{Utils.fmtBS(p.precioUSD * state.tasa)}</td>
                         <td>
                           <span className={`badge ${p.stock <= p.stockMinimo ? 'badge-err' : 'badge-ok'}`}>
                             {p.stock}
                           </span>
                         </td>
-                        <td className="opacity-50">{p.stockMinimo}</td>
                         <td>
                           <div className="flex gap-1">
                             <button className="btn-icon text-[#c8952e]" title="Editar" onClick={() => setShowProducto(p.id)}><Edit2 className="w-3.5 h-3.5" /></button>
@@ -128,7 +130,6 @@ export default function InventoryModule({ state, updateState }: { state: AppStat
                 activo: true
               };
               nuevosProds = [...state.productos, nuevo];
-              // Si el nuevo producto tiene stock inicial, registrar movimiento
               if (nuevo.stock > 0) {
                 const mov: Movimiento = {
                   id: Store.uid(),
@@ -188,6 +189,7 @@ function ModalProducto({ producto, onClose, onSave }: { producto?: Product, onCl
     codigo: producto?.codigo || '',
     nombre: producto?.nombre || '',
     categoria: producto?.categoria || 'Whisky',
+    departamento: producto?.departamento || 'Licores',
     cantidad: producto?.cantidad || '750ml',
     marca: producto?.marca || '',
     costoUSD: producto?.costoUSD || 0,
@@ -198,6 +200,7 @@ function ModalProducto({ producto, onClose, onSave }: { producto?: Product, onCl
   });
 
   const cats = ['Whisky','Ron','Vino','Cerveza','Tequila','Champagne','Vodka','Gin','Licores','Cerveza Artesanal','Sin Alcohol','Otros'];
+  const depts = ['Licores', 'Viveres', 'Charcuteria', 'Tabaco', 'Snacks', 'Limpieza', 'Otros'];
 
   const handleSubmit = () => {
     if (!datos.nombre || !datos.codigo) return alert('Nombre y Código son requeridos');
@@ -220,25 +223,27 @@ function ModalProducto({ producto, onClose, onSave }: { producto?: Product, onCl
               <input className="form-input" value={datos.codigo} onChange={e => setDatos({...datos, codigo: e.target.value})} placeholder="Ej: WH-001" />
             </div>
             <div className="form-group">
+              <label className="form-label">Departamento</label>
+              <select className="form-select" value={datos.departamento} onChange={e => setDatos({...datos, departamento: e.target.value})}>
+                {depts.map(d => <option key={d} value={d}>{d}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="form-row grid grid-cols-2 gap-4">
+            <div className="form-group">
               <label className="form-label">Categoría</label>
               <select className="form-select" value={datos.categoria} onChange={e => setDatos({...datos, categoria: e.target.value})}>
                 {cats.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
-          </div>
-          <div className="form-group">
-            <label className="form-label">Nombre del producto</label>
-            <input className="form-input" value={datos.nombre} onChange={e => setDatos({...datos, nombre: e.target.value})} placeholder="Ej: Johnnie Walker Black Label" />
-          </div>
-          <div className="form-row grid grid-cols-2 gap-4">
-            <div className="form-group">
-              <label className="form-label">Presentación</label>
-              <input className="form-input" value={datos.cantidad} onChange={e => setDatos({...datos, cantidad: e.target.value})} placeholder="Ej: 750ml" />
-            </div>
             <div className="form-group">
               <label className="form-label">Marca</label>
               <input className="form-input" value={datos.marca} onChange={e => setDatos({...datos, marca: e.target.value})} placeholder="Ej: Johnnie Walker" />
             </div>
+          </div>
+          <div className="form-group">
+            <label className="form-label">Nombre del producto</label>
+            <input className="form-input" value={datos.nombre} onChange={e => setDatos({...datos, nombre: e.target.value})} placeholder="Ej: Johnnie Walker Black Label" />
           </div>
           <div className="form-row grid grid-cols-2 gap-4">
             <div className="form-group">
@@ -275,9 +280,13 @@ function ModalProducto({ producto, onClose, onSave }: { producto?: Product, onCl
 }
 
 function ReporteGeneral({ state }: { state: AppState }) {
+  const [groupBy, setGroupBy] = useState<'categoria' | 'departamento' | 'proveedor'>('categoria');
+  
   const totalCosto = state.productos.reduce((acc, p) => acc + (p.costoUSD * p.stock), 0);
   const totalVenta = state.productos.reduce((acc, p) => acc + (p.precioUSD * p.stock), 0);
   
+  const uniqueKeys = Array.from(new Set(state.productos.map(p => p[groupBy] || 'Sin asignar'))).sort();
+
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -296,12 +305,19 @@ function ReporteGeneral({ state }: { state: AppState }) {
       </div>
       
       <div className="card">
-        <div className="card-head"><h3>Resumen por Categoría y CPP</h3></div>
+        <div className="card-head">
+          <h3>Resumen por {groupBy.charAt(0).toUpperCase() + groupBy.slice(1)} y CPP</h3>
+          <div className="flex gap-2 no-print">
+            <button className={`btn btn-sm ${groupBy === 'categoria' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setGroupBy('categoria')}>Categoría</button>
+            <button className={`btn btn-sm ${groupBy === 'departamento' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setGroupBy('departamento')}>Departamento</button>
+            <button className={`btn btn-sm ${groupBy === 'proveedor' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setGroupBy('proveedor')}>Proveedor</button>
+          </div>
+        </div>
         <div className="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>Categoría</th>
+                <th className="capitalize">{groupBy}</th>
                 <th>Items</th>
                 <th>Stock Total</th>
                 <th>CPP Promedio</th>
@@ -310,20 +326,21 @@ function ReporteGeneral({ state }: { state: AppState }) {
               </tr>
             </thead>
             <tbody>
-              {Array.from(new Set(state.productos.map(p => p.categoria))).map(cat => {
-                const catProds = state.productos.filter(p => p.categoria === cat);
-                const stockTotal = catProds.reduce((s, p) => s + p.stock, 0);
-                const cost = catProds.reduce((s, p) => s + p.costoUSD * p.stock, 0);
-                const vent = catProds.reduce((s, p) => s + p.precioUSD * p.stock, 0);
-                const cppPromedio = stockTotal > 0 ? cost / stockTotal : 0;
+              {uniqueKeys.map(key => {
+                const groupProds = state.productos.filter(p => (p[groupBy] || 'Sin asignar') === key);
+                const stockTotal = groupProds.reduce((s, p) => s + p.stock, 0);
+                const costTotal = groupProds.reduce((s, p) => s + (p.costoUSD * p.stock), 0);
+                const ventTotal = groupProds.reduce((s, p) => s + (p.precioUSD * p.stock), 0);
+                const cppPromedio = stockTotal > 0 ? costTotal / stockTotal : 0;
+                
                 return (
-                  <tr key={cat}>
-                    <td className="font-bold">{cat}</td>
-                    <td>{catProds.length}</td>
+                  <tr key={key}>
+                    <td className="font-bold">{key}</td>
+                    <td>{groupProds.length}</td>
                     <td>{stockTotal}</td>
                     <td className="mono">{Utils.fmtUSD(cppPromedio)}</td>
-                    <td className="mono">{Utils.fmtUSD(cost)}</td>
-                    <td className="mono text-[#c8952e]">{Utils.fmtUSD(vent)}</td>
+                    <td className="mono">{Utils.fmtUSD(costTotal)}</td>
+                    <td className="mono text-[#c8952e]">{Utils.fmtUSD(ventTotal)}</td>
                   </tr>
                 );
               })}
