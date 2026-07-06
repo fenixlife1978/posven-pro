@@ -108,7 +108,6 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
 
   const addPago = () => {
     let monto = parseFloat(montoInput);
-    // Si está vacío, asumir el saldo restante
     if (isNaN(monto) || monto <= 0) {
       monto = metodoActual === 'efectivo_usd' ? saldoRestanteUSD : saldoRestanteBS;
     }
@@ -230,11 +229,11 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
             )}
           </div>
 
-          <div className="flex flex-1 gap-4 overflow-hidden">
+          <div className="flex flex-1 gap-4 overflow-hidden mb-4">
             
             {/* PANEL DE CONTROL (1/3 IZQUIERDA) */}
-            <div className="w-1/3 flex flex-col gap-4">
-              <div className="card p-4 space-y-6 bg-[#131313] border-[#2a2a2a] shadow-xl">
+            <div className="w-1/3 flex flex-col gap-4 overflow-y-auto pr-2">
+              <div className="card p-4 space-y-6 bg-[#131313] border-[#2a2a2a] shadow-xl h-full flex flex-col">
                 
                 {/* Datos Cliente */}
                 <div className="form-group mb-0">
@@ -243,9 +242,9 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                 </div>
 
                 {/* Métodos de Pago Aplicados */}
-                <div className="space-y-2">
+                <div className="flex-1 space-y-2">
                   <label className="text-[9px] text-[#8a847c] font-bold uppercase tracking-widest block">Métodos Aplicados</label>
-                  <div className="min-h-[100px] p-3 border border-white/5 bg-[#181818] rounded-lg overflow-y-auto max-h-[150px] shadow-inner">
+                  <div className="h-[200px] p-3 border border-white/5 bg-[#181818] rounded-lg overflow-y-auto shadow-inner">
                     {pagos.map((p, idx) => (
                       <div key={idx} className="flex justify-between text-[11px] border-b border-[#2a2a2a] py-2 last:border-0">
                         <span className="capitalize text-[#8a847c]">{Utils.metodoLabel(p.metodo)}</span>
@@ -259,7 +258,16 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                 {/* Saldo Restante e Indicador Bs */}
                 <div className="p-4 border border-[#3a9bdc]/30 bg-[#3a9bdc]/5 rounded-xl text-center space-y-4">
                   <div>
-                    <label className="text-[9px] text-[#3a9bdc] font-bold uppercase tracking-widest block mb-1">Saldo Restante</label>
+                    <div className="flex items-center justify-center gap-2 mb-1">
+                      <label className="text-[9px] text-[#3a9bdc] font-bold uppercase tracking-widest block">Saldo Restante</label>
+                      <button 
+                        onClick={() => setShowMultiModal(true)}
+                        className="btn-icon h-7 w-7 bg-[#c8952e]/10 text-[#c8952e] border border-[#c8952e]/20 hover:bg-[#c8952e] hover:text-black transition-all"
+                        title="Registrar Abono"
+                      >
+                        <Wallet className="w-4 h-4" />
+                      </button>
+                    </div>
                     <div className={`text-3xl font-display font-black tracking-tight ${saldoRestanteUSD <= 0.01 ? 'text-[#27ae60]' : 'text-[#3a9bdc]'}`}>
                       {saldoRestanteUSD <= 0.01 ? 'SALDADO' : Utils.fmtUSD(saldoRestanteUSD)}
                     </div>
@@ -273,37 +281,12 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                   </div>
                 </div>
 
-                {/* Totales y Botón Procesar */}
-                <div className="bg-[#0b0b0b] p-4 rounded-xl border border-[#c8952e]/20 relative shadow-lg">
-                  <button 
-                    onClick={() => setShowMultiModal(true)}
-                    className="absolute right-4 top-4 btn-icon h-10 w-10 bg-[#c8952e]/10 text-[#c8952e] border border-[#c8952e]/20 hover:bg-[#c8952e] hover:text-black transition-all"
-                    title="Registrar Abono"
-                  >
-                    <Wallet className="w-5 h-5" />
-                  </button>
-                  
-                  <div className="mb-4">
-                    <div className="text-[10px] text-[#5a5650] uppercase tracking-widest font-bold">Total Factura</div>
-                    <div className="text-2xl font-display font-black text-[#c8952e]">{Utils.fmtUSD(subtotalUSD)}</div>
-                    <div className="text-xs text-[#8a847c] font-medium">{Utils.fmtBS(totalBS)}</div>
-                  </div>
-                  
-                  <button 
-                    className="btn btn-primary w-full h-14 justify-center text-sm uppercase font-black tracking-widest disabled:opacity-20 shadow-lg shadow-[#c8952e]/5" 
-                    disabled={state.carrito.length === 0 || saldoRestanteUSD > 0.01}
-                    onClick={ejecutarVenta}
-                  >
-                    <CheckCircle2 className="w-5 h-5 mr-2" /> Procesar Pago
-                  </button>
-                </div>
-
               </div>
             </div>
 
-            {/* CARRITO (2/3 DERECHA) */}
-            <div className="w-2/3 flex flex-col">
-              <div className="card flex-1 flex flex-col overflow-hidden shadow-2xl">
+            {/* CARRITO Y ACCION FINAL (2/3 DERECHA) */}
+            <div className="w-2/3 flex flex-col gap-4">
+              <div className="card flex-1 flex flex-col overflow-hidden shadow-2xl border-[#2a2a2a]">
                 <div className="card-head bg-[#131313]/50">
                   <h3 className="flex items-center gap-2">
                     <ShoppingCart className="w-4 h-4 text-[#c8952e]" /> Carrito de Venta
@@ -344,6 +327,30 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                   )}
                 </div>
               </div>
+
+              {/* SECCION FINAL DE TOTAL Y PROCESO (EN LA PARTE INFERIOR DEL CARRITO) */}
+              <div className="card p-4 bg-[#131313] border-[#c8952e]/20 shadow-xl">
+                <div className="flex items-center justify-between gap-6">
+                  <div className="flex-1">
+                    <div className="text-[10px] text-[#5a5650] uppercase tracking-widest font-bold mb-1">Total Factura</div>
+                    <div className="flex items-baseline gap-3">
+                      <div className="text-4xl font-display font-black text-[#c8952e]">{Utils.fmtUSD(subtotalUSD)}</div>
+                      <div className="text-lg text-[#8a847c] font-bold">{Utils.fmtBS(totalBS)}</div>
+                    </div>
+                  </div>
+                  
+                  <div className="w-1/3">
+                    <button 
+                      className="btn btn-primary w-full h-16 justify-center text-base uppercase font-black tracking-widest disabled:opacity-20 shadow-lg shadow-[#c8952e]/5 group" 
+                      disabled={state.carrito.length === 0 || saldoRestanteUSD > 0.01}
+                      onClick={ejecutarVenta}
+                    >
+                      <CheckCircle2 className="w-6 h-6 mr-3 group-hover:scale-110 transition-transform" /> Procesar Pago
+                    </button>
+                  </div>
+                </div>
+              </div>
+
             </div>
 
           </div>
