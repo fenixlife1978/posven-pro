@@ -1,12 +1,19 @@
 
 "use client";
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { AppState } from '@/lib/types';
 import { Utils } from '@/lib/db-store';
 import { DollarSign, Package, HandCoins, FileText, ArrowRight } from 'lucide-react';
 
 export default function DashboardModule({ state }: { state: AppState }) {
+  const [barHeights, setBarHeights] = useState<number[]>([]);
+
+  useEffect(() => {
+    // Generate random heights only on client to avoid hydration mismatch
+    setBarHeights([1, 2, 3, 4, 5, 6, 7].map(() => Math.random() * 100));
+  }, []);
+
   const hoy = Utils.hoy();
   const ventasHoy = state.ventas.filter(v => v.fecha === hoy);
   const totalHoyUSD = ventasHoy.reduce((s, v) => s + v.totalUSD, 0);
@@ -57,9 +64,15 @@ export default function DashboardModule({ state }: { state: AppState }) {
           <div className="card-head"><h3>Resumen Semanal</h3></div>
           <div className="card-body">
              <div className="flex items-end gap-2 h-20">
-                {[1,2,3,4,5,6,7].map(i => (
-                  <div key={i} className="flex-1 bg-[#c8952e]/20 rounded-t h-full min-h-[4px]" style={{ height: `${Math.random() * 100}%` }} />
-                ))}
+                {barHeights.length > 0 ? (
+                  barHeights.map((h, i) => (
+                    <div key={i} className="flex-1 bg-[#c8952e]/20 rounded-t h-full min-h-[4px]" style={{ height: `${h}%` }} />
+                  ))
+                ) : (
+                  [1, 2, 3, 4, 5, 6, 7].map(i => (
+                    <div key={i} className="flex-1 bg-[#c8952e]/20 rounded-t h-full min-h-[4px]" style={{ height: '0%' }} />
+                  ))
+                )}
              </div>
              <div className="flex justify-between text-[0.65rem] text-[#5a5650] mt-2">
                <span>Lun</span><span>Mar</span><span>Mie</span><span>Jue</span><span>Vie</span><span>Sab</span><span>Dom</span>

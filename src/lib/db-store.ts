@@ -1,11 +1,11 @@
 
 "use client";
 
-import { AppState, Product } from './types';
+import { AppState } from './types';
 
 const STORAGE_KEY = 'licoreriaPOS_v2';
 
-const initialState: AppState = {
+export const initialState: AppState = {
   tasa: 36.50,
   productos: [],
   ventas: [],

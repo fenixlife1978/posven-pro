@@ -12,10 +12,9 @@ import {
   RotateCcw, 
   BarChart, 
   Settings,
-  Menu,
-  X
+  Menu
 } from 'lucide-react';
-import { Store, Utils } from '@/lib/db-store';
+import { Store, Utils, initialState } from '@/lib/db-store';
 import { AppState } from '@/lib/types';
 import DashboardModule from '@/components/modules/DashboardModule';
 import InventoryModule from '@/components/modules/InventoryModule';
@@ -27,16 +26,22 @@ import ReportsModule from '@/components/modules/ReportsModule';
 import ConfigModule from '@/components/modules/ConfigModule';
 
 export default function LicoreriaPOS() {
-  const [state, setState] = useState<AppState>(Store.get());
+  const [state, setState] = useState<AppState>(initialState);
   const [activeModule, setActiveModule] = useState('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    setMounted(true);
+    const loadedState = Store.get();
+    
     // Initial data if empty
-    if (state.productos.length === 0) {
+    if (loadedState.productos.length === 0) {
       const demoData = generateDemoData();
       Store.set(demoData);
       setState(demoData);
+    } else {
+      setState(loadedState);
     }
   }, []);
 
@@ -47,14 +52,13 @@ export default function LicoreriaPOS() {
   };
 
   const generateDemoData = (): AppState => {
-    const s = Store.get();
     const hoy = Utils.hoy();
     const products = [
       { id: Store.uid(), codigo: 'WH-001', nombre: 'Johnnie Walker Black Label', categoria: 'Whisky', cantidad: '750ml', marca: 'Johnnie Walker', costoUSD: 28, precioUSD: 48, stock: 12, stockMinimo: 3, proveedor: 'Distribuidora Nacional', fechaCreacion: hoy, activo: true },
       { id: Store.uid(), codigo: 'RN-001', nombre: 'Santa Teresa 1796', categoria: 'Ron', cantidad: '750ml', marca: 'Santa Teresa', costoUSD: 30, precioUSD: 52, stock: 10, stockMinimo: 3, proveedor: 'Licorera Central', fechaCreacion: hoy, activo: true },
       { id: Store.uid(), codigo: 'VN-001', nombre: 'Casillero del Diablo Reserva', categoria: 'Vino', cantidad: '750ml', marca: 'Casillero del Diablo', costoUSD: 8, precioUSD: 16, stock: 20, stockMinimo: 6, proveedor: 'Bodegas del Sur', fechaCreacion: hoy, activo: true },
     ];
-    return { ...s, productos: products };
+    return { ...initialState, productos: products };
   };
 
   const renderModule = () => {
@@ -134,12 +138,12 @@ export default function LicoreriaPOS() {
             <h2 className="font-display text-lg font-semibold capitalize">{activeModule}</h2>
           </div>
           <span className="text-[0.78rem] text-[#5a5650]">
-            {new Date().toLocaleDateString('es', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+            {mounted ? new Date().toLocaleDateString('es', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) : ''}
           </span>
         </header>
         
-        <div className="p-6 md:p-8 flex-1 animate-in fade-in slide-in-from-bottom-2 duration-300">
-          {renderModule()}
+        <div className="p-6 md:p-8 flex-1 animate-in fade-in duration-300">
+          {mounted ? renderModule() : null}
         </div>
       </main>
     </div>
