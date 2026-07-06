@@ -1,5 +1,4 @@
-
-"use client";
+'use client';
 
 import React, { useState } from 'react';
 import { AppState } from '@/lib/types';
@@ -40,7 +39,7 @@ export default function ConfigModule({ state, updateState }: { state: AppState, 
         <div className="card-head"><h3>Datos de la Empresa</h3></div>
         <div className="card-body space-y-4">
           <div className="form-group"><label className="form-label">Nombre</label><input className="form-input" value={empresa.nombre} onChange={e => setEmpresa({...empresa, nombre: e.target.value})} /></div>
-          <div className="form-group"><label classsName="form-label">RIF</label><input className="form-input" value={empresa.rif} onChange={e => setEmpresa({...empresa, rif: e.target.value})} /></div>
+          <div className="form-group"><label className="form-label">RIF</label><input className="form-input" value={empresa.rif} onChange={e => setEmpresa({...empresa, rif: e.target.value})} /></div>
           <div className="form-row grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="form-group"><label className="form-label">Dirección</label><input className="form-input" value={empresa.direccion} onChange={e => setEmpresa({...empresa, direccion: e.target.value})} /></div>
             <div className="form-group"><label className="form-label">Teléfono</label><input className="form-input" value={empresa.telefono} onChange={e => setEmpresa({...empresa, telefono: e.target.value})} /></div>

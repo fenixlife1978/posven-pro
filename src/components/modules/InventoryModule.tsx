@@ -1,5 +1,4 @@
-
-"use client";
+'use client';
 
 import React, { useState } from 'react';
 import { AppState, Product, Movimiento } from '@/lib/types';
@@ -44,8 +43,8 @@ export default function InventoryModule({ state, updateState }: { state: AppStat
             <button className="btn btn-primary"><Plus className="w-4 h-4" /> Nuevo Producto</button>
           </div>
 
-          <div class="card">
-            <div class="table-wrap">
+          <div className="card">
+            <div className="table-wrap">
               <table>
                 <thead>
                   <tr>
@@ -63,23 +62,23 @@ export default function InventoryModule({ state, updateState }: { state: AppStat
                 <tbody>
                   {prods.map(p => (
                     <tr key={p.id}>
-                      <td class="mono opacity-60 text-xs">{p.codigo}</td>
-                      <td class="font-medium">{p.nombre}</td>
-                      <td><span class="badge badge-neutral">{p.categoria}</span></td>
-                      <td class="mono">{Utils.fmtUSD(p.costoUSD)}</td>
-                      <td class="mono text-[#c8952e]">{Utils.fmtUSD(p.precioUSD)}</td>
-                      <td class="mono opacity-60">{Utils.fmtBS(p.precioUSD * state.tasa)}</td>
+                      <td className="mono opacity-60 text-xs">{p.codigo}</td>
+                      <td className="font-medium">{p.nombre}</td>
+                      <td><span className="badge badge-neutral">{p.categoria}</span></td>
+                      <td className="mono">{Utils.fmtUSD(p.costoUSD)}</td>
+                      <td className="mono text-[#c8952e]">{Utils.fmtUSD(p.precioUSD)}</td>
+                      <td className="mono opacity-60">{Utils.fmtBS(p.precioUSD * state.tasa)}</td>
                       <td>
-                        <span class={`badge ${p.stock <= p.stockMinimo ? 'badge-err' : 'badge-ok'}`}>
+                        <span className={`badge ${p.stock <= p.stockMinimo ? 'badge-err' : 'badge-ok'}`}>
                           {p.stock}
                         </span>
                       </td>
-                      <td class="opacity-50">{p.stockMinimo}</td>
+                      <td className="opacity-50">{p.stockMinimo}</td>
                       <td>
-                        <div class="flex gap-1">
-                          <button class="btn-icon text-[#c8952e]" title="Editar"><Edit2 class="w-3.5 h-3.5" /></button>
-                          <button class="btn-icon text-[#3a9bdc]" title="Ajustes de Stock (CPP)" onClick={() => setShowAjuste(p.id)}><Boxes class="w-3.5 h-3.5" /></button>
-                          <button class="btn-icon text-[#e04848]" onClick={() => eliminar(p.id)} title="Eliminar"><Trash2 class="w-3.5 h-3.5" /></button>
+                        <div className="flex gap-1">
+                          <button className="btn-icon text-[#c8952e]" title="Editar"><Edit2 className="w-3.5 h-3.5" /></button>
+                          <button className="btn-icon text-[#3a9bdc]" title="Ajustes de Stock (CPP)" onClick={() => setShowAjuste(p.id)}><Boxes className="w-3.5 h-3.5" /></button>
+                          <button className="btn-icon text-[#e04848]" onClick={() => eliminar(p.id)} title="Eliminar"><Trash2 className="w-3.5 h-3.5" /></button>
                         </div>
                       </td>
                     </tr>
@@ -148,23 +147,23 @@ function ReporteGeneral({ state }: { state: AppState }) {
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div class="kpi amber">
-          <div class="kpi-icon"><BarChart3 /></div>
-          <div class="kpi-label">Valor al Costo (CPP Total)</div>
-          <div class="kpi-value">{Utils.fmtUSD(totalCosto)}</div>
-          <div class="kpi-sub">{Utils.fmtBS(totalCosto * state.tasa)}</div>
+        <div className="kpi amber">
+          <div className="kpi-icon"><BarChart3 /></div>
+          <div className="kpi-label">Valor al Costo (CPP Total)</div>
+          <div className="kpi-value">{Utils.fmtUSD(totalCosto)}</div>
+          <div className="kpi-sub">{Utils.fmtBS(totalCosto * state.tasa)}</div>
         </div>
-        <div class="kpi green">
-          <div class="kpi-icon"><BarChart3 /></div>
-          <div class="kpi-label">Valor al Precio de Venta (Total)</div>
-          <div class="kpi-value">{Utils.fmtUSD(totalVenta)}</div>
-          <div class="kpi-sub">{Utils.fmtBS(totalVenta * state.tasa)}</div>
+        <div className="kpi green">
+          <div className="kpi-icon"><BarChart3 /></div>
+          <div className="kpi-label">Valor al Precio de Venta (Total)</div>
+          <div className="kpi-value">{Utils.fmtUSD(totalVenta)}</div>
+          <div className="kpi-sub">{Utils.fmtBS(totalVenta * state.tasa)}</div>
         </div>
       </div>
       
-      <div class="card">
-        <div class="card-head"><h3>Resumen por Categoría y CPP</h3></div>
-        <div class="table-wrap">
+      <div className="card">
+        <div className="card-head"><h3>Resumen por Categoría y CPP</h3></div>
+        <div className="table-wrap">
           <table>
             <thead>
               <tr>
@@ -185,12 +184,12 @@ function ReporteGeneral({ state }: { state: AppState }) {
                 const cppPromedio = stockTotal > 0 ? cost / stockTotal : 0;
                 return (
                   <tr key={cat}>
-                    <td class="font-bold">{cat}</td>
+                    <td className="font-bold">{cat}</td>
                     <td>{catProds.length}</td>
                     <td>{stockTotal}</td>
-                    <td class="mono">{Utils.fmtUSD(cppPromedio)}</td>
-                    <td class="mono">{Utils.fmtUSD(cost)}</td>
-                    <td class="mono text-[#c8952e]">{Utils.fmtUSD(vent)}</td>
+                    <td className="mono">{Utils.fmtUSD(cppPromedio)}</td>
+                    <td className="mono">{Utils.fmtUSD(cost)}</td>
+                    <td className="mono text-[#c8952e]">{Utils.fmtUSD(vent)}</td>
                   </tr>
                 );
               })}
@@ -254,8 +253,8 @@ function ReporteVentas({ state }: { state: AppState }) {
         </button>
       </div>
 
-      <div class="card">
-        <div class="table-wrap">
+      <div className="card">
+        <div className="table-wrap">
           <table>
             <thead>
               <tr>
@@ -269,16 +268,16 @@ function ReporteVentas({ state }: { state: AppState }) {
             </thead>
             <tbody>
               {ventas.length === 0 ? (
-                <tr><td colSpan={6} class="text-center py-10 opacity-30">No hay ventas registradas en este periodo</td></tr>
+                <tr><td colSpan={6} className="text-center py-10 opacity-30">No hay ventas registradas en este periodo</td></tr>
               ) : (
                 ventas.map(v => v.items.map((item, idx) => (
                   <tr key={`${v.id}-${idx}`}>
                     <td>{idx === 0 ? Utils.fmtFecha(v.fecha) : ''}</td>
                     <td>{item.nombre}</td>
                     <td>{v.metodoPago}</td>
-                    <td class="mono">{item.cantidad}</td>
-                    <td class="mono">{Utils.fmtUSD(item.precioUnitUSD)}</td>
-                    <td class="mono font-bold">{Utils.fmtUSD(item.subtotalUSD)}</td>
+                    <td className="mono">{item.cantidad}</td>
+                    <td className="mono">{Utils.fmtUSD(item.precioUnitUSD)}</td>
+                    <td className="mono font-bold">{Utils.fmtUSD(item.subtotalUSD)}</td>
                   </tr>
                 )))
               )}
@@ -296,9 +295,9 @@ function HistorialAjustes({ state }: { state: AppState }) {
   ).sort((a, b) => b.fecha.localeCompare(a.fecha));
 
   return (
-    <div class="card animate-in fade-in slide-in-from-bottom-2">
-      <div class="card-head"><h3>Historial de Ajustes e Ingresos (CPP)</h3></div>
-      <div class="table-wrap">
+    <div className="card animate-in fade-in slide-in-from-bottom-2">
+      <div className="card-head"><h3>Historial de Ajustes e Ingresos (CPP)</h3></div>
+      <div className="table-wrap">
         <table>
           <thead>
             <tr>
@@ -317,12 +316,12 @@ function HistorialAjustes({ state }: { state: AppState }) {
               return (
                 <tr key={m.id}>
                   <td>{m.fecha.replace('T', ' ').slice(0, 16)}</td>
-                  <td class="font-medium">{p?.nombre || 'Producto Eliminado'}</td>
-                  <td><span class={`badge ${m.tipo.includes('entrada') || m.tipo === 'compra' ? 'badge-ok' : 'badge-err'}`}>{m.tipo}</span></td>
-                  <td class="mono font-bold">{m.cantidad}</td>
-                  <td class="mono opacity-60">{m.stockAntes}</td>
-                  <td class="mono font-bold">{m.stockDespues}</td>
-                  <td class="text-xs">{m.referencia}</td>
+                  <td className="font-medium">{p?.nombre || 'Producto Eliminado'}</td>
+                  <td><span className={`badge ${m.tipo.includes('entrada') || m.tipo === 'compra' ? 'badge-ok' : 'badge-err'}`}>{m.tipo}</span></td>
+                  <td className="mono font-bold">{m.cantidad}</td>
+                  <td className="mono opacity-60">{m.stockAntes}</td>
+                  <td className="mono font-bold">{m.stockDespues}</td>
+                  <td className="text-xs">{m.referencia}</td>
                 </tr>
               );
             })}
@@ -339,21 +338,21 @@ function ReporteConsumo({ state }: { state: AppState }) {
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div class="kpi amber">
-          <div class="kpi-icon"><Gift /></div>
-          <div class="kpi-label">Total Colaboraciones</div>
-          <div class="kpi-value">{movs.filter(m => m.tipo === 'colaboracion').length}</div>
+        <div className="kpi amber">
+          <div className="kpi-icon"><Gift /></div>
+          <div className="kpi-label">Total Colaboraciones</div>
+          <div className="kpi-value">{movs.filter(m => m.tipo === 'colaboracion').length}</div>
         </div>
-        <div class="kpi red">
-          <div class="kpi-icon"><History /></div>
-          <div class="kpi-label">Total Consumo Interno</div>
-          <div class="kpi-value">{movs.filter(m => m.tipo === 'consumo').length}</div>
+        <div className="kpi red">
+          <div className="kpi-icon"><History /></div>
+          <div className="kpi-label">Total Consumo Interno</div>
+          <div className="kpi-value">{movs.filter(m => m.tipo === 'consumo').length}</div>
         </div>
       </div>
       
-      <div class="card">
-        <div class="card-head"><h3>Detalle de Consumo y Colaboraciones</h3></div>
-        <div class="table-wrap">
+      <div className="card">
+        <div className="card-head"><h3>Detalle de Consumo y Colaboraciones</h3></div>
+        <div className="table-wrap">
           <table>
             <thead>
               <tr>
@@ -370,10 +369,10 @@ function ReporteConsumo({ state }: { state: AppState }) {
                 return (
                   <tr key={m.id}>
                     <td>{m.fecha.slice(0, 10)}</td>
-                    <td class="font-bold">{p?.nombre}</td>
-                    <td><span class="badge badge-info">{m.tipo}</span></td>
-                    <td class="mono">{m.cantidad}</td>
-                    <td class="text-sm opacity-80">{m.referencia}</td>
+                    <td className="font-bold">{p?.nombre}</td>
+                    <td><span className="badge badge-info">{m.tipo}</span></td>
+                    <td className="mono">{m.cantidad}</td>
+                    <td className="text-sm opacity-80">{m.referencia}</td>
                   </tr>
                 );
               })}
@@ -451,8 +450,8 @@ function ModalAjuste({ producto, onClose, onSave }: { producto: Product, onClose
           </div>
         </div>
         <div className="modal-foot">
-          <button class="btn btn-secondary" onClick={onClose}>Cancelar</button>
-          <button class="btn btn-primary" onClick={handleSave}>Aplicar Ajuste</button>
+          <button className="btn btn-secondary" onClick={onClose}>Cancelar</button>
+          <button className="btn btn-primary" onClick={handleSave}>Aplicar Ajuste</button>
         </div>
       </div>
     </div>
