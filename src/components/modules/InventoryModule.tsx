@@ -213,20 +213,25 @@ function ModalProducto({ producto, state, onClose, onSave, onUpdateLists }: { pr
 
   const [kitSearch, setKitSearch] = useState('');
 
-  // Sincronizar margen y BS cuando cambia el precio USD o costo
+  // Sincronizar usando MARGEN SOBRE VENTA
+  // Formula: Precio = Costo / (1 - Margen/100)
+  // Formula: Margen = (Precio - Costo) / Precio * 100
+
   const recalcularDesdeUSD = (usd: number, costo: number = datos.costoUSD) => {
-    const nuevoMargen = costo > 0 ? ((usd - costo) / costo) * 100 : 0;
+    const nuevoMargen = usd > 0 ? ((usd - costo) / usd) * 100 : 0;
     setDatos(d => ({ ...d, precioUSD: usd, margen: nuevoMargen, precioBS: usd * state.tasa, costoUSD: costo }));
   };
 
   const recalcularDesdeMargen = (m: number, costo: number = datos.costoUSD) => {
-    const usd = costo * (1 + m / 100);
+    // Si el margen es 100% o mas, evitamos division por cero
+    const factor = (1 - (m / 100));
+    const usd = factor > 0 ? costo / factor : 0;
     setDatos(d => ({ ...d, margen: m, precioUSD: usd, precioBS: usd * state.tasa, costoUSD: costo }));
   };
 
   const recalcularDesdeBS = (bs: number) => {
     const usd = bs / state.tasa;
-    const nuevoMargen = datos.costoUSD > 0 ? ((usd - datos.costoUSD) / datos.costoUSD) * 100 : 0;
+    const nuevoMargen = usd > 0 ? ((usd - datos.costoUSD) / usd) * 100 : 0;
     setDatos(d => ({ ...d, precioBS: bs, precioUSD: usd, margen: nuevoMargen }));
   };
 
@@ -320,18 +325,18 @@ function ModalProducto({ producto, state, onClose, onSave, onUpdateLists }: { pr
                   <input className="form-input" type="number" step="0.01" value={datos.costoUSD} onChange={e => recalcularDesdeMargen(datos.margen, parseFloat(e.target.value) || 0)} />
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Margen de Ganancia (%)</label>
-                  <input className="form-input text-[#27ae60] font-bold" type="number" value={datos.margen} onChange={e => recalcularDesdeMargen(parseFloat(e.target.value) || 0)} />
+                  <label className="form-label">Margen de Ganancia (%) <span className="text-[10px] text-[#5a5650] font-normal">(Sobre Venta)</span></label>
+                  <input className="form-input text-[#27ae60] font-bold" type="number" value={Math.round(datos.margen * 100) / 100} onChange={e => recalcularDesdeMargen(parseFloat(e.target.value) || 0)} />
                 </div>
              </div>
              <div className="form-row grid grid-cols-2 gap-4">
                 <div className="form-group">
                   <label className="form-label">Precio Venta USD</label>
-                  <input className="form-input text-[#c8952e] font-bold" type="number" step="0.01" value={datos.precioUSD} onChange={e => recalcularDesdeUSD(parseFloat(e.target.value) || 0)} />
+                  <input className="form-input text-[#c8952e] font-bold" type="number" step="0.01" value={Math.round(datos.precioUSD * 100) / 100} onChange={e => recalcularDesdeUSD(parseFloat(e.target.value) || 0)} />
                 </div>
                 <div className="form-group">
                   <label className="form-label">Precio Venta BS ({state.tasa})</label>
-                  <input className="form-input" type="number" step="0.01" value={datos.precioBS} onChange={e => recalcularDesdeBS(parseFloat(e.target.value) || 0)} />
+                  <input className="form-input" type="number" step="0.01" value={Math.round(datos.precioBS * 100) / 100} onChange={e => recalcularDesdeBS(parseFloat(e.target.value) || 0)} />
                 </div>
              </div>
           </div>
