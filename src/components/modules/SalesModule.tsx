@@ -398,14 +398,13 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
 
               <div className="form-group mb-0">
                 <label className="form-label text-[9px] uppercase font-bold text-[#8a847c] mb-1">Método</label>
-                <select className="form-select h-8 text-xs" value={metodoActual} onChange={e => setMetodoActual(e.target.value as any)}>
+                <select className="form-select h-11 text-xs" value={metodoActual} onChange={e => setMetodoActual(e.target.value as any)}>
                   <option value="efectivo_usd">Efectivo USD</option>
                   <option value="efectivo_bs">Efectivo Bs.</option>
                   <option value="biopago">Biopago</option>
                   <option value="pagomovil">PagoMovil</option>
                   <option value="punto_venta">Punto de Venta</option>
                   <option value="zelle">Zelle</option>
-                  <option value="credito">Crédito</option>
                 </select>
               </div>
 
@@ -415,7 +414,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                 </label>
                 <input 
                   type="number" 
-                  className="form-input h-10 text-base font-black text-[#c8952e]" 
+                  className="form-input h-12 text-base font-black text-[#c8952e]" 
                   placeholder={metodoActual === 'efectivo_usd' ? saldoRestanteUSD.toFixed(2) : saldoRestanteBS.toFixed(2)}
                   value={montoInput}
                   onChange={e => setMontoInput(e.target.value)}
@@ -424,7 +423,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                 />
               </div>
 
-              <button className="btn btn-primary w-full h-10 justify-center font-black uppercase text-[10px]" onClick={addPago}>
+              <button className="btn btn-primary w-full h-11 justify-center font-black uppercase text-[10px]" onClick={addPago}>
                 Confirmar Abono
               </button>
             </div>
