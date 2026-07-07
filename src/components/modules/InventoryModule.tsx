@@ -765,24 +765,83 @@ function ReporteVentas({ state }: { state: AppState }) {
 }
 
 function ReporteKardex({ state, selectedId, onSelect }: { state: AppState, selectedId: string | null, onSelect: (id: string) => void }) {
+  const [search, setSearch] = useState('');
+  const [showResults, setShowResults] = useState(false);
+  
   const products = state.productos.filter(p => p.activo);
+  const selectedProd = selectedId ? state.productos.find(p => p.id === selectedId) : null;
   const movs = selectedId ? state.movimientos.filter(m => m.productoId === selectedId).sort((a, b) => b.fecha.localeCompare(a.fecha)) : [];
-  const prod = selectedId ? state.productos.find(p => p.id === selectedId) : null;
+
+  const filtered = search.trim().length > 0 
+    ? products.filter(p => 
+        p.nombre.toLowerCase().includes(search.toLowerCase()) || 
+        p.codigo.toLowerCase().includes(search.toLowerCase())
+      ).slice(0, 15)
+    : [];
 
   return (
     <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2">
       <div className="flex gap-4 flex-wrap items-center">
-        <div className="form-group mb-0 flex-1 min-w-[250px]">
-          <label className="text-white text-[10px] font-black uppercase mb-1 block">Seleccionar Producto</label>
-          <select className="form-select bg-black text-white" value={selectedId || ''} onChange={e => onSelect(e.target.value)}>
-            <option value="">-- Seleccione un producto --</option>
-            {products.map(p => <option key={p.id} value={p.id}>{p.codigo} - {p.nombre}</option>)}
-          </select>
+        <div className="form-group mb-0 flex-1 min-w-[300px] relative">
+          <label className="text-white text-[10px] font-black uppercase mb-1 block">SELECCIONAR PRODUCTO (Búsqueda Inteligente)</label>
+          <div className="relative">
+            <Search className="absolute left-3 top-2.5 w-4 h-4 text-[#c8952e]" />
+            <input 
+              type="text"
+              className="form-input pl-10 pr-10 py-2 bg-black border-[#2a2a2a] text-white font-black uppercase text-xs" 
+              placeholder="Escriba código o nombre del producto..." 
+              value={selectedProd ? `${selectedProd.codigo} - ${selectedProd.nombre}` : search}
+              onChange={(e) => {
+                if (selectedId) onSelect('');
+                setSearch(e.target.value);
+                setShowResults(true);
+              }}
+              onFocus={() => setShowResults(true)}
+              onBlur={() => setTimeout(() => setShowResults(false), 200)}
+            />
+            {(selectedId || search) && (
+              <button 
+                onClick={() => { onSelect(''); setSearch(''); }} 
+                className="absolute right-3 top-2.5 text-white/40 hover:text-[#e04848]"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+
+          {showResults && (search.length > 0) && (
+            <div className="absolute top-full left-0 right-0 bg-[#1e1e1e] border border-[#333] rounded shadow-2xl z-[100] mt-1 max-h-60 overflow-y-auto">
+              {filtered.length === 0 ? (
+                <div className="p-4 text-center text-white/40 text-[10px] font-black uppercase">Sin resultados</div>
+              ) : (
+                filtered.map(p => (
+                  <div 
+                    key={p.id} 
+                    className="p-3 hover:bg-[#c8952e]/20 cursor-pointer border-b border-white/5 flex justify-between items-center transition-colors"
+                    onMouseDown={() => {
+                      onSelect(p.id);
+                      setSearch('');
+                      setShowResults(false);
+                    }}
+                  >
+                    <div className="flex flex-col">
+                      <span className="text-white font-black text-xs uppercase">{p.nombre}</span>
+                      <span className="text-[9px] text-white/40 mono">{p.codigo}</span>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-[#c8952e] font-black text-xs">{Utils.fmtUSD(p.precioUSD)}</div>
+                      <div className="text-[8px] text-white/60 font-bold uppercase">{p.categoria}</div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
         </div>
-        {prod && (
-          <div className="p-3 bg-secondary/30 rounded-lg flex gap-6 border border-white/10">
-            <div className="text-center"><p className="text-[10px] text-white font-black uppercase">Stock Actual</p><p className="text-xl font-black text-[#c8952e]">{prod.stock}</p></div>
-            <div className="text-center"><p className="text-[10px] text-white font-black uppercase">CPP Actual</p><p className="text-xl font-black text-[#27ae60]">{Utils.fmtUSD(prod.costoUSD)}</p></div>
+        {selectedProd && (
+          <div className="p-3 bg-[#131313] rounded-lg flex gap-6 border border-[#2a2a2a] shadow-inner">
+            <div className="text-center"><p className="text-[9px] text-white/40 font-black uppercase mb-1">Stock Actual</p><p className="text-xl font-black text-[#c8952e]">{selectedProd.stock}</p></div>
+            <div className="text-center"><p className="text-[9px] text-white/40 font-black uppercase mb-1">CPP Actual</p><p className="text-xl font-black text-[#27ae60]">{Utils.fmtUSD(selectedProd.costoUSD)}</p></div>
           </div>
         )}
       </div>
