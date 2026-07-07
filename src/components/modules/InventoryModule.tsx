@@ -4,7 +4,7 @@
 import React, { useState, useEffect } from 'react';
 import { AppState, Product, Movimiento, KitItem } from '@/lib/types';
 import { Utils, Store } from '@/lib/db-store';
-import { Plus, Search, Edit2, Trash2, Boxes, X, BarChart3, FileText, History, Gift, Layers, Settings2, Trash } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, Boxes, X, BarChart3, FileText, History, Gift, Layers, Settings2, Trash, ArrowLeft, Printer } from 'lucide-react';
 
 export default function InventoryModule({ state, updateState }: { state: AppState, updateState: (s: Partial<AppState>) => void }) {
   const [activeTab, setActiveTab] = useState('productos');
@@ -36,9 +36,9 @@ export default function InventoryModule({ state, updateState }: { state: AppStat
             <div className="flex gap-4 flex-1 min-w-[300px]">
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-2.5 w-4 h-4 text-[#ffffff]" />
-                <input className="form-input pl-10 bg-[#131313] text-white border-[#2a2a2a]" placeholder="Buscar producto..." value={search} onChange={e => setSearch(e.target.value)} />
+                <input className="form-input pl-10 bg-[#131313] text-white border-[#2a2a2a] h-11" placeholder="Buscar producto..." value={search} onChange={e => setSearch(e.target.value)} />
               </div>
-              <select className="form-select w-auto bg-[#131313] text-white border-[#2a2a2a]" value={catFilter} onChange={e => setCatFilter(e.target.value)}>
+              <select className="form-select w-auto bg-[#131313] text-white border-[#2a2a2a] h-11 px-4" value={catFilter} onChange={e => setCatFilter(e.target.value)}>
                 <option value="">Todas las categorias</option>
                 {state.categorias.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
@@ -198,6 +198,166 @@ export default function InventoryModule({ state, updateState }: { state: AppStat
   );
 }
 
+// --- SUBCOMPONENTES DE REPORTES ---
+
+function ReporteGeneral({ state }: { state: AppState }) {
+  const valorInvCosto = state.productos.filter(p => p.activo).reduce((s, p) => s + (p.costoUSD * p.stock), 0);
+  const valorInvVenta = state.productos.filter(p => p.activo).reduce((s, p) => s + (p.precioUSD * p.stock), 0);
+
+  return (
+    <div className="space-y-6 animate-in fade-in duration-300">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="kpi bg-[#181818] border-[#2a2a2a] p-6 rounded-xl border">
+          <div className="text-white text-[10px] font-black uppercase mb-1">Valor Inventario (Costo CPP)</div>
+          <div className="text-3xl font-black text-white">{Utils.fmtUSD(valorInvCosto)}</div>
+          <div className="text-white text-xs font-bold mt-1 uppercase italic">{Utils.fmtBS(valorInvCosto * state.tasa)}</div>
+        </div>
+        <div className="kpi bg-[#181818] border-[#2a2a2a] p-6 rounded-xl border">
+          <div className="text-white text-[10px] font-black uppercase mb-1">Valor Inventario (Precio Venta)</div>
+          <div className="text-3xl font-black text-[#c8952e]">{Utils.fmtUSD(valorInvVenta)}</div>
+          <div className="text-white text-xs font-bold mt-1 uppercase italic">{Utils.fmtBS(valorInvVenta * state.tasa)}</div>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="card-head px-5 py-3 border-b border-[#2a2a2a] bg-[#181818] flex justify-between items-center">
+          <h3 className="text-white font-black text-xs uppercase tracking-widest">Existencias Detalladas</h3>
+          <button onClick={() => window.print()} className="btn btn-sm btn-secondary font-bold text-white uppercase text-[9px] flex items-center gap-2"><Printer className="w-3 h-3"/> Imprimir Reporte</button>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr className="bg-[#0b0b0b]">
+                <th className="text-white font-black text-[10px] uppercase">Producto</th>
+                <th className="text-white font-black text-[10px] uppercase text-right">Stock</th>
+                <th className="text-white font-black text-[10px] uppercase text-right">Costo CPP</th>
+                <th className="text-white font-black text-[10px] uppercase text-right">Subtotal Costo</th>
+              </tr>
+            </thead>
+            <tbody className="bg-[#131313]">
+              {state.productos.filter(p => p.activo).map(p => (
+                <tr key={p.id} className="border-b border-white/5">
+                  <td className="text-white font-bold text-xs uppercase">{p.nombre}</td>
+                  <td className="text-white font-black text-xs text-right">{p.stock}</td>
+                  <td className="text-white font-bold text-xs text-right">{Utils.fmtUSD(p.costoUSD)}</td>
+                  <td className="text-[#c8952e] font-black text-xs text-right">{Utils.fmtUSD(p.costoUSD * p.stock)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ReporteVentas({ state }: { state: AppState }) {
+  return (
+    <div className="card p-20 text-center animate-in fade-in">
+      <FileText className="w-12 h-12 text-[#c8952e] mx-auto mb-4 opacity-50" />
+      <h3 className="text-white font-black uppercase text-xl">Reporte de Ventas por Producto</h3>
+      <p className="text-white/40 font-black uppercase text-[10px] mt-2">Próximamente disponible con gráficos de demanda.</p>
+    </div>
+  );
+}
+
+function HistorialAjustes({ state }: { state: AppState }) {
+  const ajustes = state.movimientos.filter(m => m.tipo.startsWith('ajuste') || m.tipo === 'compra').sort((a, b) => b.fecha.localeCompare(a.fecha));
+
+  return (
+    <div className="card animate-in slide-in-from-bottom-2">
+      <div className="card-head bg-[#181818] px-5 py-3 border-b border-[#2a2a2a]"><h3 className="text-white font-black text-xs uppercase">Historial de Ajustes Manuales</h3></div>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr className="bg-[#0b0b0b]">
+              <th className="text-white font-black text-[10px] uppercase">Fecha / Hora</th>
+              <th className="text-white font-black text-[10px] uppercase">Producto</th>
+              <th className="text-white font-black text-[10px] uppercase">Tipo</th>
+              <th className="text-white font-black text-[10px] uppercase text-right">Cant.</th>
+              <th className="text-white font-black text-[10px] uppercase">Ref / Nota</th>
+            </tr>
+          </thead>
+          <tbody className="bg-[#131313]">
+            {ajustes.map(m => {
+              const p = state.productos.find(x => x.id === m.productoId);
+              return (
+                <tr key={m.id} className="border-b border-white/5">
+                  <td className="text-white font-bold text-xs">{m.fecha.replace('T', ' ').slice(0, 16)}</td>
+                  <td className="text-white font-black text-xs uppercase">{p?.nombre || 'Eliminado'}</td>
+                  <td><span className={`badge ${m.tipo === 'compra' ? 'badge-ok' : 'badge-neutral'} text-[9px] uppercase font-black`}>{m.tipo}</span></td>
+                  <td className={`text-right font-black text-xs ${m.cantidad > 0 ? 'text-[#27ae60]' : 'text-[#e04848]'}`}>{m.cantidad > 0 ? `+${m.cantidad}` : m.cantidad}</td>
+                  <td className="text-white/60 text-[10px] uppercase italic">{m.referencia}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function ReporteKardex({ state, selectedId, onSelect }: { state: AppState, selectedId: string | null, onSelect: (id: string | null) => void }) {
+  const movs = selectedId ? state.movimientos.filter(m => m.productoId === selectedId).sort((a, b) => b.fecha.localeCompare(a.fecha)) : [];
+  const p = state.productos.find(x => x.id === selectedId);
+
+  return (
+    <div className="space-y-4 animate-in fade-in">
+      <div className="flex gap-4">
+        <select className="form-select flex-1 bg-[#131313] text-white border-[#2a2a2a] h-11" value={selectedId || ''} onChange={e => onSelect(e.target.value)}>
+          <option value="">Seleccione un producto para ver su historial...</option>
+          {state.productos.filter(p => p.activo).map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+        </select>
+      </div>
+
+      {selectedId && (
+        <div className="card">
+          <div className="card-head px-5 py-3 border-b border-[#2a2a2a] bg-[#181818]">
+            <h3 className="text-white font-black text-xs uppercase tracking-widest">Kardex: {p?.nombre}</h3>
+          </div>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr className="bg-[#0b0b0b]">
+                  <th className="text-white font-black text-[10px] uppercase">Fecha</th>
+                  <th className="text-white font-black text-[10px] uppercase">Operación</th>
+                  <th className="text-white font-black text-[10px] uppercase text-right">E/S</th>
+                  <th className="text-white font-black text-[10px] uppercase text-right">Saldo</th>
+                  <th className="text-white font-black text-[10px] uppercase">Referencia</th>
+                </tr>
+              </thead>
+              <tbody className="bg-[#131313]">
+                {movs.map(m => (
+                  <tr key={m.id} className="border-b border-white/5">
+                    <td className="text-white font-bold text-xs">{m.fecha.replace('T', ' ').slice(0, 16)}</td>
+                    <td className="text-white font-black text-[10px] uppercase">{m.tipo}</td>
+                    <td className={`text-right font-black text-xs ${m.cantidad > 0 ? 'text-[#27ae60]' : 'text-[#e04848]'}`}>{m.cantidad > 0 ? `+${m.cantidad}` : m.cantidad}</td>
+                    <td className="text-[#c8952e] font-black text-xs text-right">{m.stockDespues}</td>
+                    <td className="text-white/40 text-[10px] uppercase italic truncate max-w-[200px]">{m.referencia}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ReporteConsumo({ state }: { state: AppState }) {
+  return (
+    <div className="card p-20 text-center animate-in fade-in">
+      <Gift className="w-12 h-12 text-[#3a9bdc] mx-auto mb-4 opacity-50" />
+      <h3 className="text-white font-black uppercase text-xl">Reporte de Consumo y Colaboraciones</h3>
+      <p className="text-white/40 font-black uppercase text-[10px] mt-2">Auditoría de cortesías y uso interno próximamente.</p>
+    </div>
+  );
+}
+
+// --- MODALES ---
+
 function ModalProducto({ producto, state, onClose, onSave, onUpdateLists }: { producto?: Product, state: AppState, onClose: () => void, onSave: (p: any) => void, onUpdateLists: (l: any) => void }) {
   const [datos, setDatos] = useState({
     codigo: producto?.codigo || '',
@@ -247,20 +407,16 @@ function ModalProducto({ producto, state, onClose, onSave, onUpdateLists }: { pr
 
   const handleSubmit = () => {
     if (!datos.nombre || !datos.codigo) return alert('Nombre y Código son requeridos');
-    
-    // Determinar precio de venta activo para el POS
     let pVenta = datos.precioEstandarUSD;
     if (datos.tipoPrecioPrincipal === 'mayor') pVenta = datos.precioMayorUSD;
     else if (datos.tipoPrecioPrincipal === 'oferta') pVenta = datos.precioOfertaUSD;
     else if (datos.tipoPrecioPrincipal === 'promo') pVenta = datos.precioPromoUSD;
-    
-    if (pVenta <= 0) return alert('El precio de venta seleccionado debe ser mayor a 0');
-    
+    if (pVenta <= 0) return alert('El precio de venta debe ser mayor a 0');
     onSave({ ...datos, precioUSD: pVenta });
   };
 
   const addToList = (key: 'categorias' | 'departamentos' | 'marcas' | 'presentaciones' | 'proveedores') => {
-    const val = prompt(`Nueva entrada para ${key === 'presentaciones' ? 'presentación' : key === 'proveedores' ? 'proveedor' : key}:`);
+    const val = prompt(`Nueva entrada para ${key}:`);
     if (val) {
       const newList = [...(state[key] as string[]), val];
       onUpdateLists({ [key]: newList });
@@ -271,270 +427,171 @@ function ModalProducto({ producto, state, onClose, onSave, onUpdateLists }: { pr
   };
 
   const removeFromList = (key: 'categorias' | 'departamentos' | 'marcas' | 'presentaciones' | 'proveedores', val: string) => {
-    if (confirm(`¿Borrar "${val}" de la lista?`)) {
+    if (confirm(`¿Borrar "${val}"?`)) {
       const newList = (state[key] as string[]).filter(i => i !== val);
       onUpdateLists({ [key]: newList });
     }
   };
 
-  const filteredProveedores = state.proveedores.filter(p => 
-    p.toLowerCase().includes(provSearch.toLowerCase())
-  );
+  const filteredProveedores = state.proveedores.filter(p => p.toLowerCase().includes(provSearch.toLowerCase()));
 
   return (
     <div className="modal show">
       <div className="modal-bg" onClick={onClose}></div>
-      <div className="modal-box" style={{ maxWidth: '720px' }}>
+      <div className="modal-box bg-[#1e1e1e] max-w-[750px] border-2 border-[#2a2a2a] shadow-2xl">
         <div className="modal-head py-3 px-5 border-b border-[#2a2a2a] bg-[#181818]">
           <h3 className="text-white font-black uppercase tracking-widest text-sm">{producto ? 'Editar Producto' : 'Nuevo Producto'}</h3>
           <button className="btn-icon btn-sm text-white" onClick={onClose}><X className="w-4 h-4" /></button>
         </div>
-        <div className="modal-body p-5 space-y-4 bg-[#131313]">
-          
+        <div className="modal-body p-5 space-y-4 max-h-[80vh] overflow-y-auto">
           <div className="grid grid-cols-3 gap-3">
             <div className="form-group mb-0">
-              <label className="form-label text-white font-black text-[10px] mb-1 uppercase">Código / Barcode</label>
-              <input className="form-input py-1.5 mono text-sm bg-[#0b0b0b] text-white border-[#2a2a2a]" value={datos.codigo} onChange={e => setDatos({...datos, codigo: e.target.value})} placeholder="Escanee" />
-            </div>
-            <div className="form-group mb-0">
-              <div className="flex justify-between items-center mb-1">
-                <label className="form-label text-white font-black text-[10px] m-0 uppercase">Dpto.</label>
-                <button className="text-[9px] text-[#c8952e] font-black uppercase" onClick={() => addToList('departamentos')}>+ ADD</button>
-              </div>
-              <div className="flex gap-1">
-                <select className="form-select py-1.5 text-xs bg-[#0b0b0b] text-white border-[#2a2a2a]" value={datos.departamento} onChange={e => setDatos({...datos, departamento: e.target.value})}>
-                  {state.departamentos.map(d => <option key={d} value={d}>{d}</option>)}
-                </select>
-                <button className="btn-icon btn-sm h-7 w-7 text-[#e04848]" onClick={() => removeFromList('departamentos', datos.departamento)}><Trash className="w-3 h-3"/></button>
-              </div>
-            </div>
-            <div className="form-group mb-0">
-              <div className="flex justify-between items-center mb-1">
-                <label className="form-label text-white font-black text-[10px] m-0 uppercase">Cat.</label>
-                <button className="text-[9px] text-[#c8952e] font-black uppercase" onClick={() => addToList('categorias')}>+ ADD</button>
-              </div>
-              <div className="flex gap-1">
-                <select className="form-select py-1.5 text-xs bg-[#0b0b0b] text-white border-[#2a2a2a]" value={datos.categoria} onChange={e => setDatos({...datos, categoria: e.target.value})}>
-                  {state.categorias.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
-                <button className="btn-icon btn-sm h-7 w-7 text-[#e04848]" onClick={() => removeFromList('categorias', datos.categoria)}><Trash className="w-3 h-3"/></button>
-              </div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-3 gap-3">
-            <div className="form-group mb-0">
-              <div className="flex justify-between items-center mb-1">
-                <label className="form-label text-white font-black text-[10px] m-0 uppercase">Marca</label>
-                <button className="text-[9px] text-[#c8952e] font-black uppercase" onClick={() => addToList('marcas')}>+ ADD</button>
-              </div>
-              <div className="flex gap-1">
-                <select className="form-select py-1.5 text-xs bg-[#0b0b0b] text-white border-[#2a2a2a]" value={datos.marca} onChange={e => setDatos({...datos, marca: e.target.value})}>
-                  {state.marcas.map(m => <option key={m} value={m}>{m}</option>)}
-                </select>
-                <button className="btn-icon btn-sm h-7 w-7 text-[#e04848]" onClick={() => removeFromList('marcas', datos.marca)}><Trash className="w-3 h-3"/></button>
-              </div>
+              <label className="text-white font-black text-[10px] mb-1 uppercase block">Código / Barcode</label>
+              <input className="form-input bg-[#0b0b0b] text-white border-[#2a2a2a] h-10 px-3 mono text-sm" value={datos.codigo} onChange={e => setDatos({...datos, codigo: e.target.value})} />
             </div>
             <div className="form-group mb-0 col-span-2">
-              <label className="form-label text-white font-black text-[10px] mb-1 uppercase">Nombre del producto</label>
-              <input className="form-input py-1.5 text-sm bg-[#0b0b0b] text-white border-[#2a2a2a]" value={datos.nombre} onChange={e => setDatos({...datos, nombre: e.target.value})} placeholder="Ej: Johnnie Walker Black Label" />
+              <label className="text-white font-black text-[10px] mb-1 uppercase block">Nombre del Producto</label>
+              <input className="form-input bg-[#0b0b0b] text-white border-[#2a2a2a] h-10 px-3 font-bold text-sm" value={datos.nombre} onChange={e => setDatos({...datos, nombre: e.target.value})} />
             </div>
           </div>
 
-          <div className="bg-[#181818] p-4 rounded-lg border border-[#2a2a2a]">
-            <h4 className="text-[10px] font-black uppercase text-[#c8952e] mb-3">Costos y Precio Estándar</h4>
+          <div className="bg-[#181818] p-4 rounded border border-[#2a2a2a] space-y-3">
+            <h4 className="text-[10px] font-black uppercase text-[#c8952e] mb-2">Costos y Precio Estándar</h4>
             <div className="grid grid-cols-4 gap-3">
               <div className="form-group mb-0">
-                <label className="form-label text-white font-black text-[9px] mb-1">COSTO $</label>
-                <input className="form-input py-1.5 text-sm bg-[#0b0b0b] text-white border-[#2a2a2a]" type="number" step="0.01" value={datos.costoUSD} onChange={e => recalcularDesdeMargen(datos.margen, parseFloat(e.target.value) || 0)} />
+                <label className="text-white font-black text-[9px] mb-1 block uppercase">Costo USD</label>
+                <input type="number" step="0.01" className="form-input bg-[#0b0b0b] text-white border-[#2a2a2a] h-10 px-3 text-sm" value={datos.costoUSD} onChange={e => recalcularDesdeMargen(datos.margen, parseFloat(e.target.value) || 0)} />
               </div>
               <div className="form-group mb-0">
-                <label className="form-label text-white font-black text-[9px] mb-1">MARGEN %</label>
-                <input className="form-input py-1.5 text-sm text-[#27ae60] font-black bg-[#0b0b0b] border-[#2a2a2a]" type="number" value={Math.round(datos.margen * 100) / 100} onChange={e => recalcularDesdeMargen(parseFloat(e.target.value) || 0)} />
+                <label className="text-white font-black text-[9px] mb-1 block uppercase">Margen %</label>
+                <input type="number" className="form-input bg-[#0b0b0b] text-[#27ae60] border-[#2a2a2a] h-10 px-3 text-sm font-black" value={datos.margen} onChange={e => recalcularDesdeMargen(parseFloat(e.target.value) || 0)} />
               </div>
               <div className="form-group mb-0">
-                <div className="flex justify-between items-center mb-1">
-                  <label className="form-label text-white font-black text-[9px] m-0">VENTA $</label>
-                  <input type="radio" name="principal" checked={datos.tipoPrecioPrincipal === 'estandar'} onChange={() => setDatos({...datos, tipoPrecioPrincipal: 'estandar'})} className="accent-[#c8952e]" title="Usar como principal" />
-                </div>
-                <input className="form-input py-1.5 text-sm text-[#c8952e] font-black bg-[#0b0b0b] border-[#2a2a2a]" type="number" step="0.01" value={Math.round(datos.precioEstandarUSD * 100) / 100} onChange={e => recalcularDesdeUSD(parseFloat(e.target.value) || 0)} />
+                <div className="flex justify-between items-center mb-1"><label className="text-white font-black text-[9px] uppercase">Venta USD</label><input type="radio" checked={datos.tipoPrecioPrincipal === 'estandar'} onChange={() => setDatos({...datos, tipoPrecioPrincipal: 'estandar'})} /></div>
+                <input type="number" className="form-input bg-[#0b0b0b] text-[#c8952e] border-[#2a2a2a] h-10 px-3 text-sm font-black" value={datos.precioEstandarUSD} onChange={e => recalcularDesdeUSD(parseFloat(e.target.value) || 0)} />
               </div>
               <div className="form-group mb-0">
-                <label className="form-label text-white font-black text-[9px] mb-1">VENTA BS</label>
-                <input className="form-input py-1.5 text-sm bg-[#0b0b0b] text-white border-[#2a2a2a]" type="number" step="0.01" value={Math.round(datos.precioBS * 100) / 100} onChange={e => recalcularDesdeBS(parseFloat(e.target.value) || 0)} />
+                <label className="text-white font-black text-[9px] mb-1 block uppercase">Venta BS</label>
+                <input type="number" className="form-input bg-[#0b0b0b] text-white border-[#2a2a2a] h-10 px-3 text-sm font-black" value={datos.precioBS} onChange={e => recalcularDesdeBS(parseFloat(e.target.value) || 0)} />
               </div>
             </div>
-          </div>
-
-          <div className="bg-[#181818] p-4 rounded-lg border border-[#2a2a2a] space-y-3">
-            <h4 className="text-[10px] font-black uppercase text-[#3a9bdc] mb-3">Precios Especiales y Ofertas</h4>
-            <div className="grid grid-cols-3 gap-4">
-              <div className="form-group mb-0">
-                <div className="flex justify-between items-center mb-1">
-                  <label className="form-label text-white font-black text-[9px] m-0 uppercase">Precio al Mayor</label>
-                  <input type="radio" name="principal" checked={datos.tipoPrecioPrincipal === 'mayor'} onChange={() => setDatos({...datos, tipoPrecioPrincipal: 'mayor'})} className="accent-[#c8952e]" title="Usar como principal" />
-                </div>
-                <input className="form-input py-1.5 text-sm bg-[#0b0b0b] text-white border-[#2a2a2a]" type="number" step="0.01" value={datos.precioMayorUSD} onChange={e => setDatos({...datos, precioMayorUSD: parseFloat(e.target.value) || 0})} />
-              </div>
-              <div className="form-group mb-0">
-                <div className="flex justify-between items-center mb-1">
-                  <label className="form-label text-white font-black text-[9px] m-0 uppercase">Precio Oferta</label>
-                  <input type="radio" name="principal" checked={datos.tipoPrecioPrincipal === 'oferta'} onChange={() => setDatos({...datos, tipoPrecioPrincipal: 'oferta'})} className="accent-[#c8952e]" title="Usar como principal" />
-                </div>
-                <input className="form-input py-1.5 text-sm bg-[#0b0b0b] text-white border-[#2a2a2a]" type="number" step="0.01" value={datos.precioOfertaUSD} onChange={e => setDatos({...datos, precioOfertaUSD: parseFloat(e.target.value) || 0})} />
-              </div>
-              <div className="form-group mb-0">
-                <div className="flex justify-between items-center mb-1">
-                  <label className="form-label text-white font-black text-[9px] m-0 uppercase">Precio Promoción</label>
-                  <input type="radio" name="principal" checked={datos.tipoPrecioPrincipal === 'promo'} onChange={() => setDatos({...datos, tipoPrecioPrincipal: 'promo'})} className="accent-[#c8952e]" title="Usar como principal" />
-                </div>
-                <input className="form-input py-1.5 text-sm bg-[#0b0b0b] text-white border-[#2a2a2a]" type="number" step="0.01" value={datos.precioPromoUSD} onChange={e => setDatos({...datos, precioPromoUSD: parseFloat(e.target.value) || 0})} />
-              </div>
-            </div>
-            <p className="text-[8px] text-white font-bold uppercase italic opacity-60">Seleccione el icono radial junto a la etiqueta del precio para establecerlo como el principal para ventas.</p>
           </div>
 
           <div className="grid grid-cols-3 gap-3">
             <div className="form-group mb-0">
-              <label className="form-label text-white font-black text-[10px] mb-1 uppercase">Stock Inicial</label>
-              <input className="form-input py-1.5 text-sm bg-[#0b0b0b] text-white border-[#2a2a2a]" type="number" value={datos.stock} onChange={e => setDatos({...datos, stock: parseInt(e.target.value) || 0})} disabled={!!producto && !datos.isKit} />
-            </div>
-            <div className="form-group mb-0">
-              <label className="form-label text-white font-black text-[10px] mb-1 uppercase">Mínimo</label>
-              <input className="form-input py-1.5 text-sm bg-[#0b0b0b] text-white border-[#2a2a2a]" type="number" value={datos.stockMinimo} onChange={e => setDatos({...datos, stockMinimo: parseInt(e.target.value) || 0})} />
-            </div>
-            <div className="form-group mb-0">
-              <div className="flex justify-between items-center mb-1">
-                <label className="form-label text-white font-black text-[10px] m-0 uppercase">Presentación</label>
-                <button className="text-[9px] text-[#c8952e] font-black uppercase" onClick={() => addToList('presentaciones')}>+ ADD</button>
-              </div>
+              <label className="text-white font-black text-[10px] mb-1 uppercase block">Categoría</label>
               <div className="flex gap-1">
-                <select className="form-select py-1.5 text-xs bg-[#0b0b0b] text-white border-[#2a2a2a]" value={datos.cantidad} onChange={e => setDatos({...datos, cantidad: e.target.value})}>
-                  {state.presentaciones.map(p => <option key={p} value={p}>{p}</option>)}
+                <select className="form-select flex-1 bg-[#0b0b0b] text-white border-[#2a2a2a] h-10 px-2 text-xs" value={datos.categoria} onChange={e => setDatos({...datos, categoria: e.target.value})}>
+                  {state.categorias.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
-                <button className="btn-icon btn-sm h-7 w-7 text-[#e04848]" onClick={() => removeFromList('presentaciones', datos.cantidad)}><Trash className="w-3 h-3"/></button>
+                <button className="btn-icon h-10 w-10 text-[#c8952e]" onClick={() => addToList('categorias')}>+</button>
               </div>
             </div>
-          </div>
-
-          <div className="bg-[#181818] p-4 rounded-lg border border-[#2a2a2a] flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <input type="checkbox" checked={datos.aplicaIVA} onChange={e => setDatos({...datos, aplicaIVA: e.target.checked})} className="w-4 h-4 accent-[#c8952e]" />
-              <label className="form-label m-0 text-white font-black text-xs uppercase cursor-pointer" onClick={() => setDatos({...datos, aplicaIVA: !datos.aplicaIVA})}>Aplica Impuesto (IVA 16%)</label>
-            </div>
-            {!datos.aplicaIVA && <span className="badge badge-warn font-black text-[9px] uppercase animate-pulse">Producto Exento</span>}
-          </div>
-
-          <div className="form-group mb-0 relative">
-            <div className="flex justify-between items-center mb-1">
-              <label className="form-label text-white font-black text-[10px] m-0 uppercase">Proveedor</label>
-              <button className="text-[9px] text-[#c8952e] font-black uppercase" onClick={() => addToList('proveedores')}>+ NUEVO PROVEEDOR</button>
-            </div>
-            <div className="relative">
-              <Search className="absolute left-3 top-2.5 w-3.5 h-3.5 text-white/30" />
-              <input 
-                className="form-input py-1.5 pl-10 text-sm bg-[#0b0b0b] text-white border-[#2a2a2a]" 
-                value={provSearch} 
-                onChange={e => {
-                  setProvSearch(e.target.value);
-                  setDatos({...datos, proveedor: e.target.value});
-                  setShowProvSuggestions(true);
-                }} 
-                onFocus={() => setShowProvSuggestions(true)}
-                placeholder="Buscar proveedor..." 
-              />
-              {showProvSuggestions && provSearch.length > 0 && (
-                <div className="absolute top-full left-0 right-0 bg-[#1e1e1e] border border-[#333] rounded mt-1 max-h-32 overflow-y-auto z-[200] shadow-xl">
-                  {filteredProveedores.length > 0 ? (
-                    filteredProveedores.map(p => (
-                      <div 
-                        key={p} 
-                        className="p-2 hover:bg-[#c8952e]/20 cursor-pointer text-xs flex justify-between items-center text-white"
-                        onClick={() => {
-                          setDatos({...datos, proveedor: p});
-                          setProvSearch(p);
-                          setShowProvSuggestions(false);
-                        }}
-                      >
-                        <span className="font-bold">{p}</span>
-                        <button className="text-[#e04848] opacity-50 hover:opacity-100" onClick={(e) => {
-                          e.stopPropagation();
-                          removeFromList('proveedores', p);
-                        }}>
-                          <Trash className="w-3 h-3"/>
-                        </button>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="p-2 text-xs text-white/40 italic">No se encontraron resultados</div>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="border-t border-[#2a2a2a] pt-3">
-            <div className="flex items-center gap-3 mb-2">
-              <input type="checkbox" checked={datos.isKit} onChange={e => setDatos({...datos, isKit: e.target.checked})} className="w-3.5 h-3.5 accent-[#c8952e]" />
-              <label className="form-label m-0 text-white font-black text-xs flex items-center gap-2 uppercase">Este producto es un Kit <Layers className="w-3 h-3 text-[#c8952e]"/></label>
-            </div>
-
-            {datos.isKit && (
-              <div className="bg-[#1e1e1e] p-3 rounded-lg border border-[#333] space-y-3 animate-in fade-in">
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="form-group mb-0">
-                    <label className="form-label text-white font-black text-[9px] uppercase mb-1">Tipo de Stock</label>
-                    <select className="form-select py-1 text-xs bg-[#0b0b0b] text-white border-[#2a2a2a]" value={datos.kitType} onChange={e => setDatos({...datos, kitType: e.target.value as any})}>
-                      <option value="stock_propio">Propio</option>
-                      <option value="stock_componentes">Calculado</option>
-                    </select>
-                  </div>
-                  <div className="form-group mb-0">
-                    <label className="form-label text-white font-black text-[9px] uppercase mb-1">Añadir Componente</label>
-                    <input className="form-input py-1 text-xs bg-[#0b0b0b] text-white border-[#2a2a2a]" placeholder="Buscar..." value={kitSearch} onChange={e => setKitSearch(e.target.value)} />
-                  </div>
-                </div>
-                
-                {kitSearch.length > 1 && (
-                  <div className="bg-[#0b0b0b] border border-[#333] rounded max-h-24 overflow-y-auto">
-                    {state.productos.filter(p => !p.isKit && p.activo && (p.nombre.toLowerCase().includes(kitSearch.toLowerCase()) || p.codigo.includes(kitSearch))).map(p => (
-                      <div key={p.id} className="p-1.5 hover:bg-[#181818] cursor-pointer text-[10px] flex justify-between text-white" onClick={() => {
-                        if (!datos.kitItems.find(i => i.productoId === p.id)) {
-                          setDatos({...datos, kitItems: [...datos.kitItems, { productoId: p.id, nombre: p.nombre, cantidad: 1 }]});
-                        }
-                        setKitSearch('');
-                      }}>
-                        <span className="font-bold">{p.nombre}</span>
-                        <span className="text-[#c8952e] font-black">${p.precioUSD}</span>
-                      </div>
-                    ))}
+            <div className="form-group mb-0">
+              <label className="text-white font-black text-[10px] mb-1 uppercase block">Proveedor</label>
+              <div className="relative">
+                <input className="form-input bg-[#0b0b0b] text-white border-[#2a2a2a] h-10 px-3 text-xs" value={provSearch} onChange={e => {setProvSearch(e.target.value); setDatos({...datos, proveedor: e.target.value}); setShowProvSuggestions(true);}} />
+                {showProvSuggestions && filteredProveedores.length > 0 && (
+                  <div className="absolute top-full left-0 right-0 bg-[#1e1e1e] border border-[#333] z-50">
+                    {filteredProveedores.map(p => <div key={p} className="p-2 hover:bg-[#c8952e]/20 cursor-pointer text-xs" onClick={() => {setDatos({...datos, proveedor: p}); setProvSearch(p); setShowProvSuggestions(false);}}>{p}</div>)}
                   </div>
                 )}
-
-                <div className="grid grid-cols-2 gap-2">
-                  {datos.kitItems.map((item, idx) => (
-                    <div key={item.productoId} className="flex items-center gap-2 bg-[#0b0b0b] p-1.5 rounded text-[10px] border border-[#2a2a2a] text-white">
-                      <span className="flex-1 truncate font-bold">{item.nombre}</span>
-                      <input type="number" className="bg-[#181818] border border-[#333] rounded w-8 p-0.5 text-center text-white" value={item.cantidad} onChange={e => {
-                        const ni = [...datos.kitItems];
-                        ni[idx].cantidad = Math.max(1, parseInt(e.target.value) || 1);
-                        setDatos({...datos, kitItems: ni});
-                      }} />
-                      <button className="text-[#e04848]" onClick={() => setDatos({...datos, kitItems: datos.kitItems.filter((_, i) => i !== idx)})}><X className="w-3 h-3"/></button>
-                    </div>
-                  ))}
-                </div>
               </div>
-            )}
+            </div>
+            <div className="form-group mb-0">
+              <label className="text-white font-black text-[10px] mb-1 uppercase block">Stock Inicial</label>
+              <input type="number" className="form-input bg-[#0b0b0b] text-white border-[#2a2a2a] h-10 px-3 text-sm" value={datos.stock} onChange={e => setDatos({...datos, stock: parseInt(e.target.value) || 0})} disabled={!!producto} />
+            </div>
           </div>
 
+          <div className="flex items-center gap-4 bg-[#181818] p-4 rounded border border-[#2a2a2a]">
+             <div className="flex items-center gap-2">
+               <input type="checkbox" checked={datos.aplicaIVA} onChange={e => setDatos({...datos, aplicaIVA: e.target.checked})} className="w-4 h-4 accent-[#c8952e]" />
+               <label className="text-white font-black text-xs uppercase cursor-pointer">Aplica Impuesto (IVA 16%)</label>
+             </div>
+             {!datos.aplicaIVA && <span className="badge badge-warn font-black text-[9px] uppercase">Producto Exento</span>}
+          </div>
         </div>
-        <div className="modal-foot py-3 px-5 bg-[#181818] border-t border-[#2a2a2a]">
-          <button className="btn btn-sm btn-secondary font-black uppercase text-xs text-white" onClick={onClose}>Cancelar</button>
-          <button className="btn btn-sm btn-primary font-black uppercase text-xs" onClick={handleSubmit}>{producto ? 'Actualizar Producto' : 'Crear Producto'}</button>
+        <div className="modal-foot py-4 px-6 bg-[#181818] border-t border-[#2a2a2a] flex justify-end gap-3">
+          <button className="btn btn-secondary h-10 font-black uppercase text-xs" onClick={onClose}>Cancelar</button>
+          <button className="btn btn-primary h-10 font-black uppercase text-xs px-8" onClick={handleSubmit}>{producto ? 'Actualizar Producto' : 'Crear Producto'}</button>
         </div>
       </div>
     </div>
   );
 }
-// Rest of file continues same...
+
+function ModalAjuste({ producto, onClose, onSave }: { producto: Product, onClose: () => void, onSave: (mov: Movimiento, nuevoCosto?: number) => void }) {
+  const [tipo, setTipo] = useState<'ajuste_entrada' | 'ajuste_salida' | 'compra'>('ajuste_entrada');
+  const [cantidad, setCantidad] = useState(0);
+  const [costo, setCosto] = useState(producto.costoUSD);
+  const [referencia, setReferencia] = useState('');
+
+  const handleSave = () => {
+    if (cantidad <= 0) return alert('La cantidad debe ser mayor a 0');
+    const cantFinal = tipo === 'ajuste_salida' ? -cantidad : cantidad;
+    const stockDespues = producto.stock + cantFinal;
+    if (stockDespues < 0) return alert('El stock no puede quedar en negativo');
+
+    const mov: Movimiento = {
+      id: Store.uid(),
+      productoId: producto.id,
+      tipo: tipo,
+      cantidad: cantFinal,
+      stockAntes: producto.stock,
+      stockDespues: stockDespues,
+      fecha: Utils.ahora(),
+      referencia: referencia || `Ajuste manual de ${tipo}`
+    };
+
+    onSave(mov, costo);
+  };
+
+  return (
+    <div className="modal show">
+      <div className="modal-bg" onClick={onClose}></div>
+      <div className="modal-box bg-[#1e1e1e] border-[#2a2a2a] max-w-md">
+        <div className="modal-head border-b border-[#2a2a2a] p-4">
+          <h3 className="text-white font-black uppercase tracking-widest text-sm flex items-center gap-2"><Boxes className="w-5 h-5 text-[#27ae60]"/> Ajuste de Stock</h3>
+          <button onClick={onClose}><X className="text-white"/></button>
+        </div>
+        <div className="modal-body p-6 space-y-4">
+          <div className="bg-black/30 p-3 rounded border border-white/10 text-center mb-4">
+            <p className="text-white/40 text-[9px] font-black uppercase mb-1">Stock Actual</p>
+            <p className="text-3xl font-black text-white">{producto.stock}</p>
+            <p className="text-white font-bold text-xs uppercase mt-1">{producto.nombre}</p>
+          </div>
+
+          <div className="form-group">
+            <label className="text-white text-[10px] font-black uppercase block mb-1">Tipo de Movimiento</label>
+            <select className="form-select bg-[#0b0b0b] text-white border-[#2a2a2a] h-10 px-3 font-bold text-xs" value={tipo} onChange={e => setTipo(e.target.value as any)}>
+              <option value="ajuste_entrada">Ajuste de Entrada (+)</option>
+              <option value="ajuste_salida">Ajuste de Salida (-)</option>
+              <option value="compra">Compra a Proveedor (+)</option>
+            </select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="form-group">
+              <label className="text-white text-[10px] font-black uppercase block mb-1">Cantidad</label>
+              <input type="number" className="form-input bg-[#0b0b0b] text-white border-[#2a2a2a] h-10 px-3 font-black" value={cantidad} onChange={e => setCantidad(parseInt(e.target.value) || 0)} />
+            </div>
+            {tipo === 'compra' && (
+              <div className="form-group">
+                <label className="text-white text-[10px] font-black uppercase block mb-1">Costo Unitario ($)</label>
+                <input type="number" step="0.01" className="form-input bg-[#0b0b0b] text-white border-[#c8952e]/30 h-10 px-3 font-black" value={costo} onChange={e => setCosto(parseFloat(e.target.value) || 0)} />
+              </div>
+            )}
+          </div>
+
+          <div className="form-group">
+            <label className="text-white text-[10px] font-black uppercase block mb-1">Referencia / Observación</label>
+            <input className="form-input bg-[#0b0b0b] text-white border-[#2a2a2a] h-10 px-3 text-xs" value={referencia} onChange={e => setReferencia(e.target.value)} placeholder="Ej: Factura #1234 o Rotura" />
+          </div>
+
+          <button className="btn btn-primary w-full h-12 font-black uppercase text-xs mt-4" onClick={handleSave}>Procesar Ajuste</button>
+        </div>
+      </div>
+    </div>
+  );
+}
