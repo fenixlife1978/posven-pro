@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -273,6 +272,10 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     };
     updateState({ reportesZ: [...state.reportesZ, nuevoZ], ultimoZ: state.ultimoZ + 1 });
     setShowReport('Z');
+  };
+
+  const handlePrint = () => {
+    window.print();
   };
 
   const hoy = Utils.hoy();
@@ -643,11 +646,16 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         </div>
       )}
 
-      {/* Modal Reportes Y/Z */}
+      {/* Modal Reportes Y/Z (Optimized for 80mm Print) */}
       {showReport && (
         <div className="modal show"><div className="modal-bg" onClick={() => setShowReport(null)}></div>
-          <div className="modal-box bg-white text-black max-w-[400px] font-mono p-6 text-[11px] leading-tight rounded shadow-2xl overflow-y-auto max-h-[90vh]">
-            <div className="text-center space-y-1 mb-4"><h3 className="font-black text-sm uppercase tracking-tighter">{state.empresa.nombre}</h3><p className="font-bold">RIF: {state.empresa.rif}</p><p className="text-[10px]">{state.empresa.direccion}</p><h4 className="font-black border-y border-black py-1 mt-2 text-xs uppercase tracking-widest">REPORTE "{showReport}"</h4></div>
+          <div className="modal-box bg-white text-black max-w-[80mm] font-mono p-4 text-[11px] leading-tight rounded shadow-2xl overflow-y-auto max-h-[90vh]">
+            <div className="text-center space-y-1 mb-4">
+              <h3 className="font-black text-sm uppercase tracking-tighter">{state.empresa.nombre}</h3>
+              <p className="font-bold">RIF: {state.empresa.rif}</p>
+              <p className="text-[10px]">{state.empresa.direccion}</p>
+              <h4 className="font-black border-y border-black py-1 mt-2 text-xs uppercase tracking-widest">REPORTE "{showReport}"</h4>
+            </div>
             <div className="space-y-2">
               <div className="flex justify-between font-bold"><span>FECHA:</span><span>{Utils.fmtFecha(Utils.hoy())}</span></div>
               <div className="flex justify-between font-bold"><span>HORA:</span><span>{Utils.ahora().split('T')[1].slice(0, 8)}</span></div>
@@ -672,16 +680,16 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
             </div>
             <div className="flex gap-2 mt-6 no-print">
               <button onClick={() => setShowReport(null)} className="btn btn-sm btn-secondary flex-1 font-black uppercase text-[10px]">Cerrar</button>
-              <button onClick={() => window.print()} className="btn btn-sm btn-primary flex-1 font-black uppercase text-[10px]">Imprimir</button>
+              <button onClick={handlePrint} className="btn btn-sm btn-primary flex-1 font-black uppercase text-[10px]">Imprimir</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* MODAL RECIBO DE PAGO */}
+      {/* MODAL RECIBO DE PAGO (Optimized for 80mm Print) */}
       {showReceiptModal && lastProcessedSale && (
         <div className="modal show"><div className="modal-bg" onClick={() => setShowReceiptModal(false)}></div>
-          <div className="modal-box bg-white text-black max-w-[320px] font-mono p-6 text-[10px] leading-tight rounded shadow-2xl no-print">
+          <div className="modal-box bg-white text-black max-w-[80mm] font-mono p-4 text-[10px] leading-tight rounded shadow-2xl no-print">
             <div className="text-center mb-4"><h3 className="font-black text-xs uppercase">{state.empresa.nombre}</h3><p>RIF: {state.empresa.rif}</p><p>{state.empresa.direccion}</p></div>
             <div className="border-t border-dashed border-black my-2"></div>
             <div className="space-y-1">
@@ -707,7 +715,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
             <div className="text-center italic mt-4"><p>Gracias por su preferencia.</p><p className="text-[8px] mt-2 opacity-60">LicoreriaPOS Correlativo: {lastProcessedSale.id}</p></div>
             <div className="flex gap-2 mt-6 no-print">
               <button onClick={() => setShowReceiptModal(false)} className="btn btn-sm btn-secondary flex-1 font-black uppercase text-[9px]">Cerrar</button>
-              <button onClick={() => window.print()} className="btn btn-sm btn-primary flex-1 font-black uppercase text-[9px]">Imprimir</button>
+              <button onClick={handlePrint} className="btn btn-sm btn-primary flex-1 font-black uppercase text-[9px]">Imprimir</button>
             </div>
           </div>
         </div>
