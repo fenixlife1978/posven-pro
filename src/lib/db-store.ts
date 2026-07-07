@@ -58,13 +58,31 @@ export const Store = {
 };
 
 export const Utils = {
-  hoy: () => new Date().toISOString().slice(0, 10),
-  ahora: () => new Date().toISOString(),
+  getVzlaDate: () => {
+    const d = new Date();
+    const options: Intl.DateTimeFormatOptions = {
+      timeZone: 'America/Caracas',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    };
+    const formatter = new Intl.DateTimeFormat('en-CA', options); // ISO-like YYYY-MM-DD
+    const parts = formatter.formatToParts(d);
+    const getPart = (type: string) => parts.find(p => p.type === type)?.value;
+    return `${getPart('year')}-${getPart('month')}-${getPart('day')}T${getPart('hour')}:${getPart('minute')}:${getPart('second')}`;
+  },
+  hoy: () => Utils.getVzlaDate().slice(0, 10),
+  ahora: () => Utils.getVzlaDate(),
   fmtUSD: (v: number) => '$' + Number(v).toFixed(2),
   fmtBS: (v: number) => 'Bs. ' + Number(v).toFixed(2),
   fmtFecha: (f: string) => {
     if (!f) return '-';
-    const p = f.split('-');
+    const datePart = f.includes('T') ? f.split('T')[0] : f;
+    const p = datePart.split('-');
     return p[2] + '/' + p[1] + '/' + p[0];
   },
   metodoLabel: (m: string) => {

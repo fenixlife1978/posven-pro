@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect } from 'react';
@@ -32,6 +33,7 @@ export default function LicoreriaPOS() {
   const [activeModule, setActiveModule] = useState('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [currentTime, setCurrentTime] = useState('');
   
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
     operaciones: true,
@@ -50,6 +52,25 @@ export default function LicoreriaPOS() {
     } else {
       setState(loadedState);
     }
+
+    // Actualizar hora local Caracas
+    const updateTime = () => {
+      const now = new Date();
+      setCurrentTime(new Intl.DateTimeFormat('es-VE', {
+        timeZone: 'America/Caracas',
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+      }).format(now));
+    };
+    
+    updateTime();
+    const timer = setInterval(updateTime, 1000);
+    return () => clearInterval(timer);
   }, []);
 
   const updateState = (newState: Partial<AppState>) => {
@@ -123,7 +144,6 @@ export default function LicoreriaPOS() {
 
   return (
     <div className="flex h-screen bg-[#0b0b0b] text-white overflow-hidden">
-      {/* Sidebar como Drawer Global */}
       <aside className={`fixed top-0 left-0 w-[260px] h-screen bg-[#131313] border-r border-[#2a2a2a] flex flex-col z-[100] transition-transform duration-300 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="p-6 border-b border-[#2a2a2a]">
           <h1 className="flex items-center gap-2 font-display text-xl font-bold text-[#c8952e] tracking-tighter">
@@ -156,9 +176,9 @@ export default function LicoreriaPOS() {
                         key={item.id}
                         onClick={() => { 
                           setActiveModule(item.id); 
-                          setIsSidebarOpen(false); // Cierra automáticamente al seleccionar
+                          setIsSidebarOpen(false);
                         }}
-                        className={`w-full flex items-center gap-3 p-3 rounded-md text-sm font-bold transition-all relative ${active ? 'text-[#c8952e] bg-[rgba(200,149,46,0.08)]' : 'text-white/80 hover:bg-[#181818] hover:text-white'}`}
+                        className={`w-full flex items-center gap-3 p-3 rounded-md text-sm font-bold transition-all relative ${active ? 'text-[#c8952e] bg-[rgba(200,149,46,0.08)]' : 'text-white hover:bg-[#181818] hover:text-[#c8952e]'}`}
                       >
                         {active && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 bg-[#c8952e] rounded-r" />}
                         <Icon className="w-4 h-4" />
@@ -172,32 +192,28 @@ export default function LicoreriaPOS() {
           ))}
         </nav>
         
-        <div className="p-4 border-t border-[#2a2a2a] text-[0.8rem] text-white font-bold">
+        <div className="p-4 border-t border-[#2a2a2a] text-[0.8rem] text-white font-black">
           TASA: <span className="text-[#c8952e] font-black font-display">{state.tasa.toFixed(2)}</span> BS/USD
         </div>
       </aside>
 
-      {/* Backdrop global para cuando el menú está abierto */}
       {isSidebarOpen && (
         <div className="fixed inset-0 bg-black/60 z-[90] backdrop-blur-sm" onClick={() => setIsSidebarOpen(false)} />
       )}
 
-      {/* Main Content sin margen izquierdo fijo */}
       <main className="flex-1 flex flex-col h-screen overflow-hidden">
         <header className="flex items-center justify-between p-3 border-b border-[#2a2a2a] bg-[#131313] shrink-0">
           <div className="flex items-center gap-3">
-            {/* Botón de menú siempre visible */}
             <button className="p-2 text-white hover:text-[#c8952e]" onClick={() => setIsSidebarOpen(true)}>
               <Menu className="w-5 h-5" />
             </button>
             <h2 className="font-display text-base font-black uppercase tracking-widest text-[#c8952e]">{activeModule}</h2>
           </div>
           <span className="text-[0.7rem] text-white uppercase font-black tracking-tighter">
-            {mounted ? new Date().toLocaleDateString('es', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' }) : ''}
+            {currentTime}
           </span>
         </header>
         
-        {/* Contenedor de módulos con scroll habilitado */}
         <div className="p-3 md:p-4 flex-1 overflow-y-auto">
           {mounted ? renderModule() : null}
         </div>
