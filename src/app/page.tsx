@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect } from 'react';
@@ -123,14 +122,14 @@ export default function LicoreriaPOS() {
   ];
 
   return (
-    <div className="flex h-screen bg-[#0b0b0b] text-[#ece7df] overflow-hidden">
+    <div className="flex h-screen bg-[#0b0b0b] text-white overflow-hidden">
       {/* Sidebar como Drawer Global */}
       <aside className={`fixed top-0 left-0 w-[260px] h-screen bg-[#131313] border-r border-[#2a2a2a] flex flex-col z-[100] transition-transform duration-300 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="p-6 border-b border-[#2a2a2a]">
           <h1 className="flex items-center gap-2 font-display text-xl font-bold text-[#c8952e] tracking-tighter">
             <Wine className="w-6 h-6" /> LicoreriaPOS
           </h1>
-          <p className="text-[0.75rem] text-[#5a5650] mt-1">Sistema de punto de venta</p>
+          <p className="text-[0.75rem] text-white font-black uppercase mt-1">Gestión de Punto de Venta</p>
         </div>
         
         <nav className="flex-1 overflow-y-auto p-3 space-y-2">
@@ -138,7 +137,7 @@ export default function LicoreriaPOS() {
             <div key={group.id} className="space-y-1">
               <button
                 onClick={() => toggleGroup(group.id)}
-                className="w-full flex items-center justify-between p-2 rounded-md text-[0.7rem] font-bold uppercase tracking-widest text-[#5a5650] hover:text-[#8a847c] transition-colors"
+                className="w-full flex items-center justify-between p-2 rounded-md text-[0.7rem] font-black uppercase tracking-widest text-white hover:text-[#c8952e] transition-colors"
               >
                 <span className="flex items-center gap-2">
                   <group.icon className="w-3.5 h-3.5" />
@@ -159,7 +158,7 @@ export default function LicoreriaPOS() {
                           setActiveModule(item.id); 
                           setIsSidebarOpen(false); // Cierra automáticamente al seleccionar
                         }}
-                        className={`w-full flex items-center gap-3 p-3 rounded-md text-sm font-medium transition-all relative ${active ? 'text-[#c8952e] bg-[rgba(200,149,46,0.08)]' : 'text-[#8a847c] hover:bg-[#181818] hover:text-[#ece7df]'}`}
+                        className={`w-full flex items-center gap-3 p-3 rounded-md text-sm font-bold transition-all relative ${active ? 'text-[#c8952e] bg-[rgba(200,149,46,0.08)]' : 'text-white/80 hover:bg-[#181818] hover:text-white'}`}
                       >
                         {active && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 bg-[#c8952e] rounded-r" />}
                         <Icon className="w-4 h-4" />
@@ -173,8 +172,8 @@ export default function LicoreriaPOS() {
           ))}
         </nav>
         
-        <div className="p-4 border-t border-[#2a2a2a] text-[0.8rem] text-[#5a5650]">
-          Tasa: <span className="text-[#c8952e] font-bold font-display">{state.tasa.toFixed(2)}</span> BS/USD
+        <div className="p-4 border-t border-[#2a2a2a] text-[0.8rem] text-white font-bold">
+          TASA: <span className="text-[#c8952e] font-black font-display">{state.tasa.toFixed(2)}</span> BS/USD
         </div>
       </aside>
 
@@ -188,12 +187,12 @@ export default function LicoreriaPOS() {
         <header className="flex items-center justify-between p-3 border-b border-[#2a2a2a] bg-[#131313] shrink-0">
           <div className="flex items-center gap-3">
             {/* Botón de menú siempre visible */}
-            <button className="p-2 text-[#8a847c] hover:text-[#ece7df]" onClick={() => setIsSidebarOpen(true)}>
+            <button className="p-2 text-white hover:text-[#c8952e]" onClick={() => setIsSidebarOpen(true)}>
               <Menu className="w-5 h-5" />
             </button>
-            <h2 className="font-display text-base font-semibold capitalize text-[#c8952e] tracking-widest">{activeModule}</h2>
+            <h2 className="font-display text-base font-black uppercase tracking-widest text-[#c8952e]">{activeModule}</h2>
           </div>
-          <span className="text-[0.7rem] text-[#5a5650] uppercase font-bold tracking-tighter">
+          <span className="text-[0.7rem] text-white uppercase font-black tracking-tighter">
             {mounted ? new Date().toLocaleDateString('es', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' }) : ''}
           </span>
         </header>
