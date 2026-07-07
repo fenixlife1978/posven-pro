@@ -34,7 +34,7 @@ export default function LicoreriaPOS() {
   const [mounted, setMounted] = useState(false);
   
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
-    operaciones: false,
+    operaciones: true,
     finanzas: false,
     sistema: false
   });
@@ -123,7 +123,7 @@ export default function LicoreriaPOS() {
 
   return (
     <div className="flex h-screen bg-[#0b0b0b] text-[#ece7df] overflow-hidden">
-      <aside className={`fixed top-0 left-0 w-[260px] h-screen bg-[#131313] border-r border-[#2a2a2a] flex flex-col z-[100] transition-transform duration-300 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+      <aside className={`fixed top-0 left-0 w-[260px] h-screen bg-[#131313] border-r border-[#2a2a2a] flex flex-col z-[100] transition-transform duration-300 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0`}>
         <div className="p-6 border-b border-[#2a2a2a]">
           <h1 className="flex items-center gap-2 font-display text-xl font-bold text-[#c8952e] tracking-tighter">
             <Wine className="w-6 h-6" /> LicoreriaPOS
@@ -177,13 +177,13 @@ export default function LicoreriaPOS() {
       </aside>
 
       {isSidebarOpen && (
-        <div className="fixed inset-0 bg-black/60 z-[90] backdrop-blur-sm" onClick={() => setIsSidebarOpen(false)} />
+        <div className="fixed inset-0 bg-black/60 z-[90] backdrop-blur-sm md:hidden" onClick={() => setIsSidebarOpen(false)} />
       )}
 
-      <main className="flex-1 flex flex-col h-screen overflow-hidden">
+      <main className="flex-1 flex flex-col h-screen overflow-hidden md:ml-[260px]">
         <header className="flex items-center justify-between p-3 border-b border-[#2a2a2a] bg-[#131313] shrink-0">
           <div className="flex items-center gap-3">
-            <button className="p-2 text-[#8a847c] hover:text-[#ece7df]" onClick={() => setIsSidebarOpen(true)}>
+            <button className="p-2 text-[#8a847c] hover:text-[#ece7df] md:hidden" onClick={() => setIsSidebarOpen(true)}>
               <Menu className="w-5 h-5" />
             </button>
             <h2 className="font-display text-base font-semibold capitalize text-[#c8952e] tracking-widest">{activeModule}</h2>
@@ -193,7 +193,7 @@ export default function LicoreriaPOS() {
           </span>
         </header>
         
-        <div className="p-3 md:p-4 flex-1 overflow-hidden">
+        <div className="p-3 md:p-4 flex-1 overflow-y-auto">
           {mounted ? renderModule() : null}
         </div>
       </main>
