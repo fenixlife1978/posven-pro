@@ -16,6 +16,7 @@ export const initialState: AppState = {
   carrito: [],
   reportesZ: [],
   ultimoZ: 0,
+  proximoRecibo: 1,
   acumuladoHistorico: 0,
   empresa: { 
     nombre: 'Licorería El Buen Beber', 
@@ -40,7 +41,8 @@ export const Store = {
         ...parsed,
         departamentos: parsed.departamentos || initialState.departamentos,
         categorias: parsed.categorias || initialState.categorias,
-        marcas: parsed.marcas || initialState.marcas
+        marcas: parsed.marcas || initialState.marcas,
+        proximoRecibo: parsed.proximoRecibo || initialState.proximoRecibo
       };
     } catch {
       return initialState;

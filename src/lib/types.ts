@@ -11,7 +11,7 @@ export interface KitItem {
 export interface Movimiento {
   id: string;
   productoId: string;
-  tipo: 'compra' | 'venta' | 'devolucion' | 'ajuste_entrada' | 'ajuste_salida' | 'consumo' | 'colaboracion';
+  tipo: 'compra' | 'venta' | 'devolucion' | 'ajuste_entrada' | 'ajuste_salida' | 'consumo' | 'colaboracion' | 'cobro_deuda';
   cantidad: number;
   stockAntes: number;
   stockDespues: number;
@@ -59,6 +59,10 @@ export interface Sale {
   totalBS: number;
   metodoPago: PaymentMethod;
   estado: EntityStatus;
+  type?: 'VENTA' | 'COBRO DEUDA' | 'DEVOLUCION';
+  received?: number;
+  change?: number;
+  customerName?: string;
   cuentaCobrarId?: string | null;
 }
 
@@ -117,5 +121,6 @@ export interface AppState {
   marcas: string[];
   reportesZ: ReportZ[];
   ultimoZ: number;
+  proximoRecibo: number;
   acumuladoHistorico: number;
 }
