@@ -11,7 +11,6 @@ export default function InventoryModule({ state, updateState }: { state: AppStat
   const [catFilter, setCatFilter] = useState('');
   const [selectedKardexId, setSelectedKardexId] = useState<string | null>(null);
   
-  // Modales
   const [showAjuste, setShowAjuste] = useState<string | null>(null);
   const [showProducto, setShowProducto] = useState<string | null | 'nuevo'>(null);
   
@@ -227,31 +226,46 @@ function ModalProducto({ producto, state, onClose, onSave, onUpdateLists }: { pr
   const [showProvList, setShowProvList] = useState(false);
   const [kitSearch, setKitSearch] = useState('');
 
+  const updateSelectedPrice = (usd: number) => {
+    setDatos(d => {
+      const update: any = { precioUSD: usd, precioBS: usd * state.tasa };
+      if (d.tipoPrecioPrincipal === 'estandar') update.precioEstandarUSD = usd;
+      else if (d.tipoPrecioPrincipal === 'mayor') update.precioMayorUSD = usd;
+      else if (d.tipoPrecioPrincipal === 'oferta') update.precioOfertaUSD = usd;
+      else if (d.tipoPrecioPrincipal === 'promo') update.precioPromoUSD = usd;
+      return { ...d, ...update };
+    });
+  };
+
   const recalcularDesdeUSD = (usd: number, costo: number = datos.costoUSD) => {
     const nuevoMargen = usd > 0 ? ((usd - costo) / usd) * 100 : 0;
     setDatos(d => ({ ...d, precioUSD: usd, margen: nuevoMargen, precioBS: usd * state.tasa, costoUSD: costo }));
+    updateSelectedPrice(usd);
   };
 
   const recalcularDesdeMargen = (m: number, costo: number = datos.costoUSD) => {
     const factor = (1 - (m / 100));
     const usd = factor > 0 ? costo / factor : 0;
     setDatos(d => ({ ...d, margen: m, precioUSD: usd, precioBS: usd * state.tasa, costoUSD: costo }));
+    updateSelectedPrice(usd);
   };
 
   const recalcularDesdeBS = (bs: number) => {
     const usd = bs / state.tasa;
     const nuevoMargen = usd > 0 ? ((usd - datos.costoUSD) / usd) * 100 : 0;
     setDatos(d => ({ ...d, precioBS: bs, precioUSD: usd, margen: nuevoMargen }));
+    updateSelectedPrice(usd);
   };
 
-  // Sincronizar precioUSD cuando cambia el tipo principal o los precios
   useEffect(() => {
     let p = datos.precioEstandarUSD;
     if (datos.tipoPrecioPrincipal === 'mayor') p = datos.precioMayorUSD;
     if (datos.tipoPrecioPrincipal === 'oferta') p = datos.precioOfertaUSD;
     if (datos.tipoPrecioPrincipal === 'promo') p = datos.precioPromoUSD;
-    recalcularDesdeUSD(p);
-  }, [datos.tipoPrecioPrincipal, datos.precioEstandarUSD, datos.precioMayorUSD, datos.precioOfertaUSD, datos.precioPromoUSD]);
+    
+    const m = p > 0 ? ((p - datos.costoUSD) / p) * 100 : 0;
+    setDatos(d => ({ ...d, precioUSD: p, precioBS: p * state.tasa, margen: m }));
+  }, [datos.tipoPrecioPrincipal]);
 
   const handleSubmit = () => {
     if (!datos.nombre || !datos.codigo) return alert('Nombre y Código son requeridos');
@@ -291,7 +305,6 @@ function ModalProducto({ producto, state, onClose, onSave, onUpdateLists }: { pr
         </div>
         <div className="modal-body p-5 space-y-4">
           
-          {/* Fila 1: Codigo, Dept, Cat */}
           <div className="grid grid-cols-3 gap-3">
             <div className="form-group mb-0">
               <label className="form-label text-[10px] mb-1 uppercase text-white font-black">Código / Barcode</label>
@@ -323,7 +336,6 @@ function ModalProducto({ producto, state, onClose, onSave, onUpdateLists }: { pr
             </div>
           </div>
 
-          {/* Fila 2: Marca y Nombre */}
           <div className="grid grid-cols-3 gap-3">
             <div className="form-group mb-0">
               <div className="flex justify-between items-center mb-1">
@@ -343,7 +355,6 @@ function ModalProducto({ producto, state, onClose, onSave, onUpdateLists }: { pr
             </div>
           </div>
 
-          {/* Fila 3: Precios Compactos (Calculadora) */}
           <div className="bg-[#181818] p-3 rounded-lg border border-[#2a2a2a]">
             <div className="grid grid-cols-4 gap-3">
               <div className="form-group mb-0">
@@ -352,20 +363,37 @@ function ModalProducto({ producto, state, onClose, onSave, onUpdateLists }: { pr
               </div>
               <div className="form-group mb-0">
                 <label className="form-label text-[9px] mb-1 text-white/60 uppercase">MARGEN %</label>
-                <input className="form-input py-1.5 text-sm text-[#27ae60] font-bold" type="number" value={Math.round(datos.margen * 100) / 100} onChange={e => recalcularDesdeMargen(parseFloat(e.target.value) || 0)} />
+                <input 
+                  className="form-input py-1.5 text-sm text-[#27ae60] font-bold" 
+                  type="number" 
+                  step="0.01"
+                  value={Math.round(datos.margen * 100) / 100} 
+                  onChange={e => recalcularDesdeMargen(parseFloat(e.target.value) || 0)} 
+                />
               </div>
               <div className="form-group mb-0">
                 <label className="form-label text-[9px] mb-1 text-white/60 uppercase">VENTA ACTUAL $</label>
-                <input className="form-input py-1.5 text-sm text-[#c8952e] font-black bg-black" type="number" step="0.01" value={Math.round(datos.precioUSD * 100) / 100} readOnly />
+                <input 
+                  className="form-input py-1.5 text-sm text-[#c8952e] font-black bg-black" 
+                  type="number" 
+                  step="0.01" 
+                  value={Math.round(datos.precioUSD * 100) / 100} 
+                  onChange={e => recalcularDesdeUSD(parseFloat(e.target.value) || 0)}
+                />
               </div>
               <div className="form-group mb-0">
                 <label className="form-label text-[9px] mb-1 text-white/60 uppercase">VENTA ACTUAL BS</label>
-                <input className="form-input py-1.5 text-sm font-bold bg-black" type="number" step="0.01" value={Math.round(datos.precioBS * 100) / 100} readOnly />
+                <input 
+                  className="form-input py-1.5 text-sm font-bold bg-black" 
+                  type="number" 
+                  step="0.01" 
+                  value={Math.round(datos.precioBS * 100) / 100} 
+                  onChange={e => recalcularDesdeBS(parseFloat(e.target.value) || 0)}
+                />
               </div>
             </div>
           </div>
 
-          {/* SECCIÓN PRECIOS ADICIONALES */}
           <div className="bg-[#131313] p-3 rounded-lg border border-[#333] space-y-3">
             <label className="text-[10px] font-black text-[#c8952e] uppercase block mb-1">Definición de Precios y Uso en POS</label>
             <div className="grid grid-cols-4 gap-3">
@@ -374,33 +402,44 @@ function ModalProducto({ producto, state, onClose, onSave, onUpdateLists }: { pr
                 value={datos.precioEstandarUSD} 
                 isActive={datos.tipoPrecioPrincipal === 'estandar'}
                 onSelect={() => setDatos({...datos, tipoPrecioPrincipal: 'estandar'})}
-                onChange={(v) => setDatos({...datos, precioEstandarUSD: v})}
+                onChange={(v) => {
+                  setDatos({...datos, precioEstandarUSD: v});
+                  if(datos.tipoPrecioPrincipal === 'estandar') recalcularDesdeUSD(v);
+                }}
               />
               <PriceInput 
                 label="AL MAYOR" 
                 value={datos.precioMayorUSD} 
                 isActive={datos.tipoPrecioPrincipal === 'mayor'}
                 onSelect={() => setDatos({...datos, tipoPrecioPrincipal: 'mayor'})}
-                onChange={(v) => setDatos({...datos, precioMayorUSD: v})}
+                onChange={(v) => {
+                  setDatos({...datos, precioMayorUSD: v});
+                  if(datos.tipoPrecioPrincipal === 'mayor') recalcularDesdeUSD(v);
+                }}
               />
               <PriceInput 
                 label="OFERTA" 
                 value={datos.precioOfertaUSD} 
                 isActive={datos.tipoPrecioPrincipal === 'oferta'}
                 onSelect={() => setDatos({...datos, tipoPrecioPrincipal: 'oferta'})}
-                onChange={(v) => setDatos({...datos, precioOfertaUSD: v})}
+                onChange={(v) => {
+                  setDatos({...datos, precioOfertaUSD: v});
+                  if(datos.tipoPrecioPrincipal === 'oferta') recalcularDesdeUSD(v);
+                }}
               />
               <PriceInput 
                 label="PROMO" 
                 value={datos.precioPromoUSD} 
                 isActive={datos.tipoPrecioPrincipal === 'promo'}
                 onSelect={() => setDatos({...datos, tipoPrecioPrincipal: 'promo'})}
-                onChange={(v) => setDatos({...datos, precioPromoUSD: v})}
+                onChange={(v) => {
+                  setDatos({...datos, precioPromoUSD: v});
+                  if(datos.tipoPrecioPrincipal === 'promo') recalcularDesdeUSD(v);
+                }}
               />
             </div>
           </div>
 
-          {/* Fila 4: Inventario y Presentacion */}
           <div className="grid grid-cols-3 gap-3">
             <div className="form-group mb-0">
               <label className="form-label text-[10px] mb-1 uppercase text-white font-black">Stock Inicial</label>
@@ -424,7 +463,6 @@ function ModalProducto({ producto, state, onClose, onSave, onUpdateLists }: { pr
             </div>
           </div>
 
-          {/* Fila 5: Proveedor (Búsqueda Inteligente) */}
           <div className="grid grid-cols-2 gap-4 items-end">
             <div className="form-group mb-0 relative">
               <label className="form-label text-[10px] mb-1 uppercase text-white font-black">Proveedor</label>
@@ -477,7 +515,6 @@ function ModalProducto({ producto, state, onClose, onSave, onUpdateLists }: { pr
             </div>
           </div>
 
-          {/* SECCION KIT COMPACTA */}
           <div className="border-t border-[#2a2a2a] pt-3">
             <div className="flex items-center gap-3 mb-2">
               <input type="checkbox" checked={datos.isKit} onChange={e => setDatos({...datos, isKit: e.target.checked})} className="w-3.5 h-3.5 accent-[#c8952e]" />
