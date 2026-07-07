@@ -70,7 +70,7 @@ export const Utils = {
       second: '2-digit',
       hour12: false
     };
-    const formatter = new Intl.DateTimeFormat('en-CA', options); // ISO-like YYYY-MM-DD
+    const formatter = new Intl.DateTimeFormat('en-CA', options);
     const parts = formatter.formatToParts(d);
     const getPart = (type: string) => parts.find(p => p.type === type)?.value;
     return `${getPart('year')}-${getPart('month')}-${getPart('day')}T${getPart('hour')}:${getPart('minute')}:${getPart('second')}`;

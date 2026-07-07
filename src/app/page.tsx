@@ -53,19 +53,19 @@ export default function LicoreriaPOS() {
       setState(loadedState);
     }
 
-    // Actualizar hora local Caracas
     const updateTime = () => {
       const now = new Date();
       setCurrentTime(new Intl.DateTimeFormat('es-VE', {
         timeZone: 'America/Caracas',
-        weekday: 'long',
-        year: 'numeric',
-        month: 'long',
+        weekday: 'short',
         day: 'numeric',
+        month: 'short',
+        year: 'numeric',
         hour: '2-digit',
         minute: '2-digit',
-        second: '2-digit'
-      }).format(now));
+        second: '2-digit',
+        hour12: true
+      }).format(now).toUpperCase());
     };
     
     updateTime();
@@ -82,9 +82,9 @@ export default function LicoreriaPOS() {
   const generateDemoData = (): AppState => {
     const hoyStr = Utils.hoy();
     const products = [
-      { id: Store.uid(), codigo: 'WH-001', nombre: 'Johnnie Walker Black Label', categoria: 'Whisky', cantidad: '750ml', marca: 'Johnnie Walker', costoUSD: 28, precioUSD: 48, stock: 12, stockMinimo: 3, proveedor: 'Distribuidora Nacional', fechaCreacion: hoyStr, activo: true },
-      { id: Store.uid(), codigo: 'RN-001', nombre: 'Santa Teresa 1796', categoria: 'Ron', cantidad: '750ml', marca: 'Santa Teresa', costoUSD: 30, precioUSD: 52, stock: 10, stockMinimo: 3, proveedor: 'Licorera Central', fechaCreacion: hoyStr, activo: true },
-      { id: Store.uid(), codigo: 'VN-001', nombre: 'Casillero del Diablo Reserva', categoria: 'Vino', cantidad: '750ml', marca: 'Casillero del Diablo', costoUSD: 8, precioUSD: 16, stock: 20, stockMinimo: 6, proveedor: 'Bodegas del Sur', fechaCreacion: hoyStr, activo: true },
+      { id: Store.uid(), codigo: 'WH-001', nombre: 'Johnnie Walker Black Label', categoria: 'Whisky', departamento: 'Licores', cantidad: '750ml', marca: 'Johnnie Walker', costoUSD: 28, precioUSD: 48, stock: 12, stockMinimo: 3, proveedor: 'Distribuidora Nacional', fechaCreacion: hoyStr, activo: true },
+      { id: Store.uid(), codigo: 'RN-001', nombre: 'Santa Teresa 1796', categoria: 'Ron', departamento: 'Licores', cantidad: '750ml', marca: 'Santa Teresa', costoUSD: 30, precioUSD: 52, stock: 10, stockMinimo: 3, proveedor: 'Licorera Central', fechaCreacion: hoyStr, activo: true },
+      { id: Store.uid(), codigo: 'VN-001', nombre: 'Casillero del Diablo Reserva', categoria: 'Vino', departamento: 'Licores', cantidad: '750ml', marca: 'Casillero del Diablo', costoUSD: 8, precioUSD: 16, stock: 20, stockMinimo: 6, proveedor: 'Bodegas del Sur', fechaCreacion: hoyStr, activo: true },
     ];
     return { ...initialState, productos: products };
   };
@@ -207,7 +207,7 @@ export default function LicoreriaPOS() {
             <button className="p-2 text-white hover:text-[#c8952e]" onClick={() => setIsSidebarOpen(true)}>
               <Menu className="w-5 h-5" />
             </button>
-            <h2 className="font-display text-base font-black uppercase tracking-widest text-[#c8952e]">{activeModule}</h2>
+            <h2 className="font-display text-base font-black uppercase tracking-widest text-[#c8952e]">{activeModule === 'ventas' ? 'Ventas' : activeModule}</h2>
           </div>
           <span className="text-[0.7rem] text-white uppercase font-black tracking-tighter">
             {currentTime}
