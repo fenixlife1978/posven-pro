@@ -2,7 +2,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from 'react';
-import { AppState, SaleItem, Sale, PaymentMethod, ReportZ } from '@/lib/types';
+import { AppState, SaleItem, Sale, PaymentMethod, ReportZ, Movimiento } from '@/lib/types';
 import { Utils, Store } from '@/lib/db-store';
 import { 
   Search, 
@@ -143,6 +143,20 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       return item ? { ...p, stock: p.stock - item.cantidad } : p;
     });
 
+    const nuevosMovimientos: Movimiento[] = state.carrito.map(item => {
+      const p = state.productos.find(prod => prod.id === item.productoId);
+      return {
+        id: Store.uid(),
+        productoId: item.productoId,
+        tipo: 'venta',
+        cantidad: -Math.abs(item.cantidad),
+        stockAntes: p?.stock || 0,
+        stockDespues: (p?.stock || 0) - item.cantidad,
+        fecha: ahora,
+        referencia: `VENTA ${reciboId}`
+      };
+    });
+
     const nuevaVenta: Sale = {
       id: reciboId,
       fecha: ahora,
@@ -162,6 +176,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     updateState({
       productos: nuevosProductos,
       ventas: [...state.ventas, nuevaVenta],
+      movimientos: [...state.movimientos, ...nuevosMovimientos],
       carrito: [],
       proximoRecibo: state.proximoRecibo + 1,
       acumuladoHistorico: state.acumuladoHistorico + subtotalUSD

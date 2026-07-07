@@ -4,7 +4,7 @@
 import React, { useState, useEffect } from 'react';
 import { AppState, Product, Movimiento, KitItem } from '@/lib/types';
 import { Utils, Store } from '@/lib/db-store';
-import { Plus, Search, Edit2, Trash2, Boxes, X, BarChart3, FileText, History, Gift, Layers, Settings2, Trash, ArrowLeft, Printer } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, Boxes, X, BarChart3, FileText, History, Gift, Layers, Settings2, Trash, ArrowLeft, Printer, Trash2 as TrashIcon } from 'lucide-react';
 
 export default function InventoryModule({ state, updateState }: { state: AppState, updateState: (s: Partial<AppState>) => void }) {
   const [activeTab, setActiveTab] = useState('productos');
@@ -261,8 +261,15 @@ function ReporteVentas({ state }: { state: AppState }) {
   );
 }
 
+const isExit = (tipo: string) => ['venta', 'ajuste_salida', 'consumo', 'colaboracion'].includes(tipo.toLowerCase());
+
 function HistorialAjustes({ state }: { state: AppState }) {
-  const ajustes = state.movimientos.filter(m => m.tipo.startsWith('ajuste') || m.tipo === 'compra').sort((a, b) => b.fecha.localeCompare(a.fecha));
+  const ajustes = state.movimientos.filter(m => 
+    m.tipo.startsWith('ajuste') || 
+    m.tipo === 'compra' || 
+    m.tipo === 'consumo' || 
+    m.tipo === 'colaboracion'
+  ).sort((a, b) => b.fecha.localeCompare(a.fecha));
 
   return (
     <div className="card animate-in slide-in-from-bottom-2">
@@ -281,12 +288,16 @@ function HistorialAjustes({ state }: { state: AppState }) {
           <tbody className="bg-[#131313]">
             {ajustes.map(m => {
               const p = state.productos.find(x => x.id === m.productoId);
+              const negative = m.cantidad < 0 || isExit(m.tipo);
+              const displayQty = Math.abs(m.cantidad);
               return (
                 <tr key={m.id} className="border-b border-white/5">
                   <td className="text-white font-bold text-xs">{m.fecha.replace('T', ' ').slice(0, 16)}</td>
                   <td className="text-white font-black text-xs uppercase">{p?.nombre || 'Eliminado'}</td>
-                  <td><span className={`badge ${m.tipo === 'compra' ? 'badge-ok' : 'badge-neutral'} text-[9px] uppercase font-black`}>{m.tipo}</span></td>
-                  <td className={`text-right font-black text-xs ${m.cantidad > 0 ? 'text-[#27ae60]' : 'text-[#e04848]'}`}>{m.cantidad > 0 ? `+${m.cantidad}` : m.cantidad}</td>
+                  <td><span className={`badge ${negative ? 'badge-err' : 'badge-ok'} text-[9px] uppercase font-black`}>{m.tipo}</span></td>
+                  <td className={`text-right font-black text-xs ${negative ? 'text-[#e04848]' : 'text-[#27ae60]'}`}>
+                    {negative ? `-${displayQty}` : `+${displayQty}`}
+                  </td>
                   <td className="text-white/60 text-[10px] uppercase italic">{m.referencia}</td>
                 </tr>
               )
@@ -328,15 +339,21 @@ function ReporteKardex({ state, selectedId, onSelect }: { state: AppState, selec
                 </tr>
               </thead>
               <tbody className="bg-[#131313]">
-                {movs.map(m => (
-                  <tr key={m.id} className="border-b border-white/5">
-                    <td className="text-white font-bold text-xs">{m.fecha.replace('T', ' ').slice(0, 16)}</td>
-                    <td className="text-white font-black text-[10px] uppercase">{m.tipo}</td>
-                    <td className={`text-right font-black text-xs ${m.cantidad > 0 ? 'text-[#27ae60]' : 'text-[#e04848]'}`}>{m.cantidad > 0 ? `+${m.cantidad}` : m.cantidad}</td>
-                    <td className="text-[#c8952e] font-black text-xs text-right">{m.stockDespues}</td>
-                    <td className="text-white/40 text-[10px] uppercase italic truncate max-w-[200px]">{m.referencia}</td>
-                  </tr>
-                ))}
+                {movs.map(m => {
+                  const negative = m.cantidad < 0 || isExit(m.tipo);
+                  const displayQty = Math.abs(m.cantidad);
+                  return (
+                    <tr key={m.id} className="border-b border-white/5">
+                      <td className="text-white font-bold text-xs">{m.fecha.replace('T', ' ').slice(0, 16)}</td>
+                      <td className="text-white font-black text-[10px] uppercase">{m.tipo}</td>
+                      <td className={`text-right font-black text-xs ${negative ? 'text-[#e04848]' : 'text-[#27ae60]'}`}>
+                        {negative ? `-${displayQty}` : `+${displayQty}`}
+                      </td>
+                      <td className="text-[#c8952e] font-black text-xs text-right">{m.stockDespues}</td>
+                      <td className="text-white/40 text-[10px] uppercase italic truncate max-w-[200px]">{m.referencia}</td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>
@@ -522,21 +539,22 @@ function ModalProducto({ producto, state, onClose, onSave, onUpdateLists }: { pr
 }
 
 function ModalAjuste({ producto, onClose, onSave }: { producto: Product, onClose: () => void, onSave: (mov: Movimiento, nuevoCosto?: number) => void }) {
-  const [tipo, setTipo] = useState<'ajuste_entrada' | 'ajuste_salida' | 'compra'>('ajuste_entrada');
+  const [tipo, setTipo] = useState<'ajuste_entrada' | 'ajuste_salida' | 'compra' | 'consumo' | 'colaboracion'>('ajuste_entrada');
   const [cantidad, setCantidad] = useState(0);
   const [costo, setCosto] = useState(producto.costoUSD);
   const [referencia, setReferencia] = useState('');
 
   const handleSave = () => {
     if (cantidad <= 0) return alert('La cantidad debe ser mayor a 0');
-    const cantFinal = tipo === 'ajuste_salida' ? -cantidad : cantidad;
+    const isExitType = ['ajuste_salida', 'consumo', 'colaboracion'].includes(tipo);
+    const cantFinal = isExitType ? -Math.abs(cantidad) : Math.abs(cantidad);
     const stockDespues = producto.stock + cantFinal;
     if (stockDespues < 0) return alert('El stock no puede quedar en negativo');
 
     const mov: Movimiento = {
       id: Store.uid(),
       productoId: producto.id,
-      tipo: tipo,
+      tipo: tipo as any,
       cantidad: cantFinal,
       stockAntes: producto.stock,
       stockDespues: stockDespues,
@@ -568,6 +586,8 @@ function ModalAjuste({ producto, onClose, onSave }: { producto: Product, onClose
               <option value="ajuste_entrada">Ajuste de Entrada (+)</option>
               <option value="ajuste_salida">Ajuste de Salida (-)</option>
               <option value="compra">Compra a Proveedor (+)</option>
+              <option value="consumo">Consumo Interno (-)</option>
+              <option value="colaboracion">Colaboración / Cortesía (-)</option>
             </select>
           </div>
 
