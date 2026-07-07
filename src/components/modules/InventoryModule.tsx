@@ -12,7 +12,6 @@ export default function InventoryModule({ state, updateState }: { state: AppStat
   const [catFilter, setCatFilter] = useState('');
   const [selectedKardexId, setSelectedKardexId] = useState<string | null>(null);
   
-  // Modales
   const [showAjuste, setShowAjuste] = useState<string | null>(null);
   const [showProducto, setShowProducto] = useState<string | null | 'nuevo'>(null);
   
@@ -35,7 +34,7 @@ export default function InventoryModule({ state, updateState }: { state: AppStat
           <div className="flex justify-between items-center flex-wrap gap-4">
             <div className="flex gap-4 flex-1 min-w-[300px]">
               <div className="relative flex-1">
-                <Search className="absolute left-3 top-2.5 w-4 h-4 text-[#ffffff]" />
+                <Search className="absolute left-3 top-2.5 w-4 h-4 text-white" />
                 <input className="form-input pl-10 bg-[#131313] text-white border-[#2a2a2a] h-11" placeholder="Buscar producto..." value={search} onChange={e => setSearch(e.target.value)} />
               </div>
               <select className="form-select w-auto bg-[#131313] text-white border-[#2a2a2a] h-11 px-4" value={catFilter} onChange={e => setCatFilter(e.target.value)}>
@@ -69,7 +68,11 @@ export default function InventoryModule({ state, updateState }: { state: AppStat
                         <td className="mono text-white/60 text-xs font-bold">{p.codigo}</td>
                         <td className="font-bold text-white text-xs">
                           <div className="flex items-center gap-2">
-                            {p.isKit && <Layers className="w-3 h-3 text-[#c8952e]" title="Es un Kit" />}
+                            {p.isKit && (
+                              <span title="Es un Kit">
+                                <Layers className="w-3 h-3 text-[#c8952e]" />
+                              </span>
+                            )}
                             {p.nombre}
                           </div>
                         </td>
@@ -88,10 +91,10 @@ export default function InventoryModule({ state, updateState }: { state: AppStat
                         </td>
                         <td>
                           <div className="flex gap-1">
-                            <button className="btn-icon text-[#c8952e]" title="Editar" onClick={() => setShowProducto(p.id)}><Edit2 className="w-3.5 h-3.5" /></button>
-                            <button className="btn-icon text-[#3a9bdc]" title="Ver Kardex" onClick={() => { setSelectedKardexId(p.id); setActiveTab('kardex'); }}><History className="w-3.5 h-3.5" /></button>
-                            <button className="btn-icon text-[#27ae60]" title="Ajustes de Stock" onClick={() => setShowAjuste(p.id)}><Boxes className="w-3.5 h-3.5" /></button>
-                            <button className="btn-icon text-[#e04848]" onClick={() => eliminar(p.id)} title="Eliminar"><Trash2 className="w-3.5 h-3.5" /></button>
+                            <button className="btn-icon text-[#c8952e]" onClick={() => setShowProducto(p.id)}><Edit2 className="w-3.5 h-3.5" /></button>
+                            <button className="btn-icon text-[#3a9bdc]" onClick={() => { setSelectedKardexId(p.id); setActiveTab('kardex'); }}><History className="w-3.5 h-3.5" /></button>
+                            <button className="btn-icon text-[#27ae60]" onClick={() => setShowAjuste(p.id)}><Boxes className="w-3.5 h-3.5" /></button>
+                            <button className="btn-icon text-[#e04848]" onClick={() => eliminar(p.id)}><Trash2 className="w-3.5 h-3.5" /></button>
                           </div>
                         </td>
                       </tr>
@@ -137,7 +140,7 @@ export default function InventoryModule({ state, updateState }: { state: AppStat
               const nuevo: Product = {
                 ...datos,
                 id: Store.uid(),
-                fechaCreacion: Utils.hoy(),
+                fechaCreacion: Utils.ahora(),
                 activo: true
               };
               nuevosProds = [...state.productos, nuevo];
@@ -197,8 +200,6 @@ export default function InventoryModule({ state, updateState }: { state: AppStat
     </div>
   );
 }
-
-// --- SUBCOMPONENTES DE REPORTES ---
 
 function ReporteGeneral({ state }: { state: AppState }) {
   const valorInvCosto = state.productos.filter(p => p.activo).reduce((s, p) => s + (p.costoUSD * p.stock), 0);
@@ -373,8 +374,6 @@ function ReporteConsumo({ state }: { state: AppState }) {
   );
 }
 
-// --- MODALES ---
-
 function ModalProducto({ producto, state, onClose, onSave, onUpdateLists }: { producto?: Product, state: AppState, onClose: () => void, onSave: (p: any) => void, onUpdateLists: (l: any) => void }) {
   const [datos, setDatos] = useState({
     codigo: producto?.codigo || '',
@@ -401,7 +400,6 @@ function ModalProducto({ producto, state, onClose, onSave, onUpdateLists }: { pr
     kitItems: producto?.kitItems || [] as KitItem[]
   });
 
-  const [kitSearch, setKitSearch] = useState('');
   const [provSearch, setProvSearch] = useState(producto?.proveedor || '');
   const [showProvSuggestions, setShowProvSuggestions] = useState(false);
 
@@ -432,21 +430,14 @@ function ModalProducto({ producto, state, onClose, onSave, onUpdateLists }: { pr
     onSave({ ...datos, precioUSD: pVenta });
   };
 
-  const addToList = (key: 'categorias' | 'departamentos' | 'marcas' | 'presentaciones' | 'proveedores') => {
+  const addToList = (key: 'presentaciones' | 'proveedores' | 'categorias') => {
     const val = prompt(`Nueva entrada para ${key}:`);
     if (val) {
-      const newList = [...(state[key] as string[]), val];
+      const newList = [...(state[key as keyof AppState] as string[]), val];
       onUpdateLists({ [key]: newList });
-      const fieldKey = key === 'presentaciones' ? 'cantidad' : key === 'proveedores' ? 'proveedor' : key.slice(0, -1);
-      setDatos(d => ({ ...d, [fieldKey]: val }));
-      if (key === 'proveedores') setProvSearch(val);
-    }
-  };
-
-  const removeFromList = (key: 'categorias' | 'departamentos' | 'marcas' | 'presentaciones' | 'proveedores', val: string) => {
-    if (confirm(`¿Borrar "${val}"?`)) {
-      const newList = (state[key] as string[]).filter(i => i !== val);
-      onUpdateLists({ [key]: newList });
+      if (key === 'presentaciones') setDatos(d => ({ ...d, cantidad: val }));
+      if (key === 'proveedores') { setProvSearch(val); setDatos(d => ({ ...d, proveedor: val })); }
+      if (key === 'categorias') setDatos(d => ({ ...d, categoria: val }));
     }
   };
 
@@ -546,7 +537,7 @@ function ModalAjuste({ producto, onClose, onSave }: { producto: Product, onClose
 
   const handleSave = () => {
     if (cantidad <= 0) return alert('La cantidad debe ser mayor a 0');
-    const isExitType = ['ajuste_salida', 'consumo', 'colaboracion'].includes(tipo);
+    const isExitType = isExit(tipo);
     const cantFinal = isExitType ? -Math.abs(cantidad) : Math.abs(cantidad);
     const stockDespues = producto.stock + cantFinal;
     if (stockDespues < 0) return alert('El stock no puede quedar en negativo');
