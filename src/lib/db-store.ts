@@ -77,8 +77,8 @@ export const Utils = {
   },
   hoy: () => Utils.getVzlaDate().slice(0, 10),
   ahora: () => Utils.getVzlaDate(),
-  fmtUSD: (v: number) => '$' + Number(v).toFixed(2),
-  fmtBS: (v: number) => 'Bs. ' + Number(v).toFixed(2),
+  fmtUSD: (v: number) => '$' + Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+  fmtBS: (v: number) => 'Bs. ' + Number(v).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
   fmtFecha: (f: string) => {
     if (!f) return '-';
     const datePart = f.includes('T') ? f.split('T')[0] : f;
