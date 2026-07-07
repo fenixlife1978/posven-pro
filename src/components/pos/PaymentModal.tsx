@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState } from 'react';
@@ -19,14 +20,14 @@ interface Props {
 }
 
 export function PaymentModal({ isOpen, onClose, cart, exchangeRate, onComplete }: Props) {
-  const [method, setMethod] = useState<PaymentMethod>('EFECTIVO BS');
+  const [method, setMethod] = useState<PaymentMethod>('efectivo_bs');
   const [receivedBS, setReceivedBS] = useState<string>('');
   const [receivedUSD, setReceivedUSD] = useState<string>('');
 
   const totalBS = cart.reduce((acc, item) => acc + (item.price * item.qty), 0);
   const totalUSD = totalBS / exchangeRate;
   
-  const actualReceived = method === 'USD EFECTIVO' || method === 'ZELLE' 
+  const actualReceived = method === 'efectivo_usd' || method === 'zelle' 
     ? (parseFloat(receivedUSD) || 0) * exchangeRate 
     : (parseFloat(receivedBS) || 0);
 
@@ -85,12 +86,12 @@ export function PaymentModal({ isOpen, onClose, cart, exchangeRate, onComplete }
   };
 
   const methods: { id: PaymentMethod, label: string, icon: any }[] = [
-    { id: 'EFECTIVO BS', label: 'Efectivo BS', icon: Banknote },
-    { id: 'TARJETA', label: 'Tarjeta', icon: CreditCard },
-    { id: 'USD EFECTIVO', label: 'USD Efectivo', icon: DollarSign },
-    { id: 'BIOPAGO', label: 'Biopago', icon: Smartphone },
-    { id: 'PAGO MÓVIL', label: 'Pago Móvil', icon: Smartphone },
-    { id: 'ZELLE', label: 'Zelle', icon: CreditCard },
+    { id: 'efectivo_bs', label: 'Efectivo Bs.', icon: Banknote },
+    { id: 'punto_venta', label: 'Punto de Venta', icon: CreditCard },
+    { id: 'efectivo_usd', label: 'Efectivo USD', icon: DollarSign },
+    { id: 'biopago', label: 'Biopago', icon: Smartphone },
+    { id: 'pagomovil', label: 'PagoMovil', icon: Smartphone },
+    { id: 'zelle', label: 'Zelle', icon: CreditCard },
   ];
 
   return (
@@ -120,7 +121,7 @@ export function PaymentModal({ isOpen, onClose, cart, exchangeRate, onComplete }
         </div>
 
         <div className="space-y-4">
-          { (method === 'USD EFECTIVO' || method === 'ZELLE') ? (
+          { (method === 'efectivo_usd' || method === 'zelle') ? (
             <div className="space-y-2">
               <Label>Monto en USD</Label>
               <Input 

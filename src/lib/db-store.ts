@@ -67,10 +67,12 @@ export const Utils = {
   metodoLabel: (m: string) => {
     const map: Record<string, string> = { 
       efectivo_usd: 'Efectivo USD', 
-      efectivo_bs: 'Efectivo BS', 
+      efectivo_bs: 'Efectivo Bs.', 
       punto_venta: 'Punto de Venta', 
-      transferencia: 'Transferencia', 
-      credito: 'Credito', 
+      biopago: 'Biopago',
+      pagomovil: 'PagoMovil',
+      zelle: 'Zelle',
+      credito: 'Crédito', 
       mixto: 'Mixto' 
     };
     return map[m] || m;

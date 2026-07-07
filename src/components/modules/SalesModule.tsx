@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -399,9 +400,11 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                 <label className="form-label text-[9px] uppercase font-bold text-[#8a847c] mb-1">Método</label>
                 <select className="form-select h-8 text-xs" value={metodoActual} onChange={e => setMetodoActual(e.target.value as any)}>
                   <option value="efectivo_usd">Efectivo USD</option>
-                  <option value="efectivo_bs">Efectivo BS</option>
+                  <option value="efectivo_bs">Efectivo Bs.</option>
+                  <option value="biopago">Biopago</option>
+                  <option value="pagomovil">PagoMovil</option>
                   <option value="punto_venta">Punto de Venta</option>
-                  <option value="transferencia">Transferencia</option>
+                  <option value="zelle">Zelle</option>
                   <option value="credito">Crédito</option>
                 </select>
               </div>

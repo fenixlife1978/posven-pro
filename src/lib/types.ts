@@ -1,5 +1,5 @@
 
-export type PaymentMethod = 'efectivo_usd' | 'efectivo_bs' | 'punto_venta' | 'transferencia' | 'credito' | 'mixto';
+export type PaymentMethod = 'efectivo_usd' | 'efectivo_bs' | 'punto_venta' | 'biopago' | 'pagomovil' | 'zelle' | 'credito' | 'mixto';
 export type EntityStatus = 'completada' | 'cancelada' | 'pendiente' | 'parcial' | 'pagada' | 'parcialmente_devuelta' | 'totalmente_devuelta' | 'procesada';
 
 export interface KitItem {
