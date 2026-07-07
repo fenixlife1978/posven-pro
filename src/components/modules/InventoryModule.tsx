@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useEffect } from 'react';
@@ -203,7 +204,7 @@ function ModalProducto({ producto, state, onClose, onSave, onUpdateLists }: { pr
     nombre: producto?.nombre || '',
     categoria: producto?.categoria || state.categorias[0] || '',
     departamento: producto?.departamento || state.departamentos[0] || '',
-    cantidad: producto?.cantidad || '750ml',
+    cantidad: producto?.cantidad || state.presentaciones[0] || '',
     marca: producto?.marca || state.marcas[0] || '',
     costoUSD: producto?.costoUSD || 0,
     precioUSD: producto?.precioUSD || 0,
@@ -218,6 +219,8 @@ function ModalProducto({ producto, state, onClose, onSave, onUpdateLists }: { pr
   });
 
   const [kitSearch, setKitSearch] = useState('');
+  const [provSearch, setProvSearch] = useState(producto?.proveedor || '');
+  const [showProvSuggestions, setShowProvSuggestions] = useState(false);
 
   const recalcularDesdeUSD = (usd: number, costo: number = datos.costoUSD) => {
     const nuevoMargen = usd > 0 ? ((usd - costo) / usd) * 100 : 0;
@@ -242,21 +245,27 @@ function ModalProducto({ producto, state, onClose, onSave, onUpdateLists }: { pr
     onSave(datos);
   };
 
-  const addToList = (key: 'categorias' | 'departamentos' | 'marcas') => {
-    const val = prompt(`Nueva entrada para ${key}:`);
+  const addToList = (key: 'categorias' | 'departamentos' | 'marcas' | 'presentaciones' | 'proveedores') => {
+    const val = prompt(`Nueva entrada para ${key === 'presentaciones' ? 'presentación' : key === 'proveedores' ? 'proveedor' : key}:`);
     if (val) {
-      const newList = [...state[key], val];
+      const newList = [...(state[key] as string[]), val];
       onUpdateLists({ [key]: newList });
-      setDatos(d => ({ ...d, [key.slice(0, -1)]: val }));
+      const fieldKey = key === 'presentaciones' ? 'cantidad' : key === 'proveedores' ? 'proveedor' : key.slice(0, -1);
+      setDatos(d => ({ ...d, [fieldKey]: val }));
+      if (key === 'proveedores') setProvSearch(val);
     }
   };
 
-  const removeFromList = (key: 'categorias' | 'departamentos' | 'marcas', val: string) => {
+  const removeFromList = (key: 'categorias' | 'departamentos' | 'marcas' | 'presentaciones' | 'proveedores', val: string) => {
     if (confirm(`¿Borrar "${val}" de la lista?`)) {
-      const newList = state[key].filter(i => i !== val);
+      const newList = (state[key] as string[]).filter(i => i !== val);
       onUpdateLists({ [key]: newList });
     }
   };
+
+  const filteredProveedores = state.proveedores.filter(p => 
+    p.toLowerCase().includes(provSearch.toLowerCase())
+  );
 
   return (
     <div className="modal show">
@@ -268,7 +277,6 @@ function ModalProducto({ producto, state, onClose, onSave, onUpdateLists }: { pr
         </div>
         <div className="modal-body p-5 space-y-3">
           
-          {/* Fila 1: Codigo, Dept, Cat */}
           <div className="grid grid-cols-3 gap-3">
             <div className="form-group mb-0">
               <label className="form-label text-[10px] mb-1 uppercase">Código / Barcode</label>
@@ -300,7 +308,6 @@ function ModalProducto({ producto, state, onClose, onSave, onUpdateLists }: { pr
             </div>
           </div>
 
-          {/* Fila 2: Marca y Nombre */}
           <div className="grid grid-cols-3 gap-3">
             <div className="form-group mb-0">
               <div className="flex justify-between items-center mb-1">
@@ -320,7 +327,6 @@ function ModalProducto({ producto, state, onClose, onSave, onUpdateLists }: { pr
             </div>
           </div>
 
-          {/* Fila 3: Precios Compactos */}
           <div className="bg-[#181818] p-3 rounded-lg border border-[#2a2a2a]">
             <div className="grid grid-cols-4 gap-3">
               <div className="form-group mb-0">
@@ -342,7 +348,6 @@ function ModalProducto({ producto, state, onClose, onSave, onUpdateLists }: { pr
             </div>
           </div>
 
-          {/* Fila 4: Inventario y Presentacion */}
           <div className="grid grid-cols-3 gap-3">
             <div className="form-group mb-0">
               <label className="form-label text-[10px] mb-1 uppercase">Stock Inicial</label>
@@ -353,18 +358,67 @@ function ModalProducto({ producto, state, onClose, onSave, onUpdateLists }: { pr
               <input className="form-input py-1.5 text-sm" type="number" value={datos.stockMinimo} onChange={e => setDatos({...datos, stockMinimo: parseInt(e.target.value) || 0})} />
             </div>
             <div className="form-group mb-0">
-              <label className="form-label text-[10px] mb-1 uppercase">Presentación</label>
-              <input className="form-input py-1.5 text-sm" value={datos.cantidad} onChange={e => setDatos({...datos, cantidad: e.target.value})} placeholder="750ml" />
+              <div className="flex justify-between items-center mb-1">
+                <label className="form-label text-[10px] m-0 uppercase">Presentación</label>
+                <button className="text-[9px] text-[#c8952e]" onClick={() => addToList('presentaciones')}>+ ADD</button>
+              </div>
+              <div className="flex gap-1">
+                <select className="form-select py-1.5 text-xs" value={datos.cantidad} onChange={e => setDatos({...datos, cantidad: e.target.value})}>
+                  {state.presentaciones.map(p => <option key={p} value={p}>{p}</option>)}
+                </select>
+                <button className="btn-icon btn-sm h-7 w-7 text-[#e04848]" onClick={() => removeFromList('presentaciones', datos.cantidad)}><Trash className="w-3 h-3"/></button>
+              </div>
             </div>
           </div>
 
-          {/* Fila 5: Proveedor */}
-          <div className="form-group mb-0">
-            <label className="form-label text-[10px] mb-1 uppercase">Proveedor</label>
-            <input className="form-input py-1.5 text-sm" value={datos.proveedor} onChange={e => setDatos({...datos, proveedor: e.target.value})} placeholder="Distribuidor..." />
+          <div className="form-group mb-0 relative">
+            <div className="flex justify-between items-center mb-1">
+              <label className="form-label text-[10px] m-0 uppercase">Proveedor</label>
+              <button className="text-[9px] text-[#c8952e]" onClick={() => addToList('proveedores')}>+ NUEVO PROVEEDOR</button>
+            </div>
+            <div className="relative">
+              <Search className="absolute left-3 top-2.5 w-3.5 h-3.5 text-white/30" />
+              <input 
+                className="form-input py-1.5 pl-10 text-sm" 
+                value={provSearch} 
+                onChange={e => {
+                  setProvSearch(e.target.value);
+                  setDatos({...datos, proveedor: e.target.value});
+                  setShowProvSuggestions(true);
+                }} 
+                onFocus={() => setShowProvSuggestions(true)}
+                placeholder="Buscar proveedor..." 
+              />
+              {showProvSuggestions && provSearch.length > 0 && (
+                <div className="absolute top-full left-0 right-0 bg-[#1e1e1e] border border-[#333] rounded mt-1 max-h-32 overflow-y-auto z-[200] shadow-xl">
+                  {filteredProveedores.length > 0 ? (
+                    filteredProveedores.map(p => (
+                      <div 
+                        key={p} 
+                        className="p-2 hover:bg-[#c8952e]/20 cursor-pointer text-xs flex justify-between items-center"
+                        onClick={() => {
+                          setDatos({...datos, proveedor: p});
+                          setProvSearch(p);
+                          setShowProvSuggestions(false);
+                        }}
+                      >
+                        <span>{p}</span>
+                        <button className="text-[#e04848] opacity-50 hover:opacity-100" onClick={(e) => {
+                          e.stopPropagation();
+                          removeFromList('proveedores', p);
+                        }}>
+                          <Trash className="w-3 h-3"/>
+                        </button>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="p-2 text-xs text-white/40 italic">No se encontraron resultados</div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
 
-          {/* SECCION KIT COMPACTA */}
           <div className="border-t border-[#2a2a2a] pt-3">
             <div className="flex items-center gap-3 mb-2">
               <input type="checkbox" checked={datos.isKit} onChange={e => setDatos({...datos, isKit: e.target.checked})} className="w-3.5 h-3.5 accent-[#c8952e]" />

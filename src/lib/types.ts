@@ -119,6 +119,8 @@ export interface AppState {
   departamentos: string[];
   categorias: string[];
   marcas: string[];
+  presentaciones: string[];
+  proveedores: string[];
   reportesZ: ReportZ[];
   ultimoZ: number;
   proximoRecibo: number;

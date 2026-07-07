@@ -26,7 +26,9 @@ export const initialState: AppState = {
   },
   departamentos: ['Licores', 'Viveres', 'Charcuteria', 'Tabaco', 'Snacks', 'Limpieza', 'Otros'],
   categorias: ['Whisky', 'Ron', 'Vino', 'Cerveza', 'Tequila', 'Champagne', 'Vodka', 'Gin', 'Licores', 'Cerveza Artesanal', 'Sin Alcohol', 'Otros'],
-  marcas: ['Johnnie Walker', 'Santa Teresa', 'Pampero', 'Polar', 'Regional', 'Casillero del Diablo', 'Chivas Regal', 'Jack Daniel\'s']
+  marcas: ['Johnnie Walker', 'Santa Teresa', 'Pampero', 'Polar', 'Regional', 'Casillero del Diablo', 'Chivas Regal', 'Jack Daniel\'s'],
+  presentaciones: ['750ml', '1L', '1.75L', '355ml', 'Caja 12', 'Caja 24', 'Litro', 'Unidad'],
+  proveedores: ['Distribuidora Nacional', 'Licorera Central', 'Bodegas del Sur', 'Cervecería Polar', 'Pepsi-Cola Venezuela']
 };
 
 export const Store = {
@@ -42,6 +44,8 @@ export const Store = {
         departamentos: parsed.departamentos || initialState.departamentos,
         categorias: parsed.categorias || initialState.categorias,
         marcas: parsed.marcas || initialState.marcas,
+        presentaciones: parsed.presentaciones || initialState.presentaciones,
+        proveedores: parsed.proveedores || initialState.proveedores,
         proximoRecibo: parsed.proximoRecibo || initialState.proximoRecibo
       };
     } catch {
