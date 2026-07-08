@@ -628,17 +628,22 @@ function PriceInput({ label, value, isActive, onSelect, onChange }: { label: str
 
 function ReporteGeneral({ state }: { state: AppState }) {
   const [groupBy, setGroupBy] = useState<'categoria' | 'departamento' | 'proveedor'>('categoria');
-  
-  const totalCosto = Utils.round(state.productos.reduce((acc, p) => acc + (p.costoUSD * p.stock), 0));
-  const totalVenta = Utils.round(state.productos.reduce((acc, p) => acc + (p.precioUSD * p.stock), 0));
-  
-  const uniqueKeys = Array.from(new Set(state.productos.map(p => (p[groupBy] as string) || 'Sin asignar'))).sort();
+  const [filterValue, setFilterValue] = useState<string>('');
+
+  const uniqueValues = Array.from(new Set(state.productos.filter(p => p.activo).map(p => (p[groupBy] as string) || 'Sin asignar'))).sort();
+
+  const filteredProducts = state.productos.filter(p => 
+    p.activo && (filterValue === '' || ((p[groupBy] as string) || 'Sin asignar') === filterValue)
+  );
+
+  const totalCosto = Utils.round(filteredProducts.reduce((acc, p) => acc + (p.costoUSD * p.stock), 0));
+  const totalVenta = Utils.round(filteredProducts.reduce((acc, p) => acc + (p.precioUSD * p.stock), 0));
 
   const handleExportPDF = () => {
     exportarPDFInventarioGeneral(
-      state.productos.filter(p => p.activo), 
+      filteredProducts, 
       state.empresa, 
-      groupBy, 
+      filterValue ? `${groupBy}: ${filterValue}` : groupBy, 
       { costo: totalCosto, venta: totalVenta }
     );
   };
@@ -660,11 +665,24 @@ function ReporteGeneral({ state }: { state: AppState }) {
       
       <div className="card">
         <div className="card-head">
-          <h3 className="text-white font-black uppercase text-xs">Resumen por {groupBy} y CPP</h3>
+          <div className="flex items-center gap-4">
+            <h3 className="text-white font-black uppercase text-xs">
+              {filterValue ? `Listado: ${filterValue}` : 'Listado General de Productos'}
+            </h3>
+            <select 
+              className="form-select w-auto bg-black text-[#c8952e] border-[#c8952e]/30 text-[10px] font-black uppercase h-8 px-2"
+              value={filterValue}
+              onChange={e => setFilterValue(e.target.value)}
+            >
+              <option value="">TODOS LOS ITEMS</option>
+              {uniqueValues.map(v => <option key={v} value={v}>{v.toUpperCase()}</option>)}
+            </select>
+          </div>
+
           <div className="flex gap-2">
-            <button className={`btn btn-sm ${groupBy === 'categoria' ? 'btn-primary' : 'btn-secondary text-white'}`} onClick={() => setGroupBy('categoria')}>Categoría</button>
-            <button className={`btn btn-sm ${groupBy === 'departamento' ? 'btn-primary' : 'btn-secondary text-white'}`} onClick={() => setGroupBy('departamento')}>Departamento</button>
-            <button className={`btn btn-sm ${groupBy === 'proveedor' ? 'btn-primary' : 'btn-secondary text-white'}`} onClick={() => setGroupBy('proveedor')}>Proveedor</button>
+            <button className={`btn btn-sm ${groupBy === 'categoria' ? 'btn-primary' : 'btn-secondary text-white'}`} onClick={() => { setGroupBy('categoria'); setFilterValue(''); }}>Categoría</button>
+            <button className={`btn btn-sm ${groupBy === 'departamento' ? 'btn-primary' : 'btn-secondary text-white'}`} onClick={() => { setGroupBy('departamento'); setFilterValue(''); }}>Departamento</button>
+            <button className={`btn btn-sm ${groupBy === 'proveedor' ? 'btn-primary' : 'btn-secondary text-white'}`} onClick={() => { setGroupBy('proveedor'); setFilterValue(''); }}>Proveedor</button>
             <button className="btn btn-secondary text-white font-black text-xs uppercase ml-4" onClick={handleExportPDF}>
               <FileText className="w-4 h-4" /> PDF PROFESIONAL
             </button>
@@ -674,33 +692,40 @@ function ReporteGeneral({ state }: { state: AppState }) {
           <table>
             <thead>
               <tr>
-                <th className="uppercase">{groupBy}</th>
-                <th className="uppercase">Items</th>
-                <th className="uppercase">Stock Total</th>
-                <th className="uppercase">CPP Promedio</th>
-                <th className="uppercase">Valor Costo</th>
-                <th className="uppercase">Valor Venta</th>
+                <th className="uppercase">Cod.</th>
+                <th className="uppercase">Nombre Producto</th>
+                <th className="uppercase">Marca / Pres.</th>
+                <th className="uppercase text-right">Costo USD</th>
+                <th className="uppercase text-right">Venta USD</th>
+                <th className="uppercase text-center">Stock</th>
+                <th className="uppercase text-right">Subtotal Costo</th>
               </tr>
             </thead>
             <tbody>
-              {uniqueKeys.map(key => {
-                const groupProds = state.productos.filter(p => ((p[groupBy] as string) || 'Sin asignar') === key);
-                const stockTotal = groupProds.reduce((s, p) => s + p.stock, 0);
-                const costTotal = Utils.round(groupProds.reduce((s, p) => s + (p.costoUSD * p.stock), 0));
-                const ventTotal = Utils.round(groupProds.reduce((s, p) => s + (p.precioUSD * p.stock), 0));
-                const cppPromedio = stockTotal > 0 ? Utils.round(costTotal / stockTotal) : 0;
-                
-                return (
-                  <tr key={key}>
-                    <td className="font-black uppercase">{key}</td>
-                    <td className="font-bold">{groupProds.length}</td>
-                    <td className="font-bold">{stockTotal}</td>
-                    <td className="mono">{Utils.fmtUSD(cppPromedio)}</td>
-                    <td className="mono">{Utils.fmtUSD(costTotal)}</td>
-                    <td className="mono font-black">{Utils.fmtUSD(ventTotal)}</td>
+              {filteredProducts.length === 0 ? (
+                <tr><td colSpan={7} className="text-center py-20 opacity-30 uppercase font-black italic">No hay productos que coincidan</td></tr>
+              ) : (
+                filteredProducts.map(p => (
+                  <tr key={p.id}>
+                    <td className="mono text-[10px] opacity-60">{p.codigo}</td>
+                    <td className="font-black uppercase text-xs">{p.nombre}</td>
+                    <td>
+                      <div className="flex flex-col">
+                        <span className="text-[10px] font-bold text-white/80">{p.marca}</span>
+                        <span className="text-[9px] text-white/40">{p.cantidad}</span>
+                      </div>
+                    </td>
+                    <td className="mono text-right">{Utils.fmtUSD(p.costoUSD)}</td>
+                    <td className="mono text-right text-[#c8952e] font-bold">{Utils.fmtUSD(p.precioUSD)}</td>
+                    <td className="text-center">
+                      <span className={`badge ${p.stock <= p.stockMinimo ? 'badge-err' : 'badge-neutral'} font-black`}>
+                        {p.stock}
+                      </span>
+                    </td>
+                    <td className="mono text-right font-black">{Utils.fmtUSD(Utils.round(p.costoUSD * p.stock))}</td>
                   </tr>
-                );
-              })}
+                ))
+              )}
             </tbody>
           </table>
         </div>
