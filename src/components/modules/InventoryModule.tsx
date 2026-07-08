@@ -635,6 +635,9 @@ function ReporteGeneral({ state }: { state: AppState }) {
             <button className={`btn btn-sm ${groupBy === 'categoria' ? 'btn-primary' : 'btn-secondary text-white'}`} onClick={() => setGroupBy('categoria')}>Categoría</button>
             <button className={`btn btn-sm ${groupBy === 'departamento' ? 'btn-primary' : 'btn-secondary text-white'}`} onClick={() => setGroupBy('departamento')}>Departamento</button>
             <button className={`btn btn-sm ${groupBy === 'proveedor' ? 'btn-primary' : 'btn-secondary text-white'}`} onClick={() => setGroupBy('proveedor')}>Proveedor</button>
+            <button className="btn btn-secondary text-white font-black text-xs uppercase ml-4" onClick={() => window.print()}>
+              <FileText className="w-4 h-4" /> PDF PROFESIONAL
+            </button>
           </div>
         </div>
         <div className="table-wrap">
@@ -697,7 +700,6 @@ function ReporteVentas({ state }: { state: AppState }) {
 
   const ventas = filtrarVentas();
 
-  // Cálculos para métricas solicitadas
   const totalVendidos = ventas.reduce((acc, v) => 
     acc + v.items.reduce((sum, item) => sum + item.cantidad, 0), 0
   );
@@ -718,7 +720,7 @@ function ReporteVentas({ state }: { state: AppState }) {
 
   return (
     <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2">
-      <div className="filters flex flex-wrap gap-4 items-end bg-[#131313] p-4 rounded-lg border border-[#2a2a2a]">
+      <div className="filters flex flex-wrap gap-4 items-end bg-[#131313] p-4 rounded-lg border border-[#2a2a2a] no-print">
         <div className="form-group mb-0">
           <label className="text-white text-[10px] font-black uppercase mb-1 block">Filtrar por:</label>
           <select className="form-select w-auto bg-black text-white" value={filter} onChange={e => setFilter(e.target.value)}>
@@ -742,13 +744,11 @@ function ReporteVentas({ state }: { state: AppState }) {
           </>
         )}
 
-        {/* MÉTRICA: Total Vendidos */}
         <div className="flex flex-col bg-black/40 px-4 py-1.5 rounded border border-white/5">
           <span className="text-[8px] text-white/40 font-black uppercase">Volumen Total</span>
           <span className="text-lg font-black text-[#c8952e]">{totalVendidos} <span className="text-[9px] text-white/60">UDS</span></span>
         </div>
 
-        {/* MÉTRICA: Top 3 Productos */}
         <div className="flex-1 flex gap-2 overflow-x-auto min-w-[240px]">
           {top3.map((p, i) => (
             <div key={i} className="flex flex-col bg-black/20 px-3 py-1.5 rounded border border-[#c8952e]/10 flex-1 min-w-[140px]">
@@ -823,7 +823,7 @@ function ReporteKardex({ state, selectedId, onSelect }: { state: AppState, selec
 
   return (
     <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2">
-      <div className="flex gap-4 flex-wrap items-center">
+      <div className="flex gap-4 flex-wrap items-center no-print">
         <div className="form-group mb-0 flex-1 min-w-[300px] relative">
           <label className="text-white text-[10px] font-black uppercase mb-1 block">SELECCIONAR PRODUCTO (Búsqueda Inteligente)</label>
           <div className="relative">
@@ -886,6 +886,9 @@ function ReporteKardex({ state, selectedId, onSelect }: { state: AppState, selec
             <div className="text-center"><p className="text-[9px] text-white/40 font-black uppercase mb-1">CPP Actual</p><p className="text-xl font-black text-[#27ae60]">{Utils.fmtUSD(selectedProd.costoUSD)}</p></div>
           </div>
         )}
+        <button className="btn btn-secondary text-white font-black text-xs h-10 px-4 uppercase" onClick={() => window.print()}>
+          <FileText className="w-4 h-4" /> DESCARGAR PDF
+        </button>
       </div>
 
       <div className="card">
@@ -904,9 +907,9 @@ function ReporteKardex({ state, selectedId, onSelect }: { state: AppState, selec
             </thead>
             <tbody>
               {!selectedId ? (
-                <tr><td colSpan={6} className="text-center py-20 text-white font-black uppercase italic opacity-30">Seleccione un producto para ver su historial</td></tr>
+                <tr><td colSpan={6} className="text-center py-20 text-white font-black uppercase italic opacity-40">Seleccione un producto para ver su historial</td></tr>
               ) : movs.length === 0 ? (
-                <tr><td colSpan={6} className="text-center py-20 text-white font-black uppercase italic opacity-30">No se registran movimientos</td></tr>
+                <tr><td colSpan={6} className="text-center py-20 text-white font-black uppercase italic opacity-40">No se registran movimientos</td></tr>
               ) : (
                 movs.map(m => {
                   const isEntry = m.tipo === 'compra' || m.tipo === 'ajuste_entrada' || m.tipo === 'devolucion';
@@ -955,7 +958,12 @@ function HistorialAjustes({ state }: { state: AppState }) {
       </div>
 
       <div className="card">
-        <div className="card-head"><h3 className="text-white font-black uppercase text-xs">Historial de Ajustes e Ingresos</h3></div>
+        <div className="card-head">
+          <h3 className="text-white font-black uppercase text-xs">Historial de Ajustes e Ingresos</h3>
+          <button className="btn btn-secondary text-white font-black text-xs uppercase no-print" onClick={() => window.print()}>
+            <FileText className="w-4 h-4" /> EXPORTAR PDF
+          </button>
+        </div>
         <div className="table-wrap">
           <table>
             <thead>
@@ -1023,7 +1031,12 @@ function ReporteConsumo({ state }: { state: AppState }) {
       </div>
       
       <div className="card">
-        <div className="card-head"><h3 className="text-white font-black uppercase text-xs">Detalle de Consumo y Colaboraciones</h3></div>
+        <div className="card-head">
+          <h3 className="text-white font-black uppercase text-xs">Detalle de Consumo y Colaboraciones</h3>
+          <button className="btn btn-secondary text-white font-black text-xs uppercase no-print" onClick={() => window.print()}>
+            <FileText className="w-4 h-4" /> DESCARGAR REPORTE
+          </button>
+        </div>
         <div className="table-wrap">
           <table>
             <thead>
