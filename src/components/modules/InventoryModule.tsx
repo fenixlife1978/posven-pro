@@ -769,8 +769,22 @@ function ReporteVentas({ state }: { state: AppState }) {
   const top3 = Object.values(statsMap).sort((a, b) => b.cantidad - a.cantidad).slice(0, 3);
 
   const handleExportPDF = () => {
-    const periodo = filter === 'custom' ? `${desde} a ${hasta}` : filter;
-    exportarPDFVentasDetallado(ventas, state.empresa, periodo, { totalVendidos });
+    const meses = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+    const hoyStr = Utils.hoy();
+    const [year, month] = hoyStr.split('-').map(Number);
+    
+    let periodoLabel = filter;
+    if (filter === 'hoy') {
+      periodoLabel = Utils.fmtFecha(hoyStr);
+    } else if (filter === 'mes') {
+      periodoLabel = `Mes ${meses[month - 1]} ${year}`;
+    } else if (filter === 'año') {
+      periodoLabel = `Año ${year}`;
+    } else if (filter === 'custom') {
+      periodoLabel = `${Utils.fmtFecha(desde)} a ${Utils.fmtFecha(hasta)}`;
+    }
+
+    exportarPDFVentasDetallado(ventas, state.empresa, periodoLabel, { totalVendidos });
   };
 
   return (
