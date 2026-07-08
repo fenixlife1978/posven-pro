@@ -670,7 +670,7 @@ function ReporteGeneral({ state }: { state: AppState }) {
               {filterValue ? `Listado: ${filterValue}` : 'Listado General de Productos'}
             </h3>
             <select 
-              className="form-select w-auto bg-black text-[#c8952e] border-[#c8952e]/30 text-[10px] font-black uppercase h-8 px-2"
+              className="form-select w-auto bg-black text-[#c8952e] border-[#c8952e]/30 text-[10px] font-black uppercase h-10 px-2"
               value={filterValue}
               onChange={e => setFilterValue(e.target.value)}
             >
@@ -1168,7 +1168,7 @@ function ModalAjuste({ producto, onClose, onSave }: { producto: Product, onClose
           
           <div className="form-group">
             <label className="text-white text-[10px] font-black uppercase block mb-1">Motivo / Referencia</label>
-            <textarea className="form-textarea bg-black text-white" placeholder="Ej: Compra a distribuidor, deguste, merma..." value={ref} onChange={e => setRef(e.target.value)}></textarea>
+            <textarea className="form-textarea bg-black text-white" placeholder="Ej: Compra a distribuidor, de guste, merma..." value={ref} onChange={e => setRef(e.target.value)}></textarea>
           </div>
         </div>
         <div className="modal-foot px-5 py-3 border-t border-white/10">
