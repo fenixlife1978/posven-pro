@@ -127,16 +127,12 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
 
   const addPago = (isAbono: boolean = false) => {
     let monto = parseFloat(montoInput);
-    if (isNaN(monto) || monto <= 0) {
-      if (isAbono) {
-        const restanteUSD = Math.max(0, deudaVisualUSD - (pagosBS_Abono / state.tasa));
-        monto = metodoActual.includes('usd') || metodoActual === 'zelle' ? restanteUSD : restanteUSD * state.tasa;
-      } else {
-        monto = metodoActual.includes('usd') || metodoActual === 'zelle' ? saldoRestanteUSD : saldoRestanteBS;
-      }
-    }
     
-    if (monto <= 0) return alert("El monto debe ser mayor a cero");
+    // Validación estricta: No permite montos en cero o inválidos
+    if (isNaN(monto) || monto <= 0) {
+      alert("El monto debe ser mayor a cero");
+      return;
+    }
 
     let montoUSD = (metodoActual.includes('usd') || metodoActual === 'zelle') ? monto : monto / state.tasa;
     let montoBS = (metodoActual.includes('usd') || metodoActual === 'zelle') ? monto * state.tasa : monto;
@@ -336,7 +332,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     lastProcessedSale.items.forEach((item: any) => {
       printData.push({
         type: 'text',
-        value: `${item.cantidad}x ${item.nombre.toUpperCase().slice(0, 20)}`,
+        value: `${item.qty || item.cantidad}x ${item.nombre.toUpperCase().slice(0, 20)}`,
         style: { fontWeight: "700", textAlign: 'left', fontSize: "10px" }
       });
       printData.push({
@@ -781,7 +777,19 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                   <option value="efectivo_usd">Efectivo USD</option><option value="efectivo_bs">Efectivo BS</option><option value="punto_venta">Punto de Venta</option><option value="pagomovil">Pago Movil</option><option value="biopago">Biopago</option><option value="zelle">Zelle</option>
                 </select>
               </div>
-              <div className="space-y-1"><label className="text-white text-[10px] font-bold uppercase">MONTO ({metodoActual.includes('usd') || metodoActual === 'zelle' ? 'USD' : 'BS'})</label>
+              <div className="space-y-1">
+                <div className="flex justify-between items-center mb-1">
+                  <label className="text-white text-[10px] font-bold uppercase">MONTO ({metodoActual.includes('usd') || metodoActual === 'zelle' ? 'USD' : 'BS'})</label>
+                  <button 
+                    onClick={() => {
+                      const monto = metodoActual.includes('usd') || metodoActual === 'zelle' ? saldoRestanteUSD : saldoRestanteBS;
+                      setMontoInput(monto.toFixed(2));
+                    }}
+                    className="text-[9px] bg-[#c8952e]/20 text-[#c8952e] px-2 py-0.5 rounded font-black border border-[#c8952e]/30 hover:bg-[#c8952e] hover:text-black transition-colors"
+                  >
+                    PAGO EXACTO
+                  </button>
+                </div>
                 <input type="number" className="form-input h-12 text-lg font-black bg-[#0b0b0b] text-white border-white/20" placeholder={metodoActual.includes('usd') || metodoActual === 'zelle' ? saldoRestanteUSD.toFixed(2) : saldoRestanteBS.toFixed(2)} value={montoInput} onChange={e => setMontoInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && addPago(false)} autoFocus />
               </div>
               <button className="btn btn-primary w-full h-12 font-black uppercase text-xs" onClick={() => addPago(false)}>CONFIRMAR ABONO</button>
@@ -801,10 +809,23 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                   <option value="efectivo_usd">Efectivo USD</option><option value="efectivo_bs">Efectivo BS</option><option value="punto_venta">Punto de Venta</option><option value="pagomovil">Pago Movil</option><option value="biopago">Biopago</option><option value="zelle">Zelle</option>
                 </select>
               </div>
-              <div className="space-y-1"><label className="text-white text-[10px] font-bold uppercase">MONTO ({metodoActual.includes('usd') || metodoActual === 'zelle' ? 'USD' : 'BS'})</label>
+              <div className="space-y-1">
+                <div className="flex justify-between items-center mb-1">
+                  <label className="text-white text-[10px] font-bold uppercase">MONTO ({metodoActual.includes('usd') || metodoActual === 'zelle' ? 'USD' : 'BS'})</label>
+                  <button 
+                    onClick={() => {
+                      const restanteUSD = Math.max(0, deudaVisualUSD - (pagosBS_Abono / state.tasa));
+                      const monto = metodoActual.includes('usd') || metodoActual === 'zelle' ? restanteUSD : restanteUSD * state.tasa;
+                      setMontoInput(monto.toFixed(2));
+                    }}
+                    className="text-[9px] bg-[#c8952e]/20 text-[#c8952e] px-2 py-0.5 rounded font-black border border-[#c8952e]/30 hover:bg-[#c8952e] hover:text-black transition-colors"
+                  >
+                    PAGO EXACTO
+                  </button>
+                </div>
                 <input type="number" className="form-input h-12 text-lg font-black bg-[#0b0b0b] text-white border-white/20" placeholder="0.00" value={montoInput} onChange={e => setMontoInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && addPago(true)} autoFocus />
               </div>
-              <button className="btn btn-primary w-full h-12 font-black uppercase text-xs" onClick={() => addPago(true)}>AÑADIR AL COBRO</button>
+              <button className="btn btn-primary w-full h-12 font-black uppercase text-xs shadow-lg shadow-[#c8952e]/20" onClick={() => addPago(true)}>AÑADIR AL COBRO</button>
             </div>
           </div>
         </div>
@@ -915,7 +936,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                   <tbody>
                     {lastProcessedSale.items.map((item: any, idx: number) => (
                       <tr key={idx} style={{ borderBottom: '1px dotted #eee' }}>
-                        <td style={{ padding: '4px 0', fontSize: '9px', fontWeight: 'bold' }}>{item.cantidad} x</td>
+                        <td style={{ padding: '4px 0', fontSize: '9px', fontWeight: 'bold' }}>{(item.qty || item.cantidad)} x</td>
                         <td style={{ padding: '4px 0', paddingLeft: '4px', fontSize: '9px' }}>
                           {item.nombre.toUpperCase().slice(0, 22)}
                           <div style={{ fontSize: '8px', color: '#555' }}>Ref: {Utils.fmtUSD(item.precioUnitUSD)}</div>
