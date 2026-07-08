@@ -24,8 +24,19 @@ import {
   HandCoins,
   Clock,
   Printer,
-  Download
+  Download,
+  Zap,
+  Share2
 } from 'lucide-react';
+
+// ✅ Declarar el tipo de electronAPI en Window para soporte de impresión nativa
+declare global {
+  interface Window {
+    electronAPI?: {
+      printTicket: (data: any) => Promise<void>;
+    };
+  }
+}
 
 interface PagoRealizado {
   metodo: PaymentMethod;
@@ -51,10 +62,11 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   const [showDetailsModal, setShowDetailsModal] = useState<any | null>(null);
   const [showHistoryModal, setShowHistoryModal] = useState<any | null>(null);
   
-  const [lastProcessedSale, setLastProcessedSale] = useState<Sale | null>(null);
+  const [lastProcessedSale, setLastProcessedSale] = useState<any | null>(null);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
 
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const printRef = useRef<HTMLDivElement>(null);
 
   // Cálculos para el abono dinámico
   const deudaInicialUSD = showAbonoModal ? state.cxc.filter(d => d.cliente === showAbonoModal && d.estado !== 'pagada').reduce((s, d) => s + d.saldoUSD, 0) : 0;
@@ -117,7 +129,6 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     let monto = parseFloat(montoInput);
     if (isNaN(monto) || monto <= 0) {
       if (isAbono) {
-        // En abono, si el campo está vacío sugerimos el saldo restante en la moneda del método
         const restanteUSD = Math.max(0, deudaVisualUSD - (pagosBS_Abono / state.tasa));
         monto = metodoActual.includes('usd') || metodoActual === 'zelle' ? restanteUSD : restanteUSD * state.tasa;
       } else {
@@ -170,7 +181,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       };
     });
 
-    const nuevaVenta: Sale = {
+    const nuevaVenta: Sale & { payments?: PagoRealizado[] } = {
       id: reciboId,
       fecha: ahora,
       cliente,
@@ -183,7 +194,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       estado: 'completada',
       type: 'VENTA',
       received: totalPagadoUSD,
-      change: Math.max(0, totalPagadoUSD - subtotalUSD)
+      change: Math.max(0, totalPagadoUSD - subtotalUSD),
+      payments: [...pagos]
     };
 
     updateState({
@@ -235,7 +247,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       return d;
     });
 
-    const registroAbono: Sale = {
+    const registroAbono: Sale & { payments?: PagoRealizado[] } = {
       id: reciboId,
       fecha: ahora,
       cliente: showAbonoModal,
@@ -248,7 +260,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       estado: 'completada',
       type: 'COBRO DEUDA',
       received: totalAbonoUSD,
-      change: 0
+      change: 0,
+      payments: [...abonoPagos]
     };
 
     updateState({ 
@@ -261,6 +274,115 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     setShowReceiptModal(true);
     setShowAbonoModal(null);
     setAbonoPagos([]);
+  };
+
+  // ========== LÓGICA DE IMPRESIÓN ==========
+
+  const handlePrint = () => {
+    const printContent = printRef.current?.innerHTML;
+    if (!printContent) return;
+
+    const printWindow = window.open('', '_blank');
+    printWindow?.document.write(`
+      <html>
+        <head>
+          <meta charset="UTF-8">
+          <style>
+            @page { size: 80mm auto; margin: 0; }
+            body { font-family: 'Courier New', Courier, monospace; width: 72mm; margin: 0; padding: 4mm; font-size: 11px; color: #000; background: #fff; line-height: 1.2; }
+            .text-center { text-align: center; }
+            .text-right { text-align: right; }
+            .bold { font-weight: bold; }
+            .header { margin-bottom: 6px; padding-bottom: 6px; border-bottom: 1px dashed #000; }
+            .total-grand { font-size: 13px; font-weight: bold; margin: 6px 0; padding: 4px 0; border-top: 1px solid #000; border-bottom: 1px solid #000; }
+            table { width: 100%; border-collapse: collapse; margin: 8px 0; }
+            th { border-bottom: 1px dashed #000; border-top: 1px dashed #000; font-weight: bold; padding: 4px 0; font-size: 10px; }
+            td { padding: 4px 0; vertical-align: top; font-size: 10px; }
+          </style>
+        </head>
+        <body>
+          ${printContent}
+          <script>
+            window.onload = function() { window.print(); setTimeout(function() { window.close(); }, 500); };
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow?.document.close();
+  };
+
+  const handleNativePrint = async () => {
+    if (!lastProcessedSale) return;
+    
+    if (!window.electronAPI) {
+      handlePrint();
+      return;
+    }
+
+    const title = lastProcessedSale.type === 'COBRO DEUDA' ? 'INFORME' : 'RECIBO';
+    const printData = [
+      { type: 'text', value: state.empresa.nombre.toUpperCase(), style: { fontWeight: "700", textAlign: 'center', fontSize: "16px" } },
+      { type: 'text', value: `RIF: ${state.empresa.rif}`, style: { textAlign: 'center', fontSize: "10px" } },
+      { type: 'text', value: state.empresa.direccion, style: { textAlign: 'center', fontSize: "10px" } },
+      { type: 'text', value: '--------------------------------', style: { textAlign: 'center' } },
+      { type: 'text', value: title, style: { textAlign: 'center', fontWeight: "700", fontSize: "14px" } },
+      { type: 'text', value: '--------------------------------', style: { textAlign: 'center' } },
+      { type: 'text', value: `${title} N: ${lastProcessedSale.id}`, style: { textAlign: 'left', fontSize: "10px" } },
+      { type: 'text', value: `FECHA: ${Utils.fmtFecha(lastProcessedSale.fecha)}`, style: { textAlign: 'left', fontSize: "10px" } },
+      { type: 'text', value: `CLIENTE: ${lastProcessedSale.cliente.toUpperCase()}`, style: { textAlign: 'left', fontSize: "10px" } },
+      { type: 'text', value: '--------------------------------', style: { textAlign: 'center' } }
+    ];
+
+    lastProcessedSale.items.forEach((item: any) => {
+      printData.push({
+        type: 'text',
+        value: `${item.cantidad}x ${item.nombre.toUpperCase().slice(0, 20)}`,
+        style: { fontWeight: "700", textAlign: 'left', fontSize: "10px" }
+      });
+      printData.push({
+        type: 'text',
+        value: `    Ref: ${Utils.fmtUSD(item.precioUnitUSD)} | Total: ${Utils.fmtUSD(item.subtotalUSD)}`,
+        style: { fontSize: "10px", textAlign: 'left' }
+      });
+    });
+
+    printData.push({ type: 'text', value: '--------------------------------', style: { textAlign: 'center' } });
+    printData.push({ 
+      type: 'text', 
+      value: `TOTAL BS: ${Utils.fmtBS(lastProcessedSale.totalBS)}`, 
+      style: { textAlign: 'right', fontWeight: "700", fontSize: "14px" } 
+    });
+    printData.push({ 
+      type: 'text', 
+      value: `REF USD: ${Utils.fmtUSD(lastProcessedSale.totalUSD)}`, 
+      style: { textAlign: 'right', fontSize: "12px" } 
+    });
+
+    printData.push({ type: 'text', value: '--------------------------------', style: { textAlign: 'center' } });
+    printData.push({ type: 'text', value: '¡GRACIAS POR SU PREFERENCIA!', style: { textAlign: 'center', fontWeight: "700", fontSize: "12px" } });
+    printData.push({ type: 'text', value: 'Desarrollado por LicoreriaPOS v2.0', style: { textAlign: 'center', fontSize: "8px" } });
+
+    try {
+      await window.electronAPI.printTicket(printData);
+    } catch (e) {
+      handlePrint();
+    }
+  };
+
+  const handleSharePDF = async () => {
+    if (!lastProcessedSale) return;
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: `Recibo ${lastProcessedSale.id}`,
+          text: `Resumen de recibo nro ${lastProcessedSale.id} por un total de ${Utils.fmtBS(lastProcessedSale.totalBS)}`,
+        });
+      } catch (err) {
+        handlePrint();
+      }
+    } else {
+      handlePrint();
+    }
   };
 
   const emitirReporteZ = () => {
@@ -284,12 +406,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     setShowReport('Z');
   };
 
-  const handlePrint = () => {
-    window.print();
-  };
-
   const hoy = Utils.hoy();
-  const ventasHoy = state.ventas.filter(v => v.fecha.startsWith(hoy)).sort((a,b) => b.fecha.localeCompare(a.fecha));
+  const ventasHoyList = state.ventas.filter(v => v.fecha.startsWith(hoy)).sort((a,b) => b.fecha.localeCompare(a.fecha));
   const creditosActivos = state.cxc.filter(c => c.estado !== 'pagada');
 
   return (
@@ -428,10 +546,10 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                 </tr>
               </thead>
               <tbody>
-                {ventasHoy.length === 0 ? (
+                {ventasHoyList.length === 0 ? (
                   <tr><td colSpan={7} className="text-center py-24 text-white font-black uppercase italic opacity-30">No se registran transacciones para el día de hoy</td></tr>
                 ) : (
-                  ventasHoy.map(v => (
+                  ventasHoyList.map(v => (
                     <tr key={v.id} className="border-b border-white/5 hover:bg-white/5">
                       <td className="text-white font-black text-xs mono">{v.id}</td>
                       <td className="text-white font-bold text-xs">{v.fecha.includes('T') ? v.fecha.split('T')[1].slice(0, 5) : '-'}</td>
@@ -586,13 +704,11 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
               <button onClick={() => setShowAbonoModal(null)}><X className="text-white"/></button>
             </div>
             <div className="modal-body p-4 space-y-4">
-              {/* Deuda Total Cliente (USD Actualizada) */}
               <div className="bg-black p-4 rounded-lg text-center border border-white/10">
                 <p className="text-white/40 text-[9px] font-bold uppercase mb-1">DEUDA TOTAL CLIENTE</p>
                 <p className="text-3xl font-black text-[#3a9bdc]">{Utils.fmtUSD(deudaVisualUSD)}</p>
               </div>
               
-              {/* Sección dividida: Total a Pagar Bs. vs Total Pagado */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="bg-[#131313] p-3 rounded border border-white/5 text-center">
                   <p className="text-white/40 text-[8px] font-black uppercase mb-1">TOTAL A PAGAR BS.</p>
@@ -604,7 +720,6 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                 </div>
               </div>
 
-              {/* Lista de Métodos de Pago */}
               <div className="bg-[#181818] p-3 rounded-lg border border-white/10">
                 <div className="flex justify-between items-center mb-3">
                   <label className="text-white text-[10px] font-black uppercase">MÉTODOS DE PAGO</label>
@@ -695,7 +810,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         </div>
       )}
 
-      {/* Modal Reportes Y/Z (Optimized for 80mm Print) */}
+      {/* Modal Reportes Y/Z */}
       {showReport && (
         <div className="modal show"><div className="modal-bg" onClick={() => setShowReport(null)}></div>
           <div className="modal-box bg-white text-black max-w-[80mm] font-mono p-4 text-[11px] leading-tight rounded shadow-2xl overflow-y-auto max-h-[90vh]">
@@ -735,50 +850,127 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         </div>
       )}
 
-      {/* MODAL RECIBO DE PAGO (Optimized for 80mm Print) */}
+      {/* MODAL RECIBO DE PAGO (NUEVO FORMATO PROFESIONAL 80MM) */}
       {showReceiptModal && lastProcessedSale && (
-        <div className="modal show"><div className="modal-bg" onClick={() => setShowReceiptModal(false)}></div>
-          <div className="modal-box bg-white text-black max-w-[80mm] font-mono p-4 text-[10px] leading-tight rounded shadow-2xl no-print">
-            <div className="text-center mb-4"><h3 className="font-black text-xs uppercase">{state.empresa.nombre}</h3><p>RIF: {state.empresa.rif}</p><p>{state.empresa.direccion}</p></div>
-            <div className="border-t border-dashed border-black my-2"></div>
-            <div className="space-y-1">
-              <div className="flex justify-between font-bold"><span>{lastProcessedSale.type === 'COBRO DEUDA' ? 'INFORME' : 'RECIBO'} NRO:</span><span>{lastProcessedSale.id}</span></div>
-              <div className="flex justify-between"><span>FECHA:</span><span>{Utils.fmtFecha(lastProcessedSale.fecha)}</span></div>
-              <div className="flex justify-between"><span>HORA:</span><span>{lastProcessedSale.fecha.split('T')[1].slice(0, 5)}</span></div>
-              <div className="flex justify-between"><span>CLIENTE:</span><span className="font-bold uppercase">{lastProcessedSale.cliente}</span></div>
-              <div className="flex justify-between"><span>OPERACIÓN:</span><span className="font-bold">{lastProcessedSale.type}</span></div>
+        <div className="fixed inset-0 z-[300] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 no-print">
+          <div className="bg-white rounded-xl max-w-sm w-full shadow-2xl overflow-hidden flex flex-col border border-gray-200">
+            <div className="bg-[#1A2C4E] p-3.5 flex justify-between items-center border-b border-gray-700">
+              <h3 className="text-white font-bold text-sm flex items-center gap-2 tracking-wide">
+                <Printer size={16} className="text-amber-400" /> VISTA PREVIA DEL DOCUMENTO
+              </h3>
+              <button onClick={() => setShowReceiptModal(false)} className="text-white/70 hover:text-white transition-colors">
+                <X size={18} />
+              </button>
             </div>
-            <div className="border-t border-dashed border-black my-2"></div>
-            <div className="mb-4">
-              <div className="flex justify-between font-bold mb-1"><span>DESCRIPCIÓN</span><span className="text-right">TOTAL</span></div>
-              {lastProcessedSale.items.map((it, idx) => (
-                <div key={idx} className="flex justify-between italic"><span>{it.nombre} x{it.cantidad}</span><span>{Utils.fmtUSD(it.subtotalUSD)}</span></div>
-              ))}
+
+            <div className="p-4 max-h-[65vh] overflow-y-auto bg-gray-100 flex justify-center">
+              <div 
+                ref={printRef} 
+                className="bg-white p-5 shadow-sm text-black font-mono select-none"
+                style={{ width: '72mm', boxSizing: 'border-box', color: '#000' }}
+              >
+                <div className="text-center" style={{ marginBottom: '6px', paddingBottom: '6px', borderBottom: '1px dashed #000' }}>
+                  <h1 style={{ fontSize: '16px', fontWeight: 'bold', margin: '0 0 2px 0', letterSpacing: '1px' }}>{state.empresa.nombre.toUpperCase()}</h1>
+                  <p style={{ fontSize: '10px', margin: '2px 0', fontWeight: 'bold' }}>{state.empresa.direccion}</p>
+                  <p style={{ fontSize: '9px', margin: '2px 0' }}>RIF: {state.empresa.rif}</p>
+                  <p style={{ fontSize: '9px', margin: '2px 0' }}>TEL: {state.empresa.telefono}</p>
+                </div>
+
+                <div style={{ textAlign: 'center', marginBottom: '6px' }}>
+                  <span style={{ 
+                    background: lastProcessedSale.type === 'COBRO DEUDA' ? '#27ae60' : '#2c3e50', 
+                    color: 'white', 
+                    padding: '2px 8px', 
+                    fontSize: '9px', 
+                    fontWeight: 'bold',
+                    display: 'inline-block'
+                  }}>
+                    {lastProcessedSale.type === 'COBRO DEUDA' ? 'INFORME' : 'RECIBO'}
+                  </span>
+                </div>
+
+                <div style={{ margin: '6px 0', fontSize: '9px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>{lastProcessedSale.type === 'COBRO DEUDA' ? 'INFORME N°:' : 'RECIBO N°:'} <span style={{ fontWeight: 'bold' }}>{lastProcessedSale.id}</span></span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', margin: '2px 0' }}>
+                    <span>FECHA: {Utils.fmtFecha(lastProcessedSale.fecha)}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', margin: '2px 0' }}>
+                    <span>HORA: {lastProcessedSale.fecha.split('T')[1]?.slice(0, 5) || '-'}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', margin: '2px 0' }}>
+                    <span>CLIENTE: {lastProcessedSale.cliente.toUpperCase()}</span>
+                  </div>
+                </div>
+
+                <table style={{ width: '100%', borderCollapse: 'collapse', margin: '6px 0' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px dashed #000', borderTop: '1px dashed #000' }}>
+                      <th style={{ textAlign: 'left', padding: '3px 0', fontSize: '9px' }}>CANT</th>
+                      <th style={{ textAlign: 'left', padding: '3px 0', fontSize: '9px', paddingLeft: '4px' }}>PRODUCTO</th>
+                      <th style={{ textAlign: 'right', padding: '3px 0', fontSize: '9px' }}>TOTAL ($)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {lastProcessedSale.items.map((item: any, idx: number) => (
+                      <tr key={idx} style={{ borderBottom: '1px dotted #eee' }}>
+                        <td style={{ padding: '4px 0', fontSize: '9px', fontWeight: 'bold' }}>{item.cantidad} x</td>
+                        <td style={{ padding: '4px 0', paddingLeft: '4px', fontSize: '9px' }}>
+                          {item.nombre.toUpperCase().slice(0, 22)}
+                          <div style={{ fontSize: '8px', color: '#555' }}>Ref: {Utils.fmtUSD(item.precioUnitUSD)}</div>
+                        </td>
+                        <td style={{ textAlign: 'right', padding: '4px 0', fontSize: '9px', fontWeight: 'bold' }}>
+                          {Utils.fmtUSD(item.subtotalUSD).replace('$', '')}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+
+                <div style={{ borderTop: '1px dashed #000', paddingTop: '4px' }}>
+                  <div style={{ fontSize: '13px', fontWeight: 'bold', margin: '5px 0', padding: '3px 0', borderTop: '1px solid #000', borderBottom: '1px solid #000' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                      <span>TOTAL BS:</span>
+                      <span>{Utils.fmtBS(lastProcessedSale.totalBS)}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#333', fontWeight: 'normal', marginTop: '2px' }}>
+                      <span>REF. DIVISAS:</span>
+                      <span>{Utils.fmtUSD(lastProcessedSale.totalUSD)}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {lastProcessedSale.payments && lastProcessedSale.payments.length > 0 && (
+                  <div style={{ border: '1px solid #000', padding: '4px', margin: '8px 0' }}>
+                    <div style={{ textAlign: 'center', fontWeight: 'bold', fontSize: '10px', marginBottom: '4px' }}>DETALLE DE PAGOS</div>
+                    {lastProcessedSale.payments.map((p: PagoRealizado, idx: number) => (
+                      <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', margin: '2px 0' }}>
+                        <span>{Utils.metodoLabel(p.metodo).toUpperCase()}</span>
+                        <span style={{ fontWeight: 'bold' }}>{p.metodo.includes('usd') || p.metodo === 'zelle' ? Utils.fmtUSD(p.montoUSD) : Utils.fmtBS(p.montoBS)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div style={{ textAlign: 'center', marginTop: '12px', paddingTop: '6px', borderTop: '1px dashed #000', fontSize: '8px' }}>
+                  <p style={{ margin: '2px 0', fontWeight: 'bold' }}>¡GRACIAS POR SU PREFERENCIA!</p>
+                  <p style={{ margin: '2px 0' }}>CONSERVE ESTE TICKET COMO COMPROBANTE</p>
+                  <p style={{ fontSize: '7px', marginTop: '6px', color: '#444' }}>Desarrollado por LicoreriaPOS v2.0</p>
+                </div>
+              </div>
             </div>
-            <div className="border-t border-dashed border-black my-2"></div>
-            <div className="space-y-1 font-black">
-              <div className="flex justify-between text-xs"><span>TOTAL USD:</span><span>{Utils.fmtUSD(lastProcessedSale.totalUSD)}</span></div>
-              <div className="flex justify-between text-xs"><span>TOTAL BS:</span><span>{Utils.fmtBS(lastProcessedSale.totalBS)}</span></div>
-            </div>
-            <div className="border-t border-dashed border-black my-2"></div>
-            <div className="text-center italic mt-4"><p>Gracias por su preferencia.</p><p className="text-[8px] mt-2 opacity-60">LicoreriaPOS Correlativo: {lastProcessedSale.id}</p></div>
-            
-            <div className="flex flex-col gap-2 mt-6 no-print">
+
+            <div className="p-3 bg-gray-50 border-t border-gray-200 flex flex-col gap-2">
               <div className="flex gap-2">
-                <button onClick={handlePrint} className="btn btn-sm btn-primary flex-1 font-black uppercase text-[8px] bg-[#c8952e] text-black">
-                  <Printer className="w-3 h-3 mr-1" /> Térmica 80mm
-                </button>
-                <button onClick={handlePrint} className="btn btn-sm btn-secondary flex-1 font-black uppercase text-[8px] border-white/20 text-white">
-                  <Printer className="w-3 h-3 mr-1" /> Estándar
-                </button>
+                <button onClick={() => setShowReceiptModal(false)} className="flex-1 py-2 bg-gray-200 text-slate-800 font-bold text-xs rounded-lg hover:bg-gray-300 transition-colors uppercase tracking-wider">Cerrar</button>
+                <button onClick={handleSharePDF} className="flex-1 py-2 bg-green-600 text-white font-bold text-xs rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center gap-2 uppercase tracking-wider shadow-sm"><Share2 size={14} /> Compartir</button>
               </div>
               <div className="flex gap-2">
-                <button onClick={handlePrint} className="btn btn-sm btn-secondary flex-1 font-black uppercase text-[8px] border-white/20 text-white">
-                  <Download className="w-3 h-3 mr-1" /> PDF 80mm
-                </button>
-                <button onClick={() => setShowReceiptModal(false)} className="btn btn-sm bg-[#e04848] flex-1 font-black uppercase text-[8px] text-white">
-                  Cerrar
-                </button>
+                 <button onClick={handlePrint} className="flex-1 py-2 bg-gray-800 text-white font-bold text-xs rounded-lg hover:bg-black transition-colors flex items-center justify-center gap-2 uppercase tracking-wider shadow-sm"><Printer size={14} /> Estándar</button>
+                 <button onClick={handleNativePrint} className="flex-1 py-2 bg-[#D4A017] text-slate-950 font-black text-xs rounded-lg hover:bg-[#C4940F] transition-colors flex items-center justify-center gap-2 uppercase tracking-wider shadow-sm border-2 border-black/10">
+                   <Zap size={14} className="fill-current" /> IMPRESIÓN USB
+                 </button>
               </div>
             </div>
           </div>
