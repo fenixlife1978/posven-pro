@@ -16,28 +16,37 @@ interface CompanyInfo {
 const drawHeader = (doc: jsPDF, title: string, empresa: CompanyInfo) => {
   const pageWidth = doc.internal.pageSize.getWidth();
   const margin = 15;
+  const usableWidth = pageWidth - (margin * 2);
 
+  // Nombre de la Empresa (Izquierda)
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(18);
+  doc.setFontSize(16);
   doc.setTextColor(20, 20, 20);
-  doc.text(empresa.nombre.toUpperCase(), margin, 20);
+  const companyName = empresa.nombre.toUpperCase();
+  // Se limita el ancho para evitar que choque con el título a la derecha
+  doc.text(companyName, margin, 20, { maxWidth: usableWidth * 0.55 });
 
+  // Datos secundarios de la empresa (Izquierda)
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9);
+  doc.setFontSize(8);
   doc.setTextColor(100, 100, 100);
-  doc.text(empresa.direccion.toUpperCase(), margin, 26);
-  doc.text(`RIF: ${empresa.rif} | TEL: ${empresa.telefono}`, margin, 31);
+  doc.text(empresa.direccion.toUpperCase(), margin, 26, { maxWidth: usableWidth * 0.6 });
+  doc.text(`RIF: ${empresa.rif} | TEL: ${empresa.telefono}`, margin, 30);
 
+  // Título del Reporte (Derecha)
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(14);
+  doc.setFontSize(13);
   doc.setTextColor(0, 0, 0);
-  doc.text(title.toUpperCase(), pageWidth - margin, 20, { align: 'right' });
+  // Se limita el ancho y se alinea a la derecha para evitar superposiciones
+  doc.text(title.toUpperCase(), pageWidth - margin, 20, { align: 'right', maxWidth: usableWidth * 0.4 });
 
+  // Fecha de generación (Derecha, debajo del título)
   const now = new Date().toLocaleString('es-VE', { timeZone: 'America/Caracas' });
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
   doc.text(`GENERADO EL: ${now}`, pageWidth - margin, 26, { align: 'right' });
 
+  // Línea divisoria elegante
   doc.setDrawColor(200, 200, 200);
   doc.setLineWidth(0.5);
   doc.line(margin, 35, pageWidth - margin, 35);
@@ -133,6 +142,7 @@ export const exportarPDFVentasDetallado = (ventas: any[], empresa: CompanyInfo, 
   drawHeader(doc, 'Reporte de Ventas Detallado', empresa);
 
   doc.setFontSize(10);
+  doc.setTextColor(0, 0, 0);
   doc.text(`PERIODO: ${periodo.toUpperCase()}`, 15, 42);
   doc.text(`VOLUMEN TOTAL: ${stats.totalVendidos} UNIDADES`, 15, 47);
 
@@ -161,6 +171,7 @@ export const exportarPDFKardex = (producto: Product, movimientos: Movimiento[], 
 
   doc.setFontSize(10);
   doc.setFont('helvetica', 'bold');
+  doc.setTextColor(0, 0, 0);
   doc.text(`PRODUCTO: ${producto.nombre.toUpperCase()}`, 15, 42);
   doc.setFont('helvetica', 'normal');
   doc.text(`CÓDIGO: ${producto.codigo} | STOCK ACTUAL: ${producto.stock}`, 15, 47);
@@ -192,6 +203,7 @@ export const exportarPDFHistorialAjustes = (ajustes: any[], empresa: CompanyInfo
   doc.rect(15, 40, 186, 10, 'F');
   doc.setFontSize(9);
   doc.setFont('helvetica', 'bold');
+  doc.setTextColor(0, 0, 0);
   doc.text(`EFECTO NETO EN VALOR INVENTARIO: ${fmt(efectoNeto)}`, 20, 46.5);
 
   autoTable(doc, {
