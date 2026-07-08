@@ -41,6 +41,7 @@ interface PagoRealizado {
 }
 
 export default function SalesModule({ state, updateState }: { state: AppState, updateState: (s: Partial<AppState>) => void }) {
+  const ahora = Utils.ahora();
   const [search, setSearch] = useState('');
   const [view, setView] = useState<'pos' | 'history' | 'credits' | 'returns'>('pos');
   const [showReport, setShowReport] = useState<'Y' | 'Z' | null>(null);
@@ -151,7 +152,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     if (state.carrito.length === 0 || saldoRestanteUSD > 0.01) return;
     
     const reciboId = String(state.proximoRecibo).padStart(9, '0');
-    const ahora = Utils.ahora();
+    const ahoraStr = Utils.ahora();
     
     const nuevosProductos = state.productos.map(p => {
       const item = state.carrito.find(i => i.productoId === p.id);
@@ -167,14 +168,14 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         cantidad: -Math.abs(item.cantidad),
         stockAntes: p?.stock || 0,
         stockDespues: (p?.stock || 0) - item.cantidad,
-        fecha: ahora,
+        fecha: ahoraStr,
         referencia: `VENTA ${reciboId}`
       };
     });
 
     const nuevaVenta: Sale & { payments?: PagoRealizado[] } = {
       id: reciboId,
-      fecha: ahora,
+      fecha: ahoraStr,
       cliente,
       items: [...state.carrito],
       subtotalUSD,
@@ -209,7 +210,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     
     const totalAbonoUSD = abonoPagos.reduce((s, p) => s + p.montoUSD, 0);
     const reciboId = String(state.proximoRecibo).padStart(9, '0');
-    const ahora = Utils.ahora();
+    const ahoraStr = Utils.ahora();
     let restante = totalAbonoUSD;
     const nuevasDeudas = [...state.cxc].sort((a, b) => a.fecha.localeCompare(b.fecha));
     
@@ -220,7 +221,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         
         const historialPagos = d.historialPagos || [];
         historialPagos.push({
-          fecha: ahora,
+          fecha: ahoraStr,
           montoUSD: abonoAplicado,
           montoBS: abonoAplicado * state.tasa,
           reciboId
@@ -240,7 +241,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
 
     const registroAbono: Sale & { payments?: PagoRealizado[] } = {
       id: reciboId,
-      fecha: ahora,
+      fecha: ahoraStr,
       cliente: showAbonoModal,
       items: [{ productoId: 'ABONO', nombre: 'ABONO A CUENTA', precioUnitUSD: totalAbonoUSD, cantidad: 1, subtotalUSD: totalAbonoUSD }],
       subtotalUSD: totalAbonoUSD,
@@ -266,8 +267,6 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     setShowAbonoModal(null);
     setAbonoPagos([]);
   };
-
-  // ========== LÓGICA DE AGREGACIÓN PARA REPORTES ==========
 
   const getReportSummary = () => {
     const hoy = Utils.hoy();
@@ -295,8 +294,6 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
 
     return { breakdown, totalBS, totalUSD, ventasHoy };
   };
-
-  // ========== LÓGICA DE IMPRESIÓN ==========
 
   const handlePrint = (ref: React.RefObject<HTMLDivElement>) => {
     const printContent = ref.current?.innerHTML;
@@ -388,7 +385,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
 
     const { breakdown, totalBS, totalUSD, ventasHoy } = getReportSummary();
     const hoy = Utils.hoy();
-    const ahora = Utils.ahora();
+    const ahoraReport = Utils.ahora();
     const vDirectas = ventasHoy.filter(v => v.type === 'VENTA').reduce((s, v) => s + v.totalUSD, 0);
     const vCobros = ventasHoy.filter(v => v.type === 'COBRO DEUDA').reduce((s, v) => s + v.totalUSD, 0);
 
@@ -400,7 +397,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       { type: 'text', value: `REPORTE "${type}"`, style: { textAlign: 'center', fontWeight: "700", fontSize: "14px" } },
       { type: 'text', value: '--------------------------------', style: { textAlign: 'center' } },
       { type: 'text', value: `FECHA: ${Utils.fmtFecha(hoy)}`, style: { textAlign: 'left', fontSize: "10px" } },
-      { type: 'text', value: `HORA: ${ahora.split('T')[1].slice(0, 8)}`, style: { textAlign: 'left', fontSize: "10px" } }
+      { type: 'text', value: `HORA: ${ahoraReport.split('T')[1].slice(0, 8)}`, style: { textAlign: 'left', fontSize: "10px" } }
     ];
 
     if (type === 'Z') {
@@ -462,6 +459,21 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     };
     updateState({ reportesZ: [...state.reportesZ, nuevoZ], ultimoZ: state.ultimoZ + 1 });
     setShowReport('Z');
+  };
+
+  const handleSharePDF = async () => {
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: `Recibo ${lastProcessedSale?.id}`,
+          text: `Resumen de recibo correlativo nro ${lastProcessedSale?.id} por un total de ${Utils.fmtBS(lastProcessedSale?.totalBS || 0)}`,
+        });
+      } catch (err) {
+        handlePrint(printRef);
+      }
+    } else {
+      handlePrint(printRef);
+    }
   };
 
   const { breakdown, totalBS: rTotalBS, totalUSD: rTotalUSD, ventasHoy: rVentasHoy } = getReportSummary();
