@@ -105,23 +105,74 @@ tr:hover td { background: var(--card2); }
 .modal-body { padding: 24px; }
 .modal-foot { display: flex; justify-content: flex-end; gap: 10px; padding: 16px 24px; border-top: 1px solid var(--border); }
 
-/* Thermal Printer Optimization (80mm) */
+/* Print Styles */
 @media print {
   @page {
-    size: 80mm auto;
-    margin: 2mm;
+    size: auto;
+    margin: 5mm;
   }
   
   body {
     background: white !important;
     color: black !important;
-    font-size: 10pt;
-    width: 80mm;
-    padding: 0;
+    width: 100%;
     margin: 0;
+    padding: 0;
   }
 
   .no-print { display: none !important; }
+
+  /* General PDF Report Styling (Letter Size) */
+  .report-letter {
+    width: 216mm !important;
+    min-height: 279mm !important;
+    margin: 0 auto !important;
+    padding: 10mm !important;
+    background: white !important;
+    color: black !important;
+    box-sizing: border-box !important;
+  }
+
+  .report-letter table {
+    width: 100% !important;
+    border: 1px solid #000 !important;
+    color: black !important;
+  }
+
+  .report-letter th {
+    background: #f0f0f0 !important;
+    color: black !important;
+    border-bottom: 2px solid black !important;
+    border-right: 1px solid #ddd !important;
+    padding: 8px !important;
+    font-weight: bold !important;
+    font-size: 10pt !important;
+  }
+
+  .report-letter td {
+    border-bottom: 1px solid #eee !important;
+    border-right: 1px solid #eee !important;
+    padding: 6px 8px !important;
+    color: black !important;
+    font-size: 9pt !important;
+  }
+
+  .report-letter .kpi {
+    border: 1px solid #ddd !important;
+    background: #fafafa !important;
+    color: black !important;
+    box-shadow: none !important;
+  }
+
+  .report-letter h3, .report-letter h2, .report-letter p {
+    color: black !important;
+  }
+
+  /* Reset total de colores para impresión térmica (Blanco y Negro puro) */
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
 
   /* Asegurar que los modales de ticket ocupen todo el ancho 80mm */
   .modal.show {
@@ -141,16 +192,7 @@ tr:hover td { background: var(--card2); }
     color: black !important;
     overflow: visible !important;
     max-height: none !important;
-    margin: 0 auto;
-  }
-
-  /* Reset total de colores para impresión térmica (Blanco y Negro puro) */
-  * {
-    color: black !important;
-    background: transparent !important;
-    box-shadow: none !important;
-    text-shadow: none !important;
-    border-color: black !important;
+    margin: 0 auto !important;
   }
 
   /* Forzar fondos blancos en elementos que suelen tener color */
@@ -161,10 +203,5 @@ tr:hover td { background: var(--card2); }
   /* Corrección de selectores de color de texto específicos */
   .text-white, .text-primary, [class*="text-"] {
     color: black !important;
-  }
-
-  /* Ajuste de tablas para impresión */
-  table, th, td {
-    border-color: #ddd !important;
   }
 }
