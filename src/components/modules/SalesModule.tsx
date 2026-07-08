@@ -22,7 +22,9 @@ import {
   ArrowLeft,
   Eye,
   HandCoins,
-  Clock
+  Clock,
+  Printer,
+  Download
 } from 'lucide-react';
 
 interface PagoRealizado {
@@ -713,9 +715,24 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
             </div>
             <div className="border-t border-dashed border-black my-2"></div>
             <div className="text-center italic mt-4"><p>Gracias por su preferencia.</p><p className="text-[8px] mt-2 opacity-60">LicoreriaPOS Correlativo: {lastProcessedSale.id}</p></div>
-            <div className="flex gap-2 mt-6 no-print">
-              <button onClick={() => setShowReceiptModal(false)} className="btn btn-sm btn-secondary flex-1 font-black uppercase text-[9px]">Cerrar</button>
-              <button onClick={handlePrint} className="btn btn-sm btn-primary flex-1 font-black uppercase text-[9px]">Imprimir</button>
+            
+            <div className="flex flex-col gap-2 mt-6 no-print">
+              <div className="flex gap-2">
+                <button onClick={handlePrint} className="btn btn-sm btn-primary flex-1 font-black uppercase text-[8px] bg-[#c8952e] text-black">
+                  <Printer className="w-3 h-3 mr-1" /> Térmica 80mm
+                </button>
+                <button onClick={handlePrint} className="btn btn-sm btn-secondary flex-1 font-black uppercase text-[8px] border-white/20 text-white">
+                  <Printer className="w-3 h-3 mr-1" /> Estándar
+                </button>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={handlePrint} className="btn btn-sm btn-secondary flex-1 font-black uppercase text-[8px] border-white/20 text-white">
+                  <Download className="w-3 h-3 mr-1" /> PDF 80mm
+                </button>
+                <button onClick={() => setShowReceiptModal(false)} className="btn btn-sm bg-[#e04848] flex-1 font-black uppercase text-[8px] text-white">
+                  Cerrar
+                </button>
+              </div>
             </div>
           </div>
         </div>
