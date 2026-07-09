@@ -225,20 +225,28 @@ export default function LicoreriaPOS() {
             <div className="flex items-center gap-2.5 px-3.5 py-1.5 bg-white/50 rounded-xl border border-line shadow-sm">
               <ClockIcon className="w-3.5 h-3.5 text-ink/70" />
               <div className="flex flex-col">
-                <span className="text-[0.62rem] font-black uppercase text-ink/50 leading-none mb-0.5">{dateStr}</span>
-                <span className="text-[0.8rem] font-black text-ink leading-none">{timeStr}</span>
+                <span className="text-[0.62rem] font-black uppercase text-ink/50 leading-none mb-0.5">
+                  {mounted ? dateStr : '...'}
+                </span>
+                <span className="text-[0.8rem] font-black text-ink leading-none">
+                  {mounted ? timeStr : '--:--:--'}
+                </span>
               </div>
             </div>
 
             {/* Conectividad */}
             <div className="flex items-center gap-2.5 px-3.5 py-1.5 bg-white/50 rounded-xl border border-line shadow-sm">
-              {isOnline ? <Wifi className="w-3.5 h-3.5 text-status-success" /> : <WifiOff className="w-3.5 h-3.5 text-status-danger" />}
+              {mounted ? (
+                isOnline ? <Wifi className="w-3.5 h-3.5 text-status-success" /> : <WifiOff className="w-3.5 h-3.5 text-status-danger" />
+              ) : (
+                <Wifi className="w-3.5 h-3.5 text-ink/20" />
+              )}
               <div className="flex flex-col">
                 <span className="text-[0.62rem] font-black uppercase text-ink/50 leading-none mb-0.5">Internet</span>
                 <div className="flex items-center gap-1.5 leading-none">
-                  <div className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-status-success animate-pulse' : 'bg-status-danger'}`} />
-                  <span className={`text-[0.72rem] font-black uppercase ${isOnline ? 'text-status-success' : 'text-status-danger'}`}>
-                    {isOnline ? 'En Línea' : 'Sin Conexión'}
+                  <div className={`w-1.5 h-1.5 rounded-full ${mounted ? (isOnline ? 'bg-status-success animate-pulse' : 'bg-status-danger') : 'bg-ink/20'}`} />
+                  <span className={`text-[0.72rem] font-black uppercase ${mounted ? (isOnline ? 'text-status-success' : 'text-status-danger') : 'text-ink/20'}`}>
+                    {mounted ? (isOnline ? 'En Línea' : 'Sin Conexión') : 'Iniciando...'}
                   </span>
                 </div>
               </div>
