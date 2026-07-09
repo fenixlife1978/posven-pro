@@ -5,24 +5,24 @@
 @tailwind utilities;
 
 :root {
-  --background: #F7F5EF;
-  --foreground: #141414;
-  --card: #FFFFFF;
-  --card-foreground: #141414;
-  --popover: #FFFFFF;
-  --popover-foreground: #141414;
+  --background: #141412;
+  --foreground: #F7F5EF;
+  --card: #1C1C19;
+  --card-foreground: #F7F5EF;
+  --popover: #1C1C19;
+  --popover-foreground: #F7F5EF;
   --primary: #C8952E;
   --primary-foreground: #FFFFFF;
-  --secondary: #EFEBE0;
-  --secondary-foreground: #141414;
-  --muted: #EFEBE0;
+  --secondary: #262623;
+  --secondary-foreground: #F7F5EF;
+  --muted: #262623;
   --muted-foreground: #8A8A8A;
-  --accent: #EFEBE0;
-  --accent-foreground: #141414;
+  --accent: #262623;
+  --accent-foreground: #F7F5EF;
   --destructive: #C0392B;
   --destructive-foreground: #FFFFFF;
-  --border: #E6E1D3;
-  --input: #E6E1D3;
+  --border: #333330;
+  --input: #333330;
   --ring: #C8952E;
   --radius: 20px;
 }
@@ -30,26 +30,26 @@
 body {
   font-family: 'Inter', system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
-  color: #141414;
-  background: #F7F5EF;
+  color: #F7F5EF;
+  background: #141412;
 }
 
 /* Bento Grid Utilities */
 .bento-card {
-  @apply bg-white border border-line rounded-lg p-5 shadow-card transition-all duration-200 hover:shadow-pop;
+  @apply bg-card border border-line rounded-lg p-5 shadow-card transition-all duration-200 hover:shadow-pop;
 }
 
 .mono {
   font-family: 'JetBrains Mono', monospace;
 }
 
-/* Custom UI Components - Adaptación a tema claro */
+/* Custom UI Components */
 .card {
-  @apply bg-white border border-line rounded-lg overflow-hidden shadow-sm-card;
+  @apply bg-card border border-line rounded-lg overflow-hidden shadow-sm-card;
 }
 
 .card-head {
-  @apply px-5 py-3 border-b border-line flex justify-between items-center bg-surface-warm;
+  @apply px-5 py-3 border-b border-line flex justify-between items-center bg-surface-soft/50;
 }
 
 .card-body {
@@ -57,7 +57,7 @@ body {
 }
 
 .form-input {
-  @apply w-full bg-white border border-line rounded-md px-3 py-2 text-ink outline-none transition-all focus:border-brand-gold focus:ring-2 focus:ring-brand-gold-soft;
+  @apply w-full bg-surface-warm border border-line rounded-md px-3 py-2 text-ink outline-none transition-all focus:border-brand-gold focus:ring-2 focus:ring-brand-gold-soft;
 }
 
 .btn {
@@ -69,7 +69,7 @@ body {
 }
 
 .btn-secondary {
-  @apply bg-white border border-line text-ink hover:bg-surface-soft;
+  @apply bg-surface-soft border border-line text-ink hover:bg-surface-warm;
 }
 
 .btn-danger {

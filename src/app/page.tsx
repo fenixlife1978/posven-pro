@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect } from 'react';
@@ -109,14 +108,14 @@ export default function LicoreriaPOS() {
   return (
     <div className="flex min-h-screen bg-surface-warm text-ink">
       {/* SIDEBAR */}
-      <aside className={`fixed lg:sticky top-0 left-0 w-[260px] h-screen bg-white border-r border-line flex flex-col z-50 transition-transform duration-300 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
+      <aside className={`fixed lg:sticky top-0 left-0 w-[260px] h-screen bg-card border-r border-line flex flex-col z-50 transition-transform duration-300 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
         <div className="p-6 border-b border-line flex flex-col gap-1">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 bg-ink border border-brand-gold rounded-[10px] flex items-center justify-center font-black text-brand-gold text-lg shadow-sm">
+            <div className="w-9 h-9 bg-background border border-brand-gold rounded-[10px] flex items-center justify-center font-black text-brand-gold text-lg shadow-sm">
               P
             </div>
             <div>
-              <div className="font-display font-[800] text-lg leading-none">
+              <div className="font-display font-[800] text-lg leading-none text-ink">
                 Pos<span className="text-brand-gold">VEN</span> Pro
               </div>
               <div className="text-[0.68rem] font-bold text-ink-subtle uppercase tracking-widest mt-1">
@@ -195,9 +194,9 @@ export default function LicoreriaPOS() {
           </div>
 
           <div className="flex items-center gap-3 ml-auto">
-            <button className="relative w-[38px] h-[38px] rounded-[10px] bg-white border border-line flex items-center justify-center text-ink-muted hover:text-brand-gold transition-colors shadow-sm-card">
+            <button className="relative w-[38px] h-[38px] rounded-[10px] bg-card border border-line flex items-center justify-center text-ink-muted hover:text-brand-gold transition-colors shadow-sm-card">
               <Bell className="w-4 h-4" />
-              <span className="absolute top-2.5 right-2.5 w-2 h-2 bg-status-danger rounded-full border-2 border-white" />
+              <span className="absolute top-2.5 right-2.5 w-2 h-2 bg-status-danger rounded-full border-2 border-background" />
             </button>
 
             <div className="flex items-center gap-2.5 pl-3 border-l border-line ml-1">
@@ -205,7 +204,7 @@ export default function LicoreriaPOS() {
                 <div className="text-sm font-bold text-ink leading-none">Mariana R.</div>
                 <div className="text-[0.66rem] font-bold text-ink-subtle uppercase mt-1 tracking-wider">Administrador</div>
               </div>
-              <div className="w-[34px] h-[34px] rounded-full bg-gradient-to-br from-brand-gold to-[#E7B857] flex items-center justify-center text-white font-black text-xs border border-white shadow-sm">
+              <div className="w-[34px] h-[34px] rounded-full bg-gradient-to-br from-brand-gold to-[#E7B857] flex items-center justify-center text-white font-black text-xs border border-white/20 shadow-sm">
                 MR
               </div>
             </div>
@@ -229,7 +228,7 @@ export default function LicoreriaPOS() {
 
       {/* MOBILE DRAWER OVERLAY */}
       {isSidebarOpen && (
-        <div className="fixed inset-0 bg-ink/40 z-[45] backdrop-blur-sm lg:hidden" onClick={() => setIsSidebarOpen(false)} />
+        <div className="fixed inset-0 bg-black/60 z-[45] backdrop-blur-sm lg:hidden" onClick={() => setIsSidebarOpen(false)} />
       )}
     </div>
   );
