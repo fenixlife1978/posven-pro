@@ -47,16 +47,16 @@ export default function InventoryModule({ state, updateState }: { state: AppStat
           <div className="flex justify-between items-center flex-wrap gap-4">
             <div className="flex gap-4 flex-1 min-w-[300px]">
               <div className="relative flex-1">
-                <Search className="absolute left-3 top-2.5 w-4 h-4 text-[#5a5650]" />
+                <Search className="absolute left-3 top-2.5 w-4 h-4 text-ink" />
                 <input className="form-input pl-10" placeholder="Buscar producto..." value={search} onChange={e => setSearch(e.target.value)} />
               </div>
-              <select className="form-select w-auto" value={catFilter} onChange={e => setCatFilter(e.target.value)}>
+              <select className="form-select w-auto bg-white border-line rounded-md px-3 py-2 text-sm" value={catFilter} onChange={e => setCatFilter(e.target.value)}>
                 <option value="">Todas las categorias</option>
                 {state.categorias.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
             <div className="flex gap-2">
-              <button className="btn btn-secondary text-white" onClick={handleDownloadBasicInv}><FileText className="w-4 h-4" /> PDF</button>
+              <button className="btn btn-secondary" onClick={handleDownloadBasicInv}><FileText className="w-4 h-4" /> PDF</button>
               <button className="btn btn-primary" onClick={() => setShowProducto('nuevo')}><Plus className="w-4 h-4" /> Nuevo Producto</button>
             </div>
           </div>
@@ -81,8 +81,8 @@ export default function InventoryModule({ state, updateState }: { state: AppStat
                   ) : (
                     prods.map(p => (
                       <tr key={p.id}>
-                        <td className="mono opacity-60 text-xs">{p.codigo}</td>
-                        <td className="font-medium">
+                        <td className="mono text-xs font-bold">{p.codigo}</td>
+                        <td className="font-bold">
                           <div className="flex items-center gap-2">
                             {p.isKit && <Layers className="w-3 h-3 text-[#c8952e]" />}
                             {p.nombre}
@@ -91,11 +91,11 @@ export default function InventoryModule({ state, updateState }: { state: AppStat
                         <td>
                           <div className="flex flex-col">
                             <span className="badge badge-neutral mb-1">{p.categoria}</span>
-                            <span className="text-[0.65rem] text-[#5a5650] uppercase">{p.departamento || 'Sin Dept.'}</span>
+                            <span className="text-[0.65rem] text-ink uppercase font-bold">{p.departamento || 'Sin Dept.'}</span>
                           </div>
                         </td>
-                        <td className="mono">{Utils.fmtUSD(p.costoUSD)}</td>
-                        <td className="mono text-[#c8952e]">{Utils.fmtUSD(p.precioUSD)}</td>
+                        <td className="mono font-bold">{Utils.fmtUSD(p.costoUSD)}</td>
+                        <td className="mono text-[#c8952e] font-black">{Utils.fmtUSD(p.precioUSD)}</td>
                         <td>
                           <span className={`badge ${p.stock <= p.stockMinimo ? 'badge-err' : 'badge-ok'}`}>
                             {p.stock}
@@ -130,7 +130,7 @@ export default function InventoryModule({ state, updateState }: { state: AppStat
 
   return (
     <div className="space-y-6">
-      <div className="tabs flex border-b border-[#2a2a2a] overflow-x-auto no-print">
+      <div className="tabs flex border-b border-line overflow-x-auto no-print">
         <button onClick={() => setActiveTab('productos')} className={`tab ${activeTab === 'productos' ? 'active' : ''}`}>Productos</button>
         <button onClick={() => setActiveTab('reporte_general')} className={`tab ${activeTab === 'reporte_general' ? 'active' : ''}`}>Reporte General (CPP)</button>
         <button onClick={() => setActiveTab('reporte_ventas')} className={`tab ${activeTab === 'reporte_ventas' ? 'active' : ''}`}>Reporte de Ventas</button>
@@ -215,427 +215,6 @@ export default function InventoryModule({ state, updateState }: { state: AppStat
   );
 }
 
-function ModalProducto({ producto, state, onClose, onSave, onUpdateLists }: { producto?: Product, state: AppState, onClose: () => void, onSave: (p: any) => void, onUpdateLists: (l: any) => void }) {
-  const [datos, setDatos] = useState<any>({
-    codigo: producto?.codigo || '',
-    nombre: producto?.nombre || '',
-    categoria: producto?.categoria || state.categorias[0] || '',
-    departamento: producto?.departamento || state.departamentos[0] || '',
-    cantidad: producto?.cantidad || state.presentaciones[0] || '750ml',
-    marca: producto?.marca || state.marcas[0] || '',
-    costoUSD: Utils.round(producto?.costoUSD || 0),
-    precioUSD: Utils.round(producto?.precioUSD || 0),
-    precioEstandarUSD: Utils.round(producto?.precioEstandarUSD || producto?.precioUSD || 0),
-    precioMayorUSD: Utils.round(producto?.precioMayorUSD || 0),
-    precioOfertaUSD: Utils.round(producto?.precioOfertaUSD || 0),
-    precioPromoUSD: Utils.round(producto?.precioPromoUSD || 0),
-    tipoPrecioPrincipal: producto?.tipoPrecioPrincipal || 'estandar',
-    margen: producto?.margen || 0,
-    precioBS: Utils.round((producto?.precioUSD || 0) * state.tasa),
-    stock: producto?.stock || 0,
-    stockMinimo: producto?.stockMinimo || 3,
-    proveedor: producto?.proveedor || '',
-    aplicaIVA: producto?.aplicaIVA ?? true,
-    isKit: producto?.isKit || false,
-    kitType: producto?.kitType || 'stock_propio',
-    kitItems: producto?.kitItems || [] as KitItem[]
-  });
-
-  const [provSearch, setProvSearch] = useState(datos.proveedor || '');
-  const [showProvList, setShowProvList] = useState(false);
-  const [kitSearch, setKitSearch] = useState('');
-
-  const updateSelectedPrice = (usd: string | number) => {
-    const rUSD = Utils.round(parseFloat(usd.toString()) || 0);
-    setDatos((d: any) => {
-      const update: any = { precioUSD: usd, precioBS: Utils.round(rUSD * state.tasa) };
-      if (d.tipoPrecioPrincipal === 'estandar') update.precioEstandarUSD = usd;
-      else if (d.tipoPrecioPrincipal === 'mayor') update.precioMayorUSD = usd;
-      else if (d.tipoPrecioPrincipal === 'oferta') update.precioOfertaUSD = usd;
-      else if (d.tipoPrecioPrincipal === 'promo') update.precioPromoUSD = usd;
-      return { ...d, ...update };
-    });
-  };
-
-  const recalcularDesdeUSD = (usd: string | number, costo: string | number = datos.costoUSD) => {
-    const rUSD = parseFloat(usd.toString()) || 0;
-    const rCosto = parseFloat(costo.toString()) || 0;
-    const nuevoMargen = rUSD > 0 ? ((rUSD - rCosto) / rUSD) * 100 : 0;
-    setDatos((d: any) => ({ ...d, precioUSD: usd, margen: nuevoMargen, precioBS: Utils.round(rUSD * state.tasa), costoUSD: costo }));
-    updateSelectedPrice(usd);
-  };
-
-  const recalcularDesdeMargen = (m: string | number, costo: string | number = datos.costoUSD) => {
-    const rCosto = parseFloat(costo.toString()) || 0;
-    const rM = parseFloat(m.toString()) || 0;
-    const factor = (1 - (rM / 100));
-    const usd = factor > 0 ? Utils.round(rCosto / factor) : 0;
-    setDatos((d: any) => ({ ...d, margen: m, precioUSD: usd, precioBS: Utils.round(usd * state.tasa), costoUSD: costo }));
-    updateSelectedPrice(usd);
-  };
-
-  const recalcularDesdeBS = (bs: string | number) => {
-    const rBS = parseFloat(bs.toString()) || 0;
-    const usd = Utils.round(rBS / state.tasa);
-    const rCosto = parseFloat(datos.costoUSD.toString()) || 0;
-    const nuevoMargen = usd > 0 ? ((usd - rCosto) / usd) * 100 : 0;
-    setDatos((d: any) => ({ ...d, precioBS: bs, precioUSD: usd, margen: nuevoMargen }));
-    updateSelectedPrice(usd);
-  };
-
-  useEffect(() => {
-    let p = datos.precioEstandarUSD;
-    if (datos.tipoPrecioPrincipal === 'mayor') p = datos.precioMayorUSD;
-    if (datos.tipoPrecioPrincipal === 'oferta') p = datos.precioOfertaUSD;
-    if (datos.tipoPrecioPrincipal === 'promo') p = datos.precioPromoUSD;
-    
-    const rP = parseFloat(p.toString()) || 0;
-    const rCosto = parseFloat(datos.costoUSD.toString()) || 0;
-    const m = rP > 0 ? ((rP - rCosto) / rP) * 100 : 0;
-    setDatos((d: any) => ({ ...d, precioUSD: p, precioBS: Utils.round(rP * state.tasa), margen: m }));
-  }, [datos.tipoPrecioPrincipal]);
-
-  const handleSubmit = () => {
-    if (!datos.nombre || !datos.codigo) return alert('Nombre y Código son requeridos');
-    onSave({
-      ...datos,
-      costoUSD: parseFloat(datos.costoUSD.toString()) || 0,
-      precioUSD: parseFloat(datos.precioUSD.toString()) || 0,
-      stock: parseInt(datos.stock.toString()) || 0,
-      stockMinimo: parseInt(datos.stockMinimo.toString()) || 0
-    });
-  };
-
-  const addToList = (key: 'categorias' | 'departamentos' | 'marcas' | 'presentaciones' | 'proveedores') => {
-    const val = prompt(`Nueva entrada para ${key}:`);
-    if (val) {
-      const currentList = state[key] as string[];
-      if (!currentList.includes(val)) {
-        const newList = [...currentList, val];
-        onUpdateLists({ [key]: newList });
-        if (key === 'presentaciones') setDatos((d: any) => ({ ...d, cantidad: val }));
-        else if (key === 'proveedores') { setProvSearch(val); setDatos((d: any) => ({ ...d, proveedor: val })); }
-        else setDatos((d: any) => ({ ...d, [key.slice(0, -1)]: val }));
-      }
-    }
-  };
-
-  const removeFromList = (key: 'categorias' | 'departamentos' | 'marcas' | 'presentaciones' | 'proveedores', val: string) => {
-    if (confirm(`¿Borrar "${val}" de la lista?`)) {
-      const currentList = state[key] as string[];
-      const newList = currentList.filter(i => i !== val);
-      onUpdateLists({ [key]: newList });
-    }
-  };
-
-  return (
-    <div className="modal show">
-      <div className="modal-bg" onClick={onClose}></div>
-      <div className="modal-box" style={{ maxWidth: '680px' }}>
-        <div className="modal-head py-3 px-5">
-          <h3 className="text-base font-black uppercase text-white">{producto ? 'Editar Producto' : 'Nuevo Producto'}</h3>
-          <button className="btn-icon btn-sm" onClick={onClose}><X className="w-4 h-4" /></button>
-        </div>
-        <div className="modal-body p-5 space-y-4">
-          
-          <div className="grid grid-cols-3 gap-3">
-            <div className="form-group mb-0">
-              <label className="form-label text-[10px] mb-1 uppercase text-white font-black">Código / Barcode</label>
-              <input className="form-input py-1.5 mono text-sm" value={datos.codigo} onChange={e => setDatos({...datos, codigo: e.target.value})} placeholder="Escanee" />
-            </div>
-            <div className="form-group mb-0">
-              <div className="flex justify-between items-center mb-1">
-                <label className="form-label text-[10px] m-0 uppercase text-white font-black">Dpto.</label>
-                <button className="text-[9px] text-[#c8952e] font-black" onClick={() => addToList('departamentos')}>+ ADD</button>
-              </div>
-              <div className="flex gap-1">
-                <select className="form-select py-1.5 text-xs bg-[#0b0b0b] text-white" value={datos.departamento} onChange={e => setDatos({...datos, departamento: e.target.value})}>
-                  {state.departamentos.map(d => <option key={d} value={d}>{d}</option>)}
-                </select>
-                <button className="btn-icon btn-sm h-7 w-7 text-[#e04848]" onClick={() => removeFromList('departamentos', datos.departamento)}><Trash className="w-3 h-3"/></button>
-              </div>
-            </div>
-            <div className="form-group mb-0">
-              <div className="flex justify-between items-center mb-1">
-                <label className="form-label text-[10px] m-0 uppercase text-white font-black">Cat.</label>
-                <button className="text-[9px] text-[#c8952e] font-black" onClick={() => addToList('categorias')}>+ ADD</button>
-              </div>
-              <div className="flex gap-1">
-                <select className="form-select py-1.5 text-xs bg-[#0b0b0b] text-white" value={datos.categoria} onChange={e => setDatos({...datos, categoria: e.target.value})}>
-                  {state.categorias.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
-                <button className="btn-icon btn-sm h-7 w-7 text-[#e04848]" onClick={() => removeFromList('categorias', datos.categoria)}><Trash className="w-3 h-3"/></button>
-              </div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-3 gap-3">
-            <div className="form-group mb-0">
-              <div className="flex justify-between items-center mb-1">
-                <label className="form-label text-[10px] m-0 uppercase text-white font-black">Marca</label>
-                <button className="text-[9px] text-[#c8952e] font-black" onClick={() => addToList('marcas')}>+ ADD</button>
-              </div>
-              <div className="flex gap-1">
-                <select className="form-select py-1.5 text-xs bg-[#0b0b0b] text-white" value={datos.marca} onChange={e => setDatos({...datos, marca: e.target.value})}>
-                  {state.marcas.map(m => <option key={m} value={m}>{m}</option>)}
-                </select>
-                <button className="btn-icon btn-sm h-7 w-7 text-[#e04848]" onClick={() => removeFromList('marcas', datos.marca)}><Trash className="w-3 h-3"/></button>
-              </div>
-            </div>
-            <div className="form-group mb-0 col-span-2">
-              <label className="form-label text-[10px] mb-1 uppercase text-white font-black">Nombre del producto</label>
-              <input className="form-input py-1.5 text-sm" value={datos.nombre} onChange={e => setDatos({...datos, nombre: e.target.value})} placeholder="Ej: Johnnie Walker Black Label" />
-            </div>
-          </div>
-
-          <div className="bg-[#181818] p-3 rounded-lg border border-[#2a2a2a]">
-            <div className="grid grid-cols-4 gap-3">
-              <div className="form-group mb-0">
-                <label className="form-label text-[9px] mb-1 text-white/60 uppercase">COSTO $</label>
-                <input className="form-input py-1.5 text-sm" type="number" step="0.01" value={datos.costoUSD} onChange={e => recalcularDesdeMargen(datos.margen, e.target.value)} />
-              </div>
-              <div className="form-group mb-0">
-                <label className="form-label text-[9px] mb-1 text-white/60 uppercase">MARGEN %</label>
-                <input 
-                  className="form-input py-1.5 text-sm text-[#27ae60] font-bold" 
-                  type="number" 
-                  step="0.01"
-                  value={datos.margen} 
-                  onChange={e => recalcularDesdeMargen(e.target.value)} 
-                />
-              </div>
-              <div className="form-group mb-0">
-                <label className="form-label text-[9px] mb-1 text-white/60 uppercase">VENTA ACTUAL $</label>
-                <input 
-                  className="form-input py-1.5 text-sm text-[#c8952e] font-black bg-black" 
-                  type="number" 
-                  step="0.01" 
-                  value={datos.precioUSD} 
-                  onChange={e => recalcularDesdeUSD(e.target.value)}
-                />
-              </div>
-              <div className="form-group mb-0">
-                <label className="form-label text-[9px] mb-1 text-white/60 uppercase">VENTA ACTUAL BS</label>
-                <input 
-                  className="form-input py-1.5 text-sm font-bold bg-black" 
-                  type="number" 
-                  step="0.01" 
-                  value={datos.precioBS} 
-                  onChange={e => recalcularDesdeBS(e.target.value)}
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-[#131313] p-3 rounded-lg border border-[#333] space-y-3">
-            <label className="text-[10px] font-black text-[#c8952e] uppercase block mb-1">Definición de Precios y Uso en POS</label>
-            <div className="grid grid-cols-4 gap-3">
-              <PriceInput 
-                label="ESTÁNDAR" 
-                value={datos.precioEstandarUSD} 
-                isActive={datos.tipoPrecioPrincipal === 'estandar'}
-                onSelect={() => setDatos({...datos, tipoPrecioPrincipal: 'estandar'})}
-                onChange={(v: string | number) => {
-                  setDatos({...datos, precioEstandarUSD: v});
-                  if(datos.tipoPrecioPrincipal === 'estandar') recalcularDesdeUSD(v);
-                }}
-              />
-              <PriceInput 
-                label="AL MAYOR" 
-                value={datos.precioMayorUSD} 
-                isActive={datos.tipoPrecioPrincipal === 'mayor'}
-                onSelect={() => setDatos({...datos, tipoPrecioPrincipal: 'mayor'})}
-                onChange={(v: string | number) => {
-                  setDatos({...datos, precioMayorUSD: v});
-                  if(datos.tipoPrecioPrincipal === 'mayor') recalcularDesdeUSD(v);
-                }}
-              />
-              <PriceInput 
-                label="OFERTA" 
-                value={datos.precioOfertaUSD} 
-                isActive={datos.tipoPrecioPrincipal === 'oferta'}
-                onSelect={() => setDatos({...datos, tipoPrecioPrincipal: 'oferta'})}
-                onChange={(v: string | number) => {
-                  setDatos({...datos, precioOfertaUSD: v});
-                  if(datos.tipoPrecioPrincipal === 'oferta') recalcularDesdeUSD(v);
-                }}
-              />
-              <PriceInput 
-                label="PROMO" 
-                value={datos.precioPromoUSD} 
-                isActive={datos.tipoPrecioPrincipal === 'promo'}
-                onSelect={() => setDatos({...datos, tipoPrecioPrincipal: 'promo'})}
-                onChange={(v: string | number) => {
-                  setDatos({...datos, precioPromoUSD: v});
-                  if(datos.tipoPrecioPrincipal === 'promo') recalcularDesdeUSD(v);
-                }}
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-3 gap-3">
-            <div className="form-group mb-0">
-              <label className="form-label text-[10px] mb-1 uppercase text-white font-black">Stock Inicial</label>
-              <input className="form-input py-1.5 text-sm" type="number" value={datos.stock} onChange={e => setDatos({...datos, stock: e.target.value})} disabled={!!producto && !datos.isKit} />
-            </div>
-            <div className="form-group mb-0">
-              <label className="form-label text-[10px] mb-1 uppercase text-white font-black">Mínimo</label>
-              <input className="form-input py-1.5 text-sm" type="number" value={datos.stockMinimo} onChange={e => setDatos({...datos, stockMinimo: e.target.value})} />
-            </div>
-            <div className="form-group mb-0">
-              <div className="flex justify-between items-center mb-1">
-                <label className="form-label text-[10px] m-0 uppercase text-white font-black">Presentación</label>
-                <button className="text-[9px] text-[#c8952e] font-black" onClick={() => addToList('presentaciones')}>+ ADD</button>
-              </div>
-              <div className="flex gap-1">
-                <select className="form-select py-1.5 text-xs bg-[#0b0b0b] text-white" value={datos.cantidad} onChange={e => setDatos({...datos, cantidad: e.target.value})}>
-                  {state.presentaciones.map(p => <option key={p} value={p}>{p}</option>)}
-                </select>
-                <button className="btn-icon btn-sm h-7 w-7 text-[#e04848]" onClick={() => removeFromList('presentaciones', datos.cantidad)}><Trash className="w-3 h-3"/></button>
-              </div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4 items-end">
-            <div className="form-group mb-0 relative">
-              <label className="form-label text-[10px] mb-1 uppercase text-white font-black">Proveedor</label>
-              <input 
-                className="form-input py-1.5 text-sm" 
-                value={provSearch} 
-                onChange={e => {
-                  setProvSearch(e.target.value);
-                  setDatos({...datos, proveedor: e.target.value});
-                  setShowProvList(true);
-                }} 
-                onFocus={() => setShowProvList(true)}
-                onBlur={() => setTimeout(() => setShowProvList(false), 200)}
-                placeholder="Escriba para buscar o registrar..." 
-              />
-              {showProvList && (
-                <div className="absolute bottom-full mb-1 left-0 right-0 bg-[#1e1e1e] border border-[#333] rounded shadow-2xl z-[100] max-h-40 overflow-y-auto">
-                  {state.proveedores.filter(p => p.toLowerCase().includes(provSearch.toLowerCase())).map(p => (
-                    <div 
-                      key={p} 
-                      className="p-2 hover:bg-[#c8952e]/20 cursor-pointer text-xs text-white border-b border-white/5"
-                      onMouseDown={() => {
-                        setProvSearch(p);
-                        setDatos({...datos, proveedor: p});
-                        setShowProvList(false);
-                      }}
-                    >
-                      {p}
-                    </div>
-                  ))}
-                  <div 
-                    className="p-2 text-[#c8952e] text-[10px] font-black cursor-pointer uppercase hover:bg-white/5"
-                    onMouseDown={() => addToList('proveedores')}
-                  >
-                    + REGISTRAR NUEVO PROVEEDOR
-                  </div>
-                </div>
-              )}
-            </div>
-            <div className="flex items-center gap-3 p-2 bg-[#181818] rounded border border-[#2a2a2a]">
-              <input 
-                type="checkbox" 
-                checked={datos.aplicaIVA} 
-                onChange={e => setDatos({...datos, aplicaIVA: e.target.checked})} 
-                className="w-4 h-4 accent-[#c8952e]" 
-              />
-              <label className="text-[10px] font-black text-white uppercase m-0 flex-1">
-                {datos.aplicaIVA ? 'APLICA IVA (16%)' : 'PRODUCTO EXENTO'}
-              </label>
-            </div>
-          </div>
-
-          <div className="border-t border-[#2a2a2a] pt-3">
-            <div className="flex items-center gap-3 mb-2">
-              <input type="checkbox" checked={datos.isKit} onChange={e => setDatos({...datos, isKit: e.target.checked})} className="w-3.5 h-3.5 accent-[#c8952e]" />
-              <label className="form-label m-0 text-xs text-white font-black flex items-center gap-2">Este producto es un Kit <Layers className="w-3 h-3 text-[#c8952e]"/></label>
-            </div>
-
-            {datos.isKit && (
-              <div className="bg-[#1e1e1e] p-3 rounded-lg border border-[#333] space-y-3 animate-in fade-in">
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="form-group mb-0">
-                    <label className="form-label text-[9px] uppercase mb-1 text-white/40">Tipo de Stock</label>
-                    <select className="form-select py-1 text-xs bg-black text-white" value={datos.kitType} onChange={e => setDatos({...datos, kitType: e.target.value as any})}>
-                      <option value="stock_propio">Propio</option>
-                      <option value="stock_componentes">Calculado</option>
-                    </select>
-                  </div>
-                  <div className="form-group mb-0">
-                    <label className="form-label text-[9px] uppercase mb-1 text-white/40">Añadir Componente</label>
-                    <input className="form-input py-1 text-xs" placeholder="Buscar..." value={kitSearch} onChange={e => setKitSearch(e.target.value)} />
-                  </div>
-                </div>
-                
-                {kitSearch.length > 1 && (
-                  <div className="bg-[#0b0b0b] border border-[#333] rounded max-h-24 overflow-y-auto">
-                    {state.productos.filter(p => !p.isKit && p.activo && (p.nombre.toLowerCase().includes(kitSearch.toLowerCase()) || p.codigo.includes(kitSearch))).map(p => (
-                      <div key={p.id} className="p-1.5 hover:bg-[#181818] cursor-pointer text-[10px] flex justify-between" onClick={() => {
-                        if (!datos.kitItems.find((i: any) => i.productoId === p.id)) {
-                          setDatos({...datos, kitItems: [...datos.kitItems, { productoId: p.id, nombre: p.nombre, cantidad: 1 }]});
-                        }
-                        setKitSearch('');
-                      }}>
-                        <span className="text-white">{p.nombre}</span>
-                        <span className="text-[#c8952e] font-bold">${p.precioUSD}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                <div className="grid grid-cols-2 gap-2">
-                  {datos.kitItems.map((item: any, idx: number) => (
-                    <div key={item.productoId} className="flex items-center gap-2 bg-[#0b0b0b] p-1.5 rounded text-[10px] border border-[#2a2a2a]">
-                      <span className="flex-1 truncate text-white">{item.nombre}</span>
-                      <input type="number" className="bg-[#181818] border border-[#333] rounded w-8 p-0.5 text-center text-white" value={item.cantidad} onChange={e => {
-                        const ni = [...datos.kitItems];
-                        ni[idx].cantidad = Math.max(1, parseInt(e.target.value) || 1);
-                        setDatos({...datos, kitItems: ni});
-                      }} />
-                      <button className="text-[#e04848]" onClick={() => setDatos({...datos, kitItems: datos.kitItems.filter((_: any, i: number) => i !== idx)})}><X className="w-3 h-3"/></button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-        </div>
-        <div className="modal-foot py-3 px-5">
-          <button className="btn btn-sm btn-secondary font-black uppercase" onClick={onClose}>Cancelar</button>
-          <button className="btn btn-sm btn-primary font-black uppercase" onClick={handleSubmit}>{producto ? 'Actualizar' : 'Crear producto'}</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function PriceInput({ label, value, isActive, onSelect, onChange }: { label: string, value: string | number, isActive: boolean, onSelect: () => void, onChange: (v: string | number) => void }) {
-  return (
-    <div className={`p-2 rounded border transition-all ${isActive ? 'bg-[#c8952e]/10 border-[#c8952e]' : 'bg-black border-[#2a2a2a]'}`}>
-      <div className="flex justify-between items-center mb-1">
-        <label className={`text-[8px] font-black ${isActive ? 'text-[#c8952e]' : 'text-white/40'}`}>{label}</label>
-        <div 
-          onClick={onSelect}
-          className={`w-3 h-3 rounded-full border cursor-pointer flex items-center justify-center ${isActive ? 'border-[#c8952e] bg-[#c8952e]' : 'border-white/20'}`}
-        >
-          {isActive && <div className="w-1 h-1 bg-black rounded-full" />}
-        </div>
-      </div>
-      <input 
-        type="number" 
-        step="0.01"
-        className="w-full bg-transparent text-white font-bold text-xs outline-none" 
-        value={value} 
-        onChange={e => onChange(e.target.value)}
-      />
-    </div>
-  );
-}
-
 function ReporteGeneral({ state }: { state: AppState }) {
   const [groupBy, setGroupBy] = useState<'categoria' | 'departamento' | 'proveedor'>('categoria');
   const [filterValue, setFilterValue] = useState<string>('');
@@ -661,26 +240,26 @@ function ReporteGeneral({ state }: { state: AppState }) {
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div className="kpi amber p-6 rounded-xl border">
-          <div className="text-[10px] font-black uppercase mb-1">Valor al Costo (CPP Total)</div>
-          <div className="text-3xl font-black">{Utils.fmtUSD(totalCosto)}</div>
-          <div className="text-sm font-bold mt-1 italic">{Utils.fmtBS(totalCosto * state.tasa)}</div>
+        <div className="kpi p-6 rounded-xl border border-line">
+          <div className="text-[10px] font-black uppercase mb-1 text-ink">Valor al Costo (CPP Total)</div>
+          <div className="text-3xl font-black text-ink">{Utils.fmtUSD(totalCosto)}</div>
+          <div className="text-sm font-bold mt-1 italic text-ink">{Utils.fmtBS(totalCosto * state.tasa)}</div>
         </div>
-        <div className="kpi green p-6 rounded-xl border">
-          <div className="text-[10px] font-black uppercase mb-1">Valor al Precio de Venta (Total)</div>
+        <div className="kpi p-6 rounded-xl border border-line">
+          <div className="text-[10px] font-black uppercase mb-1 text-ink">Valor al Precio de Venta (Total)</div>
           <div className="text-3xl font-black text-[#27ae60]">{Utils.fmtUSD(totalVenta)}</div>
-          <div className="text-sm font-bold mt-1 italic">{Utils.fmtBS(totalVenta * state.tasa)}</div>
+          <div className="text-sm font-bold mt-1 italic text-ink">{Utils.fmtBS(totalVenta * state.tasa)}</div>
         </div>
       </div>
       
       <div className="card">
         <div className="card-head">
           <div className="flex items-center gap-4">
-            <h3 className="text-white font-black uppercase text-xs">
+            <h3 className="text-ink font-black uppercase text-xs">
               {filterValue ? `Listado: ${filterValue}` : 'Listado General de Productos'}
             </h3>
             <select 
-              className="form-select w-auto bg-black text-[#c8952e] border-[#c8952e]/30 text-[10px] font-black uppercase h-10 px-2"
+              className="form-select w-auto bg-white text-ink border-line text-[10px] font-black uppercase h-10 px-2"
               value={filterValue}
               onChange={e => setFilterValue(e.target.value)}
             >
@@ -690,10 +269,10 @@ function ReporteGeneral({ state }: { state: AppState }) {
           </div>
 
           <div className="flex gap-2">
-            <button className={`btn btn-sm ${groupBy === 'categoria' ? 'btn-primary' : 'btn-secondary text-white'}`} onClick={() => { setGroupBy('categoria'); setFilterValue(''); }}>Categoría</button>
-            <button className={`btn btn-sm ${groupBy === 'departamento' ? 'btn-primary' : 'btn-secondary text-white'}`} onClick={() => { setGroupBy('departamento'); setFilterValue(''); }}>Departamento</button>
-            <button className={`btn btn-sm ${groupBy === 'proveedor' ? 'btn-primary' : 'btn-secondary text-white'}`} onClick={() => { setGroupBy('proveedor'); setFilterValue(''); }}>Proveedor</button>
-            <button className="btn btn-secondary text-white font-black text-xs uppercase ml-4" onClick={handleExportPDF}>
+            <button className={`btn btn-sm ${groupBy === 'categoria' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => { setGroupBy('categoria'); setFilterValue(''); }}>Categoría</button>
+            <button className={`btn btn-sm ${groupBy === 'departamento' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => { setGroupBy('departamento'); setFilterValue(''); }}>Departamento</button>
+            <button className={`btn btn-sm ${groupBy === 'proveedor' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => { setGroupBy('proveedor'); setFilterValue(''); }}>Proveedor</button>
+            <button className="btn btn-secondary font-black text-xs uppercase ml-4" onClick={handleExportPDF}>
               <FileText className="w-4 h-4" /> PDF PROFESIONAL
             </button>
           </div>
@@ -717,16 +296,16 @@ function ReporteGeneral({ state }: { state: AppState }) {
               ) : (
                 filteredProducts.map(p => (
                   <tr key={p.id}>
-                    <td className="mono text-[10px] opacity-60">{p.codigo}</td>
+                    <td className="mono text-[10px] font-bold">{p.codigo}</td>
                     <td className="font-black uppercase text-xs">{p.nombre}</td>
                     <td>
                       <div className="flex flex-col">
-                        <span className="text-[10px] font-bold text-white/80">{p.marca}</span>
-                        <span className="text-[9px] text-white/40">{p.cantidad}</span>
+                        <span className="text-[10px] font-bold text-ink">{p.marca}</span>
+                        <span className="text-[9px] text-ink font-bold">{p.cantidad}</span>
                       </div>
                     </td>
-                    <td className="mono text-right">{Utils.fmtUSD(p.costoUSD)}</td>
-                    <td className="mono text-right text-[#c8952e] font-bold">{Utils.fmtUSD(p.precioUSD)}</td>
+                    <td className="mono text-right font-bold">{Utils.fmtUSD(p.costoUSD)}</td>
+                    <td className="mono text-right text-[#c8952e] font-black">{Utils.fmtUSD(p.precioUSD)}</td>
                     <td className="text-center">
                       <span className={`badge ${p.stock <= p.stockMinimo ? 'badge-err' : 'badge-neutral'} font-black`}>
                         {p.stock}
@@ -799,10 +378,10 @@ function ReporteVentas({ state }: { state: AppState }) {
 
   return (
     <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2">
-      <div className="filters flex flex-wrap gap-4 items-end bg-[#131313] p-4 rounded-lg border border-[#2a2a2a]">
+      <div className="filters flex flex-wrap gap-4 items-end bg-white p-4 rounded-lg border border-line">
         <div className="form-group mb-0">
-          <label className="text-white text-[10px] font-black uppercase mb-1 block">Filtrar por:</label>
-          <select className="form-select w-auto bg-black text-white" value={filter} onChange={e => setFilter(e.target.value)}>
+          <label className="text-ink text-[10px] font-black uppercase mb-1 block">Filtrar por:</label>
+          <select className="form-select w-auto bg-white border-line text-ink" value={filter} onChange={e => setFilter(e.target.value)}>
             <option value="hoy">Hoy</option>
             <option value="mes">Este Mes</option>
             <option value="año">Este Año</option>
@@ -813,32 +392,32 @@ function ReporteVentas({ state }: { state: AppState }) {
         {filter === 'custom' && (
           <>
             <div className="form-group mb-0">
-              <label className="text-white text-[10px] font-black uppercase mb-1 block">Desde</label>
-              <input type="date" className="form-input w-auto bg-black text-white" value={desde} onChange={e => setDesde(e.target.value)} />
+              <label className="text-ink text-[10px] font-black uppercase mb-1 block">Desde</label>
+              <input type="date" className="form-input w-auto bg-white border-line text-ink" value={desde} onChange={e => setDesde(e.target.value)} />
             </div>
             <div className="form-group mb-0">
-              <label className="text-white text-[10px] font-black uppercase mb-1 block">Hasta</label>
-              <input type="date" className="form-input w-auto bg-black text-white" value={hasta} onChange={e => setHasta(e.target.value)} />
+              <label className="text-ink text-[10px] font-black uppercase mb-1 block">Hasta</label>
+              <input type="date" className="form-input w-auto bg-white border-line text-ink" value={hasta} onChange={e => setHasta(e.target.value)} />
             </div>
           </>
         )}
 
-        <div className="flex flex-col bg-black/40 px-4 py-1.5 rounded border border-white/5">
-          <span className="text-[8px] text-white/40 font-black uppercase">Volumen Total</span>
-          <span className="text-lg font-black text-[#c8952e]">{totalVendidos} <span className="text-[9px] text-white/60">UDS</span></span>
+        <div className="flex flex-col bg-surface-soft px-4 py-1.5 rounded border border-line">
+          <span className="text-[8px] text-ink font-black uppercase">Volumen Total</span>
+          <span className="text-lg font-black text-[#c8952e]">{totalVendidos} <span className="text-[9px] text-ink">UDS</span></span>
         </div>
 
-        <button className="btn btn-secondary text-white font-black text-xs uppercase ml-auto" onClick={handleExportPDF}>
+        <button className="btn btn-secondary font-black text-xs uppercase ml-auto" onClick={handleExportPDF}>
           <FileText className="w-4 h-4" /> EXPORTAR PDF
         </button>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         {top3.map((p, i) => (
-          <div key={i} className="flex flex-col p-3 rounded border border-white/10 bg-[#181818] flex-1">
+          <div key={i} className="flex flex-col p-3 rounded border border-line bg-white flex-1">
             <span className="text-[8px] font-black uppercase mb-1 text-[#c8952e]">Top {i+1} Ventas</span>
-            <span className="text-xs font-black uppercase truncate text-white">{p.nombre}</span>
-            <span className="text-lg font-black text-white">{p.cantidad} <span className="text-[10px] opacity-50">UNIDADES</span></span>
+            <span className="text-xs font-black uppercase truncate text-ink">{p.nombre}</span>
+            <span className="text-lg font-black text-ink">{p.cantidad} <span className="text-[10px] opacity-70">UNIDADES</span></span>
           </div>
         ))}
       </div>
@@ -862,11 +441,11 @@ function ReporteVentas({ state }: { state: AppState }) {
               ) : (
                 ventas.map(v => v.items.map((item, idx) => (
                   <tr key={`${v.id}-${idx}`}>
-                    <td className="text-xs">{idx === 0 ? Utils.fmtFecha(v.fecha) : ''}</td>
+                    <td className="text-xs font-bold">{idx === 0 ? Utils.fmtFecha(v.fecha) : ''}</td>
                     <td className="font-bold uppercase">{item.nombre}</td>
-                    <td className="text-[10px] uppercase font-bold">{v.metodoPago}</td>
+                    <td className="text-[10px] uppercase font-black">{v.metodoPago}</td>
                     <td className="font-black mono">{item.cantidad}</td>
-                    <td className="mono">{Utils.fmtUSD(item.precioUnitUSD)}</td>
+                    <td className="mono font-bold">{Utils.fmtUSD(item.precioUnitUSD)}</td>
                     <td className="mono font-black">{Utils.fmtUSD(item.subtotalUSD)}</td>
                   </tr>
                 )))
@@ -922,10 +501,10 @@ function ReporteDevoluciones({ state }: { state: AppState }) {
 
   return (
     <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2">
-      <div className="filters flex flex-wrap gap-4 items-end bg-[#131313] p-4 rounded-lg border border-[#2a2a2a]">
+      <div className="filters flex flex-wrap gap-4 items-end bg-white p-4 rounded-lg border border-line">
         <div className="form-group mb-0">
-          <label className="text-white text-[10px] font-black uppercase mb-1 block">Filtrar por:</label>
-          <select className="form-select w-auto bg-black text-white" value={filter} onChange={e => setFilter(e.target.value)}>
+          <label className="text-ink text-[10px] font-black uppercase mb-1 block">Filtrar por:</label>
+          <select className="form-select w-auto bg-white border-line text-ink" value={filter} onChange={e => setFilter(e.target.value)}>
             <option value="hoy">Hoy</option>
             <option value="mes">Este Mes</option>
             <option value="año">Este Año</option>
@@ -936,22 +515,22 @@ function ReporteDevoluciones({ state }: { state: AppState }) {
         {filter === 'custom' && (
           <>
             <div className="form-group mb-0">
-              <label className="text-white text-[10px] font-black uppercase mb-1 block">Desde</label>
-              <input type="date" className="form-input w-auto bg-black text-white" value={desde} onChange={e => setDesde(e.target.value)} />
+              <label className="text-ink text-[10px] font-black uppercase mb-1 block">Desde</label>
+              <input type="date" className="form-input w-auto bg-white border-line text-ink" value={desde} onChange={e => setDesde(e.target.value)} />
             </div>
             <div className="form-group mb-0">
-              <label className="text-white text-[10px] font-black uppercase mb-1 block">Hasta</label>
-              <input type="date" className="form-input w-auto bg-black text-white" value={hasta} onChange={e => setHasta(e.target.value)} />
+              <label className="text-ink text-[10px] font-black uppercase mb-1 block">Hasta</label>
+              <input type="date" className="form-input w-auto bg-white border-line text-ink" value={hasta} onChange={e => setHasta(e.target.value)} />
             </div>
           </>
         )}
 
-        <div className="flex flex-col bg-black/40 px-4 py-1.5 rounded border border-white/5">
-          <span className="text-[8px] text-white/40 font-black uppercase">Total Reembolsado</span>
+        <div className="flex flex-col bg-surface-soft px-4 py-1.5 rounded border border-line">
+          <span className="text-[8px] text-ink font-black uppercase">Total Reembolsado</span>
           <span className="text-lg font-black text-[#e04848]">{Utils.fmtUSD(totalUSD)}</span>
         </div>
 
-        <button className="btn btn-secondary text-white font-black text-xs uppercase ml-auto" onClick={handleExportPDF}>
+        <button className="btn btn-secondary font-black text-xs uppercase ml-auto" onClick={handleExportPDF}>
           <FileText className="w-4 h-4" /> EXPORTAR PDF
         </button>
       </div>
@@ -974,11 +553,11 @@ function ReporteDevoluciones({ state }: { state: AppState }) {
               ) : (
                 devoluciones.map(d => (
                   <tr key={d.id}>
-                    <td className="text-xs">{Utils.fmtFecha(d.fecha)}</td>
+                    <td className="text-xs font-bold">{Utils.fmtFecha(d.fecha)}</td>
                     <td className="text-[#e04848] font-black mono text-xs">{d.id}</td>
-                    <td className="text-white opacity-60 mono text-xs">{d.ventaId}</td>
+                    <td className="text-ink font-black mono text-xs">{d.ventaId}</td>
                     <td className="mono text-right font-black">{Utils.fmtUSD(d.totalUSD)}</td>
-                    <td className="text-xs uppercase italic">{d.motivo}</td>
+                    <td className="text-xs uppercase italic font-bold">{d.motivo}</td>
                   </tr>
                 ))
               )}
@@ -1011,12 +590,12 @@ function ReporteKardex({ state, selectedId, onSelect }: { state: AppState, selec
     <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2">
       <div className="flex gap-4 flex-wrap items-center">
         <div className="form-group mb-0 flex-1 min-w-[300px] relative">
-          <label className="text-white text-[10px] font-black uppercase mb-1 block">SELECCIONAR PRODUCTO (Búsqueda Inteligente)</label>
+          <label className="text-ink text-[10px] font-black uppercase mb-1 block">SELECCIONAR PRODUCTO (Búsqueda Inteligente)</label>
           <div className="relative">
             <Search className="absolute left-3 top-2.5 w-4 h-4 text-[#c8952e]" />
             <input 
               type="text"
-              className="form-input pl-10 pr-10 py-2 bg-black border-[#2a2a2a] text-white font-black uppercase text-xs" 
+              className="form-input pl-10 pr-10 py-2 bg-white border-line text-ink font-black uppercase text-xs" 
               placeholder="Escriba código o nombre del producto..." 
               value={selectedProd ? `${selectedProd.codigo} - ${selectedProd.nombre}` : search}
               onChange={(e) => { if (selectedId) onSelect(''); setSearch(e.target.value); setShowResults(true); }}
@@ -1024,31 +603,31 @@ function ReporteKardex({ state, selectedId, onSelect }: { state: AppState, selec
               onBlur={() => setTimeout(() => setShowResults(false), 200)}
             />
             {(selectedId || search) && (
-              <button onClick={() => { onSelect(''); setSearch(''); }} className="absolute right-3 top-2.5 text-white/40 hover:text-[#e04848]"><X className="w-4 h-4" /></button>
+              <button onClick={() => { onSelect(''); setSearch(''); }} className="absolute right-3 top-2.5 text-ink hover:text-[#e04848]"><X className="w-4 h-4" /></button>
             )}
           </div>
           {showResults && (search.length > 0) && (
-            <div className="absolute top-full left-0 right-0 bg-[#1e1e1e] border border-[#333] rounded shadow-2xl z-[100] mt-1 max-h-60 overflow-y-auto">
-              {filtered.length === 0 ? <div className="p-4 text-center text-white/40 text-[10px] font-black uppercase">Sin resultados</div> : filtered.map(p => (
-                <div key={p.id} className="p-3 hover:bg-[#c8952e]/20 cursor-pointer border-b border-white/5 flex justify-between items-center transition-colors" onMouseDown={() => { onSelect(p.id); setSearch(''); setShowResults(false); }}>
-                  <div className="flex flex-col"><span className="text-white font-black text-xs uppercase">{p.nombre}</span><span className="text-[9px] text-white/40 mono">{p.codigo}</span></div>
-                  <div className="text-right"><div className="text-[#c8952e] font-black text-xs">{Utils.fmtUSD(p.precioUSD)}</div><div className="text-[8px] text-white/60 font-bold uppercase">{p.categoria}</div></div>
+            <div className="absolute top-full left-0 right-0 bg-white border border-line rounded shadow-2xl z-[100] mt-1 max-h-60 overflow-y-auto">
+              {filtered.length === 0 ? <div className="p-4 text-center text-ink text-[10px] font-black uppercase">Sin resultados</div> : filtered.map(p => (
+                <div key={p.id} className="p-3 hover:bg-[#c8952e]/20 cursor-pointer border-b border-line flex justify-between items-center transition-colors" onMouseDown={() => { onSelect(p.id); setSearch(''); setShowResults(false); }}>
+                  <div className="flex flex-col"><span className="text-ink font-black text-xs uppercase">{p.nombre}</span><span className="text-[9px] text-ink font-bold mono">{p.codigo}</span></div>
+                  <div className="text-right"><div className="text-[#c8952e] font-black text-xs">{Utils.fmtUSD(p.precioUSD)}</div><div className="text-[8px] text-ink font-black uppercase">{p.categoria}</div></div>
                 </div>
               ))}
             </div>
           )}
         </div>
-        <button disabled={!selectedProd} className="btn btn-secondary text-white font-black text-xs h-10 px-4 uppercase disabled:opacity-30" onClick={handleExportPDF}>
+        <button disabled={!selectedProd} className="btn btn-secondary font-black text-xs h-10 px-4 uppercase disabled:opacity-30" onClick={handleExportPDF}>
           <FileText className="w-4 h-4" /> DESCARGAR PDF
         </button>
       </div>
 
       {selectedProd && (
-        <div className="p-6 rounded-xl border border-white/10 bg-[#181818] flex gap-12">
-          <div><p className="text-[10px] font-black uppercase opacity-60">Producto</p><p className="text-lg font-black uppercase text-white">{selectedProd.nombre}</p></div>
-          <div><p className="text-[10px] font-black uppercase opacity-60">Código</p><p className="text-lg font-black mono text-white">{selectedProd.codigo}</p></div>
-          <div><p className="text-[10px] font-black uppercase opacity-60">Stock Actual</p><p className="text-2xl font-black text-[#3a9bdc]">{selectedProd.stock}</p></div>
-          <div><p className="text-[10px] font-black uppercase opacity-60">Costo (CPP)</p><p className="text-2xl font-black text-white">{Utils.fmtUSD(selectedProd.costoUSD)}</p></div>
+        <div className="p-6 rounded-xl border border-line bg-white flex gap-12">
+          <div><p className="text-[10px] font-black uppercase text-ink">Producto</p><p className="text-lg font-black uppercase text-ink">{selectedProd.nombre}</p></div>
+          <div><p className="text-[10px] font-black uppercase text-ink">Código</p><p className="text-lg font-black mono text-ink">{selectedProd.codigo}</p></div>
+          <div><p className="text-[10px] font-black uppercase text-ink">Stock Actual</p><p className="text-2xl font-black text-[#3a9bdc]">{selectedProd.stock}</p></div>
+          <div><p className="text-[10px] font-black uppercase text-ink">Costo (CPP)</p><p className="text-2xl font-black text-ink">{Utils.fmtUSD(selectedProd.costoUSD)}</p></div>
         </div>
       )}
 
@@ -1076,12 +655,12 @@ function ReporteKardex({ state, selectedId, onSelect }: { state: AppState, selec
                   const displayCant = isEntry ? `+${m.cantidad}` : `-${Math.abs(m.cantidad)}`;
                   return (
                     <tr key={m.id}>
-                      <td className="text-[11px] font-bold">{m.fecha.replace('T', ' ').slice(0, 16)}</td>
-                      <td><span className="font-bold uppercase text-[9px]">{m.tipo.replace('_', ' ')}</span></td>
+                      <td className="text-[11px] font-black">{m.fecha.replace('T', ' ').slice(0, 16)}</td>
+                      <td><span className="font-black uppercase text-[9px]">{m.tipo.replace('_', ' ')}</span></td>
                       <td className={`mono font-black text-sm ${isEntry ? 'text-[#27ae60]' : 'text-[#e04848]'}`}>{displayCant}</td>
-                      <td className="mono opacity-60">{m.stockAntes}</td>
+                      <td className="mono font-bold">{m.stockAntes}</td>
                       <td className="mono font-black">{m.stockDespues}</td>
-                      <td className="text-[10px] italic">{m.referencia}</td>
+                      <td className="text-[10px] italic font-bold">{m.referencia}</td>
                     </tr>
                   );
                 })
@@ -1116,16 +695,16 @@ function HistorialAjustes({ state }: { state: AppState }) {
     <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className={`kpi p-6 rounded-xl border ${efectoNetoUSD >= 0 ? 'bg-[#c8952e]/10 border-[#c8952e]/20' : 'bg-[#e04848]/10 border-[#e04848]/20'}`}>
-          <div className="text-[10px] font-black uppercase mb-1 text-white/60">Efecto Neto en Valor Inventario ($)</div>
-          <div className="text-3xl font-black text-white">{Utils.fmtUSD(efectoNetoUSD)}</div>
-          <div className="text-sm font-bold mt-1 italic text-white/40">{Utils.fmtBS(efectoNetoUSD * state.tasa)}</div>
+          <div className="text-[10px] font-black uppercase mb-1 text-ink">Efecto Neto en Valor Inventario ($)</div>
+          <div className="text-3xl font-black text-ink">{Utils.fmtUSD(efectoNetoUSD)}</div>
+          <div className="text-sm font-bold mt-1 italic text-ink">{Utils.fmtBS(efectoNetoUSD * state.tasa)}</div>
         </div>
       </div>
 
       <div className="card">
         <div className="card-head">
-          <h3 className="text-white font-black uppercase text-xs">Ajustes Realizados</h3>
-          <button className="btn btn-secondary text-white font-black text-xs uppercase" onClick={handleExportPDF}>
+          <h3 className="text-ink font-black uppercase text-xs">Ajustes Realizados</h3>
+          <button className="btn btn-secondary font-black text-xs uppercase" onClick={handleExportPDF}>
             <FileText className="w-4 h-4" /> EXPORTAR PDF
           </button>
         </div>
@@ -1148,13 +727,13 @@ function HistorialAjustes({ state }: { state: AppState }) {
                 const isEntry = m.tipo.includes('entrada') || m.tipo === 'compra';
                 return (
                   <tr key={m.id}>
-                    <td className="text-[11px]">{m.fecha.replace('T', ' ').slice(0, 16)}</td>
-                    <td className="font-bold uppercase">{p?.nombre || 'N/A'}</td>
-                    <td><span className="uppercase text-[9px] font-bold">{m.tipo}</span></td>
+                    <td className="text-[11px] font-bold">{m.fecha.replace('T', ' ').slice(0, 16)}</td>
+                    <td className="font-black uppercase">{p?.nombre || 'N/A'}</td>
+                    <td><span className="uppercase text-[9px] font-black">{m.tipo}</span></td>
                     <td className={`mono font-black ${isEntry ? 'text-[#27ae60]' : 'text-[#e04848]'}`}>{isEntry ? '+' : ''}{m.cantidad}</td>
-                    <td className="mono opacity-60">{m.stockAntes}</td>
-                    <td className="mono font-bold">{m.stockDespues}</td>
-                    <td className="text-[10px] italic">{m.referencia}</td>
+                    <td className="mono font-bold">{m.stockAntes}</td>
+                    <td className="mono font-black">{m.stockDespues}</td>
+                    <td className="text-[10px] italic font-bold">{m.referencia}</td>
                   </tr>
                 );
               })}
@@ -1185,13 +764,13 @@ function ReporteConsumo({ state }: { state: AppState }) {
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="kpi p-4 rounded-xl border border-white/10 bg-[#181818]">
-          <div className="text-[10px] font-black uppercase mb-1">Total Colaboraciones</div>
-          <div className="text-3xl font-black text-white">{movs.filter(m => m.tipo === 'colaboracion').length}</div>
+        <div className="kpi p-4 rounded-xl border border-line bg-white">
+          <div className="text-[10px] font-black uppercase mb-1 text-ink">Total Colaboraciones</div>
+          <div className="text-3xl font-black text-ink">{movs.filter(m => m.tipo === 'colaboracion').length}</div>
         </div>
-        <div className="kpi p-4 rounded-xl border border-white/10 bg-[#181818]">
-          <div className="text-[10px] font-black uppercase mb-1">Total Consumo Interno</div>
-          <div className="text-3xl font-black text-white">{movs.filter(m => m.tipo === 'consumo').length}</div>
+        <div className="kpi p-4 rounded-xl border border-line bg-white">
+          <div className="text-[10px] font-black uppercase mb-1 text-ink">Total Consumo Interno</div>
+          <div className="text-3xl font-black text-ink">{movs.filter(m => m.tipo === 'consumo').length}</div>
         </div>
         <div className="kpi p-4 rounded-xl border border-[#e04848]/20 bg-[#e04848]/5">
           <div className="text-[10px] font-black uppercase mb-1 text-[#e04848]">Costo Total (Pérdida)</div>
@@ -1201,8 +780,8 @@ function ReporteConsumo({ state }: { state: AppState }) {
       
       <div className="card">
         <div className="card-head">
-          <h3 className="text-white font-black uppercase text-xs">Detalle de Salidas</h3>
-          <button className="btn btn-secondary text-white font-black text-xs uppercase" onClick={handleExportPDF}>
+          <h3 className="text-ink font-black uppercase text-xs">Detalle de Salidas</h3>
+          <button className="btn btn-secondary font-black text-xs uppercase" onClick={handleExportPDF}>
             <FileText className="w-4 h-4" /> DESCARGAR REPORTE
           </button>
         </div>
@@ -1224,11 +803,11 @@ function ReporteConsumo({ state }: { state: AppState }) {
                 const subPerdida = Utils.round(Math.abs(m.cantidad) * (p?.costoUSD || 0));
                 return (
                   <tr key={m.id}>
-                    <td className="text-[11px]">{m.fecha.slice(0, 10)}</td>
-                    <td className="font-bold uppercase">{p?.nombre}</td>
-                    <td><span className="uppercase text-[9px] font-bold">{m.tipo}</span></td>
+                    <td className="text-[11px] font-bold">{m.fecha.slice(0, 10)}</td>
+                    <td className="font-black uppercase">{p?.nombre}</td>
+                    <td><span className="uppercase text-[9px] font-black">{m.tipo}</span></td>
                     <td className="font-black mono">{Math.abs(m.cantidad)}</td>
-                    <td className="mono opacity-60">{Utils.fmtUSD(p?.costoUSD || 0)}</td>
+                    <td className="mono font-bold">{Utils.fmtUSD(p?.costoUSD || 0)}</td>
                     <td className="mono font-black text-[#e04848]">{Utils.fmtUSD(subPerdida)}</td>
                   </tr>
                 );
@@ -1269,20 +848,20 @@ function ModalAjuste({ producto, onClose, onSave }: { producto: Product, onClose
   return (
     <div className="modal show">
       <div className="modal-bg" onClick={onClose}></div>
-      <div className="modal-box bg-[#1e1e1e] border-2 border-white/10">
-        <div className="modal-head px-5 py-3 border-b border-white/10">
-          <h3 className="text-white font-black uppercase text-sm">Ajustar Stock: {producto.nombre}</h3>
-          <button className="btn-icon" onClick={onClose}><X className="w-4 h-4 text-white" /></button>
+      <div className="modal-box bg-white border-2 border-line">
+        <div className="modal-head px-5 py-3 border-b border-line">
+          <h3 className="text-ink font-black uppercase text-sm">Ajustar Stock: {producto.nombre}</h3>
+          <button className="btn-icon" onClick={onClose}><X className="w-4 h-4 text-ink" /></button>
         </div>
         <div className="modal-body p-6 space-y-4">
-          <div className="p-3 bg-black rounded-lg flex justify-between items-center border border-white/10">
-            <span className="text-[10px] text-white font-black uppercase">Stock actual: <strong className="text-white ml-1">{producto.stock}</strong></span>
-            <span className="text-[10px] text-white font-black uppercase">CPP actual: <strong className="text-[#c8952e] ml-1">${producto.costoUSD.toFixed(2)}</strong></span>
+          <div className="p-3 bg-surface-soft rounded-lg flex justify-between items-center border border-line">
+            <span className="text-[10px] text-ink font-black uppercase">Stock actual: <strong className="text-ink ml-1">{producto.stock}</strong></span>
+            <span className="text-[10px] text-ink font-black uppercase">CPP actual: <strong className="text-[#c8952e] ml-1">${producto.costoUSD.toFixed(2)}</strong></span>
           </div>
           
           <div className="form-group">
-            <label className="text-white text-[10px] font-black uppercase block mb-1">Tipo de Ajuste</label>
-            <select className="form-select bg-black text-white" value={tipo} onChange={e => setTipo(e.target.value as any)}>
+            <label className="text-ink text-[10px] font-black uppercase block mb-1">Tipo de Ajuste</label>
+            <select className="form-select bg-white text-ink border-line rounded-md w-full p-2 text-sm" value={tipo} onChange={e => setTipo(e.target.value as any)}>
               <option value="ajuste_entrada">Entrada (+) - Recalcula CPP</option>
               <option value="ajuste_salida">Salida (-)</option>
               <option value="consumo">Consumo Interno (-)</option>
@@ -1292,23 +871,23 @@ function ModalAjuste({ producto, onClose, onSave }: { producto: Product, onClose
           
           <div className="grid grid-cols-2 gap-4">
             <div className="form-group">
-              <label className="text-white text-[10px] font-black uppercase block mb-1">Cantidad</label>
-              <input type="number" className="form-input bg-black text-white" value={cantidad} onChange={e => setCantidad(e.target.value)} min="1" />
+              <label className="text-ink text-[10px] font-black uppercase block mb-1">Cantidad</label>
+              <input type="number" className="form-input bg-white text-ink" value={cantidad} onChange={e => setCantidad(e.target.value)} min="1" />
             </div>
             {tipo === 'ajuste_entrada' && (
               <div className="form-group">
-                <label className="text-white text-[10px] font-black uppercase block mb-1">Costo Unitario Compra ($)</label>
-                <input type="number" step="0.01" className="form-input bg-black text-white" value={nuevoCosto} onChange={e => setNuevoCosto(e.target.value)} />
+                <label className="text-ink text-[10px] font-black uppercase block mb-1">Costo Unitario Compra ($)</label>
+                <input type="number" step="0.01" className="form-input bg-white text-ink" value={nuevoCosto} onChange={e => setNuevoCosto(e.target.value)} />
               </div>
             )}
           </div>
           
           <div className="form-group">
-            <label className="text-white text-[10px] font-black uppercase block mb-1">Motivo / Referencia</label>
-            <textarea className="form-textarea bg-black text-white" placeholder="Ej: Compra a distribuidor, de guste, merma..." value={ref} onChange={e => setRef(e.target.value)}></textarea>
+            <label className="text-ink text-[10px] font-black uppercase block mb-1">Motivo / Referencia</label>
+            <textarea className="form-textarea bg-white text-ink border-line rounded-md w-full p-2 text-sm" placeholder="Ej: Compra a distribuidor, de guste, merma..." value={ref} onChange={e => setRef(e.target.value)}></textarea>
           </div>
         </div>
-        <div className="modal-foot px-5 py-3 border-t border-white/10">
+        <div className="modal-foot px-5 py-3 border-t border-line">
           <button className="btn btn-secondary font-black uppercase" onClick={onClose}>Cancelar</button>
           <button className="btn btn-primary font-black uppercase" onClick={handleSave}>Aplicar Ajuste</button>
         </div>

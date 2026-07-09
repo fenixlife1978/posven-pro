@@ -1,3 +1,4 @@
+
 import type {Config} from 'tailwindcss';
 
 export default {
@@ -55,8 +56,8 @@ export default {
         },
         ink: {
           DEFAULT: '#141414',
-          muted: '#4A4A4A',
-          subtle: '#8A8A8A',
+          muted: '#141414',
+          subtle: '#141414',
         },
         line: {
           DEFAULT: '#D9D2BF',
