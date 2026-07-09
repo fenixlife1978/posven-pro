@@ -3,7 +3,7 @@
 import React from 'react';
 import { AppState } from '@/lib/types';
 import { Utils } from '@/lib/db-store';
-import { DollarSign, Package, HandCoins, FileText, ArrowUpRight, TrendingUp, Users } from 'lucide-react';
+import { Package, HandCoins, ArrowUpRight, TrendingUp } from 'lucide-react';
 
 export default function DashboardModule({ state }: { state: AppState }) {
   const hoy = Utils.hoy();
@@ -18,71 +18,50 @@ export default function DashboardModule({ state }: { state: AppState }) {
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
-      {/* Dark Accent Hero Area */}
-      <div className="bg-[#141414] rounded-[24px] p-8 text-white relative overflow-hidden shadow-2xl">
-        <div className="absolute top-0 right-0 w-64 h-64 bg-brand-gold/10 blur-[100px] rounded-full -mr-20 -mt-20" />
-        <div className="relative z-10">
-          <p className="text-brand-gold font-bold text-xs uppercase tracking-[0.2em] mb-2">Resumen de hoy</p>
-          <h1 className="text-4xl font-extrabold font-display mb-8">¡Bienvenido de nuevo!</h1>
-          
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            <div className="space-y-1">
-              <p className="text-ink-subtle text-xs font-bold uppercase">Ventas Netas</p>
-              <div className="flex items-baseline gap-2">
-                <h2 className="text-3xl font-black">{Utils.fmtUSD(totalHoyUSD)}</h2>
-                <span className="text-status-success text-xs font-bold flex items-center"><ArrowUpRight className="w-3 h-3" /> +12%</span>
-              </div>
-              <p className="text-[10px] text-ink-subtle font-medium">{Utils.fmtBS(totalHoyUSD * state.tasa)}</p>
-            </div>
-            <div className="space-y-1">
-              <p className="text-ink-subtle text-xs font-bold uppercase">Transacciones</p>
-              <h2 className="text-3xl font-black">{ventasHoy.length}</h2>
-              <p className="text-[10px] text-ink-subtle font-medium">Operaciones del día</p>
-            </div>
-            <div className="space-y-1">
-              <p className="text-ink-subtle text-xs font-bold uppercase">Valor de Activos</p>
-              <h2 className="text-3xl font-black text-brand-gold">{Utils.fmtUSD(valorInv)}</h2>
-              <p className="text-[10px] text-ink-subtle font-medium">Mercancía en stock</p>
-            </div>
+      {/* KPI Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="kpi amber bg-[#c8952e]/5 border-[#c8952e]/20">
+          <div className="kpi-label">Ventas Hoy (USD)</div>
+          <div className="flex items-baseline gap-2">
+            <div className="kpi-value text-[#c8952e]">{Utils.fmtUSD(totalHoyUSD)}</div>
+            <span className="text-[10px] text-[#27ae60] font-black flex items-center"><ArrowUpRight className="w-3 h-3" /> +12%</span>
           </div>
+          <div className="kpi-sub">{Utils.fmtBS(totalHoyUSD * state.tasa)}</div>
+        </div>
+
+        <div className="kpi blue bg-[#3a9bdc]/5 border-[#3a9bdc]/20">
+          <div className="kpi-label">Cuentas por Cobrar</div>
+          <div className="kpi-value text-[#3a9bdc]">{Utils.fmtUSD(cxcPend)}</div>
+          <div className="kpi-sub">{state.cxc.filter(x => x.estado !== 'pagada').length} pendientes</div>
+        </div>
+
+        <div className="kpi green bg-[#27ae60]/5 border-[#27ae60]/20">
+          <div className="kpi-label">Valor Inventario</div>
+          <div className="kpi-value text-[#27ae60]">{Utils.fmtUSD(valorInv)}</div>
+          <div className="kpi-sub">Mercancía activa</div>
+        </div>
+
+        <div className="kpi red bg-[#e04848]/5 border-[#e04848]/20">
+          <div className="kpi-label">Alertas Stock</div>
+          <div className="kpi-value text-[#e04848]">{bajoStock.length}</div>
+          <div className="kpi-sub">Productos bajo el mínimo</div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        {/* KPI Grid */}
-        <div className="lg:col-span-8 space-y-8">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-            <div className="kpi-card flex items-center gap-5">
-              <div className="w-14 h-14 bg-status-info-soft rounded-2xl flex items-center justify-center text-status-info">
-                <HandCoins className="w-7 h-7" />
-              </div>
-              <div>
-                <p className="text-[11px] font-bold text-ink-subtle uppercase tracking-wider mb-0.5">Por Cobrar (CxC)</p>
-                <h3 className="text-xl font-black text-ink">{Utils.fmtUSD(cxcPend)}</h3>
-              </div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="lg:col-span-2 space-y-6">
+          <div className="card">
+            <div className="card-head bg-[#181818]">
+              <h3 className="text-[10px] font-black uppercase tracking-widest flex items-center gap-2">
+                <TrendingUp className="w-3.5 h-3.5 text-[#c8952e]" /> Últimos Movimientos
+              </h3>
+              <button className="text-[9px] font-black text-[#c8952e] uppercase hover:underline">Ver Reporte</button>
             </div>
-            <div className="kpi-card flex items-center gap-5">
-              <div className="w-14 h-14 bg-status-success-soft rounded-2xl flex items-center justify-center text-status-success">
-                <TrendingUp className="w-7 h-7" />
-              </div>
-              <div>
-                <p className="text-[11px] font-bold text-ink-subtle uppercase tracking-wider mb-0.5">Eficiencia de Caja</p>
-                <h3 className="text-xl font-black text-ink">98.4%</h3>
-              </div>
-            </div>
-          </div>
-
-          {/* Table Container */}
-          <div className="bento-card">
-            <div className="px-6 py-5 bg-surface-warm/30 border-b border-line flex justify-between items-center">
-              <h3 className="text-sm font-extrabold text-ink uppercase tracking-tighter">Últimos Movimientos</h3>
-              <button className="text-xs font-bold text-brand-gold hover:text-brand-deep transition-colors">Ver Reporte Completo</button>
-            </div>
-            <div className="overflow-x-auto">
+            <div className="table-wrap">
               <table>
                 <thead>
                   <tr>
-                    <th>Ref</th>
+                    <th>Ref.</th>
                     <th>Cliente</th>
                     <th>Monto USD</th>
                     <th>Método</th>
@@ -92,46 +71,43 @@ export default function DashboardModule({ state }: { state: AppState }) {
                 <tbody>
                   {ultimasVentas.map(v => (
                     <tr key={v.id}>
-                      <td className="mono font-bold text-ink-muted text-xs">#{v.id}</td>
-                      <td className="font-bold text-ink uppercase text-xs">{v.cliente}</td>
-                      <td className="font-black text-brand-gold text-xs">{Utils.fmtUSD(v.totalUSD)}</td>
-                      <td className="text-[10px] font-bold text-ink-muted uppercase">{Utils.metodoLabel(v.metodoPago)}</td>
-                      <td><span className="badge badge-success">Saldado</span></td>
+                      <td className="mono font-bold text-white/40 text-xs">#{v.id}</td>
+                      <td className="font-black uppercase text-xs">{v.cliente}</td>
+                      <td className="font-black text-[#c8952e] text-xs">{Utils.fmtUSD(v.totalUSD)}</td>
+                      <td className="text-[9px] font-black text-white/60 uppercase">{Utils.metodoLabel(v.metodoPago)}</td>
+                      <td><span className="badge badge-ok uppercase text-[8px]">Completada</span></td>
                     </tr>
                   ))}
-                  {ultimasVentas.length === 0 && <tr><td colSpan={5} className="text-center py-10 italic text-ink-subtle">No hay ventas hoy</td></tr>}
+                  {ultimasVentas.length === 0 && <tr><td colSpan={5} className="text-center py-10 italic text-white/20">No hay ventas hoy</td></tr>}
                 </tbody>
               </table>
             </div>
           </div>
         </div>
 
-        {/* Stock Alerts Column */}
-        <div className="lg:col-span-4 space-y-6">
-          <div className="bento-card h-full">
-            <div className="px-6 py-5 border-b border-line bg-surface-warm/30">
-              <h3 className="text-sm font-extrabold text-ink uppercase tracking-tighter flex items-center gap-2">
-                <Package className="w-4 h-4 text-status-danger" /> Alertas Críticas
+        <div className="space-y-6">
+          <div className="card">
+            <div className="card-head bg-[#181818]">
+              <h3 className="text-[10px] font-black uppercase tracking-widest flex items-center gap-2">
+                <Package className="w-3.5 h-3.5 text-[#e04848]" /> Alertas Críticas
               </h3>
             </div>
-            <div className="p-4 space-y-4">
+            <div className="p-4 space-y-3">
               {bajoStock.length === 0 ? (
-                <div className="py-20 text-center flex flex-col items-center">
-                  <div className="w-12 h-12 bg-status-success-soft rounded-full flex items-center justify-center text-status-success mb-3">
-                    <Package className="w-6 h-6" />
-                  </div>
-                  <p className="text-xs font-bold text-ink-subtle uppercase">Stock en orden</p>
+                <div className="py-10 text-center opacity-30">
+                  <Package className="w-10 h-10 mx-auto mb-2" />
+                  <p className="text-[10px] font-black uppercase">Stock en orden</p>
                 </div>
               ) : (
                 bajoStock.map(p => (
-                  <div key={p.id} className="p-4 bg-surface-warm border border-line rounded-xl flex justify-between items-center hover:border-brand-gold transition-colors group">
-                    <div className="min-w-0">
-                      <p className="text-xs font-extrabold text-ink truncate uppercase">{p.nombre}</p>
-                      <p className="text-[10px] text-ink-subtle font-medium uppercase">{p.categoria}</p>
+                  <div key={p.id} className="p-3 bg-black/40 border border-white/5 rounded-lg flex justify-between items-center">
+                    <div>
+                      <p className="text-[10px] font-black text-white uppercase">{p.nombre}</p>
+                      <p className="text-[8px] text-white/40 uppercase">{p.categoria}</p>
                     </div>
                     <div className="text-right">
-                      <p className="text-xs font-black text-status-danger">{p.stock} Uds</p>
-                      <p className="text-[9px] font-bold text-ink-subtle uppercase">Mín: {p.stockMinimo}</p>
+                      <p className="text-xs font-black text-[#e04848]">{p.stock} Uds</p>
+                      <p className="text-[8px] text-white/40 font-bold">MÍN: {p.stockMinimo}</p>
                     </div>
                   </div>
                 ))
