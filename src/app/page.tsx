@@ -193,31 +193,10 @@ export default function LicoreriaPOS() {
             </p>
           </div>
 
-          <div className="flex-1 max-w-[480px] hidden md:block">
-            <div className="relative group">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-subtle group-focus-within:text-brand-gold transition-colors" />
-              <input 
-                className="w-full bg-white border border-line rounded-[10px] pl-10 pr-4 py-2 text-sm text-ink placeholder:text-ink-subtle/60 outline-none transition-all focus:border-brand-gold focus:ring-4 focus:ring-brand-gold-soft shadow-sm"
-                placeholder="Buscar producto, cliente, factura…"
-              />
-            </div>
-          </div>
-
           <div className="flex items-center gap-3 ml-auto">
-            <button className="w-[38px] h-[38px] rounded-[10px] bg-white border border-line flex items-center justify-center text-ink-muted hover:text-brand-gold transition-colors shadow-sm-card">
-              <CalendarIcon className="w-4 h-4" />
-            </button>
             <button className="relative w-[38px] h-[38px] rounded-[10px] bg-white border border-line flex items-center justify-center text-ink-muted hover:text-brand-gold transition-colors shadow-sm-card">
               <Bell className="w-4 h-4" />
               <span className="absolute top-2.5 right-2.5 w-2 h-2 bg-status-danger rounded-full border-2 border-white" />
-            </button>
-            
-            <button 
-              onClick={() => handleModuleChange('ventas')}
-              className="h-[38px] px-4 rounded-[10px] bg-brand-gold text-white font-bold text-sm flex items-center gap-2 shadow-md hover:bg-brand-gold-deep transition-all transform active:scale-95"
-            >
-              <Plus className="w-4 h-4" />
-              <span className="hidden sm:inline">Nueva venta</span>
             </button>
 
             <div className="flex items-center gap-2.5 pl-3 border-l border-line ml-1">
