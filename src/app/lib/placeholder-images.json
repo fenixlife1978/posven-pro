@@ -3,7 +3,7 @@
     {
       "id": "posven-logo",
       "description": "Logo de PosVEN pro",
-      "imageUrl": "https://picsum.photos/seed/posven/200/80",
+      "imageUrl": "/posven.png",
       "imageHint": "posven logo"
     }
   ]

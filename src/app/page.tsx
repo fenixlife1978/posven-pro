@@ -152,7 +152,7 @@ export default function LicoreriaPOS() {
         <div className="p-6 border-b border-[#2a2a2a] flex flex-col items-center">
           <div className="w-full h-12 relative mb-2">
             <Image 
-              src={logo?.imageUrl || 'https://picsum.photos/seed/posvenpro/200/80'} 
+              src={logo?.imageUrl || '/posven.png'} 
               alt="PosVEN pro" 
               fill
               style={{ objectFit: 'contain' }}
