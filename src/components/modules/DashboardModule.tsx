@@ -1,10 +1,9 @@
-
 "use client";
 
 import React, { useState, useEffect } from 'react';
 import { AppState } from '@/lib/types';
 import { Utils } from '@/lib/db-store';
-import { DollarSign, Package, HandCoins, FileText, ArrowRight } from 'lucide-react';
+import { DollarSign, Package, HandCoins, FileText, ArrowRight, TrendingUp } from 'lucide-react';
 
 export default function DashboardModule({ state }: { state: AppState }) {
   const [barHeights, setBarHeights] = useState<number[]>([]);
@@ -27,7 +26,8 @@ export default function DashboardModule({ state }: { state: AppState }) {
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* GRID KPI BENTO */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         <KPI 
           type="amber" 
           icon={<DollarSign />} 
@@ -58,37 +58,46 @@ export default function DashboardModule({ state }: { state: AppState }) {
         />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="card">
-          <div className="card-head"><h3 className="text-white">Resumen Semanal</h3></div>
-          <div className="card-body">
-             <div className="flex items-end gap-2 h-20">
-                {barHeights.length > 0 ? (
-                  barHeights.map((h, i) => (
-                    <div key={i} className="flex-1 bg-[#c8952e]/60 rounded-t h-full min-h-[4px]" style={{ height: `${h}%` }} />
-                  ))
-                ) : (
-                  [1, 2, 3, 4, 5, 6, 7].map(i => (
-                    <div key={i} className="flex-1 bg-[#c8952e]/20 rounded-t h-full min-h-[4px]" style={{ height: '0%' }} />
-                  ))
-                )}
-             </div>
-             <div className="flex justify-between text-[0.7rem] text-white font-black mt-2">
-               <span>LUN</span><span>MAR</span><span>MIE</span><span>JUE</span><span>VIE</span><span>SAB</span><span>DOM</span>
-             </div>
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        {/* GRAFICO SEMANAL BENTO */}
+        <div className="lg:col-span-8 bento-card p-8">
+          <div className="flex justify-between items-center mb-8">
+            <h3 className="text-xl font-black uppercase text-slate-900 tracking-tight">Rendimiento Semanal</h3>
+            <div className="flex items-center gap-2 text-emerald-500 bg-emerald-50 px-3 py-1 rounded-full text-xs font-black">
+              <TrendingUp size={14}/> +12.5%
+            </div>
+          </div>
+          <div className="flex items-end gap-3 h-48">
+            {barHeights.map((h, i) => (
+              <div key={i} className="flex-1 bg-slate-100 rounded-2xl relative group overflow-hidden">
+                <div 
+                  className="absolute bottom-0 left-0 right-0 bg-[#c8952e] opacity-80 group-hover:opacity-100 transition-all duration-500 rounded-t-xl" 
+                  style={{ height: `${h}%` }}
+                />
+              </div>
+            ))}
+          </div>
+          <div className="flex justify-between text-[10px] text-slate-400 font-black uppercase mt-6 tracking-widest">
+            <span>LUN</span><span>MAR</span><span>MIE</span><span>JUE</span><span>VIE</span><span>SAB</span><span>DOM</span>
           </div>
         </div>
 
-        <div className="card">
-          <div className="card-head"><h3 className="text-white">Stock Bajo ({bajoStock.length})</h3></div>
-          <div className="card-body p-0 max-h-[160px] overflow-y-auto">
+        {/* ALERTAS STOCK BENTO */}
+        <div className="lg:col-span-4 bento-card p-8 bg-slate-900 text-white">
+          <h3 className="text-lg font-black uppercase mb-6 tracking-tight flex items-center gap-2">
+            <Package size={20} className="text-amber-400"/> Alertas Stock ({bajoStock.length})
+          </h3>
+          <div className="space-y-4 max-h-[220px] overflow-y-auto pr-2">
             {bajoStock.length === 0 ? (
-              <p className="text-center p-4 text-white font-black text-sm italic uppercase">Sin alertas de stock</p>
+              <p className="text-center py-10 text-white/20 font-black uppercase text-xs">Todo en orden</p>
             ) : (
               bajoStock.map(p => (
-                <div key={p.id} className="flex justify-between p-3 border-b border-[#2a2a2a] text-sm mx-4 text-white font-black">
-                  <span className="uppercase">{p.nombre}</span>
-                  <span className="badge badge-err font-black">{p.stock} UDS</span>
+                <div key={p.id} className="flex justify-between items-center p-4 bg-white/5 rounded-2xl border border-white/5">
+                  <div className="flex flex-col">
+                    <span className="text-xs font-black uppercase">{p.nombre}</span>
+                    <span className="text-[10px] opacity-40 uppercase">{p.categoria}</span>
+                  </div>
+                  <span className="px-3 py-1 bg-amber-500/20 text-amber-400 rounded-full font-black text-[10px]">{p.stock} UDS</span>
                 </div>
               ))
             )}
@@ -96,32 +105,43 @@ export default function DashboardModule({ state }: { state: AppState }) {
         </div>
       </div>
 
-      <div className="card">
-        <div className="card-head">
-          <h3 className="text-white">Últimas Ventas</h3>
-          <button className="btn btn-sm btn-secondary flex items-center gap-1 text-white font-black">
-            VER TODAS <ArrowRight className="w-3 h-3" />
+      {/* TABLA VENTAS BENTO */}
+      <div className="bento-card overflow-hidden">
+        <div className="p-8 border-b border-slate-50 flex justify-between items-center">
+          <h3 className="text-xl font-black uppercase text-slate-900 tracking-tight">Últimas Transacciones</h3>
+          <button className="text-xs font-black text-[#c8952e] flex items-center gap-1 hover:gap-2 transition-all">
+            VER TODAS <ArrowRight size={14}/>
           </button>
         </div>
-        <div className="table-wrap">
-          <table>
-            <thead>
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-slate-50/50">
               <tr>
-                <th className="text-white font-black">Fecha</th>
-                <th className="text-white font-black">Cliente</th>
-                <th className="text-white font-black text-right">Monto</th>
-                <th className="text-white font-black">Método</th>
-                <th className="text-white font-black">Estado</th>
+                <th className="px-8 py-4 text-left text-[10px] font-black uppercase text-slate-400 tracking-widest">Fecha / Hora</th>
+                <th className="px-8 py-4 text-left text-[10px] font-black uppercase text-slate-400 tracking-widest">Cliente</th>
+                <th className="px-8 py-4 text-right text-[10px] font-black uppercase text-slate-400 tracking-widest">Monto USD</th>
+                <th className="px-8 py-4 text-center text-[10px] font-black uppercase text-slate-400 tracking-widest">Método</th>
+                <th className="px-8 py-4 text-center text-[10px] font-black uppercase text-slate-400 tracking-widest">Estado</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="divide-y divide-slate-50">
               {ultimasVentas.map(v => (
-                <tr key={v.id}>
-                  <td className="text-white font-black text-xs">{v.fecha.includes('T') ? v.fecha.replace('T', ' ').slice(0, 16) : v.fecha}</td>
-                  <td className="text-white font-black uppercase text-xs">{v.cliente}</td>
-                  <td className="mono text-[#c8952e] font-black text-right">{Utils.fmtUSD(v.totalUSD)}</td>
-                  <td className="text-white font-black uppercase text-[10px]">{Utils.metodoLabel(v.metodoPago)}</td>
-                  <td><span className={`badge ${v.estado === 'completada' ? 'badge-ok' : 'badge-warn'} font-black text-[9px] uppercase`}>{v.estado}</span></td>
+                <tr key={v.id} className="hover:bg-slate-50/50 transition-colors">
+                  <td className="px-8 py-4 text-xs font-medium text-slate-600">
+                    {v.fecha.includes('T') ? v.fecha.replace('T', ' ').slice(0, 16) : v.fecha}
+                  </td>
+                  <td className="px-8 py-4 text-xs font-black uppercase text-slate-900">{v.cliente}</td>
+                  <td className="px-8 py-4 text-right font-black text-slate-900">{Utils.fmtUSD(v.totalUSD)}</td>
+                  <td className="px-8 py-4 text-center">
+                    <span className="px-3 py-1 bg-slate-100 text-slate-500 rounded-full text-[9px] font-black uppercase">
+                      {Utils.metodoLabel(v.metodoPago)}
+                    </span>
+                  </td>
+                  <td className="px-8 py-4 text-center">
+                    <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase ${v.estado === 'completada' ? 'bg-emerald-100 text-emerald-600' : 'bg-amber-100 text-amber-600'}`}>
+                      {v.estado}
+                    </span>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -133,18 +153,22 @@ export default function DashboardModule({ state }: { state: AppState }) {
 }
 
 function KPI({ type, icon, label, value, sub }: any) {
-  const colors: any = {
-    amber: 'text-[#c8952e] bg-[rgba(200,149,46,0.2)]',
-    green: 'text-[#27ae60] bg-[rgba(39,174,96,0.25)]',
-    red: 'text-[#e04848] bg-[rgba(224,72,72,0.25)]',
-    blue: 'text-[#3a9bdc] bg-[rgba(58,155,220,0.25)]'
+  const themes: any = {
+    amber: 'bg-[#c8952e]/5 border-[#c8952e]/10 text-[#c8952e]',
+    green: 'bg-emerald-50 border-emerald-100 text-emerald-600',
+    red: 'bg-rose-50 border-rose-100 text-rose-600',
+    blue: 'bg-sky-50 border-sky-100 text-sky-600'
   };
   return (
-    <div className={`kpi ${type} border-[#2a2a2a]`}>
-      <div className={`kpi-icon ${colors[type]}`}>{icon}</div>
-      <div className="text-[0.78rem] text-white font-black uppercase mb-1">{label}</div>
-      <div className="font-display text-[1.4rem] font-black text-white">{value}</div>
-      <div className="text-[0.75rem] text-white font-black mt-1 italic">{sub}</div>
+    <div className={`bento-card p-8 border ${themes[type]}`}>
+      <div className="flex items-center gap-4 mb-4">
+        <div className={`p-3 rounded-2xl ${type === 'amber' ? 'bg-[#c8952e]/10' : 'bg-white shadow-sm'}`}>
+          {React.cloneElement(icon as React.ReactElement, { size: 24 })}
+        </div>
+        <span className="text-[10px] font-black uppercase tracking-widest opacity-60">{label}</span>
+      </div>
+      <div className="text-3xl font-black text-slate-900 tracking-tight mb-2">{value}</div>
+      <div className="text-xs font-bold opacity-60 italic">{sub}</div>
     </div>
   );
 }
