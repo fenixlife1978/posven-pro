@@ -7,6 +7,7 @@ import {
   PieChart, 
   Package, 
   ShoppingCart, 
+  ShoppingBag,
   HandCoins, 
   FileText, 
   RotateCcw, 
@@ -22,6 +23,7 @@ import { AppState } from '@/lib/types';
 import DashboardModule from '@/components/modules/DashboardModule';
 import InventoryModule from '@/components/modules/InventoryModule';
 import SalesModule from '@/components/modules/SalesModule';
+import PurchaseModule from '@/components/modules/PurchaseModule';
 import CxCModule from '@/components/modules/CxCModule';
 import CxPModule from '@/components/modules/CxPModule';
 import ReportsModule from '@/components/modules/ReportsModule';
@@ -91,7 +93,7 @@ export default function LicoreriaPOS() {
         marca: 'Johnnie Walker', 
         costoUSD: 28, 
         precioUSD: 48, 
-        margen: 20, // Margen de ganancia en USD
+        margen: 20,
         stock: 12, 
         stockMinimo: 3, 
         proveedor: 'Distribuidora Nacional', 
@@ -108,7 +110,7 @@ export default function LicoreriaPOS() {
         marca: 'Santa Teresa', 
         costoUSD: 30, 
         precioUSD: 52, 
-        margen: 22, // Margen de ganancia en USD
+        margen: 22,
         stock: 10, 
         stockMinimo: 3, 
         proveedor: 'Licorera Central', 
@@ -125,7 +127,7 @@ export default function LicoreriaPOS() {
         marca: 'Casillero del Diablo', 
         costoUSD: 8, 
         precioUSD: 16, 
-        margen: 8, // Margen de ganancia en USD
+        margen: 8,
         stock: 20, 
         stockMinimo: 6, 
         proveedor: 'Bodegas del Sur', 
@@ -141,6 +143,7 @@ export default function LicoreriaPOS() {
       case 'dashboard': return <DashboardModule state={state} />;
       case 'inventario': return <InventoryModule state={state} updateState={updateState} />;
       case 'ventas': return <SalesModule state={state} updateState={updateState} />;
+      case 'compras': return <PurchaseModule state={state} updateState={updateState} />;
       case 'cxc': return <CxCModule state={state} updateState={updateState} />;
       case 'cxp': return <CxPModule state={state} updateState={updateState} />;
       case 'reportes': return <ReportsModule state={state} />;
@@ -165,6 +168,7 @@ export default function LicoreriaPOS() {
         { id: 'dashboard', label: 'Dashboard', icon: PieChart },
         { id: 'inventario', label: 'Inventario', icon: Package },
         { id: 'ventas', label: 'Ventas', icon: ShoppingCart },
+        { id: 'compras', label: 'Compras', icon: ShoppingBag },
       ]
     },
     {
@@ -261,7 +265,14 @@ export default function LicoreriaPOS() {
             <button className="p-2 text-white hover:text-[#c8952e]" onClick={() => setIsSidebarOpen(true)}>
               <Menu className="w-5 h-5" />
             </button>
-            <h2 className="font-display text-base font-black uppercase tracking-widest text-[#c8952e]">{activeModule === 'ventas' ? 'Ventas' : activeModule}</h2>
+            <h2 className="font-display text-base font-black uppercase tracking-widest text-[#c8952e]">
+              {activeModule === 'ventas' ? 'Ventas' : 
+               activeModule === 'compras' ? 'Compras' : 
+               activeModule === 'cxc' ? 'CxC' :
+               activeModule === 'cxp' ? 'CxP' :
+               activeModule === 'devoluciones' ? 'Devoluciones' :
+               activeModule}
+            </h2>
           </div>
           <span className="text-[0.7rem] text-white uppercase font-black tracking-tighter">
             {currentTime}

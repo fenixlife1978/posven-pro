@@ -528,7 +528,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     printData.push({ type: 'text', value: 'RESUMEN POR OPERACIÓN:', style: { textAlign: 'left', fontSize: "10px", fontWeight: "700" } });
     printData.push({ type: 'text', value: `VENTAS DIRECTAS:      ${Utils.fmtUSD(vDirectas)}`, style: { textAlign: 'left', fontSize: "10px" } });
     printData.push({ type: 'text', value: `COBROS DEUDA:         ${Utils.fmtUSD(vCobros)}`, style: { textAlign: 'left', fontSize: "10px" } });
-    printData.push({ type: 'text', value: `DEVOLUCIONES:        -${Utils.fmtUSD(totalDev)}`, style: { textAlign: 'left', fontSize: "10px", color: '#e04848' } });
+    printData.push({ type: 'text', value: `DEVOLUCIONES:        -${Utils.fmtUSD(totalDev)}`, style: { textAlign: 'left', fontSize: "10px" } });
     
     printData.push({ type: 'text', value: '--------------------------------', style: { textAlign: 'center' } });
     printData.push({ type: 'text', value: 'DESGLOSE NETO POR MÉTODO:', style: { textAlign: 'left', fontSize: "10px", fontWeight: "700" } });
@@ -536,7 +536,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     Object.entries(breakdown).forEach(([metodo, montos]) => {
       const isUSD = metodo === 'efectivo_usd' || metodo === 'zelle';
       const label = Utils.metodoLabel(metodo).toUpperCase();
-      const valNeto = isUSD ? Utils.fmtUSD(montos.usd - montos.devUs) : Utils.fmtBS(montos.bs - montos.devBs);
+      const valNeto = isUSD ? Utils.fmtUSD(montos.usd - montos.devUsd) : Utils.fmtBS(montos.bs - montos.devBs);
       printData.push({ type: 'text', value: `${label.padEnd(20)} ${valNeto}`, style: { textAlign: 'left', fontSize: "9px" } });
     });
 
