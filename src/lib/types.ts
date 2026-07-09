@@ -78,7 +78,25 @@ export interface Sale {
   change?: number;
   customerName?: string;
   cuentaCobrarId?: string | null;
-  payments?: PagoRealizado[]; // ✅ AGREGADO: para soportar múltiples métodos de pago
+  payments?: PagoRealizado[]; 
+}
+
+export interface ReturnItem {
+  productoId: string;
+  nombre: string;
+  cantidad: number;
+  precioUnitUSD: number;
+  estadoProducto: 'REINTEGRADO_STOCK' | 'MERMA_DANADO';
+}
+
+export interface Return {
+  id: string;
+  ventaId: string;
+  fecha: string;
+  items: ReturnItem[];
+  totalUSD: number;
+  metodoReembolso: 'EFECTIVO' | 'MISMO_METODO' | 'CREDITO_TIENDA';
+  motivo: string;
 }
 
 export interface ReportZ {
@@ -123,7 +141,7 @@ export interface AppState {
   cxc: any[];
   cxp: any[];
   clientes: Customer[];
-  devoluciones: any[];
+  devoluciones: Return[];
   movimientos: Movimiento[];
   carrito: SaleItem[];
   empresa: {
