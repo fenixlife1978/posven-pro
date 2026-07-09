@@ -3,8 +3,8 @@ import './globals.css';
 import { Toaster } from "@/components/ui/toaster";
 
 export const metadata: Metadata = {
-  title: 'Nuevo Proyecto',
-  description: 'Creado con Firebase Studio',
+  title: 'PosVEN pro - Soluciones Profesionales',
+  description: 'Sistema de Punto de Venta avanzado para comercios en Venezuela, con gestión de inventario, ventas a crédito y reportes profesionales detallados.',
 };
 
 export default function RootLayout({
