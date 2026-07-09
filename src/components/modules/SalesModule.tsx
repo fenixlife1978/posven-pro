@@ -579,12 +579,12 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   return (
     <div className="flex flex-col gap-2 h-[calc(100vh-100px)] max-w-7xl mx-auto w-full overflow-hidden">
       <div className="flex gap-2 no-print shrink-0 overflow-x-auto pb-1">
-        <button onClick={() => setView('pos')} className={`btn btn-sm ${view === 'pos' ? 'btn-primary' : 'btn-secondary text-white font-bold'}`}><ShoppingCart className="w-3.5 h-3.5"/> Punto de Venta</button>
-        <button onClick={() => setView('history')} className={`btn btn-sm ${view === 'history' ? 'btn-primary' : 'btn-secondary text-white font-bold'}`}><History className="w-3.5 h-3.5"/> Historial</button>
-        <button onClick={() => setView('credits')} className={`btn btn-sm ${view === 'credits' ? 'btn-primary' : 'btn-secondary text-white font-bold'}`}><ClipboardList className="w-3.5 h-3.5"/> Consultar Créditos</button>
-        <button onClick={() => setShowReport('Y')} className="btn btn-sm btn-secondary text-white font-bold"><FileText className="w-3.5 h-3.5"/> Reporte Y</button>
-        <button onClick={emitirReporteZ} className="btn btn-sm btn-secondary text-white font-bold"><Receipt className="w-3.5 h-3.5"/> Reporte Z</button>
-        <button onClick={() => setView('returns')} className="btn btn-sm btn-secondary text-white font-bold"><RotateCcw className="w-3.5 h-3.5"/> Devoluciones</button>
+        <button onClick={() => setView('pos')} className={`btn btn-sm ${view === 'pos' ? 'btn-primary' : 'btn-secondary text-ink font-bold'}`}><ShoppingCart className="w-3.5 h-3.5"/> Punto de Venta</button>
+        <button onClick={() => setView('history')} className={`btn btn-sm ${view === 'history' ? 'btn-primary' : 'btn-secondary text-ink font-bold'}`}><History className="w-3.5 h-3.5"/> Historial</button>
+        <button onClick={() => setView('credits')} className={`btn btn-sm ${view === 'credits' ? 'btn-primary' : 'btn-secondary text-ink font-bold'}`}><ClipboardList className="w-3.5 h-3.5"/> Consultar Créditos</button>
+        <button onClick={() => setShowReport('Y')} className="btn btn-sm btn-secondary text-ink font-bold"><FileText className="w-3.5 h-3.5"/> Reporte Y</button>
+        <button onClick={emitirReporteZ} className="btn btn-sm btn-secondary text-ink font-bold"><Receipt className="w-3.5 h-3.5"/> Reporte Z</button>
+        <button onClick={() => setView('returns')} className="btn btn-sm btn-secondary text-ink font-bold"><RotateCcw className="w-3.5 h-3.5"/> Devoluciones</button>
       </div>
 
       {view === 'pos' ? (
@@ -689,131 +689,131 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
           </div>
         </div>
       ) : view === 'history' ? (
-        <div className="card flex-1 bg-[#131313] text-white flex flex-col overflow-hidden animate-in slide-in-from-bottom-2 duration-300">
-          <div className="card-head px-5 py-4 border-b border-[#2a2a2a] bg-[#181818] flex justify-between items-center">
-            <h3 className="text-white font-black uppercase italic tracking-tighter flex items-center gap-2">
-              <History className="w-5 h-5 text-[#c8952e]" /> Historial de Transacciones Diarias
+        <div className="card flex-1 bg-white text-ink flex flex-col overflow-hidden animate-in slide-in-from-bottom-2 duration-300">
+          <div className="card-head px-5 py-4 border-b border-line bg-surface-soft flex justify-between items-center">
+            <h3 className="text-ink font-black uppercase italic tracking-tighter flex items-center gap-2">
+              <History className="w-5 h-5 text-brand-gold" /> Historial de Transacciones Diarias
             </h3>
-            <button onClick={() => setView('pos')} className="btn btn-sm btn-secondary flex items-center gap-2 font-black uppercase text-[10px]">
+            <button onClick={() => setView('pos')} className="btn btn-sm btn-secondary flex items-center gap-2 font-black uppercase text-[10px] border-line">
               <ArrowLeft className="w-3 h-3"/> Volver al POS
             </button>
           </div>
           <div className="table-wrap flex-1 overflow-y-auto">
             <table>
-              <thead className="sticky top-0 bg-[#0b0b0b] z-10">
+              <thead className="sticky top-0 bg-surface-soft z-10">
                 <tr>
-                  <th className="text-white font-black text-[10px] uppercase">Recibo</th>
-                  <th className="text-white font-black text-[10px] uppercase">Hora</th>
-                  <th className="text-white font-black text-[10px] uppercase">Cliente</th>
-                  <th className="text-white font-black text-[10px] uppercase">Tipo</th>
-                  <th className="text-white font-black text-[10px] uppercase text-right">Monto USD</th>
-                  <th className="text-white font-black text-[10px] uppercase">Método Pago</th>
-                  <th className="text-white font-black text-[10px] uppercase text-center">Estado</th>
+                  <th className="text-ink font-black text-[10px] uppercase">Recibo</th>
+                  <th className="text-ink font-black text-[10px] uppercase">Hora</th>
+                  <th className="text-ink font-black text-[10px] uppercase">Cliente</th>
+                  <th className="text-ink font-black text-[10px] uppercase">Tipo</th>
+                  <th className="text-ink font-black text-[10px] uppercase text-right">Monto USD</th>
+                  <th className="text-ink font-black text-[10px] uppercase">Método Pago</th>
+                  <th className="text-ink font-black text-[10px] uppercase text-center">Estado</th>
                 </tr>
               </thead>
               <tbody>
                 {getReportSummary().ventasHoy.sort((a,b) => b.fecha.localeCompare(a.fecha)).map(v => (
-                  <tr key={v.id} className="border-b border-white/5 hover:bg-white/5">
-                    <td className="text-white font-black text-xs mono">{v.id}</td>
-                    <td className="text-white font-bold text-xs">{v.fecha.split('T')[1]?.slice(0, 5) || '-'}</td>
-                    <td className="text-white font-black text-xs uppercase truncate max-w-[150px]">{v.cliente}</td>
-                    <td className="text-white font-black text-[9px] uppercase"><span className={`badge ${v.type === 'COBRO DEUDA' ? 'badge-info' : 'badge-neutral'}`}>{v.type || 'VENTA'}</span></td>
-                    <td className="text-[#c8952e] font-black text-xs text-right">{Utils.fmtUSD(v.totalUSD)}</td>
-                    <td className="text-white font-bold text-[10px] uppercase">{Utils.metodoLabel(v.metodoPago)}</td>
+                  <tr key={v.id} className="border-b border-line/40 hover:bg-surface-warm/20">
+                    <td className="text-ink font-black text-xs mono">{v.id}</td>
+                    <td className="text-ink font-bold text-xs">{v.fecha.split('T')[1]?.slice(0, 5) || '-'}</td>
+                    <td className="text-ink font-black text-xs uppercase truncate max-w-[150px]">{v.cliente}</td>
+                    <td className="text-ink font-black text-[9px] uppercase"><span className={`badge ${v.type === 'COBRO DEUDA' ? 'badge-info' : 'badge-neutral'}`}>{v.type || 'VENTA'}</span></td>
+                    <td className="text-brand-gold-deep font-black text-xs text-right">{Utils.fmtUSD(v.totalUSD)}</td>
+                    <td className="text-ink font-bold text-[10px] uppercase">{Utils.metodoLabel(v.metodoPago)}</td>
                     <td className="text-center"><span className={`badge ${v.estado === 'pendiente' ? 'badge-warn' : 'badge-ok'} font-black text-[9px] uppercase`}>{v.estado}</span></td>
                   </tr>
                 ))}
                 {getReportSummary().ventasHoy.length === 0 && (
-                  <tr><td colSpan={7} className="text-center py-24 text-white font-black uppercase italic opacity-30">No se registran transacciones para el día de hoy</td></tr>
+                  <tr><td colSpan={7} className="text-center py-24 text-ink font-black uppercase italic opacity-30">No se registran transacciones para el día de hoy</td></tr>
                 )}
               </tbody>
             </table>
           </div>
         </div>
       ) : view === 'credits' ? (
-        <div className="card flex-1 bg-[#131313] text-white flex flex-col overflow-hidden animate-in slide-in-from-bottom-2 duration-300">
-          <div className="card-head px-5 py-4 border-b border-[#2a2a2a] bg-[#181818] flex justify-between items-center">
-            <h3 className="text-white font-black uppercase italic tracking-tighter flex items-center gap-2">
-              <ClipboardList className="w-5 h-5 text-[#3a9bdc]" /> Consulta de Créditos Activos
+        <div className="card flex-1 bg-white text-ink flex flex-col overflow-hidden animate-in slide-in-from-bottom-2 duration-300">
+          <div className="card-head px-5 py-4 border-b border-line bg-surface-soft flex justify-between items-center">
+            <h3 className="text-ink font-black uppercase italic tracking-tighter flex items-center gap-2">
+              <ClipboardList className="w-5 h-5 text-status-info" /> Consulta de Créditos Activos
             </h3>
-            <button onClick={() => setView('pos')} className="btn btn-sm btn-secondary flex items-center gap-2 font-black uppercase text-[10px]">
+            <button onClick={() => setView('pos')} className="btn btn-sm btn-secondary flex items-center gap-2 font-black uppercase text-[10px] border-line">
               <ArrowLeft className="w-3 h-3"/> Volver al POS
             </button>
           </div>
           <div className="table-wrap flex-1 overflow-y-auto">
             <table>
-              <thead className="sticky top-0 bg-[#0b0b0b] z-10">
+              <thead className="sticky top-0 bg-surface-soft z-10">
                 <tr>
-                  <th className="text-white font-black text-[10px] uppercase">Emisión</th>
-                  <th className="text-white font-black text-[10px] uppercase">Vencimiento</th>
-                  <th className="text-white font-black text-[10px] uppercase">Cliente</th>
-                  <th className="text-white font-black text-[10px] uppercase text-right">Monto Orig. USD</th>
-                  <th className="text-white font-black text-[10px] uppercase text-right">Saldo Pend. USD</th>
-                  <th className="text-white font-black text-[10px] uppercase text-right">Saldo en Bs.</th>
-                  <th className="text-white font-black text-[10px] uppercase text-center">Acciones</th>
+                  <th className="text-ink font-black text-[10px] uppercase">Emisión</th>
+                  <th className="text-ink font-black text-[10px] uppercase">Vencimiento</th>
+                  <th className="text-ink font-black text-[10px] uppercase">Cliente</th>
+                  <th className="text-ink font-black text-[10px] uppercase text-right">Monto Orig. USD</th>
+                  <th className="text-ink font-black text-[10px] uppercase text-right">Saldo Pend. USD</th>
+                  <th className="text-ink font-black text-[10px] uppercase text-right">Saldo en Bs.</th>
+                  <th className="text-ink font-black text-[10px] uppercase text-center">Acciones</th>
                 </tr>
               </thead>
               <tbody>
                 {state.cxc.filter((c: any) => c.estado !== 'pagada').map((c: any) => (
-                  <tr key={c.id} className="border-b border-white/5 hover:bg-white/5">
-                    <td className="text-white font-bold text-xs">{Utils.fmtFecha(c.fecha)}</td>
-                    <td className={`text-xs font-bold ${c.fechaVencimiento < Utils.hoy() && c.estado !== 'pagada' ? 'text-[#e04848]' : 'text-white'}`}>
+                  <tr key={c.id} className="border-b border-line/40 hover:bg-surface-warm/20">
+                    <td className="text-ink font-bold text-xs">{Utils.fmtFecha(c.fecha)}</td>
+                    <td className={`text-xs font-bold ${c.fechaVencimiento < Utils.hoy() && c.estado !== 'pagada' ? 'text-status-danger' : 'text-ink'}`}>
                       {c.fechaVencimiento === '2099-12-31' ? 'ABIERTA' : Utils.fmtFecha(c.fechaVencimiento)}
                     </td>
-                    <td className="text-white font-black text-xs uppercase">{c.cliente}</td>
-                    <td className="text-white font-bold text-xs text-right">{Utils.fmtUSD(c.montoUSD)}</td>
-                    <td className="text-[#3a9bdc] font-black text-xs text-right">{Utils.fmtUSD(c.saldoUSD)}</td>
-                    <td className="text-white font-bold text-xs text-right">{Utils.fmtBS(c.saldoUSD * state.tasa)}</td>
+                    <td className="text-ink font-black text-xs uppercase">{c.cliente}</td>
+                    <td className="text-ink font-bold text-xs text-right">{Utils.fmtUSD(c.montoUSD)}</td>
+                    <td className="text-status-info font-black text-xs text-right">{Utils.fmtUSD(c.saldoUSD)}</td>
+                    <td className="text-ink font-bold text-xs text-right">{Utils.fmtBS(c.saldoUSD * state.tasa)}</td>
                     <td className="text-center">
                       <div className="flex justify-center gap-2">
-                        <button onClick={() => setShowDetailsModal(c)} className="btn-icon h-8 w-8 text-white hover:text-[#c8952e]" title="Ver Detalles"><Eye className="w-4 h-4"/></button>
-                        <button onClick={() => setShowHistoryModal(c)} className="btn-icon h-8 w-8 text-white hover:text-[#3a9bdc]" title="Historial de Abonos"><Clock className="w-4 h-4"/></button>
+                        <button onClick={() => setShowDetailsModal(c)} className="btn-icon h-8 w-8 text-ink hover:text-brand-gold" title="Ver Detalles"><Eye className="w-4 h-4"/></button>
+                        <button onClick={() => setShowHistoryModal(c)} className="btn-icon h-8 w-8 text-ink hover:text-status-info" title="Historial de Abonos"><Clock className="w-4 h-4"/></button>
                         <button onClick={() => { setShowAbonoModal(c.cliente); setAbonoPagos([]); }} className="btn btn-sm btn-primary font-black text-[9px] uppercase px-4">Abonar</button>
                       </div>
                     </td>
                   </tr>
                 ))}
                 {state.cxc.filter((c: any) => c.estado !== 'pagada').length === 0 && (
-                  <tr><td colSpan={7} className="text-center py-24 text-white font-black uppercase italic opacity-30">No hay cuentas por cobrar activas</td></tr>
+                  <tr><td colSpan={7} className="text-center py-24 text-ink font-black uppercase italic opacity-30">No hay cuentas por cobrar activas</td></tr>
                 )}
               </tbody>
             </table>
           </div>
         </div>
       ) : (
-        <div className="card flex-1 bg-[#131313] text-white p-4 flex flex-col items-center justify-center space-y-4">
-          <RotateCcw className="w-12 h-12 text-[#e04848] opacity-50" />
-          <h3 className="text-white font-black uppercase italic text-xl">Módulo de Devoluciones</h3>
-          <p className="text-white/40 font-black uppercase text-xs">Gestión de retornos de mercancía próximamente integrada.</p>
-          <button onClick={() => setView('pos')} className="btn btn-secondary uppercase font-black text-xs h-10 px-8">Regresar al POS</button>
+        <div className="card flex-1 bg-white text-ink p-4 flex flex-col items-center justify-center space-y-4">
+          <RotateCcw className="w-12 h-12 text-status-danger opacity-50" />
+          <h3 className="text-ink font-black uppercase italic text-xl">Módulo de Devoluciones</h3>
+          <p className="text-ink/60 font-black uppercase text-xs">Gestión de retornos de mercancía próximamente integrada.</p>
+          <button onClick={() => setView('pos')} className="btn btn-secondary uppercase font-black text-xs h-10 px-8 border-line">Regresar al POS</button>
         </div>
       )}
 
       {/* MODAL DETALLES CREDITO */}
       {showDetailsModal && (
         <div className="modal show"><div className="modal-bg" onClick={() => setShowDetailsModal(null)}></div>
-          <div className="modal-box bg-[#1e1e1e] border-2 border-white/20 max-w-lg">
-            <div className="modal-head py-3 px-4 border-b border-white/10"><h3 className="text-white text-xs font-black uppercase">DETALLE DE CRÉDITO - {showDetailsModal.id}</h3><button onClick={() => setShowDetailsModal(null)}><X className="text-white"/></button></div>
+          <div className="modal-box bg-white border-2 border-line max-w-lg">
+            <div className="modal-head py-3 px-4 border-b border-line"><h3 className="text-ink text-xs font-black uppercase">DETALLE DE CRÉDITO - {showDetailsModal.id}</h3><button onClick={() => setShowDetailsModal(null)}><X className="text-ink"/></button></div>
             <div className="modal-body p-4 space-y-4">
-              <div className="bg-black/40 p-3 rounded border border-white/5 space-y-1">
-                <div className="flex justify-between text-[10px] text-white/60"><span>CLIENTE:</span><span className="text-white font-black uppercase">{showDetailsModal.cliente}</span></div>
-                <div className="flex justify-between text-[10px] text-white/60"><span>EMISIÓN:</span><span className="text-white font-black">{Utils.fmtFecha(showDetailsModal.fecha)}</span></div>
-                <div className="flex justify-between text-sm font-black text-[#c8952e]"><span>TOTAL DEUDA:</span><span>{Utils.fmtUSD(showDetailsModal.montoUSD)}</span></div>
+              <div className="bg-surface-soft p-3 rounded border border-line space-y-1">
+                <div className="flex justify-between text-[10px] text-ink/60"><span>CLIENTE:</span><span className="text-ink font-black uppercase">{showDetailsModal.cliente}</span></div>
+                <div className="flex justify-between text-[10px] text-ink/60"><span>EMISIÓN:</span><span className="text-ink font-black">{Utils.fmtFecha(showDetailsModal.fecha)}</span></div>
+                <div className="flex justify-between text-sm font-black text-brand-gold-deep"><span>TOTAL DEUDA:</span><span>{Utils.fmtUSD(showDetailsModal.montoUSD)}</span></div>
               </div>
               <div className="table-wrap max-h-48 overflow-y-auto">
                 <table className="text-[10px]">
                   <thead>
-                    <tr className="border-b border-white/10"><th className="text-white/40">Item</th><th className="text-white/40 text-center">Cant</th><th className="text-white/40 text-right">Subtotal</th></tr>
+                    <tr className="border-b border-line"><th className="text-ink font-black uppercase">Item</th><th className="text-ink text-center font-black uppercase">Cant</th><th className="text-ink text-right font-black uppercase">Subtotal</th></tr>
                   </thead>
                   <tbody>
                     {state.ventas.find(v => v.id === showDetailsModal.id || v.id === showDetailsModal.ventaId)?.items.map((it, idx) => (
-                      <tr key={idx} className="border-b border-white/5">
-                        <td className="text-white font-bold uppercase py-2">{it.nombre}</td>
-                        <td className="text-white text-center">{it.cantidad}</td>
-                        <td className="text-[#c8952e] text-right font-black">{Utils.fmtUSD(it.subtotalUSD)}</td>
+                      <tr key={idx} className="border-b border-line/30">
+                        <td className="text-ink font-bold uppercase py-2">{it.nombre}</td>
+                        <td className="text-ink text-center">{it.cantidad}</td>
+                        <td className="text-brand-gold-deep text-right font-black">{Utils.fmtUSD(it.subtotalUSD)}</td>
                       </tr>
                     )) || (
-                      <tr><td colSpan={3} className="text-center py-4 text-white/20 italic uppercase">Detalle de items no disponible (Deuda Directa)</td></tr>
+                      <tr><td colSpan={3} className="text-center py-4 text-ink/20 italic uppercase font-black">Detalle de items no disponible (Deuda Directa)</td></tr>
                     )}
                   </tbody>
                 </table>
@@ -826,30 +826,30 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       {/* MODAL HISTORIAL DE ABONOS */}
       {showHistoryModal && (
         <div className="modal show"><div className="modal-bg" onClick={() => setShowHistoryModal(null)}></div>
-          <div className="modal-box bg-[#1e1e1e] border-2 border-white/20 max-w-lg">
-            <div className="modal-head py-3 px-4 border-b border-white/10"><h3 className="text-white text-xs font-black uppercase">HISTORIAL DE PAGOS - {showHistoryModal.id}</h3><button onClick={() => setShowHistoryModal(null)}><X className="text-white"/></button></div>
+          <div className="modal-box bg-white border-2 border-line max-w-lg">
+            <div className="modal-head py-3 px-4 border-b border-line"><h3 className="text-ink text-xs font-black uppercase">HISTORIAL DE PAGOS - {showHistoryModal.id}</h3><button onClick={() => setShowHistoryModal(null)}><X className="text-ink"/></button></div>
             <div className="modal-body p-4 space-y-4">
-              <div className="bg-black/40 p-3 rounded border border-white/5 space-y-1">
-                <div className="flex justify-between text-[10px] text-white/60"><span>CLIENTE:</span><span className="text-white font-black uppercase">{showHistoryModal.cliente}</span></div>
-                <div className="flex justify-between text-[10px] text-white/60"><span>SALDO PENDIENTE:</span><span className="text-[#3a9bdc] font-black">{Utils.fmtUSD(showHistoryModal.saldoUSD)}</span></div>
+              <div className="bg-surface-soft p-3 rounded border border-line space-y-1">
+                <div className="flex justify-between text-[10px] text-ink/60"><span>CLIENTE:</span><span className="text-ink font-black uppercase">{showHistoryModal.cliente}</span></div>
+                <div className="flex justify-between text-[10px] text-ink/60"><span>SALDO PENDIENTE:</span><span className="text-status-info font-black">{Utils.fmtUSD(showHistoryModal.saldoUSD)}</span></div>
               </div>
               <div className="table-wrap max-h-60 overflow-y-auto">
                 <table className="text-[10px]">
                   <thead>
-                    <tr className="border-b border-white/10"><th className="text-white/40">Recibo</th><th className="text-white/40">Fecha / Hora</th><th className="text-white/40 text-right">Abono (USD)</th><th className="text-white/40 text-right">Abono (BS)</th></tr>
+                    <tr className="border-b border-line"><th className="text-ink font-black uppercase">Recibo</th><th className="text-ink font-black uppercase">Fecha / Hora</th><th className="text-ink font-black uppercase text-right">Abono (USD)</th><th className="text-ink font-black uppercase text-right">Abono (BS)</th></tr>
                   </thead>
                   <tbody>
                     {showHistoryModal.historialPagos && showHistoryModal.historialPagos.length > 0 ? (
                       showHistoryModal.historialPagos.map((p: any, idx: number) => (
-                        <tr key={idx} className="border-b border-white/5">
-                          <td className="text-white font-black mono py-2">{p.reciboId || '-'}</td>
-                          <td className="text-white font-bold py-2">{p.fecha.replace('T', ' ').slice(0, 16)}</td>
-                          <td className="text-[#27ae60] text-right font-black">{Utils.fmtUSD(p.montoUSD)}</td>
-                          <td className="text-white text-right font-black">{Utils.fmtBS(p.montoBS)}</td>
+                        <tr key={idx} className="border-b border-line/30">
+                          <td className="text-ink font-black mono py-2">{p.reciboId || '-'}</td>
+                          <td className="text-ink font-bold py-2">{p.fecha.replace('T', ' ').slice(0, 16)}</td>
+                          <td className="text-status-success text-right font-black">{Utils.fmtUSD(p.montoUSD)}</td>
+                          <td className="text-ink text-right font-black">{Utils.fmtBS(p.montoBS)}</td>
                         </tr>
                       ))
                     ) : (
-                      <tr><td colSpan={4} className="text-center py-8 text-white/20 italic uppercase font-black">No se registran abonos aún</td></tr>
+                      <tr><td colSpan={4} className="text-center py-8 text-ink/20 italic uppercase font-black">No se registran abonos aún</td></tr>
                     )}
                   </tbody>
                 </table>
@@ -862,67 +862,67 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       {/* MODAL ABONO GENERAL CON CALCULADORA INTELIGENTE */}
       {showAbonoModal && (
         <div className="modal show"><div className="modal-bg" onClick={() => setShowAbonoModal(null)}></div>
-          <div className="modal-box max-w-[420px] bg-[#1e1e1e] border-2 border-white/20">
-            <div className="modal-head py-3 px-4 border-b border-white/10">
-              <h3 className="text-white text-xs font-black uppercase">REGISTRAR ABONO - {showAbonoModal}</h3>
-              <button onClick={() => setShowAbonoModal(null)}><X className="text-white"/></button>
+          <div className="modal-box max-w-[420px] bg-white border-2 border-line">
+            <div className="modal-head py-3 px-4 border-b border-line">
+              <h3 className="text-ink text-xs font-black uppercase">REGISTRAR ABONO - {showAbonoModal}</h3>
+              <button onClick={() => setShowAbonoModal(null)}><X className="text-ink"/></button>
             </div>
             <div className="modal-body p-4 space-y-4">
-              <div className="bg-black p-4 rounded-lg text-center border border-white/10">
-                <p className="text-white/40 text-[9px] font-bold uppercase mb-1">DEUDA TOTAL CLIENTE</p>
-                <p className="text-3xl font-black text-[#3a9bdc]">{Utils.fmtUSD(deudaVisualUSD)}</p>
+              <div className="bg-surface-soft p-4 rounded-lg text-center border border-line shadow-inner">
+                <p className="text-ink/60 text-[9px] font-bold uppercase mb-1">DEUDA TOTAL CLIENTE</p>
+                <p className="text-3xl font-black text-status-info">{Utils.fmtUSD(deudaVisualUSD)}</p>
               </div>
               
               <div className="grid grid-cols-2 gap-4">
-                <div className="bg-[#131313] p-3 rounded border border-white/5 text-center">
-                  <p className="text-white/40 text-[8px] font-black uppercase mb-1">TOTAL A PAGAR BS.</p>
-                  <p className="text-lg font-black text-white">{Utils.fmtBS(totalAPagarBS)}</p>
+                <div className="bg-white p-3 rounded border border-line text-center shadow-sm">
+                  <p className="text-ink/60 text-[8px] font-black uppercase mb-1">TOTAL A PAGAR BS.</p>
+                  <p className="text-lg font-black text-ink">{Utils.fmtBS(totalAPagarBS)}</p>
                 </div>
-                <div className="bg-[#131313] p-3 rounded border border-white/5 text-center">
-                  <p className="text-[#c8952e]/60 text-[8px] font-black uppercase mb-1">TOTAL PAGADO</p>
-                  <p className="text-lg font-black text-[#c8952e]">{Utils.fmtBS(pagosBS_Abono)}</p>
+                <div className="bg-white p-3 rounded border border-line text-center shadow-sm">
+                  <p className="text-brand-gold-deep/60 text-[8px] font-black uppercase mb-1">TOTAL PAGADO</p>
+                  <p className="text-lg font-black text-brand-gold-deep">{Utils.fmtBS(pagosBS_Abono)}</p>
                 </div>
               </div>
 
-              <div className="bg-[#181818] p-3 rounded-lg border border-white/10">
+              <div className="bg-surface-soft p-3 rounded-lg border border-line">
                 <div className="flex justify-between items-center mb-3">
-                  <label className="text-white text-[10px] font-black uppercase">MÉTODOS DE PAGO</label>
-                  <button onClick={() => setShowAbonoMultiModal(true)} className="btn-icon h-6 w-6 bg-[#c8952e] text-black rounded hover:bg-[#c8952e]/80 transition-all">
+                  <label className="text-ink text-[10px] font-black uppercase">MÉTODOS DE PAGO</label>
+                  <button onClick={() => setShowAbonoMultiModal(true)} className="btn-icon h-6 w-6 bg-brand-gold text-white rounded hover:bg-brand-gold-deep transition-all shadow-sm">
                     <Plus className="w-4 h-4"/>
                   </button>
                 </div>
                 
                 <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1">
                   {abonoPagos.map((p, idx) => (
-                    <div key={idx} className="flex justify-between items-center text-[10px] text-white font-bold bg-black/30 p-2 rounded border border-white/5">
+                    <div key={idx} className="flex justify-between items-center text-[10px] text-ink font-bold bg-white p-2 rounded border border-line">
                       <div className="flex items-center gap-3">
-                         <button onClick={() => removeAbonoPago(idx)} className="text-[#e04848] hover:scale-110 transition-transform">
+                         <button onClick={() => removeAbonoPago(idx)} className="text-status-danger hover:scale-110 transition-transform">
                            <Trash2 className="w-4 h-4" />
                          </button>
                          <span className="uppercase">{Utils.metodoLabel(p.metodo)}</span>
                       </div>
                       <div className="text-right">
-                        <div className="text-[#c8952e] font-black">{Utils.fmtUSD(p.montoUSD)}</div>
-                        {(p.metodo !== 'efectivo_usd' && p.metodo !== 'zelle') && <div className="text-[8px] text-white/40 font-bold">{Utils.fmtBS(p.montoBS)}</div>}
+                        <div className="text-brand-gold-deep font-black">{Utils.fmtUSD(p.montoUSD)}</div>
+                        {(p.metodo !== 'efectivo_usd' && p.metodo !== 'zelle') && <div className="text-[8px] text-ink/40 font-bold">{Utils.fmtBS(p.montoBS)}</div>}
                       </div>
                     </div>
                   ))}
                   {abonoPagos.length === 0 && (
                     <div className="py-8 text-center">
-                      <p className="text-[10px] text-white/20 italic uppercase font-black tracking-widest">Añada métodos de pago para continuar</p>
+                      <p className="text-[10px] text-ink/20 italic uppercase font-black tracking-widest">Añada métodos de pago para continuar</p>
                     </div>
                   )}
                 </div>
               </div>
 
-              <div className="bg-amber-500/5 p-3 rounded border border-amber-500/10">
-                <p className="text-[9px] text-amber-500/60 italic uppercase text-center leading-tight font-bold">
+              <div className="bg-brand-gold-soft/20 p-3 rounded border border-brand-gold/10">
+                <p className="text-[9px] text-brand-gold-deep/60 italic uppercase text-center leading-tight font-bold">
                   El abono liquidará facturas automáticamente desde la más antigua.
                 </p>
               </div>
               
               <button 
-                className="btn btn-primary w-full h-14 font-black uppercase text-xs shadow-xl shadow-[#c8952e]/20 disabled:opacity-20 transition-all" 
+                className="btn btn-primary w-full h-14 font-black uppercase text-xs shadow-xl shadow-brand-gold/10 disabled:opacity-20 transition-all" 
                 onClick={procesarAbonoCascada}
                 disabled={abonoPagos.length === 0}
               >
@@ -936,49 +936,49 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       {/* Modal Multi-pago POS */}
       {showMultiModal && (
         <div className="modal show"><div className="modal-bg" onClick={() => { setShowMultiModal(false); setIsCreditView(false); }}></div>
-          <div className="modal-box max-w-[380px] bg-[#1e1e1e] border-2 border-white/20">
-            <div className="modal-head py-3 px-4 border-b border-white/10">
-              <h3 className="text-white text-xs font-black uppercase">{isCreditView ? 'CARGAR CRÉDITO' : 'REGISTRAR PAGO'}</h3>
-              <button onClick={() => { setShowMultiModal(false); setIsCreditView(false); }}><X className="text-white"/></button>
+          <div className="modal-box max-w-[380px] bg-white border-2 border-line">
+            <div className="modal-head py-3 px-4 border-b border-line">
+              <h3 className="text-ink text-xs font-black uppercase">{isCreditView ? 'CARGAR CRÉDITO' : 'REGISTRAR PAGO'}</h3>
+              <button onClick={() => { setShowMultiModal(false); setIsCreditView(false); }}><X className="text-ink"/></button>
             </div>
             <div className="modal-body p-4 space-y-4">
-              <div className="bg-black p-3 rounded-lg text-center border border-white/10">
-                <p className="text-white/40 text-[9px] font-bold uppercase mb-1">Pendiente</p>
-                <p className="text-2xl font-black text-[#3a9bdc]">{Utils.fmtUSD(saldoRestanteUSD)}</p>
-                <p className="text-xs text-white/60 font-bold">{Utils.fmtBS(saldoRestanteBS)}</p>
+              <div className="bg-surface-soft p-3 rounded-lg text-center border border-line shadow-inner">
+                <p className="text-ink/60 text-[9px] font-bold uppercase mb-1">Pendiente</p>
+                <p className="text-2xl font-black text-status-info">{Utils.fmtUSD(saldoRestanteUSD)}</p>
+                <p className="text-xs text-ink/60 font-bold">{Utils.fmtBS(saldoRestanteBS)}</p>
               </div>
               
               {!isCreditView ? (
                 <>
-                  <div className="space-y-1"><label className="text-white text-[10px] font-bold uppercase">MÉTODO</label>
-                    <select className="form-select h-10 bg-[#0b0b0b] text-white border-white/20 font-black uppercase text-xs" value={metodoActual} onChange={e => setMetodoActual(e.target.value as PaymentMethod)}>
+                  <div className="space-y-1"><label className="text-ink text-[10px] font-bold uppercase">MÉTODO</label>
+                    <select className="form-select h-10 bg-white text-ink border-line font-black uppercase text-xs shadow-sm" value={metodoActual} onChange={e => setMetodoActual(e.target.value as PaymentMethod)}>
                       <option value="efectivo_usd">Efectivo USD</option><option value="efectivo_bs">Efectivo BS</option><option value="punto_venta">Punto de Venta</option><option value="pagomovil">Pago Movil</option><option value="biopago">Biopago</option><option value="zelle">Zelle</option>
                     </select>
                   </div>
                   <div className="space-y-1">
                     <div className="flex justify-between items-center mb-1">
-                      <label className="text-white text-[10px] font-bold uppercase">MONTO ({metodoActual.includes('usd') || metodoActual === 'zelle' ? 'USD' : 'BS'})</label>
+                      <label className="text-ink text-[10px] font-bold uppercase">MONTO ({metodoActual.includes('usd') || metodoActual === 'zelle' ? 'USD' : 'BS'})</label>
                       <button 
                         onClick={() => {
                           const monto = metodoActual.includes('usd') || metodoActual === 'zelle' ? saldoRestanteUSD : saldoRestanteBS;
                           setMontoInput(monto.toFixed(2));
                         }}
-                        className="text-[9px] bg-[#c8952e]/20 text-[#c8952e] px-2 py-0.5 rounded font-black border border-[#c8952e]/30 hover:bg-[#c8952e] hover:text-black transition-colors"
+                        className="text-[9px] bg-brand-gold-soft text-brand-gold-deep px-2 py-0.5 rounded font-black border border-brand-gold/30 hover:bg-brand-gold hover:text-white transition-colors"
                       >
                         PAGO EXACTO
                       </button>
                     </div>
-                    <input type="number" className="form-input h-12 text-lg font-black bg-[#0b0b0b] text-white border-white/20" placeholder={metodoActual.includes('usd') || metodoActual === 'zelle' ? saldoRestanteUSD.toFixed(2) : saldoRestanteBS.toFixed(2)} value={montoInput} onChange={e => setMontoInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && addPago(false)} autoFocus />
+                    <input type="number" className="form-input h-12 text-lg font-black bg-white text-ink border-line shadow-inner" placeholder={metodoActual.includes('usd') || metodoActual === 'zelle' ? saldoRestanteUSD.toFixed(2) : saldoRestanteBS.toFixed(2)} value={montoInput} onChange={e => setMontoInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && addPago(false)} autoFocus />
                   </div>
                   <div className="flex flex-col gap-2">
-                    <button className="btn btn-primary w-full h-12 font-black uppercase text-xs" onClick={() => addPago(false)}>CONFIRMAR ABONO</button>
+                    <button className="btn btn-primary w-full h-12 font-black uppercase text-xs shadow-md" onClick={() => addPago(false)}>CONFIRMAR ABONO</button>
                     <div className="flex items-center gap-2 py-2">
-                      <div className="flex-1 h-px bg-white/10"></div>
-                      <span className="text-[9px] text-white/40 font-black">Ó TAMBIÉN</span>
-                      <div className="flex-1 h-px bg-white/10"></div>
+                      <div className="flex-1 h-px bg-line"></div>
+                      <span className="text-[9px] text-ink/40 font-black uppercase">Ó TAMBIÉN</span>
+                      <div className="flex-1 h-px bg-line"></div>
                     </div>
                     <button 
-                      className="btn h-10 border-2 border-[#3a9bdc]/40 text-[#3a9bdc] hover:bg-[#3a9bdc]/10 bg-transparent font-black uppercase text-[10px] w-full"
+                      className="btn h-10 border-2 border-status-info text-status-info hover:bg-status-info-soft bg-transparent font-black uppercase text-[10px] w-full"
                       onClick={() => setIsCreditView(true)}
                     >
                       Cargar Crédito
@@ -990,49 +990,49 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                   {!showNewClientForm ? (
                     <div className="space-y-3">
                        <div className="relative">
-                         <Search className="absolute left-3 top-2.5 w-4 h-4 text-white/40" />
+                         <Search className="absolute left-3 top-2.5 w-4 h-4 text-ink/40" />
                          <input 
-                           className="form-input pl-10 h-10 text-xs bg-black text-white border-white/10" 
+                           className="form-input pl-10 h-10 text-xs bg-white text-ink border-line" 
                            placeholder="Buscar por nombre o cédula..." 
                            value={clientSearch}
                            onChange={e => setClientSearch(e.target.value)}
                          />
                        </div>
                        
-                       <div className="max-h-[160px] overflow-y-auto border border-white/10 rounded-lg bg-black/40">
+                       <div className="max-h-[160px] overflow-y-auto border border-line rounded-lg bg-white shadow-inner">
                          {filteredClients.map(c => (
                            <div 
                              key={c.id} 
                              onClick={() => setSelectedClient(c)}
-                             className={`p-3 border-b border-white/5 cursor-pointer hover:bg-[#c8952e]/10 transition-all ${selectedClient?.id === c.id ? 'bg-[#c8952e]/20 border-l-4 border-l-[#c8952e]' : ''}`}
+                             className={`p-3 border-b border-line/40 cursor-pointer hover:bg-brand-gold/10 transition-all ${selectedClient?.id === c.id ? 'bg-brand-gold-soft border-l-4 border-l-brand-gold' : ''}`}
                            >
-                             <div className="text-xs font-black text-white uppercase">{c.name}</div>
-                             <div className="text-[10px] text-white/40 mono">{c.cedula}</div>
+                             <div className="text-xs font-black text-ink uppercase">{c.name}</div>
+                             <div className="text-[10px] text-ink/40 mono">{c.cedula}</div>
                            </div>
                          ))}
                          {clientSearch.length > 0 && filteredClients.length === 0 && (
-                           <div className="p-4 text-center text-[10px] text-white/20 uppercase font-black">No se encontraron clientes</div>
+                           <div className="p-4 text-center text-[10px] text-ink/20 uppercase font-black">No se encontraron clientes</div>
                          )}
                          {clientSearch.length === 0 && (
-                           <div className="p-4 text-center text-[10px] text-white/40 uppercase font-black italic">Escriba para buscar...</div>
+                           <div className="p-4 text-center text-[10px] text-ink/40 uppercase font-black italic">Escriba para buscar...</div>
                          )}
                        </div>
 
                        <div className="flex flex-col gap-2">
                          <button 
-                           className="btn bg-[#3a9bdc]/20 text-[#3a9bdc] border border-[#3a9bdc]/40 hover:bg-[#3a9bdc]/30 font-black uppercase text-[10px] w-full h-10 flex items-center justify-center gap-2"
+                           className="btn bg-status-info-soft text-status-info border border-status-info/40 hover:bg-status-info/20 font-black uppercase text-[10px] w-full h-10 flex items-center justify-center gap-2"
                            onClick={() => setShowNewClientForm(true)}
                          >
                            <UserPlus className="w-4 h-4" /> Registrar Cliente
                          </button>
                          <button 
-                           className="btn btn-primary w-full h-12 font-black uppercase text-xs disabled:opacity-30" 
+                           className="btn btn-primary w-full h-12 font-black uppercase text-xs disabled:opacity-30 shadow-md" 
                            disabled={!selectedClient}
                            onClick={ejecutarVentaACredito}
                          >
                            Cargar Deuda
                          </button>
-                         <button className="text-[9px] text-white/40 uppercase font-black mt-1 hover:text-white" onClick={() => { setIsCreditView(false); setSelectedClient(null); }}>
+                         <button className="text-[9px] text-ink/40 uppercase font-black mt-1 hover:text-ink text-center" onClick={() => { setIsCreditView(false); setSelectedClient(null); }}>
                            Cancelar y volver al pago
                          </button>
                        </div>
@@ -1041,30 +1041,30 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                     <div className="space-y-3">
                        <div className="grid grid-cols-1 gap-2">
                          <div className="space-y-1">
-                           <label className="text-[9px] font-black uppercase text-white/60">Nombre y Apellido</label>
-                           <input className="form-input h-9 text-xs bg-black text-white border-white/10" value={newClient.name} onChange={e => setNewClient({...newClient, name: e.target.value})} />
+                           <label className="text-[9px] font-black uppercase text-ink/60">Nombre y Apellido</label>
+                           <input className="form-input h-9 text-xs bg-white text-ink border-line" value={newClient.name} onChange={e => setNewClient({...newClient, name: e.target.value})} />
                          </div>
                          <div className="space-y-1">
-                           <label className="text-[9px] font-black uppercase text-white/60">Cédula (V-00.000.000)</label>
-                           <input className="form-input h-9 text-xs bg-black text-white border-white/10" value={newClient.cedula} onChange={e => setNewClient({...newClient, cedula: e.target.value})} />
+                           <label className="text-[9px] font-black uppercase text-ink/60">Cédula (V-00.000.000)</label>
+                           <input className="form-input h-9 text-xs bg-white text-ink border-line" value={newClient.cedula} onChange={e => setNewClient({...newClient, cedula: e.target.value})} />
                          </div>
                          <div className="grid grid-cols-2 gap-2">
                            <div className="space-y-1">
-                             <label className="text-[9px] font-black uppercase text-white/60">Teléfono (Op.)</label>
-                             <input className="form-input h-9 text-xs bg-black text-white border-white/10" value={newClient.phone} onChange={e => setNewClient({...newClient, phone: e.target.value})} />
+                             <label className="text-[9px] font-black uppercase text-ink/60">Teléfono (Op.)</label>
+                             <input className="form-input h-9 text-xs bg-white text-ink border-line" value={newClient.phone} onChange={e => setNewClient({...newClient, phone: e.target.value})} />
                            </div>
                            <div className="space-y-1">
-                             <label className="text-[9px] font-black uppercase text-white/60">Dirección (Op.)</label>
-                             <input className="form-input h-9 text-xs bg-black text-white border-white/10" value={newClient.address} onChange={e => setNewClient({...newClient, address: e.target.value})} />
+                             <label className="text-[9px] font-black uppercase text-ink/60">Dirección (Op.)</label>
+                             <input className="form-input h-9 text-xs bg-white text-ink border-line" value={newClient.address} onChange={e => setNewClient({...newClient, address: e.target.value})} />
                            </div>
                          </div>
                        </div>
                        
                        <div className="flex flex-col gap-2 pt-2">
-                         <button className="btn btn-primary w-full h-12 font-black uppercase text-xs" onClick={ejecutarVentaACredito}>
+                         <button className="btn btn-primary w-full h-12 font-black uppercase text-xs shadow-md" onClick={ejecutarVentaACredito}>
                            Cargar Deuda
                          </button>
-                         <button className="text-[9px] text-white/40 uppercase font-black hover:text-white" onClick={() => setShowNewClientForm(false)}>
+                         <button className="text-[9px] text-ink/40 uppercase font-black hover:text-ink text-center" onClick={() => setShowNewClientForm(false)}>
                            Volver a buscar clientes
                          </button>
                        </div>
@@ -1080,31 +1080,31 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       {/* Modal Multi-pago Abono */}
       {showAbonoMultiModal && (
         <div className="modal show"><div className="modal-bg" onClick={() => setShowAbonoMultiModal(false)}></div>
-          <div className="modal-box max-w-[350px] bg-[#1e1e1e] border-2 border-white/20">
-            <div className="modal-head py-3 px-4 border-b border-white/10"><h3 className="text-white text-xs font-black uppercase">AÑADIR MÉTODO DE PAGO</h3><button onClick={() => setShowAbonoMultiModal(false)}><X className="text-white"/></button></div>
+          <div className="modal-box max-w-[350px] bg-white border-2 border-line">
+            <div className="modal-head py-3 px-4 border-b border-line"><h3 className="text-ink text-xs font-black uppercase">AÑADIR MÉTODO DE PAGO</h3><button onClick={() => setShowAbonoMultiModal(false)}><X className="text-ink"/></button></div>
             <div className="modal-body p-4 space-y-4">
-              <div className="space-y-1"><label className="text-white text-[10px] font-bold uppercase">MÉTODO</label>
-                <select className="form-select h-10 bg-[#0b0b0b] text-white border-white/20 font-black uppercase text-xs" value={metodoActual} onChange={e => setMetodoActual(e.target.value as PaymentMethod)}>
+              <div className="space-y-1"><label className="text-ink text-[10px] font-bold uppercase">MÉTODO</label>
+                <select className="form-select h-10 bg-white text-ink border-line font-black uppercase text-xs shadow-sm" value={metodoActual} onChange={e => setMetodoActual(e.target.value as PaymentMethod)}>
                   <option value="efectivo_usd">Efectivo USD</option><option value="efectivo_bs">Efectivo BS</option><option value="punto_venta">Punto de Venta</option><option value="pagomovil">Pago Movil</option><option value="biopago">Biopago</option><option value="zelle">Zelle</option>
                 </select>
               </div>
               <div className="space-y-1">
                 <div className="flex justify-between items-center mb-1">
-                  <label className="text-white text-[10px] font-bold uppercase">MONTO ({metodoActual.includes('usd') || metodoActual === 'zelle' ? 'USD' : 'BS'})</label>
+                  <label className="text-ink text-[10px] font-bold uppercase">MONTO ({metodoActual.includes('usd') || metodoActual === 'zelle' ? 'USD' : 'BS'})</label>
                   <button 
                     onClick={() => {
                       const restanteUSD = Math.max(0, deudaVisualUSD - (pagosBS_Abono / state.tasa));
                       const monto = metodoActual.includes('usd') || metodoActual === 'zelle' ? restanteUSD : restanteUSD * state.tasa;
                       setMontoInput(monto.toFixed(2));
                     }}
-                    className="text-[9px] bg-[#c8952e]/20 text-[#c8952e] px-2 py-0.5 rounded font-black border border-[#c8952e]/30 hover:bg-[#c8952e] hover:text-black transition-colors"
+                    className="text-[9px] bg-brand-gold-soft text-brand-gold-deep px-2 py-0.5 rounded font-black border border-brand-gold/30 hover:bg-brand-gold hover:text-white transition-colors"
                   >
                     PAGO EXACTO
                   </button>
                 </div>
-                <input type="number" className="form-input h-12 text-lg font-black bg-[#0b0b0b] text-white border-white/20" placeholder="0.00" value={montoInput} onChange={e => setMontoInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && addPago(true)} autoFocus />
+                <input type="number" className="form-input h-12 text-lg font-black bg-white text-ink border-line shadow-inner" placeholder="0.00" value={montoInput} onChange={e => setMontoInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && addPago(true)} autoFocus />
               </div>
-              <button className="btn btn-primary w-full h-12 font-black uppercase text-xs shadow-lg shadow-[#c8952e]/20" onClick={() => addPago(true)}>AÑADIR AL COBRO</button>
+              <button className="btn btn-primary w-full h-12 font-black uppercase text-xs shadow-lg shadow-brand-gold/20" onClick={() => addPago(true)}>AÑADIR AL COBRO</button>
             </div>
           </div>
         </div>
@@ -1114,9 +1114,9 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       {showReport && (
         <div className="modal show"><div className="modal-bg" onClick={() => setShowReport(null)}></div>
           <div className="modal-box bg-white text-black max-w-sm rounded shadow-2xl overflow-hidden flex flex-col">
-            <div className="bg-[#131313] p-3 flex justify-between items-center border-b border-white/10">
-              <h3 className="text-white font-bold text-xs uppercase tracking-widest">Vista Previa Reporte</h3>
-              <button onClick={() => setShowReport(null)}><X className="text-white h-4 w-4"/></button>
+            <div className="bg-surface-soft p-3 flex justify-between items-center border-b border-line">
+              <h3 className="text-ink font-bold text-xs uppercase tracking-widest">Vista Previa Reporte</h3>
+              <button onClick={() => setShowReport(null)}><X className="text-ink h-4 w-4"/></button>
             </div>
             
             <div className="p-4 max-h-[70vh] overflow-y-auto bg-gray-100 flex justify-center">
@@ -1211,7 +1211,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
 
             <div className="p-3 bg-gray-50 border-t border-gray-200 flex gap-2">
               <button onClick={() => setShowReport(null)} className="flex-1 py-3 bg-gray-800 text-white font-black text-xs rounded-lg uppercase tracking-wider">Cerrar</button>
-              <button onClick={() => handleNativeReportPrint(showReport)} className="flex-1 py-3 bg-[#c8952e] text-black font-black text-xs rounded-lg uppercase tracking-wider flex items-center justify-center gap-2">
+              <button onClick={() => handleNativeReportPrint(showReport)} className="flex-1 py-3 bg-brand-gold text-white font-black text-xs rounded-lg uppercase tracking-wider flex items-center justify-center gap-2 shadow-sm">
                 <Printer size={14} /> IMPRIMIR
               </button>
             </div>
@@ -1223,11 +1223,11 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       {showReceiptModal && lastProcessedSale && (
         <div className="fixed inset-0 z-[300] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 no-print">
           <div className="bg-white rounded-xl max-w-sm w-full shadow-2xl overflow-hidden flex flex-col border border-gray-200">
-            <div className="bg-black p-3.5 flex justify-between items-center border-b border-gray-700">
-              <h3 className="text-white font-bold text-sm flex items-center gap-2 tracking-wide">
-                <Printer size={16} className="text-amber-400" /> VISTA PREVIA DEL DOCUMENTO
+            <div className="bg-surface-soft p-3.5 flex justify-between items-center border-b border-line">
+              <h3 className="text-ink font-bold text-sm flex items-center gap-2 tracking-wide">
+                <Printer size={16} className="text-brand-gold" /> VISTA PREVIA DEL DOCUMENTO
               </h3>
-              <button onClick={() => setShowReceiptModal(false)} className="text-white/70 hover:text-white transition-colors">
+              <button onClick={() => setShowReceiptModal(false)} className="text-ink/70 hover:text-ink transition-colors">
                 <X size={18} />
               </button>
             </div>
@@ -1342,7 +1342,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
               </div>
               <div className="flex gap-2">
                  <button onClick={() => handlePrint(printRef)} className="flex-1 py-2 bg-gray-800 text-white font-bold text-xs rounded-lg hover:bg-black transition-colors flex items-center justify-center gap-2 uppercase tracking-wider shadow-sm"><Printer size={14} /> Estándar</button>
-                 <button onClick={() => handleNativePrint(lastProcessedSale)} className="flex-1 py-2 bg-[#D4A017] text-slate-950 font-black text-xs rounded-lg hover:bg-[#C4940F] transition-colors flex items-center justify-center gap-2 uppercase tracking-wider shadow-sm border-2 border-black/10">
+                 <button onClick={() => handleNativePrint(lastProcessedSale)} className="flex-1 py-2 bg-brand-gold text-white font-black text-xs rounded-lg hover:bg-brand-gold-deep transition-colors flex items-center justify-center gap-2 uppercase tracking-wider shadow-sm border-2 border-black/10">
                    <Zap size={14} className="fill-current" /> IMPRESIÓN USB
                  </button>
               </div>
