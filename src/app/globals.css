@@ -5,24 +5,24 @@
 @tailwind utilities;
 
 :root {
-  --background: #141412;
-  --foreground: #F7F5EF;
-  --card: #1C1C19;
-  --card-foreground: #F7F5EF;
-  --popover: #1C1C19;
-  --popover-foreground: #F7F5EF;
+  --background: #E6E1D3;
+  --foreground: #141414;
+  --card: #FFFFFF;
+  --card-foreground: #141414;
+  --popover: #FFFFFF;
+  --popover-foreground: #141414;
   --primary: #C8952E;
   --primary-foreground: #FFFFFF;
-  --secondary: #262623;
-  --secondary-foreground: #F7F5EF;
-  --muted: #262623;
-  --muted-foreground: #8A8A8A;
-  --accent: #262623;
-  --accent-foreground: #F7F5EF;
+  --secondary: #EFEBE0;
+  --secondary-foreground: #141414;
+  --muted: #EFEBE0;
+  --muted-foreground: #4A4A4A;
+  --accent: #F5E9CC;
+  --accent-foreground: #A37619;
   --destructive: #C0392B;
   --destructive-foreground: #FFFFFF;
-  --border: #333330;
-  --input: #333330;
+  --border: #D9D2BF;
+  --input: #D9D2BF;
   --ring: #C8952E;
   --radius: 20px;
 }
@@ -30,38 +30,33 @@
 body {
   font-family: 'Inter', system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
-  color: #F7F5EF;
-  background: #141412;
-}
-
-/* Bento Grid Utilities */
-.bento-card {
-  @apply bg-card border border-line rounded-lg p-5 shadow-card transition-all duration-200 hover:shadow-pop;
+  color: #141414;
+  background: #E6E1D3;
 }
 
 .mono {
   font-family: 'JetBrains Mono', monospace;
 }
 
-/* Custom UI Components */
+/* Custom UI Classes */
 .card {
   @apply bg-card border border-line rounded-lg overflow-hidden shadow-sm-card;
 }
 
 .card-head {
-  @apply px-5 py-3 border-b border-line flex justify-between items-center bg-surface-soft/50;
+  @apply px-6 py-4 border-b border-line flex justify-between items-center;
 }
 
 .card-body {
-  @apply p-5;
+  @apply p-6;
 }
 
 .form-input {
-  @apply w-full bg-surface-warm border border-line rounded-md px-3 py-2 text-ink outline-none transition-all focus:border-brand-gold focus:ring-2 focus:ring-brand-gold-soft;
+  @apply w-full bg-surface-soft border border-line rounded-md px-3 py-2 text-ink outline-none transition-all focus:border-brand-gold focus:ring-4 focus:ring-brand-gold-soft/30;
 }
 
 .btn {
-  @apply inline-flex items-center justify-center px-4 py-2 rounded-md font-semibold cursor-pointer transition-all gap-2 h-10;
+  @apply inline-flex items-center justify-center px-4 py-2 rounded-md font-semibold cursor-pointer transition-all gap-2 h-10 active:scale-[0.98];
 }
 
 .btn-primary {
@@ -69,15 +64,19 @@ body {
 }
 
 .btn-secondary {
-  @apply bg-surface-soft border border-line text-ink hover:bg-surface-warm;
+  @apply bg-white border border-line text-ink hover:bg-surface-soft;
 }
 
 .btn-danger {
-  @apply bg-status-danger text-white hover:opacity-90;
+  @apply bg-status-danger text-white hover:opacity-90 shadow-sm;
+}
+
+.btn-icon {
+  @apply flex items-center justify-center rounded-md transition-colors hover:bg-surface-soft;
 }
 
 .badge {
-  @apply px-2 py-0.5 rounded-full text-[0.7rem] font-bold uppercase tracking-wider;
+  @apply px-2.5 py-0.5 rounded-full text-[0.7rem] font-bold uppercase tracking-wider;
 }
 
 .badge-neutral { @apply bg-surface-soft text-ink-muted; }
@@ -85,6 +84,72 @@ body {
 .badge-err { @apply bg-status-danger-soft text-status-danger; }
 .badge-info { @apply bg-status-info-soft text-status-info; }
 .badge-warn { @apply bg-status-warn-soft text-status-warn; }
+
+.kpi {
+  @apply bg-white border border-line rounded-lg p-5 shadow-sm-card;
+}
+
+.kpi-label { @apply text-[0.7rem] font-bold text-ink-subtle uppercase tracking-widest mb-1; }
+.kpi-value { @apply text-2xl font-black text-ink font-display; }
+.kpi-sub { @apply text-[0.7rem] font-medium text-ink-subtle mt-1; }
+
+.table-wrap {
+  @apply w-full overflow-x-auto;
+}
+
+table {
+  @apply w-full border-collapse;
+}
+
+th {
+  @apply px-6 py-3 text-left text-[0.68rem] font-bold text-ink-subtle uppercase tracking-[0.12em] border-b border-line bg-surface-soft/50;
+}
+
+td {
+  @apply px-6 py-4 text-sm border-b border-line/50;
+}
+
+/* Tabs Styling */
+.tabs {
+  @apply flex items-center gap-1;
+}
+
+.tab {
+  @apply px-4 py-2 text-sm font-bold text-ink-subtle rounded-t-lg transition-all border-b-2 border-transparent hover:text-ink;
+}
+
+.tab.active {
+  @apply text-brand-gold border-brand-gold bg-white;
+}
+
+/* Modals */
+.modal {
+  @apply fixed inset-0 z-50 flex items-center justify-center p-4 invisible opacity-0 transition-all duration-300;
+}
+
+.modal.show {
+  @apply visible opacity-100;
+}
+
+.modal-bg {
+  @apply absolute inset-0 bg-black/40 backdrop-blur-sm;
+}
+
+.modal-box {
+  @apply relative w-full max-w-2xl bg-white rounded-lg shadow-pop border border-line overflow-hidden animate-in zoom-in-95 duration-200;
+}
+
+.modal-head {
+  @apply px-6 py-4 border-b border-line flex justify-between items-center;
+}
+
+.modal-body {
+  @apply p-6 overflow-y-auto max-h-[85vh];
+}
+
+.modal-foot {
+  @apply px-6 py-4 border-t border-line bg-surface-soft/30 flex justify-end gap-3;
+}
 
 /* Hide Number Arrows */
 input::-webkit-outer-spin-button,
@@ -98,4 +163,5 @@ input[type=number] {
 
 @media print {
   .no-print { display: none !important; }
+  body { background: white !important; }
 }
