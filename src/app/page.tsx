@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect } from 'react';
@@ -185,11 +186,11 @@ export default function LicoreriaPOS() {
           </button>
           
           <div className="hidden sm:block">
-            <h2 className="font-display text-lg font-[800] text-ink leading-tight capitalize">
-              {activeModule === 'dashboard' ? 'Dashboard' : activeModule}
+            <h2 className="font-display text-lg font-[800] text-ink leading-tight">
+              Pos<span className="text-brand-gold">VEN</span> pro
             </h2>
             <p className="text-[0.7rem] text-ink-subtle uppercase font-bold tracking-widest">
-              Resumen general del negocio
+              Soluciones Venezuela
             </p>
           </div>
 
