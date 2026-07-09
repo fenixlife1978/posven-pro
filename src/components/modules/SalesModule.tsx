@@ -1,7 +1,8 @@
+
 "use client";
 
 import React, { useState, useEffect, useRef } from 'react';
-import { AppState, SaleItem, Sale, PaymentMethod, ReportZ, Movimiento, PagoRealizado, Customer } from '@/lib/types';
+import { AppState, SaleItem, Sale, PaymentMethod, ReportZ, Movimiento, PagoRealizado, Customer, Return, ReturnItem } from '@/lib/types';
 import { Utils, Store } from '@/lib/db-store';
 import { 
   Search, 
@@ -24,7 +25,9 @@ import {
   Zap,
   Share2,
   UserPlus,
-  User
+  User,
+  AlertTriangle,
+  Undo2
 } from 'lucide-react';
 
 // ✅ Declarar el tipo de electronAPI en Window para soporte de impresión nativa
@@ -65,9 +68,117 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   const [showNewClientForm, setShowNewClientForm] = useState(false);
   const [newClient, setNewClient] = useState({ name: '', cedula: 'V-', phone: '', address: '' });
 
+  // Estados para Devoluciones (Trasladados de ReturnsModule)
+  const [returnView, setReturnView] = useState<'list' | 'create'>('list');
+  const [returnSaleSearch, setReturnSaleSearch] = useState('');
+  const [selectedSaleForReturn, setSelectedSaleForReturn] = useState<Sale | null>(null);
+  const [returnItems, setReturnItems] = useState<ReturnItem[]>([]);
+  const [refundMethod, setRefundMethod] = useState<'EFECTIVO' | 'MISMO_METODO' | 'CREDITO_TIENDA'>('EFECTIVO');
+  const [returnReason, setReturnReason] = useState('');
+
   const searchInputRef = useRef<HTMLInputElement>(null);
   const printRef = useRef<HTMLDivElement | null>(null);
   const reportPrintRef = useRef<HTMLDivElement | null>(null);
+
+  // Funciones de Devolución
+  const buscarVentaParaDevolucion = () => {
+    const sale = state.ventas.find(v => v.id === returnSaleSearch || v.id.endsWith(returnSaleSearch));
+    if (!sale) return alert('Venta no encontrada');
+    setSelectedSaleForReturn(sale);
+    setReturnItems([]);
+  };
+
+  const handleAddReturnItem = (productoId: string, nombre: string, precioUnitUSD: number, maxQty: number) => {
+    const alreadyReturned = (state.devoluciones || [])
+      .filter(d => d.ventaId === selectedSaleForReturn?.id)
+      .flatMap(d => d.items)
+      .filter(i => i.productoId === productoId)
+      .reduce((sum, i) => sum + i.cantidad, 0);
+
+    const availableToReturn = maxQty - alreadyReturned;
+    if (availableToReturn <= 0) return alert('Este producto ya ha sido devuelto en su totalidad.');
+
+    const qtyStr = prompt(`Cantidad a devolver (Máx: ${availableToReturn}):`, '1');
+    if (qtyStr === null) return;
+    const qty = parseInt(qtyStr || '0');
+    if (isNaN(qty) || qty <= 0 || qty > availableToReturn) return alert('Cantidad no válida');
+
+    const condition = confirm('¿El producto se encuentra APTO para la venta? (OK: Vuelve a stock, CANCEL: Va a merma/daño)') 
+      ? 'REINTEGRADO_STOCK' 
+      : 'MERMA_DANADO';
+
+    setReturnItems([...returnItems, {
+      productoId,
+      nombre,
+      cantidad: qty,
+      precioUnitUSD,
+      estadoProducto: condition as any
+    }]);
+  };
+
+  const procesarDevolucionPOS = () => {
+    if (!selectedSaleForReturn || returnItems.length === 0) return;
+    if (!returnReason.trim()) return alert('Por favor indique el motivo de la devolución');
+
+    const totalDevuelto = returnItems.reduce((s, i) => s + (i.cantidad * i.precioUnitUSD), 0);
+    const idDev = 'DEV-' + String(state.proximaDevolucion).padStart(6, '0');
+    const ahoraStr = Utils.ahora();
+
+    const nuevaDevolucion: Return = {
+      id: idDev,
+      ventaId: selectedSaleForReturn.id,
+      fecha: ahoraStr,
+      items: [...returnItems],
+      totalUSD: totalDevuelto,
+      metodoReembolso: refundMethod,
+      motivo: returnReason
+    };
+
+    const nuevosProductos = [...state.productos];
+    const nuevosMovimientos: Movimiento[] = [];
+
+    returnItems.forEach(item => {
+      const pIdx = nuevosProductos.findIndex(p => p.id === item.productoId);
+      if (pIdx >= 0) {
+        const p = nuevosProductos[pIdx];
+        const stockAntes = p.stock;
+        if (item.estadoProducto === 'REINTEGRADO_STOCK') {
+          nuevosProductos[pIdx] = { ...p, stock: p.stock + item.cantidad };
+        }
+        nuevosMovimientos.push({
+          id: Store.uid(),
+          productoId: item.productoId,
+          tipo: 'devolucion',
+          cantidad: item.cantidad,
+          stockAntes,
+          stockDespues: nuevosProductos[pIdx].stock,
+          fecha: ahoraStr,
+          referencia: `DEVOLUCIÓN ${idDev} - REF VENTA ${selectedSaleForReturn.id}`
+        });
+      }
+    });
+
+    const nuevasVentas = state.ventas.map(v => {
+      if (v.id === selectedSaleForReturn.id) {
+        return { ...v, estado: 'parcialmente_devuelta' as any };
+      }
+      return v;
+    });
+
+    updateState({
+      productos: nuevosProductos,
+      devoluciones: [nuevaDevolucion, ...(state.devoluciones || [])],
+      movimientos: [...state.movimientos, ...nuevosMovimientos],
+      ventas: nuevasVentas,
+      proximaDevolucion: state.proximaDevolucion + 1
+    });
+
+    alert(`Devolución ${idDev} procesada con éxito`);
+    setReturnView('list');
+    setSelectedSaleForReturn(null);
+    setReturnItems([]);
+    setReturnReason('');
+  };
 
   // Cálculos para el abono dinámico
   const deudaInicialUSD = showAbonoModal ? state.cxc.filter((d: any) => d.cliente === showAbonoModal && d.estado !== 'pagada').reduce((s: number, d: any) => s + d.saldoUSD, 0) : 0;
@@ -579,12 +690,12 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   return (
     <div className="flex flex-col gap-2 h-[calc(100vh-100px)] max-w-7xl mx-auto w-full overflow-hidden">
       <div className="flex gap-2 no-print shrink-0 overflow-x-auto pb-1">
-        <button onClick={() => setView('pos')} className={`btn btn-sm ${view === 'pos' ? 'btn-primary' : 'btn-secondary text-ink font-bold'}`}><ShoppingCart className="w-3.5 h-3.5"/> Punto de Venta</button>
-        <button onClick={() => setView('history')} className={`btn btn-sm ${view === 'history' ? 'btn-primary' : 'btn-secondary text-ink font-bold'}`}><History className="w-3.5 h-3.5"/> Historial</button>
-        <button onClick={() => setView('credits')} className={`btn btn-sm ${view === 'credits' ? 'btn-primary' : 'btn-secondary text-ink font-bold'}`}><ClipboardList className="w-3.5 h-3.5"/> Consultar Créditos</button>
-        <button onClick={() => setShowReport('Y')} className="btn btn-sm btn-secondary text-ink font-bold"><FileText className="w-3.5 h-3.5"/> Reporte Y</button>
-        <button onClick={emitirReporteZ} className="btn btn-sm btn-secondary text-ink font-bold"><Receipt className="w-3.5 h-3.5"/> Reporte Z</button>
-        <button onClick={() => setView('returns')} className="btn btn-sm btn-secondary text-ink font-bold"><RotateCcw className="w-3.5 h-3.5"/> Devoluciones</button>
+        <button onClick={() => setView('pos')} className={`btn btn-sm ${view === 'pos' ? 'btn-primary shadow-md' : 'bg-white text-ink font-bold border-line border'}`}><ShoppingCart className="w-3.5 h-3.5"/> Punto de Venta</button>
+        <button onClick={() => setView('history')} className={`btn btn-sm ${view === 'history' ? 'btn-primary shadow-md' : 'bg-white text-ink font-bold border-line border'}`}><History className="w-3.5 h-3.5"/> Historial</button>
+        <button onClick={() => setView('credits')} className={`btn btn-sm ${view === 'credits' ? 'btn-primary shadow-md' : 'bg-white text-ink font-bold border-line border'}`}><ClipboardList className="w-3.5 h-3.5"/> Consultar Créditos</button>
+        <button onClick={() => setShowReport('Y')} className="btn btn-sm bg-white text-ink font-bold border-line border"><FileText className="w-3.5 h-3.5"/> Reporte Y</button>
+        <button onClick={emitirReporteZ} className="btn btn-sm bg-white text-ink font-bold border-line border"><Receipt className="w-3.5 h-3.5"/> Reporte Z</button>
+        <button onClick={() => setView('returns')} className={`btn btn-sm ${view === 'returns' ? 'btn-primary shadow-md' : 'bg-white text-ink font-bold border-line border'}`}><RotateCcw className="w-3.5 h-3.5"/> Devoluciones</button>
       </div>
 
       {view === 'pos' ? (
@@ -646,7 +757,6 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
 
             <div className="w-2/3 flex flex-col gap-2 overflow-hidden">
               <div className="card flex-1 flex flex-col overflow-hidden bg-white border-none shadow-xl">
-                {/* CABECERA NEGRA ESTILO IMAGEN */}
                 <div className="grid grid-cols-[1fr_80px_60px_70px_80px_80px_40px] gap-2 px-3 py-3 bg-ink text-white text-[9px] font-black uppercase tracking-[0.15em] rounded-t-lg">
                   <div>Descripción</div><div className="text-center">Cant</div><div className="text-center">U.M.</div><div className="text-right">Precio ($)</div><div className="text-right">Precio (Bs)</div><div className="text-right">Total</div><div className="text-center"></div>
                 </div>
@@ -677,7 +787,6 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                     })
                   )}
                 </div>
-                {/* FOOTER NEGRO ESTILO IMAGEN */}
                 <div className="p-4 bg-ink border-t border-line/10 flex items-center justify-between rounded-b-lg">
                   <div className="space-y-0">
                     <label className="text-white/60 text-[8px] font-black uppercase block tracking-widest mb-1">TOTAL FACTURA</label>
@@ -791,11 +900,194 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
           </div>
         </div>
       ) : (
-        <div className="card flex-1 bg-white text-ink p-4 flex flex-col items-center justify-center space-y-4">
-          <RotateCcw className="w-12 h-12 text-status-danger opacity-50" />
-          <h3 className="text-ink font-black uppercase italic text-xl">Módulo de Devoluciones</h3>
-          <p className="text-ink/60 font-black uppercase text-xs">Gestión de retornos de mercancía próximamente integrada.</p>
-          <button onClick={() => setView('pos')} className="btn btn-secondary uppercase font-black text-xs h-10 px-8 border-line">Regresar al POS</button>
+        /* VISTA DE DEVOLUCIONES INTEGRADA */
+        <div className="flex flex-col gap-6 animate-in slide-in-from-bottom-2 duration-300 flex-1 overflow-hidden">
+          <div className="flex justify-between items-center bg-white p-4 rounded-xl border border-line shadow-sm">
+            <div>
+              <h2 className="text-ink font-black uppercase italic tracking-tighter text-lg flex items-center gap-2">
+                <RotateCcw className="text-status-danger w-5 h-5" /> GESTIÓN DE DEVOLUCIONES
+              </h2>
+              <p className="text-[10px] text-ink font-bold uppercase tracking-widest opacity-60">Auditoría y Reintegro de Mercancía</p>
+            </div>
+            <button 
+              onClick={() => { setReturnView(returnView === 'list' ? 'create' : 'list'); setSelectedSaleForReturn(null); }} 
+              className={`btn ${returnView === 'list' ? 'btn-primary' : 'btn-secondary'} h-9 px-6 font-black uppercase text-[10px] flex items-center gap-2 shadow-sm`}
+            >
+              {returnView === 'list' ? <><RotateCcw className="w-3.5 h-3.5" /> Nueva Devolución</> : <><History className="w-3.5 h-3.5" /> Ver Historial</>}
+            </button>
+          </div>
+
+          {returnView === 'list' ? (
+            <div className="card flex-1 bg-white border-line shadow-lg overflow-hidden flex flex-col">
+              <div className="card-head bg-surface-soft border-b border-line px-5 py-3">
+                <h3 className="text-ink font-black text-[10px] uppercase tracking-widest flex items-center gap-2">
+                  <ClipboardList className="w-4 h-4 text-status-info" /> Historial de Devoluciones
+                </h3>
+              </div>
+              <div className="table-wrap flex-1 overflow-y-auto">
+                <table className="w-full">
+                  <thead className="sticky top-0 bg-surface-soft z-10">
+                    <tr>
+                      <th className="text-ink font-black text-[10px] uppercase">ID Devolución</th>
+                      <th className="text-ink font-black text-[10px] uppercase">Fecha</th>
+                      <th className="text-ink font-black text-[10px] uppercase">Venta Ref.</th>
+                      <th className="text-ink font-black text-[10px] uppercase">Items</th>
+                      <th className="text-ink font-black text-[10px] uppercase text-right">Total Devuelto</th>
+                      <th className="text-ink font-black text-[10px] uppercase">Reembolso</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(state.devoluciones || []).length === 0 ? (
+                      <tr><td colSpan={6} className="text-center py-24 text-ink font-black uppercase italic opacity-20">No hay devoluciones registradas</td></tr>
+                    ) : (
+                      state.devoluciones.map(d => (
+                        <tr key={d.id} className="border-b border-line/40 hover:bg-surface-warm/20">
+                          <td className="text-status-danger font-black text-xs mono">{d.id}</td>
+                          <td className="text-ink font-bold text-xs">{Utils.fmtFecha(d.fecha)}</td>
+                          <td className="text-ink font-black text-xs mono opacity-60">{d.ventaId}</td>
+                          <td className="text-ink font-bold text-[10px] uppercase">{d.items.length} productos</td>
+                          <td className="text-brand-gold-deep font-black text-xs text-right">{Utils.fmtUSD(d.totalUSD)}</td>
+                          <td><span className="badge badge-neutral font-black text-[9px] uppercase">{d.metodoReembolso}</span></td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1 overflow-hidden">
+              <div className="lg:col-span-2 flex flex-col gap-4 overflow-hidden">
+                {!selectedSaleForReturn ? (
+                  <div className="card p-12 flex-1 flex flex-col items-center justify-center text-center space-y-6 bg-white border-dashed border-2 border-line">
+                    <div className="p-5 bg-surface-soft rounded-full"><Search className="w-10 h-10 text-ink/20" /></div>
+                    <div className="max-w-xs space-y-2">
+                      <h3 className="text-ink font-black uppercase text-sm">Localizar Venta Original</h3>
+                      <p className="text-[10px] text-ink font-bold uppercase opacity-60">Ingrese el número de recibo para iniciar el proceso.</p>
+                    </div>
+                    <div className="flex gap-2 w-full max-w-sm">
+                      <input 
+                        className="form-input flex-1 h-11 bg-white border-line text-ink font-black uppercase" 
+                        placeholder="Ej: 000000024"
+                        value={returnSaleSearch}
+                        onChange={e => setReturnSaleSearch(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && buscarVentaParaDevolucion()}
+                      />
+                      <button onClick={buscarVentaParaDevolucion} className="btn btn-primary h-11 px-6 font-black uppercase text-xs">Buscar</button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-4 overflow-hidden flex-1">
+                    <div className="card bg-white border-status-info/30 flex flex-col min-h-[200px]">
+                      <div className="card-head py-2 px-5 border-b border-line flex justify-between bg-status-info-soft/10">
+                        <h3 className="text-status-info font-black uppercase text-[10px]">Venta Original: {selectedSaleForReturn.id}</h3>
+                        <button onClick={() => setSelectedSaleForReturn(null)} className="text-ink/40 hover:text-ink"><X className="w-4 h-4"/></button>
+                      </div>
+                      <div className="table-wrap flex-1 overflow-y-auto">
+                        <table>
+                          <thead>
+                            <tr className="bg-surface-soft">
+                              <th className="text-[9px] uppercase font-black text-ink">Producto</th>
+                              <th className="text-[9px] uppercase text-center font-black text-ink">Cant</th>
+                              <th className="text-[9px] uppercase text-right font-black text-ink">Precio</th>
+                              <th className="text-[9px] uppercase text-center font-black text-ink">Acción</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {selectedSaleForReturn.items.map((item, idx) => (
+                              <tr key={idx} className="border-b border-line/30">
+                                <td className="text-ink font-bold text-[11px] uppercase">{item.nombre}</td>
+                                <td className="text-ink font-black text-[11px] text-center">{item.cantidad}</td>
+                                <td className="text-ink font-black text-[11px] text-right">{Utils.fmtUSD(item.precioUnitUSD)}</td>
+                                <td className="text-center">
+                                  <button onClick={() => handleAddReturnItem(item.productoId, item.nombre, item.precioUnitUSD, item.cantidad)} className="btn btn-sm btn-secondary font-black text-[9px] h-7 px-3">Seleccionar</button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    <div className="card bg-white border-line shadow-sm flex-1 flex flex-col overflow-hidden">
+                      <div className="card-head py-2 px-5 border-b border-line">
+                        <h3 className="text-status-danger font-black uppercase text-[10px] flex items-center gap-2">
+                          <Undo2 className="w-4 h-4"/> Productos a Devolver
+                        </h3>
+                      </div>
+                      <div className="table-wrap flex-1 overflow-y-auto">
+                        <table>
+                          <thead>
+                            <tr className="bg-surface-soft">
+                              <th className="text-[9px] uppercase font-black text-ink">Producto</th>
+                              <th className="text-[9px] uppercase text-center font-black text-ink">Cant</th>
+                              <th className="text-[9px] uppercase font-black text-ink">Estado</th>
+                              <th className="text-[9px] uppercase text-right font-black text-ink">Total</th>
+                              <th className="text-[9px] uppercase text-center"></th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {returnItems.map((item, idx) => (
+                              <tr key={idx} className="border-b border-line/30">
+                                <td className="text-ink font-bold text-[11px] uppercase">{item.nombre}</td>
+                                <td className="text-status-danger font-black text-[11px] text-center">{item.cantidad}</td>
+                                <td><span className={`badge ${item.estadoProducto === 'REINTEGRADO_STOCK' ? 'badge-ok' : 'badge-err'} font-black text-[8px] uppercase`}>{item.estadoProducto.replace('_', ' ')}</span></td>
+                                <td className="text-brand-gold-deep font-black text-[11px] text-right">{Utils.fmtUSD(item.cantidad * item.precioUnitUSD)}</td>
+                                <td className="text-center">
+                                  <button onClick={() => setReturnItems(returnItems.filter((_, i) => i !== idx))} className="text-ink/20 hover:text-status-danger transition-colors"><Trash2 className="w-3.5 h-3.5"/></button>
+                                </td>
+                              </tr>
+                            ))}
+                            {returnItems.length === 0 && (
+                              <tr><td colSpan={5} className="text-center py-10 text-ink/20 font-black uppercase italic text-[10px]">Añade productos de la venta original</td></tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex flex-col gap-6">
+                <div className="card bg-white border-line h-fit shadow-lg">
+                  <div className="card-head py-3 px-6 border-b border-line bg-surface-soft">
+                    <h3 className="text-ink font-black uppercase text-[10px] tracking-widest">Resumen de Devolución</h3>
+                  </div>
+                  <div className="card-body p-5 space-y-5">
+                    <div className="bg-surface-soft p-4 rounded-lg border border-line text-center shadow-inner">
+                      <p className="text-ink/60 text-[9px] font-black uppercase mb-1">Monto a Reembolsar</p>
+                      <p className="text-2xl font-black text-status-danger">
+                        {Utils.fmtUSD(returnItems.reduce((s, i) => s + (i.cantidad * i.precioUnitUSD), 0))}
+                      </p>
+                    </div>
+
+                    <div className="form-group">
+                      <label className="text-ink text-[10px] font-black uppercase block mb-1">Método de Reembolso</label>
+                      <select className="form-select bg-white text-ink h-10 text-xs font-black uppercase border-line shadow-sm" value={refundMethod} onChange={e => setRefundMethod(e.target.value as any)}>
+                        <option value="EFECTIVO">Efectivo de Caja</option>
+                        <option value="MISMO_METODO">Reverso (Mismo Método)</option>
+                        <option value="CREDITO_TIENDA">Crédito / Vale Interno</option>
+                      </select>
+                    </div>
+
+                    <div className="form-group">
+                      <label className="text-ink text-[10px] font-black uppercase block mb-1">Motivo</label>
+                      <textarea className="form-input bg-white text-ink text-xs min-h-[80px] border-line py-2" placeholder="Explique el motivo..." value={returnReason} onChange={e => setReturnReason(e.target.value)}></textarea>
+                    </div>
+
+                    <button 
+                      disabled={returnItems.length === 0 || !returnReason.trim()}
+                      onClick={procesarDevolucionPOS}
+                      className="btn btn-primary w-full h-12 font-black uppercase text-xs shadow-xl shadow-status-danger/10 disabled:opacity-20"
+                    >
+                      Procesar Devolución
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -1229,7 +1521,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         </div>
       )}
 
-      {/* MODAL RECIBO DE PAGO (NUEVO FORMATO PROFESIONAL 80MM) */}
+      {/* MODAL RECIBO DE PAGO */}
       {showReceiptModal && lastProcessedSale && (
         <div className="fixed inset-0 z-[300] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 no-print">
           <div className="bg-white rounded-xl max-w-sm w-full shadow-2xl overflow-hidden flex flex-col border border-gray-200">

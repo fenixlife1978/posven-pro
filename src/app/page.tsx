@@ -31,7 +31,6 @@ import InventoryModule from '@/components/modules/InventoryModule';
 import SalesModule from '@/components/modules/SalesModule';
 import CxCModule from '@/components/modules/CxCModule';
 import CxPModule from '@/components/modules/CxPModule';
-import ReturnsModule from '@/components/modules/ReturnsModule';
 import ReportsModule from '@/components/modules/ReportsModule';
 import ConfigModule from '@/components/modules/ConfigModule';
 
@@ -101,7 +100,6 @@ export default function LicoreriaPOS() {
       items: [
         { id: 'cxc', label: 'Cuentas por Cobrar', icon: HandCoins, count: state.cxc.filter(x => x.estado !== 'pagada').length },
         { id: 'cxp', label: 'Cuentas por Pagar', icon: FileText },
-        { id: 'devoluciones', label: 'Devoluciones', icon: RotateCcw },
       ]
     },
     {
@@ -123,7 +121,6 @@ export default function LicoreriaPOS() {
       case 'ventas': return <SalesModule state={state} updateState={updateState} />;
       case 'cxc': return <CxCModule state={state} updateState={updateState} />;
       case 'cxp': return <CxPModule state={state} updateState={updateState} />;
-      case 'devoluciones': return <ReturnsModule state={state} updateState={updateState} />;
       case 'reportes': return <ReportsModule state={state} />;
       case 'config': return <ConfigModule state={state} updateState={updateState} />;
       default: return <DashboardModule state={state} />;
@@ -235,7 +232,7 @@ export default function LicoreriaPOS() {
             </p>
           </div>
 
-          {/* INDICADORES CENTRALES - Visibles desde md/lg */}
+          {/* INDICADORES CENTRALES */}
           <div className="hidden md:flex items-center gap-4 mx-auto">
             {/* Reloj Local (Caracas) */}
             <div className="flex items-center gap-2.5 px-4 py-2 bg-white/70 rounded-xl border border-line shadow-sm min-w-[160px]">
@@ -272,7 +269,7 @@ export default function LicoreriaPOS() {
               </div>
             </div>
 
-            {/* Tasa BCV (Opcional, pero útil en header) */}
+            {/* Tasa BCV */}
             <div className="hidden lg:flex items-center gap-2.5 px-4 py-2 bg-brand-gold-soft/40 rounded-xl border border-brand-gold/20 shadow-sm">
               <RefreshCw className="w-3.5 h-3.5 text-brand-gold-deep" />
               <div className="flex flex-col">
