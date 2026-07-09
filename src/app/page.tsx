@@ -61,9 +61,11 @@ export default function LicoreriaPOS() {
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
     
-    setIsOnline(navigator.onLine);
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
+    if (typeof navigator !== 'undefined') {
+      setIsOnline(navigator.onLine);
+      window.addEventListener('online', handleOnline);
+      window.addEventListener('offline', handleOffline);
+    }
 
     return () => {
       clearInterval(timer);
@@ -128,8 +130,9 @@ export default function LicoreriaPOS() {
     }
   };
 
-  const timeStr = currentTime.toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
-  const dateStr = currentTime.toLocaleDateString('es-VE', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' });
+  // Formateo seguro para evitar hidratación incorrecta
+  const timeStr = mounted ? currentTime.toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }) : '--:--:--';
+  const dateStr = mounted ? currentTime.toLocaleDateString('es-VE', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }) : '...';
 
   return (
     <div className="flex min-h-screen bg-surface-warm text-ink">
@@ -219,44 +222,44 @@ export default function LicoreriaPOS() {
             </p>
           </div>
 
-          {/* INDICADORES CENTRALES */}
-          <div className="hidden xl:flex items-center gap-5 mx-auto">
+          {/* INDICADORES CENTRALES - Visibles desde lg para asegurar espacio */}
+          <div className="hidden lg:flex items-center gap-4 mx-auto">
             {/* Reloj */}
-            <div className="flex items-center gap-2.5 px-3.5 py-1.5 bg-white/50 rounded-xl border border-line shadow-sm">
+            <div className="flex items-center gap-2.5 px-3.5 py-1.5 bg-white/60 rounded-xl border border-line shadow-sm min-w-[140px]">
               <ClockIcon className="w-3.5 h-3.5 text-ink/70" />
               <div className="flex flex-col">
                 <span className="text-[0.62rem] font-black uppercase text-ink/50 leading-none mb-0.5">
-                  {mounted ? dateStr : '...'}
+                  {dateStr}
                 </span>
-                <span className="text-[0.8rem] font-black text-ink leading-none">
-                  {mounted ? timeStr : '--:--:--'}
+                <span className="text-[0.8rem] font-black text-ink leading-none tabular-nums">
+                  {timeStr}
                 </span>
               </div>
             </div>
 
             {/* Conectividad */}
-            <div className="flex items-center gap-2.5 px-3.5 py-1.5 bg-white/50 rounded-xl border border-line shadow-sm">
-              {mounted ? (
-                isOnline ? <Wifi className="w-3.5 h-3.5 text-status-success" /> : <WifiOff className="w-3.5 h-3.5 text-status-danger" />
+            <div className="flex items-center gap-2.5 px-3.5 py-1.5 bg-white/60 rounded-xl border border-line shadow-sm">
+              {mounted && isOnline ? (
+                <Wifi className="w-3.5 h-3.5 text-status-success" />
               ) : (
-                <Wifi className="w-3.5 h-3.5 text-ink/20" />
+                <WifiOff className="w-3.5 h-3.5 text-status-danger" />
               )}
               <div className="flex flex-col">
-                <span className="text-[0.62rem] font-black uppercase text-ink/50 leading-none mb-0.5">Internet</span>
+                <span className="text-[0.62rem] font-black uppercase text-ink/50 leading-none mb-0.5">Estado Red</span>
                 <div className="flex items-center gap-1.5 leading-none">
                   <div className={`w-1.5 h-1.5 rounded-full ${mounted ? (isOnline ? 'bg-status-success animate-pulse' : 'bg-status-danger') : 'bg-ink/20'}`} />
                   <span className={`text-[0.72rem] font-black uppercase ${mounted ? (isOnline ? 'text-status-success' : 'text-status-danger') : 'text-ink/20'}`}>
-                    {mounted ? (isOnline ? 'En Línea' : 'Sin Conexión') : 'Iniciando...'}
+                    {mounted ? (isOnline ? 'En Línea' : 'Sin Internet') : 'Detectando...'}
                   </span>
                 </div>
               </div>
             </div>
 
             {/* Tasa BCV Header */}
-            <div className="flex items-center gap-2.5 px-3.5 py-1.5 bg-brand-gold-soft/40 rounded-xl border border-brand-gold/20 shadow-sm">
+            <div className="flex items-center gap-2.5 px-3.5 py-1.5 bg-brand-gold-soft/60 rounded-xl border border-brand-gold/30 shadow-sm">
               <div className="w-5 h-5 rounded-full bg-gradient-to-b from-[#FFD700] via-[#003893] to-[#CF142B] border border-white/20 shrink-0" />
               <div className="flex flex-col">
-                <span className="text-[0.62rem] font-black uppercase text-brand-gold-deep leading-none mb-0.5">Tasa del Sistema</span>
+                <span className="text-[0.62rem] font-black uppercase text-brand-gold-deep leading-none mb-0.5">Tasa Sistema</span>
                 <span className="text-[0.8rem] font-black text-ink leading-none">
                   {state.tasa.toFixed(2)} <span className="text-[0.65rem] opacity-60">Bs/USD</span>
                 </span>
