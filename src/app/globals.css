@@ -3,44 +3,35 @@
 @tailwind utilities;
 
 :root {
-  --background: 210 40% 98%;
-  --foreground: 222 47% 11%;
+  --background: 0 0% 4%;
+  --foreground: 0 0% 98%;
   
-  --card: 0 0% 100%;
-  --card-foreground: 222 47% 11%;
+  --card: 0 0% 7%;
+  --card-foreground: 0 0% 98%;
   
-  --popover: 0 0% 100%;
-  --popover-foreground: 222 47% 11%;
+  --popover: 0 0% 7%;
+  --popover-foreground: 0 0% 98%;
   
-  --primary: 38 62% 48%; /* PosVEN Gold */
-  --primary-foreground: 210 40% 98%;
+  --primary: 38 62% 48%; /* PosVEN Gold #c8952e */
+  --primary-foreground: 0 0% 100%;
   
-  --secondary: 210 40% 96.1%;
-  --secondary-foreground: 222 47% 11.2%;
+  --secondary: 0 0% 12%;
+  --secondary-foreground: 0 0% 98%;
   
-  --muted: 210 40% 96.1%;
-  --muted-foreground: 215.4 16.3% 46.9%;
+  --muted: 0 0% 12%;
+  --muted-foreground: 0 0% 65%;
   
-  --accent: 210 40% 96.1%;
-  --accent-foreground: 222 47% 11.2%;
+  --accent: 38 62% 48%;
+  --accent-foreground: 0 0% 98%;
   
-  --destructive: 0 84.2% 60.2%;
-  --destructive-foreground: 210 40% 98%;
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 98%;
 
-  --border: 214.3 31.8% 91.4%;
-  --input: 214.3 31.8% 91.4%;
-  --ring: 222.2 84% 4.9%;
+  --border: 0 0% 16%;
+  --input: 0 0% 16%;
+  --ring: 38 62% 48%;
   
-  --radius: 24px;
-}
-
-.dark {
-  --background: 222.2 84% 4.9%;
-  --foreground: 210 40% 98%;
-  --card: 222.2 84% 4.9%;
-  --card-foreground: 210 40% 98%;
-  --border: 217.2 32.6% 17.5%;
-  --input: 217.2 32.6% 17.5%;
+  --radius: 8px;
 }
 
 * {
@@ -50,34 +41,139 @@
 }
 
 body {
-  background: hsl(var(--background));
-  color: hsl(var(--foreground));
-  font-family: 'Geist', 'Inter', sans-serif;
+  background: #0b0b0b;
+  color: white;
+  font-family: 'Inter', sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
-/* Bento Card Style */
-.bento-card {
-  background: white;
-  border-radius: var(--radius);
-  border: 1px solid rgba(0,0,0,0.03);
-  box-shadow: 0 10px 25px -5px rgba(0,0,0,0.02), 0 8px 10px -6px rgba(0,0,0,0.02);
+/* COMPONENTES PERSONALIZADOS POSVEN */
+
+.card {
+  background: #131313;
+  border: 1px solid #2a2a2a;
+  border-radius: 8px;
   overflow: hidden;
 }
 
-.bento-card-dark {
-  background: #0f172a;
-  color: white;
-  border-radius: var(--radius);
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+.card-head {
+  padding: 12px 20px;
+  border-bottom: 1px solid #2a2a2a;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
+
+.card-body {
+  padding: 20px;
+}
+
+.kpi {
+  padding: 20px;
+  border-radius: 8px;
+  border: 1px solid #2a2a2a;
+  display: flex;
+  flex-direction: column;
+}
+
+.kpi.amber { border-left: 4px solid #c8952e; }
+.kpi.green { border-left: 4px solid #27ae60; }
+.kpi.red { border-left: 4px solid #e04848; }
+.kpi.blue { border-left: 4px solid #3a9bdc; }
+
+.btn {
+  display: inline-flex;
+  items-center: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 16px;
+  border-radius: 4px;
+  font-weight: 700;
+  transition: all 0.2s;
+  cursor: pointer;
+  border: none;
+}
+
+.btn-primary { background: #c8952e; color: black; }
+.btn-primary:hover { background: #d4a017; }
+.btn-secondary { background: #2a2a2a; color: white; }
+.btn-secondary:hover { background: #333; }
+.btn-danger { background: #e04848; color: white; }
+.btn-danger:hover { background: #c0392b; }
+
+.btn-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+
+.btn-icon:hover { background: rgba(255,255,255,0.05); }
+
+.table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th {
+  text-align: left;
+  padding: 12px 15px;
+  font-size: 11px;
+  color: #888;
+  border-bottom: 1px solid #2a2a2a;
+}
+
+td {
+  padding: 12px 15px;
+  border-bottom: 1px solid rgba(255,255,255,0.03);
+}
+
+.form-group { margin-bottom: 15px; }
+.form-label { display: block; margin-bottom: 5px; font-size: 12px; color: #aaa; }
+.form-input, .form-select, .form-textarea {
+  width: 100%;
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 4px;
+  padding: 8px 12px;
+  color: white;
+  outline: none;
+}
+
+.form-input:focus { border-color: #c8952e; }
+
+.badge {
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.badge-ok { background: rgba(39, 174, 96, 0.1); color: #27ae60; }
+.badge-warn { background: rgba(200, 149, 46, 0.1); color: #c8952e; }
+.badge-err { background: rgba(224, 72, 72, 0.1); color: #e04848; }
+.badge-neutral { background: rgba(255,255,255,0.05); color: #aaa; }
+
+.mono { font-family: 'Source Code Pro', monospace; }
 
 /* Custom Scrollbar */
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
-::-webkit-scrollbar-thumb:hover { background: #cbd5e1; }
+::-webkit-scrollbar-thumb { background: #333; border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: #444; }
 
+/* Impresión */
+@media print {
+  .no-print { display: none !important; }
+}
+
+/* Ocultar flechas de incremento/decremento en inputs numéricos */
 input::-webkit-outer-spin-button,
 input::-webkit-inner-spin-button {
   -webkit-appearance: none;
