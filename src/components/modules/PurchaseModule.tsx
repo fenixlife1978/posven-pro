@@ -1,40 +1,28 @@
+
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   ShoppingBag, 
   Plus, 
   Trash2, 
   Search,
-  AlertCircle,
   CheckCircle,
-  HandCoins
+  HandCoins,
+  Calendar,
+  Layers,
+  ArrowRight,
+  Info
 } from 'lucide-react';
 import { Store, Utils } from '@/lib/db-store';
-import { AppState, Product } from '@/lib/types';
+import { AppState, Product, Movimiento, PaymentMethod } from '@/lib/types';
 
-interface PurchaseProduct {
+interface PurchaseItemTemp {
   productoId: string;
   nombre: string;
   cantidad: number;
   costoUnitarioUSD: number;
   subtotalUSD: number;
-}
-
-interface Purchase {
-  id: string;
-  proveedor: string;
-  numeroFactura: string;
-  fecha: string;
-  tasaBCV: number;
-  condicionesPago: 'contado' | 'credito' | 'mixto';
-  productos: PurchaseProduct[];
-  totalUSD: number;
-  totalBS: number;
-  totalPagadoUSD: number;
-  saldoPendienteUSD: number;
-  estado: 'pagado' | 'pendiente' | 'parcial';
-  fechaCreacion: string;
 }
 
 interface PurchaseModuleProps {
@@ -43,445 +31,428 @@ interface PurchaseModuleProps {
 }
 
 export default function PurchaseModule({ state, updateState }: PurchaseModuleProps) {
-  // Estado del formulario
+  // 1. DATOS DE LA FACTURA
   const [proveedor, setProveedor] = useState('');
   const [numeroFactura, setNumeroFactura] = useState('');
   const [fecha, setFecha] = useState(Utils.hoy());
-  const [condicionesPago, setCondicionesPago] = useState<'contado' | 'credito' | 'mixto'>('contado');
-  const [productosSeleccionados, setProductosSeleccionados] = useState<PurchaseProduct[]>([]);
-  const [productoSeleccionado, setProductoSeleccionado] = useState('');
+  const [tasaCompra, setTasaCompra] = useState<number>(state.tasa);
+  
+  // 2. CONDICIONES DE PAGO
+  const [condicion, setCondicion] = useState<'contado' | 'credito' | 'mixto'>('contado');
+  const [diasPlazo, setDiasPlazo] = useState(30);
+  const [montoPagadoUSD, setMontoPagadoUSD] = useState(0);
+  const [montoPagadoBS, setMontoPagadoBS] = useState(0);
+
+  // 3. AÑADIR PRODUCTOS
+  const [busqueda, setBusqueda] = useState('');
+  const [itemSeleccionado, setItemSeleccionado] = useState<Product | null>(null);
   const [cantidad, setCantidad] = useState(1);
-  const [costoUnitario, setCostoUnitario] = useState(0);
-  const [totalPagadoUSD, setTotalPagadoUSD] = useState(0);
-  const [busquedaProducto, setBusquedaProducto] = useState('');
-  const [comprasRecientes, setComprasRecientes] = useState<Purchase[]>([]);
+  const [costoInput, setCostoInput] = useState(0);
+  const [loteTemporal, setLoteTemporal] = useState<PurchaseItemTemp[]>([]);
 
-  // Cargar compras guardadas
+  // Cálculos de Totales
+  const totalUSD = loteTemporal.reduce((acc, item) => acc + item.subtotalUSD, 0);
+  const totalBS = totalUSD * tasaCompra;
+
+  // Lógica de actualización de montos según condición
   useEffect(() => {
-    const savedPurchases = localStorage.getItem('posven_purchases');
-    if (savedPurchases) {
-      setComprasRecientes(JSON.parse(savedPurchases));
+    if (condicion === 'contado') {
+      setMontoPagadoUSD(totalUSD);
+      setMontoPagadoBS(totalUSD * tasaCompra);
+    } else if (condicion === 'credito') {
+      setMontoPagadoUSD(0);
+      setMontoPagadoBS(0);
     }
-  }, []);
+  }, [condicion, totalUSD, tasaCompra]);
 
-  // Calcular totales
-  const totalUSD = productosSeleccionados.reduce((sum, p) => sum + p.subtotalUSD, 0);
-  const totalBS = totalUSD * state.tasa;
+  const saldoPendienteUSD = Math.max(0, totalUSD - montoPagadoUSD);
 
-  // Actualizar total pagado según condiciones
-  useEffect(() => {
-    if (condicionesPago === 'contado') {
-      setTotalPagadoUSD(totalUSD);
-    } else if (condicionesPago === 'credito') {
-      setTotalPagadoUSD(0);
-    }
-  }, [condicionesPago, totalUSD]);
+  // Manejo de cambios en Mixto
+  const handlePaidUsdChange = (val: number) => {
+    setMontoPagadoUSD(val);
+    setMontoPagadoBS(Utils.round(val * tasaCompra));
+  };
 
-  const saldoPendiente = totalUSD - totalPagadoUSD;
+  const handlePaidBsChange = (val: number) => {
+    setMontoPagadoBS(val);
+    setMontoPagadoUSD(Utils.round(val / tasaCompra));
+  };
 
-  // Agregar producto a la lista
-  const agregarProducto = () => {
-    if (!productoSeleccionado || cantidad <= 0 || costoUnitario <= 0) {
-      alert('Selecciona un producto, cantidad y costo válidos');
-      return;
-    }
+  // Buscador de productos
+  const matches = useMemo(() => {
+    if (busqueda.trim().length < 2) return [];
+    return state.productos.filter(p => 
+      p.activo && 
+      (p.nombre.toLowerCase().includes(busqueda.toLowerCase()) || p.codigo.toLowerCase().includes(busqueda.toLowerCase()))
+    ).slice(0, 5);
+  }, [busqueda, state.productos]);
 
-    const producto = state.productos.find(p => p.id === productoSeleccionado);
-    if (!producto) return;
+  const handleSelectItem = (p: Product) => {
+    setItemSeleccionado(p);
+    setCostoInput(p.costoUSD);
+    setBusqueda('');
+  };
 
-    // Verificar si el producto ya está en la lista
-    const existe = productosSeleccionados.find(p => p.productoId === productoSeleccionado);
-    if (existe) {
-      alert('El producto ya está en la lista. Si necesitas más cantidad, edita la fila existente.');
-      return;
-    }
-
-    const nuevoProducto: PurchaseProduct = {
-      productoId: producto.id,
-      nombre: producto.nombre,
-      cantidad: cantidad,
-      costoUnitarioUSD: costoUnitario,
-      subtotalUSD: cantidad * costoUnitario
+  const handleAddTempItem = () => {
+    if (!itemSeleccionado || cantidad <= 0 || costoInput <= 0) return;
+    
+    const nuevo: PurchaseItemTemp = {
+      productoId: itemSeleccionado.id,
+      nombre: itemSeleccionado.nombre,
+      cantidad,
+      costoUnitarioUSD: costoInput,
+      subtotalUSD: Utils.round(cantidad * costoInput)
     };
 
-    setProductosSeleccionados([...productosSeleccionados, nuevoProducto]);
-    setProductoSeleccionado('');
+    setLoteTemporal([...loteTemporal, nuevo]);
+    setItemSeleccionado(null);
     setCantidad(1);
-    setCostoUnitario(0);
+    setCostoInput(0);
   };
 
-  // Eliminar producto de la lista
-  const eliminarProducto = (productoId: string) => {
-    setProductosSeleccionados(productosSeleccionados.filter(p => p.productoId !== productoId));
+  const handleRemoveTempItem = (idx: number) => {
+    setLoteTemporal(loteTemporal.filter((_, i) => i !== idx));
   };
 
-  // Registrar compra
-  const registrarCompra = () => {
-    // Validaciones
-    if (!proveedor.trim()) {
-      alert('Ingresa el nombre del proveedor');
-      return;
-    }
-    if (!numeroFactura.trim()) {
-      alert('Ingresa el número de factura');
-      return;
-    }
-    if (productosSeleccionados.length === 0) {
-      alert('Agrega al menos un producto');
-      return;
-    }
+  const handleProcessPurchase = () => {
+    if (!proveedor) return alert('Seleccione un proveedor');
+    if (!numeroFactura) return alert('Ingrese el número de factura');
+    if (loteTemporal.length === 0) return alert('Agregue productos a la lista');
 
-    // Verificar que la factura no esté duplicada
-    const facturaDuplicada = comprasRecientes.some(c => c.numeroFactura === numeroFactura);
-    if (facturaDuplicada) {
-      alert('El número de factura ya existe');
-      return;
-    }
+    const ahoraStr = Utils.ahora();
+    const fechaVencimiento = condicion === 'credito' ? 
+      new Date(new Date(fecha).getTime() + (diasPlazo * 24 * 60 * 60 * 1000)).toISOString().slice(0, 10) : 
+      fecha;
 
-    // Crear objeto de compra
-    const nuevaCompra: Purchase = {
-      id: Store.uid(),
-      proveedor,
-      numeroFactura,
-      fecha,
-      tasaBCV: state.tasa,
-      condicionesPago,
-      productos: productosSeleccionados,
-      totalUSD,
-      totalBS,
-      totalPagadoUSD,
-      saldoPendienteUSD: saldoPendiente,
-      estado: saldoPendiente === 0 ? 'pagado' : saldoPendiente === totalUSD ? 'pendiente' : 'parcial',
-      fechaCreacion: Utils.hoy()
-    };
+    // Determinar estado de la factura
+    const estado: any = saldoPendienteUSD === 0 ? 'pagada' : 
+                    saldoPendienteUSD === totalUSD ? 'pendiente' : 'parcial';
 
-    // Actualizar stock de productos
-    const productosActualizados = state.productos.map(producto => {
-      const compraProducto = productosSeleccionados.find(p => p.productoId === producto.id);
-      if (compraProducto) {
-        return {
-          ...producto,
-          stock: producto.stock + compraProducto.cantidad
-        };
+    // 1. Actualizar Productos (Stock y CPP)
+    const nuevosProductos = state.productos.map(p => {
+      const itemCompra = loteTemporal.find(i => i.productoId === p.id);
+      if (itemCompra) {
+        const stockActual = p.stock || 0;
+        const costoActual = p.costoUSD || 0;
+        const nuevaCantidad = itemCompra.cantidad;
+        const nuevoCosto = itemCompra.costoUnitarioUSD;
+        
+        const stockTotal = stockActual + nuevaCantidad;
+        // Fórmula CPP: ((S1*C1) + (S2*C2)) / (S1+S2)
+        const costoPromedio = Utils.round(((stockActual * costoActual) + (nuevaCantidad * nuevoCosto)) / stockTotal);
+
+        return { ...p, stock: stockTotal, costoUSD: costoPromedio };
       }
-      return producto;
+      return p;
     });
 
-    // Actualizar estado
-    const nuevasCompras = [...comprasRecientes, nuevaCompra];
-    setComprasRecientes(nuevasCompras);
-    localStorage.setItem('posven_purchases', JSON.stringify(nuevasCompras));
+    // 2. Registrar Movimientos en Kardex
+    const nuevosMovimientos: Movimiento[] = loteTemporal.map(item => {
+      const p = state.productos.find(prod => prod.id === item.productoId);
+      return {
+        id: Store.uid(),
+        productoId: item.productoId,
+        tipo: 'compra',
+        cantidad: item.cantidad,
+        stockAntes: p?.stock || 0,
+        stockDespues: (p?.stock || 0) + item.cantidad,
+        fecha: ahoraStr,
+        referencia: `COMPRA FACT: ${numeroFactura} - PROV: ${proveedor}`
+      };
+    });
+
+    // 3. Si es Crédito o Parcial, crear CxP
+    const nuevasCxP = [...state.cxp];
+    if (saldoPendienteUSD > 0) {
+      nuevasCxP.push({
+        id: 'CXP-' + Store.uid().slice(0, 6).toUpperCase(),
+        fecha: fecha,
+        fechaVencimiento,
+        proveedor,
+        concepto: `FACTURA COMPRA #${numeroFactura}`,
+        montoUSD: totalUSD,
+        abonadoUSD: montoPagadoUSD,
+        saldoUSD: saldoPendienteUSD,
+        estado: estado === 'pagada' ? 'pagada' : (montoPagadoUSD > 0 ? 'parcial' : 'pendiente')
+      });
+    }
 
     updateState({
-      productos: productosActualizados
+      productos: nuevosProductos,
+      movimientos: [...state.movimientos, ...nuevosMovimientos],
+      cxp: nuevasCxP
     });
 
-    // Limpiar formulario
+    alert('Compra registrada exitosamente. Inventario y costos actualizados.');
+    
+    // Limpiar Formulario
     setProveedor('');
     setNumeroFactura('');
-    setFecha(Utils.hoy());
-    setProductosSeleccionados([]);
-    setTotalPagadoUSD(0);
-    setCondicionesPago('contado');
-
-    alert('Compra registrada exitosamente!');
+    setLoteTemporal([]);
+    setCondicion('contado');
+    setBusqueda('');
   };
 
-  // Filtrar productos para el selector
-  const productosDisponibles = state.productos
-    .filter(p => p.activo)
-    .filter(p => 
-      p.nombre.toLowerCase().includes(busquedaProducto.toLowerCase()) ||
-      p.codigo.toLowerCase().includes(busquedaProducto.toLowerCase())
-    );
-
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+    <div className="space-y-6 animate-in fade-in duration-500">
+      {/* HEADER */}
+      <div className="flex items-center justify-between border-b border-[#2a2a2a] pb-4">
         <div className="flex items-center gap-3">
-          <ShoppingBag className="w-6 h-6 text-[#c8952e]" />
-          <h1 className="text-2xl font-black text-white uppercase tracking-wider">
-            Entrada por Compra
-          </h1>
+          <div className="p-2 bg-[#c8952e]/10 rounded-lg">
+            <ShoppingBag className="w-6 h-6 text-[#c8952e]" />
+          </div>
+          <div>
+            <h1 className="text-xl font-black text-white uppercase tracking-tighter">Entrada por Compra</h1>
+            <p className="text-[10px] text-white/40 font-black uppercase tracking-widest">Suministro de Inventario y Control de Costos</p>
+          </div>
         </div>
-        <div className="text-sm text-white/50">
-          Tasa BCV: <span className="text-[#c8952e] font-bold">{state.tasa.toFixed(2)} Bs/USD</span>
+        <div className="bg-black/40 px-4 py-2 rounded-lg border border-white/10 text-right">
+          <p className="text-[9px] text-white/40 font-black uppercase">Tasa del Sistema</p>
+          <p className="text-sm font-black text-[#c8952e]">{state.tasa.toFixed(2)} <span className="text-[10px] opacity-60">BS/USD</span></p>
         </div>
       </div>
 
-      {/* Formulario */}
-      <div className="bg-[#131313] rounded-lg border border-[#2a2a2a] p-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="space-y-4">
-            {/* Proveedor */}
-            <div>
-              <label className="block text-xs font-bold text-white/70 uppercase tracking-wider mb-1">
-                Proveedor
-              </label>
-              <input
-                type="text"
-                value={proveedor}
-                onChange={(e) => setProveedor(e.target.value)}
-                className="w-full bg-[#0b0b0b] border border-[#2a2a2a] rounded-md px-3 py-2 text-white focus:outline-none focus:border-[#c8952e]"
-                placeholder="Nombre del proveedor"
-              />
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* COLUMNA IZQUIERDA: DATOS Y CONDICIONES */}
+        <div className="space-y-6">
+          {/* DATOS FACTURA */}
+          <div className="card">
+            <div className="card-head py-3 px-5 border-b border-white/5">
+              <h3 className="text-[10px] font-black uppercase text-white tracking-widest flex items-center gap-2">
+                <Info className="w-3.5 h-3.5 text-[#3a9bdc]" /> Datos de la Factura
+              </h3>
             </div>
-
-            {/* Número de Factura */}
-            <div>
-              <label className="block text-xs font-bold text-white/70 uppercase tracking-wider mb-1">
-                Número de Factura
-              </label>
-              <input
-                type="text"
-                value={numeroFactura}
-                onChange={(e) => setNumeroFactura(e.target.value)}
-                className="w-full bg-[#0b0b0b] border border-[#2a2a2a] rounded-md px-3 py-2 text-white focus:outline-none focus:border-[#c8952e]"
-                placeholder="Factura #"
-              />
-            </div>
-
-            {/* Fecha */}
-            <div>
-              <label className="block text-xs font-bold text-white/70 uppercase tracking-wider mb-1">
-                Fecha
-              </label>
-              <input
-                type="date"
-                value={fecha}
-                onChange={(e) => setFecha(e.target.value)}
-                className="w-full bg-[#0b0b0b] border border-[#2a2a2a] rounded-md px-3 py-2 text-white focus:outline-none focus:border-[#c8952e]"
-              />
+            <div className="card-body p-5 space-y-4">
+              <div className="form-group mb-0">
+                <label className="text-[10px] font-black uppercase text-white/40 block mb-1">Proveedor</label>
+                <select 
+                  className="form-select bg-black border-white/10 h-10 text-xs font-black uppercase" 
+                  value={proveedor} 
+                  onChange={e => setProveedor(e.target.value)}
+                >
+                  <option value="">SELECCIONE PROVEEDOR</option>
+                  {state.proveedores.map(p => <option key={p} value={p}>{p.toUpperCase()}</option>)}
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="form-group mb-0">
+                  <label className="text-[10px] font-black uppercase text-white/40 block mb-1">N° Factura</label>
+                  <input className="form-input h-10 bg-black text-white border-white/10 text-xs font-black uppercase" value={numeroFactura} onChange={e => setNumeroFactura(e.target.value)} placeholder="000123" />
+                </div>
+                <div className="form-group mb-0">
+                  <label className="text-[10px] font-black uppercase text-white/40 block mb-1">Tasa Compra</label>
+                  <input type="number" className="form-input h-10 bg-black text-[#c8952e] border-[#c8952e]/30 text-xs font-black" value={tasaCompra} onChange={e => setTasaCompra(parseFloat(e.target.value) || 0)} />
+                </div>
+              </div>
+              <div className="form-group mb-0">
+                <label className="text-[10px] font-black uppercase text-white/40 block mb-1">Fecha Emisión</label>
+                <input type="date" className="form-input h-10 bg-black text-white border-white/10 text-xs" value={fecha} onChange={e => setFecha(e.target.value)} />
+              </div>
             </div>
           </div>
 
-          {/* Condiciones de Pago Reestilizado */}
-          <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <HandCoins className="w-4 h-4 text-white/70" />
-              <label className="block text-xs font-black text-white uppercase tracking-wider">
-                Condiciones de Pago
-              </label>
+          {/* CONDICIONES PAGO */}
+          <div className="card border-[#c8952e]/20">
+            <div className="card-head py-3 px-5 border-b border-white/5">
+              <h3 className="text-[10px] font-black uppercase text-white tracking-widest flex items-center gap-2">
+                <HandCoins className="w-3.5 h-3.5 text-[#c8952e]" /> Condiciones de Pago
+              </h3>
             </div>
-            
-            <div className="bg-white/5 border border-white/10 rounded-xl p-4 space-y-4 shadow-xl">
-              <div className="flex gap-2">
-                {['contado', 'credito', 'mixto'].map((cond) => (
-                  <button
-                    key={cond}
-                    onClick={() => setCondicionesPago(cond as any)}
-                    className={`flex-1 py-3 rounded-lg text-[10px] font-black uppercase transition-all border ${
-                      condicionesPago === cond
-                        ? 'bg-[#c8952e] text-[#0b0b0b] border-[#c8952e]'
-                        : 'bg-transparent text-white/70 border-white/10 hover:bg-white/5'
-                    }`}
+            <div className="card-body p-5 space-y-4">
+              <div className="flex gap-1">
+                {['contado', 'credito', 'mixto'].map(c => (
+                  <button 
+                    key={c}
+                    onClick={() => setCondicion(c as any)}
+                    className={`flex-1 h-9 rounded text-[9px] font-black uppercase transition-all ${condicion === c ? 'bg-[#c8952e] text-black' : 'bg-black text-white/40 border border-white/5 hover:bg-white/5'}`}
                   >
-                    {cond === 'contado' ? 'Contado' : cond === 'credito' ? 'Crédito' : 'Mixto'}
+                    {c}
                   </button>
                 ))}
               </div>
 
-              <div className="bg-black/30 rounded-lg p-4 space-y-2 border border-white/5">
-                <div className="flex justify-between items-center text-[11px] font-bold">
-                  <span className="text-white/70">Total factura USD:</span>
-                  <span className="text-white">USD ${totalUSD.toFixed(4)}</span>
+              {condicion === 'credito' && (
+                <div className="p-3 bg-black rounded border border-white/10 animate-in slide-in-from-top-2">
+                  <label className="text-[9px] font-black uppercase text-white/40 block mb-1">Días de Plazo</label>
+                  <input type="number" className="form-input h-9 bg-[#111] text-white border-white/10 text-xs font-black" value={diasPlazo} onChange={e => setDiasPlazo(parseInt(e.target.value) || 0)} />
                 </div>
-                <div className="flex justify-between items-center text-[11px] font-bold">
-                  <span className="text-white/70">Total pagado USD:</span>
-                  {condicionesPago === 'mixto' ? (
-                    <div className="flex items-center gap-2">
-                      <span className="text-emerald-500">USD $</span>
-                      <input 
-                        type="number"
-                        value={totalPagadoUSD}
-                        onChange={(e) => setTotalPagadoUSD(Number(e.target.value))}
-                        className="bg-black/40 border border-white/10 rounded px-2 py-0.5 w-24 text-right text-emerald-500 focus:outline-none focus:border-[#c8952e]"
-                        step="0.01"
-                      />
-                    </div>
+              )}
+
+              <div className="space-y-2 pt-2">
+                <div className="flex justify-between items-center text-[10px] font-bold">
+                  <span className="text-white/40">TOTAL FACTURA USD:</span>
+                  <span className="text-white font-black">{totalUSD.toFixed(4)}</span>
+                </div>
+                
+                <div className="flex justify-between items-center text-[10px] font-bold">
+                  <span className="text-white/40">TOTAL PAGADO USD:</span>
+                  {condicion === 'mixto' ? (
+                    <input 
+                      type="number" 
+                      className="w-24 h-7 bg-black border border-[#27ae60]/30 text-[#27ae60] text-right rounded px-2 font-black" 
+                      value={montoPagadoUSD}
+                      onChange={e => handlePaidUsdChange(parseFloat(e.target.value) || 0)}
+                    />
                   ) : (
-                    <span className="text-emerald-500">USD ${totalPagadoUSD.toFixed(2)}</span>
+                    <span className="text-[#27ae60] font-black">{montoPagadoUSD.toFixed(4)}</span>
                   )}
                 </div>
-                <div className="flex justify-between items-center text-[11px] font-bold">
-                  <span className="text-white/70">Saldo pendiente USD:</span>
-                  <span className="text-emerald-500">USD ${saldoPendiente.toFixed(4)}</span>
+
+                <div className="flex justify-between items-center text-[10px] font-bold">
+                  <span className="text-white/40">SALDO PENDIENTE USD:</span>
+                  <span className="text-[#e04848] font-black">{saldoPendienteUSD.toFixed(4)}</span>
                 </div>
+
+                {condicion === 'mixto' && (
+                  <div className="pt-3 border-t border-white/5 space-y-2">
+                    <label className="text-[8px] font-black uppercase text-[#c8952e] block">Convertidor a Bolívares (Abono)</label>
+                    <div className="flex items-center gap-2">
+                      <input 
+                        type="number" 
+                        className="flex-1 h-9 bg-black border border-white/10 text-white text-xs font-black px-3 rounded"
+                        placeholder="Monto en BS"
+                        value={montoPagadoBS}
+                        onChange={e => handlePaidBsChange(parseFloat(e.target.value) || 0)}
+                      />
+                      <span className="text-[10px] font-black text-white/20">BS.</span>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
         </div>
-      </div>
 
-      {/* Agregar Productos */}
-      <div className="bg-[#131313] rounded-lg border border-[#2a2a2a] p-6">
-        <h3 className="text-xs font-bold text-white/70 uppercase tracking-wider mb-4 flex items-center gap-2">
-          <Plus className="w-3 h-3 text-[#c8952e]" /> Añadir Productos al Lote
-        </h3>
-        
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
-          {/* Buscador de Productos */}
-          <div className="relative">
-            <input
-              type="text"
-              value={busquedaProducto}
-              onChange={(e) => setBusquedaProducto(e.target.value)}
-              className="w-full bg-[#0b0b0b] border border-[#2a2a2a] rounded-md px-3 py-2 text-white focus:outline-none focus:border-[#c8952e]"
-              placeholder="Buscar producto..."
-            />
-            <Search className="absolute right-3 top-2.5 w-4 h-4 text-white/30" />
-          </div>
+        {/* COLUMNA DERECHA: SELECCIÓN DE PRODUCTOS Y TABLA */}
+        <div className="lg:col-span-2 space-y-6">
+          <div className="card">
+            <div className="card-head py-3 px-5 border-b border-white/5">
+              <h3 className="text-[10px] font-black uppercase text-white tracking-widest flex items-center gap-2">
+                <Plus className="w-3.5 h-3.5 text-[#27ae60]" /> Añadir Productos al Lote
+              </h3>
+            </div>
+            <div className="card-body p-5">
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+                {/* Buscador */}
+                <div className="md:col-span-5 relative">
+                  <label className="text-[9px] font-black uppercase text-white/40 block mb-1">Buscar Producto</label>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-2.5 w-4 h-4 text-white/20" />
+                    <input 
+                      className="form-input h-10 pl-10 bg-black text-white border-white/10 text-xs" 
+                      placeholder="Nombre o Código..."
+                      value={busqueda}
+                      onChange={e => setBusqueda(e.target.value)}
+                    />
+                  </div>
+                  {matches.length > 0 && (
+                    <div className="absolute top-full left-0 right-0 bg-[#1e1e1e] border border-white/10 rounded-b-lg shadow-2xl z-[100] mt-1 overflow-hidden">
+                      {matches.map(p => (
+                        <div 
+                          key={p.id} 
+                          onClick={() => handleSelectItem(p)}
+                          className="p-3 border-b border-white/5 hover:bg-[#c8952e]/20 cursor-pointer flex justify-between items-center"
+                        >
+                          <div className="flex flex-col">
+                            <span className="text-xs font-black uppercase text-white">{p.nombre}</span>
+                            <span className="text-[9px] text-white/40 mono">{p.codigo}</span>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-[10px] font-black text-[#c8952e]">${p.costoUSD.toFixed(2)}</div>
+                            <div className="text-[8px] text-white/60 uppercase">Stock: {p.stock}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
 
-          {/* Selector de Producto */}
-          <div>
-            <select
-              value={productoSeleccionado}
-              onChange={(e) => {
-                setProductoSeleccionado(e.target.value);
-                const producto = state.productos.find(p => p.id === e.target.value);
-                if (producto) {
-                  setCostoUnitario(producto.costoUSD || 0);
-                }
-              }}
-              className="w-full bg-[#0b0b0b] border border-[#2a2a2a] rounded-md px-3 py-2 text-white focus:outline-none focus:border-[#c8952e]"
-            >
-              <option value="">Seleccionar producto</option>
-              {productosDisponibles.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.codigo} - {p.nombre} (Stock: {p.stock})
-                </option>
-              ))}
-            </select>
-          </div>
+                {/* Formulario Adición */}
+                <div className="md:col-span-2">
+                  <label className="text-[9px] font-black uppercase text-white/40 block mb-1">Cant.</label>
+                  <input type="number" className="form-input h-10 bg-black text-white border-white/10 text-xs font-black" value={cantidad} onChange={e => setCantidad(parseInt(e.target.value) || 0)} />
+                </div>
+                <div className="md:col-span-3">
+                  <label className="text-[9px] font-black uppercase text-white/40 block mb-1">Costo Unit. $</label>
+                  <input type="number" className="form-input h-10 bg-black text-[#c8952e] border-[#c8952e]/30 text-xs font-black" value={costoInput} onChange={e => setCostoInput(parseFloat(e.target.value) || 0)} />
+                </div>
+                <div className="md:col-span-2">
+                  <button 
+                    onClick={handleAddTempItem}
+                    disabled={!itemSeleccionado}
+                    className="btn btn-primary h-10 w-full font-black uppercase text-[10px] flex items-center justify-center gap-2 disabled:opacity-20"
+                  >
+                    Añadir <Plus className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
 
-          {/* Cantidad */}
-          <div>
-            <input
-              type="number"
-              value={cantidad}
-              onChange={(e) => setCantidad(Number(e.target.value))}
-              className="w-full bg-[#0b0b0b] border border-[#2a2a2a] rounded-md px-3 py-2 text-white focus:outline-none focus:border-[#c8952e]"
-              placeholder="Cantidad"
-              min="1"
-            />
-          </div>
+              {itemSeleccionado && (
+                <div className="mt-3 p-2 bg-[#c8952e]/5 rounded border border-[#c8952e]/20 flex items-center gap-2 animate-in fade-in">
+                  <Layers className="w-4 h-4 text-[#c8952e]" />
+                  <span className="text-[10px] font-black uppercase text-white">Preparado para añadir: <strong className="text-[#c8952e]">{itemSeleccionado.nombre}</strong></span>
+                </div>
+              )}
+            </div>
 
-          {/* Costo Unitario */}
-          <div>
-            <input
-              type="number"
-              value={costoUnitario}
-              onChange={(e) => setCostoUnitario(Number(e.target.value))}
-              className="w-full bg-[#0b0b0b] border border-[#2a2a2a] rounded-md px-3 py-2 text-white focus:outline-none focus:border-[#c8952e]"
-              placeholder="Costo Unitario USD"
-              min="0"
-              step="0.01"
-            />
-          </div>
-        </div>
-
-        <button
-          onClick={agregarProducto}
-          className="flex items-center gap-2 px-4 py-2 bg-[#c8952e] text-[#0b0b0b] rounded-md font-black text-[10px] uppercase hover:bg-[#d9a540] transition-colors shadow-lg shadow-[#c8952e]/10"
-        >
-          <Plus className="w-4 h-4" />
-          Agregar Producto
-        </button>
-
-        {/* Tabla de Productos */}
-        {productosSeleccionados.length > 0 && (
-          <div className="mt-4 overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-[#2a2a2a]">
-                  <th className="text-left py-2 text-[10px] font-bold text-white/50 uppercase tracking-wider">Producto</th>
-                  <th className="text-right py-2 text-[10px] font-bold text-white/50 uppercase tracking-wider">Cantidad</th>
-                  <th className="text-right py-2 text-[10px] font-bold text-white/50 uppercase tracking-wider">Costo Unitario</th>
-                  <th className="text-right py-2 text-[10px] font-bold text-white/50 uppercase tracking-wider">Subtotal</th>
-                  <th className="text-right py-2 text-[10px] font-bold text-white/50 uppercase tracking-wider">Acción</th>
-                </tr>
-              </thead>
-              <tbody>
-                {productosSeleccionados.map((p) => (
-                  <tr key={p.productoId} className="border-b border-[#1a1a1a]">
-                    <td className="py-2 text-white font-bold text-xs uppercase">{p.nombre}</td>
-                    <td className="py-2 text-right text-white text-xs">{p.cantidad}</td>
-                    <td className="py-2 text-right text-white text-xs">${p.costoUnitarioUSD.toFixed(2)}</td>
-                    <td className="py-2 text-right text-[#c8952e] font-bold text-xs">${p.subtotalUSD.toFixed(2)}</td>
-                    <td className="py-2 text-right">
-                      <button
-                        onClick={() => eliminarProducto(p.productoId)}
-                        className="text-red-500 hover:text-red-400 transition-colors"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </td>
+            <div className="table-wrap border-t border-white/5">
+              <table className="text-[10px]">
+                <thead>
+                  <tr className="bg-black/40">
+                    <th className="py-3 px-5 text-white/40 font-black uppercase">Producto</th>
+                    <th className="py-3 text-white/40 font-black uppercase text-center">Cant.</th>
+                    <th className="py-3 text-white/40 font-black uppercase text-right">Costo USD</th>
+                    <th className="py-3 text-white/40 font-black uppercase text-right">Subtotal USD</th>
+                    <th className="py-3 px-5 text-center"></th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+                </thead>
+                <tbody>
+                  {loteTemporal.map((item, idx) => (
+                    <tr key={idx} className="border-b border-white/5 hover:bg-white/5">
+                      <td className="py-2 px-5 font-black uppercase text-white">{item.nombre}</td>
+                      <td className="py-2 text-center text-white font-bold">{item.cantidad}</td>
+                      <td className="py-2 text-right text-white/60 font-bold">${item.costoUnitarioUSD.toFixed(2)}</td>
+                      <td className="py-2 text-right text-[#c8952e] font-black">${item.subtotalUSD.toFixed(2)}</td>
+                      <td className="py-2 px-5 text-center">
+                        <button onClick={() => handleRemoveTempItem(idx)} className="text-white/20 hover:text-[#e04848] transition-colors">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {loteTemporal.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="py-20 text-center text-white/20 font-black uppercase italic tracking-widest">
+                        No hay productos en la lista temporal
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
 
-      {/* Totales Inferiores */}
-      <div className="bg-[#131313] rounded-lg border border-[#2a2a2a] p-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="bg-[#0b0b0b] rounded-md p-4 border border-white/5">
-            <p className="text-[10px] text-white/50 uppercase tracking-wider font-black">Total en Bolívares</p>
-            <p className="text-2xl font-black text-white">{Utils.fmtBS(totalBS)}</p>
+            <div className="card-foot p-5 bg-black/40 flex flex-col md:flex-row justify-between items-center gap-4">
+              <div className="grid grid-cols-2 gap-4 w-full md:w-auto">
+                <div className="bg-[#111] p-3 rounded-lg border border-white/10 min-w-[140px]">
+                  <p className="text-[8px] text-white/40 font-black uppercase mb-1">Total en Bolívares</p>
+                  <p className="text-lg font-black text-white">{Utils.fmtBS(totalBS)}</p>
+                </div>
+                <div className="bg-[#111] p-3 rounded-lg border border-[#c8952e]/20 min-w-[140px]">
+                  <p className="text-[8px] text-[#c8952e]/60 font-black uppercase mb-1">Total Factura USD</p>
+                  <p className="text-lg font-black text-[#c8952e]">{Utils.fmtUSD(totalUSD)}</p>
+                </div>
+              </div>
+              <button 
+                onClick={handleProcessPurchase}
+                disabled={loteTemporal.length === 0}
+                className="btn btn-primary h-14 w-full md:w-64 font-black uppercase text-xs flex items-center justify-center gap-3 shadow-xl shadow-[#c8952e]/10 disabled:opacity-20 transition-all"
+              >
+                Registrar Compra <CheckCircle className="w-5 h-5" />
+              </button>
+            </div>
           </div>
-          <button
-            onClick={registrarCompra}
-            disabled={productosSeleccionados.length === 0 || !proveedor || !numeroFactura}
-            className="w-full py-3 bg-[#c8952e] text-[#0b0b0b] rounded-md font-black text-lg uppercase tracking-wider hover:bg-[#d9a540] transition-colors disabled:opacity-20 flex items-center justify-center gap-3 shadow-xl shadow-[#c8952e]/10"
-          >
-            <CheckCircle className="w-6 h-6" /> Registrar Compra
-          </button>
         </div>
       </div>
-
-      {/* Compras Recientes */}
-      {comprasRecientes.length > 0 && (
-        <div className="bg-[#131313] rounded-lg border border-[#2a2a2a] p-6">
-          <h3 className="text-xs font-bold text-white/70 uppercase tracking-wider mb-4 flex items-center gap-2">
-            <ShoppingBag className="w-3 h-3 text-[#3a9bdc]" /> Historial Reciente de Compras
-          </h3>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-[#2a2a2a]">
-                  <th className="text-left py-2 text-[9px] font-bold text-white/40 uppercase tracking-wider">Factura</th>
-                  <th className="text-left py-2 text-[9px] font-bold text-white/40 uppercase tracking-wider">Proveedor</th>
-                  <th className="text-left py-2 text-[9px] font-bold text-white/40 uppercase tracking-wider">Fecha</th>
-                  <th className="text-right py-2 text-[9px] font-bold text-white/40 uppercase tracking-wider">Total USD</th>
-                  <th className="text-right py-2 text-[9px] font-bold text-white/40 uppercase tracking-wider">Estado</th>
-                </tr>
-              </thead>
-              <tbody>
-                {comprasRecientes.slice(-5).reverse().map((compra) => (
-                  <tr key={compra.id} className="border-b border-[#1a1a1a] hover:bg-white/5 transition-colors">
-                    <td className="py-2 text-white text-xs font-bold mono">{compra.numeroFactura}</td>
-                    <td className="py-2 text-white/70 text-xs uppercase">{compra.proveedor}</td>
-                    <td className="py-2 text-white/70 text-xs">{compra.fecha}</td>
-                    <td className="py-2 text-right text-[#c8952e] font-bold text-xs">${compra.totalUSD.toFixed(2)}</td>
-                    <td className="py-2 text-right">
-                      <span className={`px-2 py-1 rounded text-[9px] font-black uppercase ${
-                        compra.estado === 'pagado' ? 'bg-green-500/20 text-green-500' :
-                        compra.estado === 'pendiente' ? 'bg-red-500/20 text-red-500' :
-                        'bg-yellow-500/20 text-yellow-500'
-                      }`}>
-                        {compra.estado}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
