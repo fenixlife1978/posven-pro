@@ -273,6 +273,35 @@ export const exportarPDFConsumoInterno = (movs: any[], empresa: CompanyInfo, tot
   doc.save(`Reporte_Consumo_${new Date().getTime()}.pdf`);
 };
 
+// 7. Reporte de Devoluciones Detallado
+export const exportarPDFDevoluciones = (devoluciones: any[], empresa: CompanyInfo, periodo: string, stats: any) => {
+  const doc = new jsPDF('p', 'mm', 'letter');
+  const startY = drawHeader(doc, 'Reporte de Devoluciones Detallado', empresa);
+
+  doc.setFontSize(10);
+  doc.setTextColor(0, 0, 0);
+  doc.text(`PERIODO: ${periodo.toUpperCase()}`, 15, startY + 5);
+  doc.text(`TOTAL REEMBOLSADO: ${fmt(stats.totalUSD)}`, 15, startY + 10);
+
+  autoTable(doc, {
+    startY: startY + 18,
+    head: [['FECHA', 'ID DEV.', 'PRODUCTO', 'CANT.', 'PRECIO UNIT.', 'TOTAL (USD)', 'MOTIVO']],
+    body: devoluciones.flatMap(d => d.items.map((item: any, idx: number) => [
+      idx === 0 ? d.fecha.slice(0, 10) : '',
+      idx === 0 ? d.id : '',
+      item.nombre.toUpperCase(),
+      item.cantidad,
+      fmt(item.precioUnitUSD),
+      fmt(item.cantidad * item.precioUnitUSD),
+      idx === 0 ? d.motivo.toUpperCase() : ''
+    ])),
+    headStyles: { fillColor: [180, 0, 0] },
+    styles: { fontSize: 7 }
+  });
+
+  doc.save(`Devoluciones_${periodo.replace(/\s+/g, '_')}_${new Date().getTime()}.pdf`);
+};
+
 // Mantenemos la función original para compatibilidad
 export const generarPDFInventario = async (products: Product[]) => {
   const doc = new jsPDF('l', 'mm', 'letter');

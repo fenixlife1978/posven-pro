@@ -4,14 +4,15 @@
 import React, { useState, useEffect } from 'react';
 import { AppState, Product, Movimiento, KitItem } from '@/lib/types';
 import { Utils, Store } from '@/lib/db-store';
-import { Plus, Search, Edit2, Trash2, Boxes, X, BarChart3, FileText, History, Gift, Layers, Trash, ShoppingBag, TrendingUp, Printer } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, Boxes, X, BarChart3, FileText, History, Gift, Layers, Trash, ShoppingBag, TrendingUp, Printer, RotateCcw } from 'lucide-react';
 import { 
   generarPDFInventarioSimple, 
   exportarPDFInventarioGeneral, 
   exportarPDFVentasDetallado, 
   exportarPDFKardex, 
   exportarPDFHistorialAjustes, 
-  exportarPDFConsumoInterno 
+  exportarPDFConsumoInterno,
+  exportarPDFDevoluciones
 } from '@/lib/pdf-generator';
 
 export default function InventoryModule({ state, updateState }: { state: AppState, updateState: (s: Partial<AppState>) => void }) {
@@ -119,6 +120,7 @@ export default function InventoryModule({ state, updateState }: { state: AppStat
       );
       case 'reporte_general': return <ReporteGeneral state={state} />;
       case 'reporte_ventas': return <ReporteVentas state={state} />;
+      case 'reporte_devoluciones': return <ReporteDevoluciones state={state} />;
       case 'historial_ajustes': return <HistorialAjustes state={state} />;
       case 'kardex': return <ReporteKardex state={state} selectedId={selectedKardexId} onSelect={setSelectedKardexId} />;
       case 'consumo_colab': return <ReporteConsumo state={state} />;
@@ -132,6 +134,7 @@ export default function InventoryModule({ state, updateState }: { state: AppStat
         <button onClick={() => setActiveTab('productos')} className={`tab ${activeTab === 'productos' ? 'active' : ''}`}>Productos</button>
         <button onClick={() => setActiveTab('reporte_general')} className={`tab ${activeTab === 'reporte_general' ? 'active' : ''}`}>Reporte General (CPP)</button>
         <button onClick={() => setActiveTab('reporte_ventas')} className={`tab ${activeTab === 'reporte_ventas' ? 'active' : ''}`}>Reporte de Ventas</button>
+        <button onClick={() => setActiveTab('reporte_devoluciones')} className={`tab ${activeTab === 'reporte_devoluciones' ? 'active' : ''}`}>Devoluciones</button>
         <button onClick={() => setActiveTab('kardex')} className={`tab ${activeTab === 'kardex' ? 'active' : ''}`}>Kardex</button>
         <button onClick={() => setActiveTab('historial_ajustes')} className={`tab ${activeTab === 'historial_ajustes' ? 'active' : ''}`}>Historial de Ajustes</button>
         <button onClick={() => setActiveTab('consumo_colab')} className={`tab ${activeTab === 'consumo_colab' ? 'active' : ''}`}>Consumo y Colab.</button>
@@ -860,6 +863,117 @@ function ReporteVentas({ state }: { state: AppState }) {
                     <td className="mono font-black">{Utils.fmtUSD(item.subtotalUSD)}</td>
                   </tr>
                 )))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ReporteDevoluciones({ state }: { state: AppState }) {
+  const [filter, setFilter] = useState('hoy');
+  const [desde, setDesde] = useState(Utils.hoy());
+  const [hasta, setHasta] = useState(Utils.hoy());
+
+  const filtrarDevoluciones = () => {
+    const hoy = Utils.hoy();
+    const esteMes = hoy.slice(0, 7);
+    const esteAño = hoy.slice(0, 4);
+
+    return (state.devoluciones || []).filter(d => {
+      if (filter === 'hoy') return d.fecha.startsWith(hoy);
+      if (filter === 'mes') return d.fecha.startsWith(esteMes);
+      if (filter === 'año') return d.fecha.startsWith(esteAño);
+      if (filter === 'custom') return d.fecha >= desde && d.fecha <= hasta;
+      return true;
+    });
+  };
+
+  const devoluciones = filtrarDevoluciones();
+  const totalUSD = devoluciones.reduce((acc, d) => acc + d.totalUSD, 0);
+
+  const handleExportPDF = () => {
+    const meses = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+    const hoyStr = Utils.hoy();
+    const [year, month] = hoyStr.split('-').map(Number);
+    
+    let periodoLabel = filter;
+    if (filter === 'hoy') {
+      periodoLabel = Utils.fmtFecha(hoyStr);
+    } else if (filter === 'mes') {
+      periodoLabel = `Mes ${meses[month - 1]} ${year}`;
+    } else if (filter === 'año') {
+      periodoLabel = `Año ${year}`;
+    } else if (filter === 'custom') {
+      periodoLabel = `${Utils.fmtFecha(desde)} a ${Utils.fmtFecha(hasta)}`;
+    }
+
+    exportarPDFDevoluciones(devoluciones, state.empresa, periodoLabel, { totalUSD });
+  };
+
+  return (
+    <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2">
+      <div className="filters flex flex-wrap gap-4 items-end bg-[#131313] p-4 rounded-lg border border-[#2a2a2a]">
+        <div className="form-group mb-0">
+          <label className="text-white text-[10px] font-black uppercase mb-1 block">Filtrar por:</label>
+          <select className="form-select w-auto bg-black text-white" value={filter} onChange={e => setFilter(e.target.value)}>
+            <option value="hoy">Hoy</option>
+            <option value="mes">Este Mes</option>
+            <option value="año">Este Año</option>
+            <option value="custom">Personalizado</option>
+          </select>
+        </div>
+        
+        {filter === 'custom' && (
+          <>
+            <div className="form-group mb-0">
+              <label className="text-white text-[10px] font-black uppercase mb-1 block">Desde</label>
+              <input type="date" className="form-input w-auto bg-black text-white" value={desde} onChange={e => setDesde(e.target.value)} />
+            </div>
+            <div className="form-group mb-0">
+              <label className="text-white text-[10px] font-black uppercase mb-1 block">Hasta</label>
+              <input type="date" className="form-input w-auto bg-black text-white" value={hasta} onChange={e => setHasta(e.target.value)} />
+            </div>
+          </>
+        )}
+
+        <div className="flex flex-col bg-black/40 px-4 py-1.5 rounded border border-white/5">
+          <span className="text-[8px] text-white/40 font-black uppercase">Total Reembolsado</span>
+          <span className="text-lg font-black text-[#e04848]">{Utils.fmtUSD(totalUSD)}</span>
+        </div>
+
+        <button className="btn btn-secondary text-white font-black text-xs uppercase ml-auto" onClick={handleExportPDF}>
+          <FileText className="w-4 h-4" /> EXPORTAR PDF
+        </button>
+      </div>
+
+      <div className="card">
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th className="uppercase">Fecha</th>
+                <th className="uppercase">ID Dev.</th>
+                <th className="uppercase">Venta Ref.</th>
+                <th className="uppercase text-right">Total USD</th>
+                <th className="uppercase">Motivo</th>
+              </tr>
+            </thead>
+            <tbody>
+              {devoluciones.length === 0 ? (
+                <tr><td colSpan={5} className="text-center py-10 opacity-30 uppercase font-black italic">No hay devoluciones registradas</td></tr>
+              ) : (
+                devoluciones.map(d => (
+                  <tr key={d.id}>
+                    <td className="text-xs">{Utils.fmtFecha(d.fecha)}</td>
+                    <td className="text-[#e04848] font-black mono text-xs">{d.id}</td>
+                    <td className="text-white opacity-60 mono text-xs">{d.ventaId}</td>
+                    <td className="mono text-right font-black">{Utils.fmtUSD(d.totalUSD)}</td>
+                    <td className="text-xs uppercase italic">{d.motivo}</td>
+                  </tr>
+                ))
               )}
             </tbody>
           </table>
