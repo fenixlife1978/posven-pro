@@ -54,10 +54,10 @@ export default function LicoreriaPOS() {
     const loadedState = Store.get();
     setState(loadedState);
 
-    // Reloj en tiempo real
+    // Reloj en tiempo real - Sincronizado cada segundo
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
 
-    // Monitoreo de conexión
+    // Monitoreo de conexión en tiempo real
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
     
@@ -82,7 +82,7 @@ export default function LicoreriaPOS() {
 
   const handleModuleChange = (moduleId: string) => {
     setActiveModule(moduleId);
-    setIsSidebarOpen(false); // Ocultar sidebar después de seleccionar
+    setIsSidebarOpen(false); // Ocultar sidebar después de seleccionar (UX Móvil)
   };
 
   const menuGroups = [
@@ -130,9 +130,22 @@ export default function LicoreriaPOS() {
     }
   };
 
-  // Formateo seguro para evitar hidratación incorrecta
-  const timeStr = mounted ? currentTime.toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }) : '--:--:--';
-  const dateStr = mounted ? currentTime.toLocaleDateString('es-VE', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }) : '...';
+  // Formateo con zona horaria de Caracas para evitar desajustes de servidor/cliente
+  const timeStr = mounted ? currentTime.toLocaleTimeString('es-VE', { 
+    hour: '2-digit', 
+    minute: '2-digit', 
+    second: '2-digit', 
+    hour12: true,
+    timeZone: 'America/Caracas' 
+  }) : '--:--:--';
+
+  const dateStr = mounted ? currentTime.toLocaleDateString('es-VE', { 
+    weekday: 'short', 
+    day: '2-digit', 
+    month: 'short', 
+    year: 'numeric',
+    timeZone: 'America/Caracas'
+  }) : '...';
 
   return (
     <div className="flex min-h-screen bg-surface-warm text-ink">
@@ -207,7 +220,7 @@ export default function LicoreriaPOS() {
 
       {/* MAIN CONTENT */}
       <main className="flex-1 flex flex-col min-h-screen max-w-full overflow-hidden">
-        {/* TOPBAR */}
+        {/* TOPBAR - FIJO CON INDICADORES */}
         <header className="sticky top-0 z-30 bg-surface-warm/85 backdrop-blur-md border-b border-line px-7 py-3.5 flex items-center gap-6 no-print">
           <button className="lg:hidden p-2 -ml-2 text-ink" onClick={() => setIsSidebarOpen(true)}>
             <Menu className="w-[18px] h-[18px]" />
@@ -222,46 +235,50 @@ export default function LicoreriaPOS() {
             </p>
           </div>
 
-          {/* INDICADORES CENTRALES - Visibles desde lg para asegurar espacio */}
-          <div className="hidden lg:flex items-center gap-4 mx-auto">
-            {/* Reloj */}
-            <div className="flex items-center gap-2.5 px-3.5 py-1.5 bg-white/60 rounded-xl border border-line shadow-sm min-w-[140px]">
-              <ClockIcon className="w-3.5 h-3.5 text-ink/70" />
+          {/* INDICADORES CENTRALES - Visibles desde md/lg */}
+          <div className="hidden md:flex items-center gap-4 mx-auto">
+            {/* Reloj Local (Caracas) */}
+            <div className="flex items-center gap-2.5 px-4 py-2 bg-white/70 rounded-xl border border-line shadow-sm min-w-[160px]">
+              <div className="w-8 h-8 bg-brand-gold-soft rounded-lg flex items-center justify-center">
+                <ClockIcon className="w-4 h-4 text-brand-gold-deep" />
+              </div>
               <div className="flex flex-col">
-                <span className="text-[0.62rem] font-black uppercase text-ink/50 leading-none mb-0.5">
+                <span className="text-[0.65rem] font-black uppercase text-ink opacity-50 leading-none mb-0.5">
                   {dateStr}
                 </span>
-                <span className="text-[0.8rem] font-black text-ink leading-none tabular-nums">
+                <span className="text-[0.88rem] font-black text-ink leading-none tabular-nums">
                   {timeStr}
                 </span>
               </div>
             </div>
 
-            {/* Conectividad */}
-            <div className="flex items-center gap-2.5 px-3.5 py-1.5 bg-white/60 rounded-xl border border-line shadow-sm">
-              {mounted && isOnline ? (
-                <Wifi className="w-3.5 h-3.5 text-status-success" />
-              ) : (
-                <WifiOff className="w-3.5 h-3.5 text-status-danger" />
-              )}
+            {/* Estado de Red (Internet) */}
+            <div className="flex items-center gap-2.5 px-4 py-2 bg-white/70 rounded-xl border border-line shadow-sm">
+              <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${mounted && isOnline ? 'bg-status-success-soft' : 'bg-status-danger-soft'}`}>
+                {mounted && isOnline ? (
+                  <Wifi className="w-4 h-4 text-status-success" />
+                ) : (
+                  <WifiOff className="w-4 h-4 text-status-danger" />
+                )}
+              </div>
               <div className="flex flex-col">
-                <span className="text-[0.62rem] font-black uppercase text-ink/50 leading-none mb-0.5">Estado Red</span>
+                <span className="text-[0.65rem] font-black uppercase text-ink opacity-50 leading-none mb-0.5">Estado Red</span>
                 <div className="flex items-center gap-1.5 leading-none">
                   <div className={`w-1.5 h-1.5 rounded-full ${mounted ? (isOnline ? 'bg-status-success animate-pulse' : 'bg-status-danger') : 'bg-ink/20'}`} />
-                  <span className={`text-[0.72rem] font-black uppercase ${mounted ? (isOnline ? 'text-status-success' : 'text-status-danger') : 'text-ink/20'}`}>
-                    {mounted ? (isOnline ? 'En Línea' : 'Sin Internet') : 'Detectando...'}
+                  <span className={`text-[0.74rem] font-black uppercase ${mounted ? (isOnline ? 'text-status-success' : 'text-status-danger') : 'text-ink/20'}`}>
+                    {mounted ? (isOnline ? 'Sincronizado' : 'Sin Internet') : 'Detectando...'}
                   </span>
                 </div>
               </div>
             </div>
 
-            {/* Tasa BCV Header */}
-            <div className="flex items-center gap-2.5 px-3.5 py-1.5 bg-brand-gold-soft/60 rounded-xl border border-brand-gold/30 shadow-sm">
-              <div className="w-5 h-5 rounded-full bg-gradient-to-b from-[#FFD700] via-[#003893] to-[#CF142B] border border-white/20 shrink-0" />
+            {/* Tasa BCV (Opcional, pero útil en header) */}
+            <div className="hidden lg:flex items-center gap-2.5 px-4 py-2 bg-brand-gold-soft/40 rounded-xl border border-brand-gold/20 shadow-sm">
+              <RefreshCw className="w-3.5 h-3.5 text-brand-gold-deep" />
               <div className="flex flex-col">
-                <span className="text-[0.62rem] font-black uppercase text-brand-gold-deep leading-none mb-0.5">Tasa Sistema</span>
-                <span className="text-[0.8rem] font-black text-ink leading-none">
-                  {state.tasa.toFixed(2)} <span className="text-[0.65rem] opacity-60">Bs/USD</span>
+                <span className="text-[0.65rem] font-black uppercase text-brand-gold-deep leading-none mb-0.5">Tasa Sistema</span>
+                <span className="text-[0.88rem] font-black text-ink leading-none">
+                  {state.tasa.toFixed(2)} <span className="text-[0.65rem] opacity-60">Bs</span>
                 </span>
               </div>
             </div>
@@ -277,7 +294,7 @@ export default function LicoreriaPOS() {
             <div className="flex items-center gap-2.5 pl-3 border-l border-line ml-1">
               <div className="text-right hidden sm:block">
                 <div className="text-sm font-bold text-ink leading-none">Mariana R.</div>
-                <div className="text-[0.66rem] font-bold text-ink uppercase mt-1 tracking-wider">Administrador</div>
+                <div className="text-[0.66rem] font-bold text-ink opacity-60 uppercase mt-1 tracking-wider">Administrador</div>
               </div>
               <div className="w-[34px] h-[34px] rounded-full bg-gradient-to-br from-brand-gold to-[#E7B857] flex items-center justify-center text-white font-black text-xs border border-white/20 shadow-sm">
                 MR
