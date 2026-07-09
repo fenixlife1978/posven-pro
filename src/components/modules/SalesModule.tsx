@@ -593,16 +593,16 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
             <div className="absolute left-4 top-1/2 -translate-y-1/2 text-[#c8952e] z-10"><Barcode className="w-5 h-5" /></div>
             <input 
               ref={searchInputRef}
-              className="form-input pl-14 py-2 text-base bg-[#131313] border-[#c8952e]/30 text-white placeholder-white/40" 
+              className="form-input pl-14 py-2 text-base bg-white border-brand-gold/30 text-ink placeholder-ink/40" 
               placeholder="Escanee o busque producto..." value={search} onChange={e => setSearch(e.target.value)} 
               onKeyDown={e => e.key === 'Enter' && matches.length >= 1 && agregar(matches[0].id)} autoFocus
             />
             {matches.length > 0 && (
-              <div className="absolute top-full left-0 right-0 bg-[#1e1e1e] border border-[#2a2a2a] rounded-b-lg shadow-2xl z-[100] mt-1 overflow-hidden">
+              <div className="absolute top-full left-0 right-0 bg-white border border-line rounded-b-lg shadow-2xl z-[100] mt-1 overflow-hidden">
                 {matches.map(p => (
-                  <div key={p.id} onClick={() => agregar(p.id)} className="flex items-center justify-between p-2 hover:bg-[#c8952e]/20 cursor-pointer border-b border-[#2a2a2a]">
-                    <div className="text-white text-xs font-bold uppercase">{p.nombre} <span className="text-white/40 text-[9px] mono ml-2">{p.codigo}</span></div>
-                    <div className="text-[#c8952e] font-black text-sm">{Utils.fmtUSD(p.precioUSD)}</div>
+                  <div key={p.id} onClick={() => agregar(p.id)} className="flex items-center justify-between p-2 hover:bg-brand-gold/10 cursor-pointer border-b border-line">
+                    <div className="text-ink text-xs font-bold uppercase">{p.nombre} <span className="text-ink/40 text-[9px] mono ml-2">{p.codigo}</span></div>
+                    <div className="text-brand-gold font-black text-sm">{Utils.fmtUSD(p.precioUSD)}</div>
                   </div>
                 ))}
               </div>
@@ -611,32 +611,32 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
 
           <div className="flex flex-1 gap-3 overflow-hidden">
             <div className="w-1/3 flex flex-col gap-2">
-              <div className="card p-3 space-y-3 bg-[#131313] border-[#2a2a2a] h-full flex flex-col">
+              <div className="card p-3 space-y-3 bg-white border-line h-full flex flex-col">
                 <div className="form-group mb-0">
-                  <label className="text-white text-[10px] font-black uppercase block mb-1">IDENTIFICACIÓN CLIENTE</label>
-                  <input className="form-input h-8 text-xs bg-[#0b0b0b] text-white border-[#2a2a2a] font-black uppercase" value={cliente} onChange={e => setCliente(e.target.value)} />
+                  <label className="text-ink text-[10px] font-black uppercase block mb-1">IDENTIFICACIÓN CLIENTE</label>
+                  <input className="form-input h-8 text-xs bg-surface-soft text-ink border-line font-black uppercase" value={cliente} onChange={e => setCliente(e.target.value)} />
                 </div>
                 <div className="flex-1 flex flex-col min-h-0">
-                  <label className="text-white text-[10px] font-black uppercase block mb-1">MÉTODOS APLICADOS</label>
-                  <div className="flex-1 p-2 border border-white/10 bg-[#181818] rounded-lg overflow-y-auto">
+                  <label className="text-ink text-[10px] font-black uppercase block mb-1">MÉTODOS APLICADOS</label>
+                  <div className="flex-1 p-2 border border-line bg-surface-soft rounded-lg overflow-y-auto">
                     {pagos.map((p, idx) => (
-                      <div key={idx} className="flex justify-between text-[10px] border-b border-white/5 py-1 text-white font-black uppercase">
+                      <div key={idx} className="flex justify-between text-[10px] border-b border-line/30 py-1 text-ink font-black uppercase">
                         <span>{Utils.metodoLabel(p.metodo)}</span>
-                        <span className="text-[#c8952e]">{Utils.fmtUSD(p.montoUSD)}</span>
+                        <span className="text-brand-gold-deep">{Utils.fmtUSD(p.montoUSD)}</span>
                       </div>
                     ))}
-                    {pagos.length === 0 && <div className="text-[10px] text-white/20 italic py-2 text-center uppercase font-black">Sin abonos</div>}
+                    {pagos.length === 0 && <div className="text-[10px] text-ink/20 italic py-2 text-center uppercase font-black">Sin abonos</div>}
                   </div>
                 </div>
                 <div className="p-3 border border-[#3a9bdc]/30 bg-[#3a9bdc]/5 rounded-lg text-center space-y-2">
                   <div className="flex items-center justify-center gap-2">
-                    <label className="text-white text-[10px] font-black uppercase">SALDO RESTANTE</label>
+                    <label className="text-ink text-[10px] font-black uppercase">SALDO RESTANTE</label>
                     <button onClick={() => setShowMultiModal(true)} className="btn-icon h-6 w-6 bg-[#c8952e] text-black"><Wallet className="w-3.5 h-3.5"/></button>
                   </div>
                   <div className={`text-2xl font-black ${saldoRestanteUSD <= 0.01 ? 'text-[#27ae60]' : 'text-[#3a9bdc]'}`}>
                     {saldoRestanteUSD <= 0.01 ? 'SALDADO' : Utils.fmtUSD(saldoRestanteUSD)}
                   </div>
-                  <div className="bg-black py-2 rounded-lg border-2 border-white/20">
+                  <div className="bg-ink py-2 rounded-lg border-2 border-line">
                     <label className="text-white text-[9px] font-black uppercase block mb-1">EQUIVALENTE A PAGAR</label>
                     <div className="text-2xl font-black text-white">{Utils.fmtBS(saldoRestanteBS)}</div>
                   </div>
@@ -646,7 +646,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
 
             <div className="w-2/3 flex flex-col gap-2 overflow-hidden">
               <div className="card flex-1 flex flex-col overflow-hidden bg-white border-none shadow-xl">
-                <div className="grid grid-cols-[1fr_80px_60px_70px_80px_80px_40px] gap-2 px-3 py-2 bg-[#131313] text-white text-[9px] font-black uppercase tracking-widest">
+                <div className="grid grid-cols-[1fr_80px_60px_70px_80px_80px_40px] gap-2 px-3 py-2 bg-surface-soft text-ink text-[9px] font-black uppercase tracking-widest">
                   <div>Descripción</div><div className="text-center">Cant</div><div className="text-center">U.M.</div><div className="text-right">Precio ($)</div><div className="text-right">Precio (Bs)</div><div className="text-right">Total</div><div className="text-center"></div>
                 </div>
                 <div className="flex-1 overflow-y-auto p-1 space-y-1">
@@ -672,12 +672,12 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                     })
                   )}
                 </div>
-                <div className="p-3 bg-[#131313] border-t border-[#2a2a2a] flex items-center justify-between">
+                <div className="p-3 bg-white border-t border-line flex items-center justify-between">
                   <div className="space-y-1">
-                    <label className="text-white text-[10px] font-black uppercase block">TOTAL FACTURA</label>
+                    <label className="text-ink text-[10px] font-black uppercase block">TOTAL FACTURA</label>
                     <div className="flex items-baseline gap-2">
-                      <div className="text-3xl font-black text-[#c8952e]">{Utils.fmtUSD(subtotalUSD)}</div>
-                      <div className="text-sm font-black text-white">{Utils.fmtBS(totalBS)}</div>
+                      <div className="text-3xl font-black text-brand-gold-deep">{Utils.fmtUSD(subtotalUSD)}</div>
+                      <div className="text-sm font-black text-ink">{Utils.fmtBS(totalBS)}</div>
                     </div>
                   </div>
                   <button onClick={ejecutarVenta} disabled={state.carrito.length === 0 || saldoRestanteUSD > 0.01} className="btn btn-primary h-12 px-8 font-black uppercase text-xs disabled:opacity-20 flex items-center gap-2">
