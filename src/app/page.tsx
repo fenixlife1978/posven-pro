@@ -34,7 +34,7 @@ import ConfigModule from '@/components/modules/ConfigModule';
 export default function LicoreriaPOS() {
   const [state, setState] = useState<AppState>(initialState);
   const [activeModule, setActiveModule] = useState('dashboard');
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
@@ -53,6 +53,11 @@ export default function LicoreriaPOS() {
     const updated = { ...state, ...newState };
     setState(updated);
     Store.set(updated);
+  };
+
+  const handleModuleChange = (moduleId: string) => {
+    setActiveModule(moduleId);
+    setIsSidebarOpen(false); // Ocultar sidebar después de seleccionar
   };
 
   const menuGroups = [
@@ -103,7 +108,7 @@ export default function LicoreriaPOS() {
   return (
     <div className="flex min-h-screen bg-surface-warm text-ink">
       {/* SIDEBAR */}
-      <aside className={`fixed lg:sticky top-0 left-0 w-[260px] h-screen bg-white border-r border-line flex flex-col z-40 transition-transform duration-300 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
+      <aside className={`fixed lg:sticky top-0 left-0 w-[260px] h-screen bg-white border-r border-line flex flex-col z-50 transition-transform duration-300 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
         <div className="p-6 border-b border-line flex flex-col gap-1">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 bg-ink border border-brand-gold rounded-[10px] flex items-center justify-center font-black text-brand-gold text-lg shadow-sm">
@@ -134,7 +139,7 @@ export default function LicoreriaPOS() {
                   return (
                     <button
                       key={item.id}
-                      onClick={() => setActiveModule(item.id)}
+                      onClick={() => handleModuleChange(item.id)}
                       className={`w-full flex items-center justify-between gap-2.5 px-3 py-2 rounded-[10px] text-[0.9rem] font-semibold transition-all group relative ${active ? 'bg-brand-gold-soft text-brand-gold-deep' : 'text-ink-muted hover:bg-surface-soft hover:text-ink'}`}
                     >
                       {active && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 bg-brand-gold rounded-r-full" />}
@@ -175,7 +180,7 @@ export default function LicoreriaPOS() {
       <main className="flex-1 flex flex-col min-h-screen max-w-full overflow-hidden">
         {/* TOPBAR */}
         <header className="sticky top-0 z-30 bg-surface-warm/85 backdrop-blur-md border-b border-line px-7 py-3.5 flex items-center gap-6 no-print">
-          <button className="lg:hidden p-2 -ml-2 text-ink" onClick={() => setIsSidebarOpen(!isSidebarOpen)}>
+          <button className="lg:hidden p-2 -ml-2 text-ink" onClick={() => setIsSidebarOpen(true)}>
             <Menu className="w-[18px] h-[18px]" />
           </button>
           
@@ -208,7 +213,7 @@ export default function LicoreriaPOS() {
             </button>
             
             <button 
-              onClick={() => setActiveModule('ventas')}
+              onClick={() => handleModuleChange('ventas')}
               className="h-[38px] px-4 rounded-[10px] bg-brand-gold text-white font-bold text-sm flex items-center gap-2 shadow-md hover:bg-brand-gold-deep transition-all transform active:scale-95"
             >
               <Plus className="w-4 h-4" />
@@ -243,8 +248,8 @@ export default function LicoreriaPOS() {
       </main>
 
       {/* MOBILE DRAWER OVERLAY */}
-      {!isSidebarOpen && (
-        <div className="fixed inset-0 bg-ink/40 z-[35] backdrop-blur-sm lg:hidden" onClick={() => setIsSidebarOpen(true)} />
+      {isSidebarOpen && (
+        <div className="fixed inset-0 bg-ink/40 z-[45] backdrop-blur-sm lg:hidden" onClick={() => setIsSidebarOpen(false)} />
       )}
     </div>
   );
