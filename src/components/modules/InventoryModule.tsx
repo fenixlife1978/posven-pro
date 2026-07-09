@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState, useEffect } from 'react';
@@ -66,13 +65,13 @@ export default function InventoryModule({ state, updateState }: { state: AppStat
               <table>
                 <thead>
                   <tr>
-                    <th className="font-black">Código</th>
-                    <th className="font-black">Nombre Producto</th>
-                    <th className="font-black">Categoría</th>
-                    <th className="font-black">Costo USD</th>
-                    <th className="font-black">P. Venta USD</th>
-                    <th className="font-black">Stock</th>
-                    <th className="font-black">Acciones</th>
+                    <th className="font-black text-ink">Código</th>
+                    <th className="font-black text-ink">Nombre Producto</th>
+                    <th className="font-black text-ink">Categoría</th>
+                    <th className="font-black text-ink">Costo USD</th>
+                    <th className="font-black text-ink">P. Venta USD</th>
+                    <th className="font-black text-ink">Stock</th>
+                    <th className="font-black text-ink">Acciones</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white">
@@ -128,13 +127,13 @@ export default function InventoryModule({ state, updateState }: { state: AppStat
   return (
     <div className="space-y-6">
       <div className="tabs border-b border-line no-print">
-        <button onClick={() => setActiveTab('productos')} className={`tab ${activeTab === 'productos' ? 'active' : ''}`}>Productos</button>
-        <button onClick={() => setActiveTab('reporte_general')} className={`tab ${activeTab === 'reporte_general' ? 'active' : ''}`}>Inventario CPP</button>
-        <button onClick={() => setActiveTab('reporte_ventas')} className={`tab ${activeTab === 'reporte_ventas' ? 'active' : ''}`}>Ventas</button>
-        <button onClick={() => setActiveTab('reporte_devoluciones')} className={`tab ${activeTab === 'reporte_devoluciones' ? 'active' : ''}`}>Devoluciones</button>
-        <button onClick={() => setActiveTab('kardex')} className={`tab ${activeTab === 'kardex' ? 'active' : ''}`}>Kardex</button>
-        <button onClick={() => setActiveTab('historial_ajustes')} className={`tab ${activeTab === 'historial_ajustes' ? 'active' : ''}`}>Ajustes</button>
-        <button onClick={() => setActiveTab('consumo_colab')} className={`tab ${activeTab === 'consumo_colab' ? 'active' : ''}`}>Consumo</button>
+        <button onClick={() => setActiveTab('productos')} className={`tab ${activeTab === 'productos' ? 'active' : 'text-ink'}`}>Productos</button>
+        <button onClick={() => setActiveTab('reporte_general')} className={`tab ${activeTab === 'reporte_general' ? 'active' : 'text-ink'}`}>Inventario CPP</button>
+        <button onClick={() => setActiveTab('reporte_ventas')} className={`tab ${activeTab === 'reporte_ventas' ? 'active' : 'text-ink'}`}>Ventas</button>
+        <button onClick={() => setActiveTab('reporte_devoluciones')} className={`tab ${activeTab === 'reporte_devoluciones' ? 'active' : 'text-ink'}`}>Devoluciones</button>
+        <button onClick={() => setActiveTab('kardex')} className={`tab ${activeTab === 'kardex' ? 'active' : 'text-ink'}`}>Kardex</button>
+        <button onClick={() => setActiveTab('historial_ajustes')} className={`tab ${activeTab === 'historial_ajustes' ? 'active' : 'text-ink'}`}>Ajustes</button>
+        <button onClick={() => setActiveTab('consumo_colab')} className={`tab ${activeTab === 'consumo_colab' ? 'active' : 'text-ink'}`}>Consumo</button>
       </div>
 
       <div className="animate-in fade-in duration-300">
@@ -240,12 +239,12 @@ function ReporteGeneral({ state }: { state: AppState }) {
     <div className="space-y-6">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="kpi p-6 border-line shadow-md bg-white">
-          <div className="text-[10px] font-black uppercase mb-1 text-ink opacity-70">Valor al Costo (CPP Total)</div>
+          <div className="text-[10px] font-black uppercase mb-1 text-ink">Valor al Costo (CPP Total)</div>
           <div className="text-3xl font-black text-ink">{Utils.fmtUSD(totalCosto)}</div>
           <div className="text-sm font-bold mt-1 italic text-ink/70">{Utils.fmtBS(totalCosto * state.tasa)}</div>
         </div>
         <div className="kpi p-6 border-line shadow-md bg-white">
-          <div className="text-[10px] font-black uppercase mb-1 text-ink opacity-70">Valor al Precio de Venta (Total)</div>
+          <div className="text-[10px] font-black uppercase mb-1 text-ink">Valor al Precio de Venta (Total)</div>
           <div className="text-3xl font-black text-status-success">{Utils.fmtUSD(totalVenta)}</div>
           <div className="text-sm font-bold mt-1 italic text-ink/70">{Utils.fmtBS(totalVenta * state.tasa)}</div>
         </div>
@@ -273,13 +272,13 @@ function ReporteGeneral({ state }: { state: AppState }) {
           <table>
             <thead>
               <tr className="bg-surface-soft">
-                <th className="font-black">Cod.</th>
-                <th className="font-black">Nombre Producto</th>
-                <th className="font-black">Marca / Pres.</th>
-                <th className="font-black text-right">Costo USD</th>
-                <th className="font-black text-right">Venta USD</th>
-                <th className="font-black text-center">Stock</th>
-                <th className="font-black text-right">Subtotal Costo</th>
+                <th className="font-black text-ink">Cod.</th>
+                <th className="font-black text-ink">Nombre Producto</th>
+                <th className="font-black text-ink">Marca / Pres.</th>
+                <th className="font-black text-ink text-right">Costo USD</th>
+                <th className="font-black text-ink text-right">Venta USD</th>
+                <th className="font-black text-ink text-center">Stock</th>
+                <th className="font-black text-ink text-right">Subtotal Costo</th>
               </tr>
             </thead>
             <tbody className="bg-white">
@@ -372,7 +371,7 @@ function ReporteVentas({ state }: { state: AppState }) {
     <div className="space-y-4">
       <div className="filters flex flex-wrap gap-4 items-end bg-white p-5 rounded-lg border border-line shadow-sm">
         <div className="form-group mb-0">
-          <label className="text-ink text-[10px] font-black uppercase mb-1 block opacity-70">Filtrar por:</label>
+          <label className="text-ink text-[10px] font-black uppercase mb-1 block">Filtrar por:</label>
           <select className="form-select w-auto bg-surface-soft border-line text-ink font-black h-10 px-3 rounded shadow-inner" value={filter} onChange={e => setFilter(e.target.value)}>
             <option value="hoy">Ventas de Hoy</option>
             <option value="mes">Ventas del Mes</option>
@@ -384,11 +383,11 @@ function ReporteVentas({ state }: { state: AppState }) {
         {filter === 'custom' && (
           <>
             <div className="form-group mb-0">
-              <label className="text-ink text-[10px] font-black uppercase mb-1 block opacity-70">Desde</label>
+              <label className="text-ink text-[10px] font-black uppercase mb-1 block">Desde</label>
               <input type="date" className="form-input h-10 px-3" value={desde} onChange={e => setDesde(e.target.value)} />
             </div>
             <div className="form-group mb-0">
-              <label className="text-ink text-[10px] font-black uppercase mb-1 block opacity-70">Hasta</label>
+              <label className="text-ink text-[10px] font-black uppercase mb-1 block">Hasta</label>
               <input type="date" className="form-input h-10 px-3" value={hasta} onChange={e => setHasta(e.target.value)} />
             </div>
           </>
@@ -419,12 +418,12 @@ function ReporteVentas({ state }: { state: AppState }) {
           <table>
             <thead>
               <tr className="bg-surface-soft">
-                <th className="font-black">Fecha</th>
-                <th className="font-black">Producto</th>
-                <th className="font-black">Pago</th>
-                <th className="font-black text-center">Cant.</th>
-                <th className="font-black text-right">Precio $</th>
-                <th className="font-black text-right">Total $</th>
+                <th className="font-black text-ink">Fecha</th>
+                <th className="font-black text-ink">Producto</th>
+                <th className="font-black text-ink">Pago</th>
+                <th className="font-black text-ink text-center">Cant.</th>
+                <th className="font-black text-ink text-right">Precio $</th>
+                <th className="font-black text-ink text-right">Total $</th>
               </tr>
             </thead>
             <tbody className="bg-white">
@@ -495,7 +494,7 @@ function ReporteDevoluciones({ state }: { state: AppState }) {
     <div className="space-y-4">
       <div className="filters flex flex-wrap gap-4 items-end bg-white p-5 rounded-lg border border-line shadow-sm">
         <div className="form-group mb-0">
-          <label className="text-ink text-[10px] font-black uppercase mb-1 block opacity-70">Filtrar por:</label>
+          <label className="text-ink text-[10px] font-black uppercase mb-1 block">Filtrar por:</label>
           <select className="form-select bg-surface-soft border-line text-ink font-black h-10 px-3 rounded shadow-inner" value={filter} onChange={e => setFilter(e.target.value)}>
             <option value="hoy">Hoy</option>
             <option value="mes">Mes Actual</option>
@@ -519,11 +518,11 @@ function ReporteDevoluciones({ state }: { state: AppState }) {
           <table>
             <thead>
               <tr className="bg-surface-soft">
-                <th className="font-black">Fecha</th>
-                <th className="font-black">ID Dev.</th>
-                <th className="font-black">Venta Ref.</th>
-                <th className="font-black text-right">Total USD</th>
-                <th className="font-black">Motivo</th>
+                <th className="font-black text-ink">Fecha</th>
+                <th className="font-black text-ink">ID Dev.</th>
+                <th className="font-black text-ink">Venta Ref.</th>
+                <th className="font-black text-ink text-right">Total USD</th>
+                <th className="font-black text-ink">Motivo</th>
               </tr>
             </thead>
             <tbody className="bg-white">
@@ -569,7 +568,7 @@ function ReporteKardex({ state, selectedId, onSelect }: { state: AppState, selec
     <div className="space-y-4">
       <div className="flex gap-4 flex-wrap items-center bg-white p-5 rounded-lg border border-line shadow-sm">
         <div className="form-group mb-0 flex-1 min-w-[300px] relative">
-          <label className="text-ink text-[10px] font-black uppercase mb-1 block opacity-70">Búsqueda Inteligente de Producto</label>
+          <label className="text-ink text-[10px] font-black uppercase mb-1 block">Búsqueda Inteligente de Producto</label>
           <div className="relative">
             <Search className="absolute left-3 top-3 w-4 h-4 text-brand-gold" />
             <input 
@@ -615,12 +614,12 @@ function ReporteKardex({ state, selectedId, onSelect }: { state: AppState, selec
           <table>
             <thead>
               <tr className="bg-surface-soft">
-                <th className="font-black">Fecha / Hora</th>
-                <th className="font-black">Movimiento</th>
-                <th className="font-black text-center">Cant.</th>
-                <th className="font-black text-center">Stock Antes</th>
-                <th className="font-black text-center">Stock Después</th>
-                <th className="font-black">Referencia</th>
+                <th className="font-black text-ink">Fecha / Hora</th>
+                <th className="font-black text-ink">Movimiento</th>
+                <th className="font-black text-ink text-center">Cant.</th>
+                <th className="font-black text-ink text-center">Stock Antes</th>
+                <th className="font-black text-ink text-center">Stock Después</th>
+                <th className="font-black text-ink">Referencia</th>
               </tr>
             </thead>
             <tbody className="bg-white">
@@ -674,7 +673,7 @@ function HistorialAjustes({ state }: { state: AppState }) {
     <div className="space-y-4">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className={`kpi p-6 border-line shadow-md bg-white border-l-8 ${efectoNetoUSD >= 0 ? 'border-l-status-success' : 'border-l-status-danger'}`}>
-          <div className="text-[10px] font-black uppercase mb-1 text-ink opacity-70">Variación Neta de Capital en Inventario ($)</div>
+          <div className="text-[10px] font-black uppercase mb-1 text-ink">Variación Neta de Capital en Inventario ($)</div>
           <div className="text-3xl font-black text-ink">{Utils.fmtUSD(efectoNetoUSD)}</div>
           <div className="text-sm font-bold mt-1 italic text-ink/60">{Utils.fmtBS(efectoNetoUSD * state.tasa)}</div>
         </div>
@@ -691,13 +690,13 @@ function HistorialAjustes({ state }: { state: AppState }) {
           <table>
             <thead>
               <tr className="bg-surface-soft">
-                <th className="font-black">Fecha</th>
-                <th className="font-black">Producto</th>
-                <th className="font-black">Tipo de Ajuste</th>
-                <th className="font-black text-center">Cant.</th>
-                <th className="font-black text-center">Antes</th>
-                <th className="font-black text-center">Después</th>
-                <th className="font-black">Detalle</th>
+                <th className="font-black text-ink">Fecha</th>
+                <th className="font-black text-ink">Producto</th>
+                <th className="font-black text-ink">Tipo de Ajuste</th>
+                <th className="font-black text-ink text-center">Cant.</th>
+                <th className="font-black text-ink text-center">Antes</th>
+                <th className="font-black text-ink text-center">Después</th>
+                <th className="font-black text-ink">Detalle</th>
               </tr>
             </thead>
             <tbody className="bg-white">
@@ -744,11 +743,11 @@ function ReporteConsumo({ state }: { state: AppState }) {
     <div className="space-y-6">
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="kpi p-5 border-line shadow-md bg-white">
-          <div className="text-[10px] font-black uppercase mb-1 text-ink opacity-60">Colaboraciones</div>
+          <div className="text-[10px] font-black uppercase mb-1 text-ink">Colaboraciones</div>
           <div className="text-3xl font-black text-ink">{movs.filter(m => m.tipo === 'colaboracion').length}</div>
         </div>
         <div className="kpi p-5 border-line shadow-md bg-white">
-          <div className="text-[10px] font-black uppercase mb-1 text-ink opacity-60">Consumo Interno</div>
+          <div className="text-[10px] font-black uppercase mb-1 text-ink">Consumo Interno</div>
           <div className="text-3xl font-black text-ink">{movs.filter(m => m.tipo === 'consumo').length}</div>
         </div>
         <div className="kpi p-5 border-l-8 border-l-status-danger shadow-md bg-white border-line">
@@ -768,12 +767,12 @@ function ReporteConsumo({ state }: { state: AppState }) {
           <table>
             <thead>
               <tr className="bg-surface-soft">
-                <th className="font-black">Fecha</th>
-                <th className="font-black">Producto</th>
-                <th className="font-black">Tipo</th>
-                <th className="font-black text-center">Cantidad</th>
-                <th className="font-black text-right">Costo Unit.</th>
-                <th className="font-black text-right">Costo Total</th>
+                <th className="font-black text-ink">Fecha</th>
+                <th className="font-black text-ink">Producto</th>
+                <th className="font-black text-ink">Tipo</th>
+                <th className="font-black text-ink text-center">Cantidad</th>
+                <th className="font-black text-ink text-right">Costo Unit.</th>
+                <th className="font-black text-ink text-right">Costo Total</th>
               </tr>
             </thead>
             <tbody className="bg-white">
