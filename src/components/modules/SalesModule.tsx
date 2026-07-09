@@ -23,7 +23,8 @@ import {
   Zap,
   Share2,
   UserPlus,
-  RotateCcw
+  RotateCcw,
+  HandCoins
 } from 'lucide-react';
 import ReturnsModule from './ReturnsModule';
 
@@ -177,7 +178,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     const nuevaCxC = {
       id: 'DEU-' + reciboId,
       ventaId: reciboId,
-      fecha: hoy,
+      fecha: Utils.hoy(),
       fechaVencimiento: '2099-12-31',
       cliente: selectedClient.name,
       montoUSD: subtotalUSD,
@@ -317,10 +318,6 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     printWindow.focus();
     setTimeout(() => { printWindow.print(); printWindow.close(); }, 250);
   };
-
-  const hoy = Utils.hoy();
-
-  if (view === 'returns') return <ReturnsModule state={state} updateState={updateState} />;
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -694,7 +691,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
           <div className="modal-bg" onClick={() => setShowReport(null)}></div>
           <div className="modal-box max-w-md bg-[#1e1e1e] border-2 border-[#3a9bdc]/30">
             <div className="modal-head py-3 px-5 border-b border-white/10">
-              <h3 className="text-white font-black uppercase text-xs">REPORTE {showReport} - {Utils.fmtFecha(hoy)}</h3>
+              <h3 className="text-white font-black uppercase text-xs">REPORTE {showReport} - {Utils.fmtFecha(Utils.hoy())}</h3>
               <button onClick={() => setShowReport(null)} className="text-white/40 hover:text-white"><X className="w-4 h-4"/></button>
             </div>
             <div className="modal-body p-6 space-y-6">
