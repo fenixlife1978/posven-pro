@@ -7,7 +7,8 @@ import {
   Trash2, 
   Search,
   AlertCircle,
-  CheckCircle
+  CheckCircle,
+  HandCoins
 } from 'lucide-react';
 import { Store, Utils } from '@/lib/db-store';
 import { AppState, Product } from '@/lib/types';
@@ -211,80 +212,103 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
 
       {/* Formulario */}
       <div className="bg-[#131313] rounded-lg border border-[#2a2a2a] p-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Proveedor */}
-          <div>
-            <label className="block text-sm font-bold text-white/70 uppercase tracking-wider mb-1">
-              Proveedor
-            </label>
-            <input
-              type="text"
-              value={proveedor}
-              onChange={(e) => setProveedor(e.target.value)}
-              className="w-full bg-[#0b0b0b] border border-[#2a2a2a] rounded-md px-3 py-2 text-white focus:outline-none focus:border-[#c8952e]"
-              placeholder="Nombre del proveedor"
-            />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="space-y-4">
+            {/* Proveedor */}
+            <div>
+              <label className="block text-xs font-bold text-white/70 uppercase tracking-wider mb-1">
+                Proveedor
+              </label>
+              <input
+                type="text"
+                value={proveedor}
+                onChange={(e) => setProveedor(e.target.value)}
+                className="w-full bg-[#0b0b0b] border border-[#2a2a2a] rounded-md px-3 py-2 text-white focus:outline-none focus:border-[#c8952e]"
+                placeholder="Nombre del proveedor"
+              />
+            </div>
+
+            {/* Número de Factura */}
+            <div>
+              <label className="block text-xs font-bold text-white/70 uppercase tracking-wider mb-1">
+                Número de Factura
+              </label>
+              <input
+                type="text"
+                value={numeroFactura}
+                onChange={(e) => setNumeroFactura(e.target.value)}
+                className="w-full bg-[#0b0b0b] border border-[#2a2a2a] rounded-md px-3 py-2 text-white focus:outline-none focus:border-[#c8952e]"
+                placeholder="Factura #"
+              />
+            </div>
+
+            {/* Fecha */}
+            <div>
+              <label className="block text-xs font-bold text-white/70 uppercase tracking-wider mb-1">
+                Fecha
+              </label>
+              <input
+                type="date"
+                value={fecha}
+                onChange={(e) => setFecha(e.target.value)}
+                className="w-full bg-[#0b0b0b] border border-[#2a2a2a] rounded-md px-3 py-2 text-white focus:outline-none focus:border-[#c8952e]"
+              />
+            </div>
           </div>
 
-          {/* Número de Factura */}
-          <div>
-            <label className="block text-sm font-bold text-white/70 uppercase tracking-wider mb-1">
-              Número de Factura
-            </label>
-            <input
-              type="text"
-              value={numeroFactura}
-              onChange={(e) => setNumeroFactura(e.target.value)}
-              className="w-full bg-[#0b0b0b] border border-[#2a2a2a] rounded-md px-3 py-2 text-white focus:outline-none focus:border-[#c8952e]"
-              placeholder="Factura #"
-            />
-          </div>
+          {/* Condiciones de Pago Reestilizado */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <HandCoins className="w-4 h-4 text-white/70" />
+              <label className="block text-xs font-black text-white uppercase tracking-wider">
+                Condiciones de Pago
+              </label>
+            </div>
+            
+            <div className="bg-white/5 border border-white/10 rounded-xl p-4 space-y-4 shadow-xl">
+              <div className="flex gap-2">
+                {['contado', 'credito', 'mixto'].map((cond) => (
+                  <button
+                    key={cond}
+                    onClick={() => setCondicionesPago(cond as any)}
+                    className={`flex-1 py-3 rounded-lg text-[10px] font-black uppercase transition-all border ${
+                      condicionesPago === cond
+                        ? 'bg-[#c8952e] text-[#0b0b0b] border-[#c8952e]'
+                        : 'bg-transparent text-white/70 border-white/10 hover:bg-white/5'
+                    }`}
+                  >
+                    {cond === 'contado' ? 'Contado' : cond === 'credito' ? 'Crédito' : 'Mixto'}
+                  </button>
+                ))}
+              </div>
 
-          {/* Fecha */}
-          <div>
-            <label className="block text-sm font-bold text-white/70 uppercase tracking-wider mb-1">
-              Fecha
-            </label>
-            <input
-              type="date"
-              value={fecha}
-              onChange={(e) => setFecha(e.target.value)}
-              className="w-full bg-[#0b0b0b] border border-[#2a2a2a] rounded-md px-3 py-2 text-white focus:outline-none focus:border-[#c8952e]"
-            />
-          </div>
-
-          {/* Tasa BCV */}
-          <div>
-            <label className="block text-sm font-bold text-white/70 uppercase tracking-wider mb-1">
-              Tasa BCV Aplicada (Bs/$)
-            </label>
-            <input
-              type="text"
-              value={state.tasa.toFixed(2)}
-              disabled
-              className="w-full bg-[#0b0b0b] border border-[#2a2a2a] rounded-md px-3 py-2 text-[#c8952e] font-bold focus:outline-none cursor-not-allowed opacity-70"
-            />
-          </div>
-
-          {/* Condiciones de Pago */}
-          <div className="col-span-1 md:col-span-2">
-            <label className="block text-sm font-bold text-white/70 uppercase tracking-wider mb-1">
-              Condiciones de Pago
-            </label>
-            <div className="flex gap-3">
-              {['contado', 'credito', 'mixto'].map((cond) => (
-                <button
-                  key={cond}
-                  onClick={() => setCondicionesPago(cond as any)}
-                  className={`px-4 py-2 rounded-md text-sm font-bold uppercase transition-all ${
-                    condicionesPago === cond
-                      ? 'bg-[#c8952e] text-[#0b0b0b]'
-                      : 'bg-[#0b0b0b] text-white/70 hover:bg-[#1a1a1a]'
-                  }`}
-                >
-                  {cond === 'contado' ? 'Contado' : cond === 'credito' ? 'Crédito' : 'Mixto'}
-                </button>
-              ))}
+              <div className="bg-black/30 rounded-lg p-4 space-y-2 border border-white/5">
+                <div className="flex justify-between items-center text-[11px] font-bold">
+                  <span className="text-white/70">Total factura USD:</span>
+                  <span className="text-white">USD ${totalUSD.toFixed(4)}</span>
+                </div>
+                <div className="flex justify-between items-center text-[11px] font-bold">
+                  <span className="text-white/70">Total pagado USD:</span>
+                  {condicionesPago === 'mixto' ? (
+                    <div className="flex items-center gap-2">
+                      <span className="text-emerald-500">USD $</span>
+                      <input 
+                        type="number"
+                        value={totalPagadoUSD}
+                        onChange={(e) => setTotalPagadoUSD(Number(e.target.value))}
+                        className="bg-black/40 border border-white/10 rounded px-2 py-0.5 w-24 text-right text-emerald-500 focus:outline-none focus:border-[#c8952e]"
+                        step="0.01"
+                      />
+                    </div>
+                  ) : (
+                    <span className="text-emerald-500">USD ${totalPagadoUSD.toFixed(2)}</span>
+                  )}
+                </div>
+                <div className="flex justify-between items-center text-[11px] font-bold">
+                  <span className="text-white/70">Saldo pendiente USD:</span>
+                  <span className="text-emerald-500">USD ${saldoPendiente.toFixed(4)}</span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -292,8 +316,8 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
 
       {/* Agregar Productos */}
       <div className="bg-[#131313] rounded-lg border border-[#2a2a2a] p-6">
-        <h3 className="text-sm font-bold text-white/70 uppercase tracking-wider mb-4">
-          Añadir Productos al Lote
+        <h3 className="text-xs font-bold text-white/70 uppercase tracking-wider mb-4 flex items-center gap-2">
+          <Plus className="w-3 h-3 text-[#c8952e]" /> Añadir Productos al Lote
         </h3>
         
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
@@ -359,7 +383,7 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
 
         <button
           onClick={agregarProducto}
-          className="flex items-center gap-2 px-4 py-2 bg-[#c8952e] text-[#0b0b0b] rounded-md font-bold hover:bg-[#d9a540] transition-colors"
+          className="flex items-center gap-2 px-4 py-2 bg-[#c8952e] text-[#0b0b0b] rounded-md font-black text-[10px] uppercase hover:bg-[#d9a540] transition-colors shadow-lg shadow-[#c8952e]/10"
         >
           <Plus className="w-4 h-4" />
           Agregar Producto
@@ -371,20 +395,20 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
             <table className="w-full">
               <thead>
                 <tr className="border-b border-[#2a2a2a]">
-                  <th className="text-left py-2 text-sm font-bold text-white/50 uppercase tracking-wider">Producto</th>
-                  <th className="text-right py-2 text-sm font-bold text-white/50 uppercase tracking-wider">Cantidad</th>
-                  <th className="text-right py-2 text-sm font-bold text-white/50 uppercase tracking-wider">Costo Unitario</th>
-                  <th className="text-right py-2 text-sm font-bold text-white/50 uppercase tracking-wider">Subtotal</th>
-                  <th className="text-right py-2 text-sm font-bold text-white/50 uppercase tracking-wider">Acción</th>
+                  <th className="text-left py-2 text-[10px] font-bold text-white/50 uppercase tracking-wider">Producto</th>
+                  <th className="text-right py-2 text-[10px] font-bold text-white/50 uppercase tracking-wider">Cantidad</th>
+                  <th className="text-right py-2 text-[10px] font-bold text-white/50 uppercase tracking-wider">Costo Unitario</th>
+                  <th className="text-right py-2 text-[10px] font-bold text-white/50 uppercase tracking-wider">Subtotal</th>
+                  <th className="text-right py-2 text-[10px] font-bold text-white/50 uppercase tracking-wider">Acción</th>
                 </tr>
               </thead>
               <tbody>
                 {productosSeleccionados.map((p) => (
                   <tr key={p.productoId} className="border-b border-[#1a1a1a]">
-                    <td className="py-2 text-white font-bold">{p.nombre}</td>
-                    <td className="py-2 text-right text-white">{p.cantidad}</td>
-                    <td className="py-2 text-right text-white">${p.costoUnitarioUSD.toFixed(2)}</td>
-                    <td className="py-2 text-right text-[#c8952e] font-bold">${p.subtotalUSD.toFixed(2)}</td>
+                    <td className="py-2 text-white font-bold text-xs uppercase">{p.nombre}</td>
+                    <td className="py-2 text-right text-white text-xs">{p.cantidad}</td>
+                    <td className="py-2 text-right text-white text-xs">${p.costoUnitarioUSD.toFixed(2)}</td>
+                    <td className="py-2 text-right text-[#c8952e] font-bold text-xs">${p.subtotalUSD.toFixed(2)}</td>
                     <td className="py-2 text-right">
                       <button
                         onClick={() => eliminarProducto(p.productoId)}
@@ -401,85 +425,54 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
         )}
       </div>
 
-      {/* Totales */}
+      {/* Totales Inferiores */}
       <div className="bg-[#131313] rounded-lg border border-[#2a2a2a] p-6">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className="bg-[#0b0b0b] rounded-md p-4">
-            <p className="text-xs text-white/50 uppercase tracking-wider font-bold">Total en Bolívares</p>
-            <p className="text-2xl font-black text-white">Bs. {totalBS.toFixed(2)}</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="bg-[#0b0b0b] rounded-md p-4 border border-white/5">
+            <p className="text-[10px] text-white/50 uppercase tracking-wider font-black">Total en Bolívares</p>
+            <p className="text-2xl font-black text-white">{Utils.fmtBS(totalBS)}</p>
           </div>
-          <div className="bg-[#0b0b0b] rounded-md p-4">
-            <p className="text-xs text-white/50 uppercase tracking-wider font-bold">Total Factura USD</p>
-            <p className="text-2xl font-black text-[#c8952e]">${totalUSD.toFixed(4)}</p>
-          </div>
-          <div className="bg-[#0b0b0b] rounded-md p-4">
-            <p className="text-xs text-white/50 uppercase tracking-wider font-bold">Total Pagado USD</p>
-            <input
-              type="number"
-              value={totalPagadoUSD}
-              onChange={(e) => {
-                if (condicionesPago === 'mixto') {
-                  setTotalPagadoUSD(Number(e.target.value));
-                }
-              }}
-              disabled={condicionesPago !== 'mixto'}
-              className={`w-full bg-transparent text-2xl font-black text-[#c8952e] border-0 focus:outline-none ${
-                condicionesPago !== 'mixto' ? 'cursor-not-allowed opacity-70' : ''
-              }`}
-              step="0.01"
-              min="0"
-              max={totalUSD}
-            />
-          </div>
-          <div className="bg-[#0b0b0b] rounded-md p-4">
-            <p className="text-xs text-white/50 uppercase tracking-wider font-bold">Saldo Pendiente USD</p>
-            <p className={`text-2xl font-black ${saldoPendiente > 0 ? 'text-red-500' : 'text-green-500'}`}>
-              ${saldoPendiente.toFixed(4)}
-            </p>
-          </div>
+          <button
+            onClick={registrarCompra}
+            disabled={productosSeleccionados.length === 0 || !proveedor || !numeroFactura}
+            className="w-full py-3 bg-[#c8952e] text-[#0b0b0b] rounded-md font-black text-lg uppercase tracking-wider hover:bg-[#d9a540] transition-colors disabled:opacity-20 flex items-center justify-center gap-3 shadow-xl shadow-[#c8952e]/10"
+          >
+            <CheckCircle className="w-6 h-6" /> Registrar Compra
+          </button>
         </div>
-
-        {/* Botón Registrar */}
-        <button
-          onClick={registrarCompra}
-          className="w-full mt-4 py-3 bg-[#c8952e] text-[#0b0b0b] rounded-md font-black text-lg uppercase tracking-wider hover:bg-[#d9a540] transition-colors"
-        >
-          Registrar Compra
-        </button>
       </div>
 
       {/* Compras Recientes */}
       {comprasRecientes.length > 0 && (
         <div className="bg-[#131313] rounded-lg border border-[#2a2a2a] p-6">
-          <h3 className="text-sm font-bold text-white/70 uppercase tracking-wider mb-4">
-            Compras Recientes
+          <h3 className="text-xs font-bold text-white/70 uppercase tracking-wider mb-4 flex items-center gap-2">
+            <ShoppingBag className="w-3 h-3 text-[#3a9bdc]" /> Historial Reciente de Compras
           </h3>
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-[#2a2a2a]">
-                  <th className="text-left py-2 text-xs font-bold text-white/40 uppercase tracking-wider">Factura</th>
-                  <th className="text-left py-2 text-xs font-bold text-white/40 uppercase tracking-wider">Proveedor</th>
-                  <th className="text-left py-2 text-xs font-bold text-white/40 uppercase tracking-wider">Fecha</th>
-                  <th className="text-right py-2 text-xs font-bold text-white/40 uppercase tracking-wider">Total USD</th>
-                  <th className="text-right py-2 text-xs font-bold text-white/40 uppercase tracking-wider">Estado</th>
+                  <th className="text-left py-2 text-[9px] font-bold text-white/40 uppercase tracking-wider">Factura</th>
+                  <th className="text-left py-2 text-[9px] font-bold text-white/40 uppercase tracking-wider">Proveedor</th>
+                  <th className="text-left py-2 text-[9px] font-bold text-white/40 uppercase tracking-wider">Fecha</th>
+                  <th className="text-right py-2 text-[9px] font-bold text-white/40 uppercase tracking-wider">Total USD</th>
+                  <th className="text-right py-2 text-[9px] font-bold text-white/40 uppercase tracking-wider">Estado</th>
                 </tr>
               </thead>
               <tbody>
                 {comprasRecientes.slice(-5).reverse().map((compra) => (
-                  <tr key={compra.id} className="border-b border-[#1a1a1a]">
-                    <td className="py-2 text-white">{compra.numeroFactura}</td>
-                    <td className="py-2 text-white/70">{compra.proveedor}</td>
-                    <td className="py-2 text-white/70">{compra.fecha}</td>
-                    <td className="py-2 text-right text-[#c8952e] font-bold">${compra.totalUSD.toFixed(2)}</td>
+                  <tr key={compra.id} className="border-b border-[#1a1a1a] hover:bg-white/5 transition-colors">
+                    <td className="py-2 text-white text-xs font-bold mono">{compra.numeroFactura}</td>
+                    <td className="py-2 text-white/70 text-xs uppercase">{compra.proveedor}</td>
+                    <td className="py-2 text-white/70 text-xs">{compra.fecha}</td>
+                    <td className="py-2 text-right text-[#c8952e] font-bold text-xs">${compra.totalUSD.toFixed(2)}</td>
                     <td className="py-2 text-right">
-                      <span className={`px-2 py-1 rounded text-xs font-bold ${
+                      <span className={`px-2 py-1 rounded text-[9px] font-black uppercase ${
                         compra.estado === 'pagado' ? 'bg-green-500/20 text-green-500' :
                         compra.estado === 'pendiente' ? 'bg-red-500/20 text-red-500' :
                         'bg-yellow-500/20 text-yellow-500'
                       }`}>
-                        {compra.estado === 'pagado' ? 'Pagado' :
-                         compra.estado === 'pendiente' ? 'Pendiente' : 'Parcial'}
+                        {compra.estado}
                       </span>
                     </td>
                   </tr>
