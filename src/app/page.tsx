@@ -24,7 +24,6 @@ import InventoryModule from '@/components/modules/InventoryModule';
 import SalesModule from '@/components/modules/SalesModule';
 import CxCModule from '@/components/modules/CxCModule';
 import CxPModule from '@/components/modules/CxPModule';
-import ReturnsModule from '@/components/modules/ReturnsModule';
 import ReportsModule from '@/components/modules/ReportsModule';
 import ConfigModule from '@/components/modules/ConfigModule';
 
@@ -144,7 +143,6 @@ export default function LicoreriaPOS() {
       case 'ventas': return <SalesModule state={state} updateState={updateState} />;
       case 'cxc': return <CxCModule state={state} updateState={updateState} />;
       case 'cxp': return <CxPModule state={state} updateState={updateState} />;
-      case 'devoluciones': return <ReturnsModule state={state} updateState={updateState} />;
       case 'reportes': return <ReportsModule state={state} />;
       case 'config': return <ConfigModule state={state} updateState={updateState} />;
       default: return <DashboardModule state={state} />;
@@ -176,7 +174,6 @@ export default function LicoreriaPOS() {
       items: [
         { id: 'cxc', label: 'Cuentas por Cobrar', icon: HandCoins },
         { id: 'cxp', label: 'Cuentas por Pagar', icon: FileText },
-        { id: 'devoluciones', label: 'Devoluciones', icon: RotateCcw },
       ]
     },
     {

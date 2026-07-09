@@ -26,6 +26,7 @@ import {
   UserPlus,
   User
 } from 'lucide-react';
+import ReturnsModule from './ReturnsModule';
 
 // ✅ Declarar el tipo de electronAPI en Window para soporte de impresión nativa
 declare global {
@@ -584,7 +585,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         <button onClick={() => setView('credits')} className={`btn btn-sm ${view === 'credits' ? 'btn-primary' : 'btn-secondary text-white font-bold'}`}><ClipboardList className="w-3.5 h-3.5"/> Consultar Créditos</button>
         <button onClick={() => setShowReport('Y')} className="btn btn-sm btn-secondary text-white font-bold"><FileText className="w-3.5 h-3.5"/> Reporte Y</button>
         <button onClick={emitirReporteZ} className="btn btn-sm btn-secondary text-white font-bold"><Receipt className="w-3.5 h-3.5"/> Reporte Z</button>
-        <button onClick={() => setView('returns')} className="btn btn-sm btn-secondary text-white font-bold"><RotateCcw className="w-3.5 h-3.5"/> Devoluciones</button>
+        <button onClick={() => setView('returns')} className={`btn btn-sm ${view === 'returns' ? 'btn-primary' : 'btn-secondary text-white font-bold'}`}><RotateCcw className="w-3.5 h-3.5"/> Devoluciones</button>
       </div>
 
       {view === 'pos' ? (
@@ -781,11 +782,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
           </div>
         </div>
       ) : (
-        <div className="card flex-1 bg-[#131313] text-white p-4 flex flex-col items-center justify-center space-y-4">
-          <RotateCcw className="w-12 h-12 text-[#e04848] opacity-50" />
-          <h3 className="text-white font-black uppercase italic text-xl">Módulo de Devoluciones</h3>
-          <p className="text-white/40 font-black uppercase text-xs">Gestión de retornos de mercancía próximamente integrada.</p>
-          <button onClick={() => setView('pos')} className="btn btn-secondary uppercase font-black text-xs h-10 px-8">Regresar al POS</button>
+        <div className="flex-1 overflow-hidden animate-in slide-in-from-bottom-2 duration-300">
+          <ReturnsModule state={state} updateState={updateState} />
         </div>
       )}
 
