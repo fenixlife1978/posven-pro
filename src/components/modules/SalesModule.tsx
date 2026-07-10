@@ -1050,8 +1050,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                 )}
               </div>
 
-              <div className="flex flex-col gap-6">
-                <div className="card bg-white border-line h-fit shadow-lg rounded-xl overflow-hidden">
+              <div className="flex flex-col gap-6 overflow-y-auto pr-1">
+                <div className="card bg-white border-line h-fit shadow-lg rounded-xl overflow-hidden mb-4">
                   <div className="card-head py-3 px-6 bg-ink border-b border-white/10">
                     <h3 className="text-white font-black uppercase italic text-[10px] tracking-widest">RESUMEN DE DEVOLUCIÓN</h3>
                   </div>
