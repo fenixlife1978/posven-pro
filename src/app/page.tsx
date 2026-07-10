@@ -21,7 +21,8 @@ import {
   ShoppingBag,
   LogOut,
   Bell,
-  ShieldCheck
+  ShieldCheck,
+  Truck
 } from 'lucide-react';
 import { Store, Utils, initialState } from '@/lib/db-store';
 import { AppState } from '@/lib/types';
@@ -38,6 +39,7 @@ import ReportsModule from '@/components/modules/ReportsModule';
 import ConfigModule from '@/components/modules/ConfigModule';
 import UsersModule from '@/components/modules/UsersModule';
 import GlobalControlModule from '@/components/modules/GlobalControlModule';
+import SuppliersModule from '@/components/modules/SuppliersModule';
 
 export default function LicoreriaPOS() {
   const router = useRouter();
@@ -204,6 +206,7 @@ export default function LicoreriaPOS() {
         { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
         { id: 'inventario', label: 'Inventario', icon: Package, count: state.productos.length },
         { id: 'compras', label: 'Entradas (Compras)', icon: ShoppingBag },
+        { id: 'proveedores', label: 'Proveedores', icon: Truck, count: state.proveedores.length },
       ]
     },
     {
@@ -233,6 +236,7 @@ export default function LicoreriaPOS() {
       case 'inventario': return <InventoryModule state={state} updateState={updateState} />;
       case 'ventas': return <SalesModule state={state} updateState={updateState} />;
       case 'compras': return <PurchaseModule state={state} updateState={updateState} />;
+      case 'proveedores': return <SuppliersModule state={state} updateState={updateState} />;
       case 'cxc': return <CxCModule state={state} updateState={updateState} />;
       case 'cxp': return <CxPModule state={state} updateState={updateState} />;
       case 'reportes': return <ReportsModule state={state} />;
