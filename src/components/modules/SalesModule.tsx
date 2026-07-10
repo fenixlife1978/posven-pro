@@ -809,8 +809,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         </div>
       ) : view === 'history' ? (
         <div className="card flex-1 bg-white text-ink flex flex-col overflow-hidden animate-in slide-in-from-bottom-2 duration-300">
-          <div className="card-head px-5 py-4 border-b border-line bg-surface-soft flex justify-between items-center">
-            <h3 className="text-ink font-black uppercase italic tracking-tighter flex items-center gap-2">
+          <div className="card-head px-5 py-4 border-b border-line bg-ink flex justify-between items-center">
+            <h3 className="text-white font-black uppercase italic tracking-tighter flex items-center gap-2">
               <History className="w-5 h-5 text-brand-gold" /> Historial de Transacciones Diarias
             </h3>
             <button onClick={() => setView('pos')} className="btn btn-sm btn-secondary flex items-center gap-2 font-black uppercase text-[10px] border-line">
