@@ -24,9 +24,10 @@ import {
 } from 'lucide-react';
 import { Store, Utils, initialState } from '@/lib/db-store';
 import { AppState } from '@/lib/types';
-import { auth, db } from '@/lib/firebase';
+import { auth, db, rtdb } from '@/lib/firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { ref, get as getRTDB } from 'firebase/database';
 import DashboardModule from '@/components/modules/DashboardModule';
 import InventoryModule from '@/components/modules/InventoryModule';
 import SalesModule from '@/components/modules/SalesModule';
@@ -64,6 +65,22 @@ export default function LicoreriaPOS() {
           const userDoc = await getDoc(doc(db, 'users', userDocId));
           if (userDoc.exists()) {
             const data = userDoc.data();
+            
+            // VALIDACIÓN DE SEGURIDAD: TERMINAL ASIGNADO PARA CAJEROS
+            if (data.rol === 'cajero') {
+               const snap = await getRTDB(ref(rtdb, 'pos_system_data/terminales'));
+               const terminals = snap.val() || [];
+               const terminalsArr = Array.isArray(terminals) ? terminals : Object.values(terminals);
+               const hasTerminal = terminalsArr.some((t: any) => t.usuarioId === userDocId);
+               
+               if (!hasTerminal) {
+                  await signOut(auth);
+                  alert("ACCESO RESTRINGIDO: Su usuario no tiene un terminal de venta asignado. Contacte al administrador.");
+                  router.push('/login');
+                  return;
+               }
+            }
+
             setUserRole(data.rol);
             setUserProfile(data);
             if (data.rol === 'cajero') {
@@ -286,7 +303,7 @@ export default function LicoreriaPOS() {
 
       {/* SIDEBAR - HIDDEN FOR CAJERO */}
       {!isCajero && (
-        <aside className={`fixed lg:sticky top-0 left-0 w-[260px] h-screen bg-white border-r border-line flex flex-col z-50 transition-transform duration-300 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
+        <aside className={`fixed lg:sticky top-0 left-0 w-[260px] h-screen bg-white border-line flex flex-col z-50 transition-transform duration-300 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'} border-r`}>
           <div className="p-6 border-b border-line flex flex-col gap-1">
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 bg-ink border border-brand-gold rounded-[10px] flex items-center justify-center font-black text-brand-gold text-lg shadow-sm">

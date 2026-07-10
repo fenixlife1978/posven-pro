@@ -10,9 +10,10 @@ import {
   EyeOff,
   ChevronDown 
 } from 'lucide-react';
-import { auth, db } from '@/lib/firebase';
+import { auth, db, rtdb } from '@/lib/firebase';
 import { signInWithEmailAndPassword, onAuthStateChanged, setPersistence, browserSessionPersistence, signOut } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
+import { ref, get as getRTDB } from 'firebase/database';
 import { toast } from '@/hooks/use-toast';
 
 export default function LoginPage() {
@@ -29,9 +30,27 @@ export default function LoginPage() {
          // Verificación de bloqueo antes de permitir entrada automática
          const userDocId = user.email!.replace(/\W/g, '_');
          const userDoc = await getDoc(doc(db, 'users', userDocId));
-         if (userDoc.exists() && userDoc.data().accesoBloqueado) {
-            await signOut(auth);
-            return;
+         if (userDoc.exists()) {
+            const userData = userDoc.data();
+            
+            // 1. Verificar bloqueo manual
+            if (userData.accesoBloqueado) {
+               await signOut(auth);
+               return;
+            }
+
+            // 2. Verificar terminal para cajeros
+            if (userData.rol === 'cajero') {
+               const terminalsSnap = await getRTDB(ref(rtdb, 'pos_system_data/terminales'));
+               const terminalsRaw = terminalsSnap.val() || [];
+               const terminalsArr = Array.isArray(terminalsRaw) ? terminalsRaw : Object.values(terminalsRaw);
+               const hasTerminal = terminalsArr.some((t: any) => t.usuarioId === userDocId);
+               
+               if (!hasTerminal) {
+                  await signOut(auth);
+                  return;
+               }
+            }
          }
          router.push('/');
       }
@@ -52,12 +71,14 @@ export default function LoginPage() {
       await setPersistence(auth, browserSessionPersistence);
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       
-      // 2. Verificar si el acceso está bloqueado en Firestore
+      // 2. Verificar si el acceso está bloqueado o si no tiene terminal
       const userDocId = email.replace(/\W/g, '_');
       const userDoc = await getDoc(doc(db, 'users', userDocId));
       
       if (userDoc.exists()) {
         const userData = userDoc.data();
+        
+        // Bloqueo administrativo
         if (userData.accesoBloqueado) {
            await signOut(auth);
            toast({ 
@@ -67,6 +88,25 @@ export default function LoginPage() {
            });
            setLoading(false);
            return;
+        }
+
+        // Validación de Terminal para Cajeros
+        if (userData.rol === 'cajero') {
+           const terminalsSnap = await getRTDB(ref(rtdb, 'pos_system_data/terminales'));
+           const terminalsRaw = terminalsSnap.val() || [];
+           const terminalsArr = Array.isArray(terminalsRaw) ? terminalsRaw : Object.values(terminalsRaw);
+           const hasTerminal = terminalsArr.some((t: any) => t.usuarioId === userDocId);
+           
+           if (!hasTerminal) {
+             await signOut(auth);
+             toast({ 
+               variant: "destructive", 
+               title: "Sin Terminal Asignado", 
+               description: "Usted no tiene un terminal de venta asignado. No puede operar el sistema." 
+             });
+             setLoading(false);
+             return;
+           }
         }
       }
 
