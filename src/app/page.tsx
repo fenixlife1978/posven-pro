@@ -42,7 +42,15 @@ import GlobalControlModule from '@/components/modules/GlobalControlModule';
 export default function LicoreriaPOS() {
   const router = useRouter();
   const [state, setState] = useState<AppState>(initialState);
-  const [activeModule, setActiveModule] = useState('');
+  
+  // Persistencia de módulo activo
+  const [activeModule, setActiveModule] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('posven_active_module') || '';
+    }
+    return '';
+  });
+  
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -52,6 +60,8 @@ export default function LicoreriaPOS() {
   
   const [userRole, setUserRole] = useState<string | null>(null);
   const [userProfile, setUserProfile] = useState<any>(null);
+  
+  // Persistencia de estado de apertura
   const [showApertura, setShowApertura] = useState(false);
   const [aperturaData, setAperturaData] = useState({ bs: '0', usd: '0' });
 
@@ -76,6 +86,10 @@ export default function LicoreriaPOS() {
                 return;
               }
 
+              // Lógica de recuperación de sesión
+              const savedModule = localStorage.getItem('posven_active_module');
+              const aperturaConfirmada = localStorage.getItem('posven_apertura_done');
+
               if (data.rol === 'cajero') {
                  const configSnap = await getDoc(doc(db, 'pos_system_data', 'state'));
                  const terminals = configSnap.data()?.terminales || [];
@@ -89,10 +103,10 @@ export default function LicoreriaPOS() {
                     return;
                  }
                  
-                 setActiveModule('ventas');
-                 setShowApertura(true);
+                 if (!savedModule) setActiveModule('ventas');
+                 setShowApertura(!aperturaConfirmada);
               } else {
-                 setActiveModule('dashboard');
+                 if (!savedModule) setActiveModule('dashboard');
                  setShowApertura(false);
               }
 
@@ -101,14 +115,13 @@ export default function LicoreriaPOS() {
               setUser(currentUser);
               setLoading(false);
             } else {
-              // Si el usuario no tiene perfil (ej. admin creado manual), permitir dashboard por defecto
               setUserRole('administrador');
-              setActiveModule('dashboard');
+              if (!activeModule) setActiveModule('dashboard');
               setLoading(false);
             }
           }, (err) => {
             console.error("Error en tiempo real de perfil:", err);
-            setLoading(false); // No dejar colgado al usuario
+            setLoading(false);
           });
 
         } catch (error) {
@@ -143,8 +156,19 @@ export default function LicoreriaPOS() {
     };
   }, [router]);
 
+  // Efecto para guardar módulo activo en cada cambio
+  useEffect(() => {
+    if (activeModule) {
+      localStorage.setItem('posven_active_module', activeModule);
+    }
+  }, [activeModule]);
+
   const handleLogout = async () => {
     if (confirm('¿Cerrar sesión del sistema?')) {
+      // Limpiar rastro de sesión UI
+      localStorage.removeItem('posven_active_module');
+      localStorage.removeItem('posven_apertura_done');
+      
       if (userRole === 'cajero' && user) {
         try {
           const userDocId = user.email.replace(/\W/g, '_');
@@ -271,12 +295,12 @@ export default function LicoreriaPOS() {
 
                 <div className="p-2.5 bg-ink text-white rounded-xl flex justify-between items-center">
                   <div className="space-y-0">
-                    <label className="text-[7px] font-bold uppercase opacity-50 block tracking-widest">Fecha</label>
-                    <p className="text-[9px] font-black uppercase">{dateStr}</p>
+                    <label className="text-7px font-bold uppercase opacity-50 block tracking-widest">Fecha</label>
+                    <p className="text-9px font-black uppercase">{dateStr}</p>
                   </div>
                   <div className="text-right space-y-0">
-                    <label className="text-[7px] font-bold uppercase opacity-50 block tracking-widest">Hora</label>
-                    <p className="text-[9px] font-black uppercase">{timeStr}</p>
+                    <label className="text-7px font-bold uppercase opacity-50 block tracking-widest">Hora</label>
+                    <p className="text-9px font-black uppercase">{timeStr}</p>
                   </div>
                 </div>
 
@@ -303,7 +327,10 @@ export default function LicoreriaPOS() {
 
                 <button 
                   disabled={aperturaData.bs === '' || aperturaData.usd === ''}
-                  onClick={() => setShowApertura(false)}
+                  onClick={() => {
+                    localStorage.setItem('posven_apertura_done', 'true');
+                    setShowApertura(false);
+                  }}
                   className="w-full h-12 bg-brand-gold text-ink font-black text-sm rounded-xl shadow-xl shadow-brand-gold/10 hover:bg-brand-gold-deep hover:text-white transition-all uppercase tracking-widest"
                 >
                   Confirmar Apertura
