@@ -2,13 +2,11 @@
 
 import React, { useState, useEffect } from 'react';
 import { UserPlus, Trash2, Edit2, Shield, X, Save, Users as UsersIcon, Mail, Lock, User as UserIcon } from 'lucide-react';
-import { db } from '@/lib/firebase';
+import { db, firebaseConfig } from '@/lib/firebase';
 import { collection, doc, setDoc, getDocs, deleteDoc, updateDoc } from 'firebase/firestore';
+import { initializeApp, deleteApp } from 'firebase/app';
+import { getAuth, createUserWithEmailAndPassword } from 'firebase/auth';
 import { toast } from '@/hooks/use-toast';
-
-// NOTA: Para crear usuarios en Auth sin cerrar la sesión actual, se requiere Firebase Admin SDK (Server Side).
-// Aquí simulamos la persistencia en Firestore y asumimos que el administrador registra manualmente el Auth
-// o se integra con una Cloud Function en producción para automatizar el Auth.
 
 interface UserProfile {
   id: string;
@@ -32,12 +30,16 @@ export default function UsersModule() {
   });
 
   const cargarUsuarios = async () => {
-    const querySnapshot = await getDocs(collection(db, 'users'));
-    const list: UserProfile[] = [];
-    querySnapshot.forEach((doc) => {
-      list.push({ id: doc.id, ...doc.data() } as UserProfile);
-    });
-    setUsuarios(list);
+    try {
+      const querySnapshot = await getDocs(collection(db, 'users'));
+      const list: UserProfile[] = [];
+      querySnapshot.forEach((doc) => {
+        list.push({ id: doc.id, ...doc.data() } as UserProfile);
+      });
+      setUsuarios(list);
+    } catch (error) {
+      console.error("Error cargando usuarios:", error);
+    }
   };
 
   useEffect(() => {
@@ -51,36 +53,57 @@ export default function UsersModule() {
     }
 
     setLoading(true);
+    let secondaryApp;
+
     try {
       if (editingId) {
-        // Actualizar solo nombre y rol en Firestore
         const userRef = doc(db, 'users', editingId);
         await updateDoc(userRef, {
           nombre: formData.nombre,
           rol: formData.rol
         });
-        toast({ title: "Usuario actualizado con éxito" });
+        toast({ title: "Éxito", description: "Perfil actualizado correctamente." });
       } else {
-        // Simulación de creación automática en Firestore
+        // 1. Crear usuario en Firebase Auth usando una APP SECUNDARIA
+        // Esto evita que el administrador actual sea deslogueado
+        secondaryApp = initializeApp(firebaseConfig, "SecondaryAuthApp");
+        const secondaryAuth = getAuth(secondaryApp);
+        
+        const userCredential = await createUserWithEmailAndPassword(
+          secondaryAuth, 
+          formData.email, 
+          formData.password
+        );
+
+        // 2. Crear perfil en Firestore
         const newId = formData.email.replace(/\W/g, '_');
-        const userRef = doc(db, 'users', newId);
-        await setDoc(userRef, {
+        await setDoc(doc(db, 'users', newId), {
+          uid: userCredential.user.uid,
           nombre: formData.nombre,
           email: formData.email,
           rol: formData.rol,
           fechaCreacion: new Date().toISOString()
         });
-        toast({ title: "Perfil de usuario creado en Firestore", description: "Recuerde habilitar el acceso en Firebase Auth con este correo." });
+
+        toast({ 
+          title: "Usuario Creado", 
+          description: "Acceso y perfil configurados con éxito." 
+        });
       }
       
       setShowModal(false);
       setEditingId(null);
       setFormData({ nombre: '', email: '', password: '', rol: 'cajero' });
-      cargarUsuarios();
-    } catch (error) {
-      console.error(error);
-      alert("Error al procesar el usuario.");
+      await cargarUsuarios();
+
+    } catch (error: any) {
+      console.error("Error al crear usuario:", error);
+      const msg = error.code === 'auth/email-already-in-use' 
+        ? "El correo ya está registrado en el sistema." 
+        : "Error técnico al procesar el registro.";
+      alert(msg);
     } finally {
+      if (secondaryApp) await deleteApp(secondaryApp);
       setLoading(false);
     }
   };
@@ -97,10 +120,14 @@ export default function UsersModule() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("¿Está seguro de eliminar este usuario? Esta acción es irreversible en Firestore.")) return;
-    await deleteDoc(doc(db, 'users', id));
-    cargarUsuarios();
-    toast({ title: "Usuario eliminado" });
+    if (!confirm("¿Está seguro de eliminar este acceso? El perfil será borrado de Firestore (El acceso Auth deberá borrarse manualmente en la consola por seguridad).")) return;
+    try {
+      await deleteDoc(doc(db, 'users', id));
+      await cargarUsuarios();
+      toast({ title: "Registro eliminado" });
+    } catch (error) {
+      alert("Error al eliminar el documento.");
+    }
   };
 
   return (
@@ -150,7 +177,7 @@ export default function UsersModule() {
                     </td>
                     <td className="text-center">
                        <div className="flex justify-center gap-2">
-                          <button onClick={() => handleEdit(u)} className="btn-icon h-8 w-8 text-ink hover:text-brand-gold" title="Modificar Nombre"><Edit2 className="w-4 h-4"/></button>
+                          <button onClick={() => handleEdit(u)} className="btn-icon h-8 w-8 text-ink hover:text-brand-gold" title="Modificar Datos"><Edit2 className="w-4 h-4"/></button>
                           <button onClick={() => handleDelete(u.id)} className="btn-icon h-8 w-8 text-ink hover:text-status-danger" title="Eliminar"><Trash2 className="w-4 h-4"/></button>
                        </div>
                     </td>
@@ -209,12 +236,12 @@ export default function UsersModule() {
 
               <div className="p-3 bg-brand-gold-soft/20 rounded border border-brand-gold/10">
                 <p className="text-[9px] text-brand-gold-deep font-bold italic text-center leading-tight">
-                  {editingId ? 'Solo se permite modificar el nombre y el rol por seguridad.' : 'El sistema creará automáticamente el perfil en Firestore para la validación de roles.'}
+                  {editingId ? 'Solo se permite modificar el nombre y el rol por seguridad.' : 'El sistema creará automáticamente el acceso en Firebase Auth y el perfil en Firestore.'}
                 </p>
               </div>
 
               <button onClick={handleSave} disabled={loading} className="btn btn-primary w-full h-14 font-black uppercase text-sm mt-4 shadow-xl">
-                <Save className="w-4 h-4" /> {loading ? 'PROCESANDO...' : (editingId ? 'ACTUALIZAR DATOS' : 'CREAR USUARIO')}
+                <Save className="w-4 h-4" /> {loading ? 'PROCESANDO REGISTRO...' : (editingId ? 'ACTUALIZAR DATOS' : 'CREAR USUARIO COMPLETO')}
               </button>
             </div>
           </div>
