@@ -14,19 +14,20 @@ interface Props {
   onClose: () => void;
   product?: Product;
   onSave: () => void;
-  state: any; // AppState
+  state: any;
   updateState: (newState: any) => void;
 }
 
 export function ProductFormModal({ isOpen, onClose, product, onSave, state, updateState }: Props) {
-  const [formData, setFormData] = useState<Partial<Product>>({
+  // Usamos `any` para permitir strings en los campos de monto
+  const [formData, setFormData] = useState<any>({
     codigo: '',
     nombre: '',
     categoria: 'Ron',
-    precioUSD: 0,
+    precioUSD: '0',
     stock: 0,
     stockMinimo: 5,
-    costoUSD: 0,
+    costoUSD: '0',
     marca: '',
     proveedor: '',
     departamento: 'Licores',
@@ -40,10 +41,10 @@ export function ProductFormModal({ isOpen, onClose, product, onSave, state, upda
         codigo: product.codigo || '',
         nombre: product.nombre || '',
         categoria: product.categoria || 'Ron',
-        precioUSD: product.precioUSD || 0,
+        precioUSD: product.precioUSD?.toString() ?? '0',
         stock: product.stock || 0,
         stockMinimo: product.stockMinimo || 5,
-        costoUSD: product.costoUSD || 0,
+        costoUSD: product.costoUSD?.toString() ?? '0',
         marca: product.marca || '',
         proveedor: product.proveedor || '',
         departamento: product.departamento || 'Licores',
@@ -55,10 +56,10 @@ export function ProductFormModal({ isOpen, onClose, product, onSave, state, upda
         codigo: '',
         nombre: '',
         categoria: 'Ron',
-        precioUSD: 0,
+        precioUSD: '0',
         stock: 0,
         stockMinimo: 5,
-        costoUSD: 0,
+        costoUSD: '0',
         marca: '',
         proveedor: '',
         departamento: 'Licores',
@@ -74,6 +75,10 @@ export function ProductFormModal({ isOpen, onClose, product, onSave, state, upda
       return;
     }
 
+    // Convertir los montos a número con parseFloat (mantiene precisión)
+    const precioUSDNum = parseFloat(formData.precioUSD) || 0;
+    const costoUSDNum = parseFloat(formData.costoUSD) || 0;
+
     let productosActualizados = [...state.productos];
 
     if (product) {
@@ -83,6 +88,9 @@ export function ProductFormModal({ isOpen, onClose, product, onSave, state, upda
         productosActualizados[idx] = { 
           ...productosActualizados[idx], 
           ...formData,
+          precioUSD: precioUSDNum,
+          costoUSD: costoUSDNum,
+          margen: precioUSDNum - costoUSDNum,
           id: product.id,
           fechaCreacion: product.fechaCreacion || Utils.hoy()
         } as Product;
@@ -98,9 +106,9 @@ export function ProductFormModal({ isOpen, onClose, product, onSave, state, upda
         cantidad: formData.cantidad || '750ml',
         marca: formData.marca || '',
         proveedor: formData.proveedor || '',
-        costoUSD: formData.costoUSD || 0,
-        precioUSD: formData.precioUSD || 0,
-        margen: (formData.precioUSD || 0) - (formData.costoUSD || 0),
+        costoUSD: costoUSDNum,
+        precioUSD: precioUSDNum,
+        margen: precioUSDNum - costoUSDNum,
         stock: formData.stock || 0,
         stockMinimo: formData.stockMinimo || 5,
         fechaCreacion: Utils.hoy(),
@@ -155,11 +163,18 @@ export function ProductFormModal({ isOpen, onClose, product, onSave, state, upda
             <div className="space-y-1">
               <Label className="text-white/70 font-bold uppercase text-xs tracking-wider">Precio USD</Label>
               <Input 
-                type="number"
-                step="0.01"
-                value={formData.precioUSD} 
-                onChange={(e) => setFormData({...formData, precioUSD: parseFloat(e.target.value) || 0})}
-                className="bg-[#0b0b0b] border-[#2a2a2a] text-white"
+                type="text"
+                inputMode="decimal"
+                value={formData.precioUSD}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  // Permitir solo números, punto y un solo punto decimal
+                  if (/^[\d]*\.?[\d]*$/.test(val) || val === '') {
+                    setFormData({...formData, precioUSD: val});
+                  }
+                }}
+                className="bg-[#0b0b0b] border-[#2a2a2a] text-white font-mono"
+                placeholder="0.00"
               />
             </div>
           </div>
@@ -167,11 +182,17 @@ export function ProductFormModal({ isOpen, onClose, product, onSave, state, upda
             <div className="space-y-1">
               <Label className="text-white/70 font-bold uppercase text-xs tracking-wider">Costo USD</Label>
               <Input 
-                type="number"
-                step="0.0001"
-                value={formData.costoUSD} 
-                onChange={(e) => setFormData({...formData, costoUSD: parseFloat(e.target.value) || 0})}
-                className="bg-[#0b0b0b] border-[#2a2a2a] text-white"
+                type="text"
+                inputMode="decimal"
+                value={formData.costoUSD}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (/^[\d]*\.?[\d]*$/.test(val) || val === '') {
+                    setFormData({...formData, costoUSD: val});
+                  }
+                }}
+                className="bg-[#0b0b0b] border-[#2a2a2a] text-white font-mono"
+                placeholder="0.0000"
               />
             </div>
             <div className="space-y-1">

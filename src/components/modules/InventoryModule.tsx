@@ -627,7 +627,7 @@ function ModalProducto({ producto, state, onClose, onSave, onUpdateLists }: { pr
   const syncFromMargin = (cost: number, margin: number) => {
     const price = margin >= 100 ? cost : cost / (1 - margin / 100);
     const priceBS = price * state.tasa;
-    setDatos(prev => ({ 
+    setDatos((prev: any) => ({ 
       ...prev, 
       costoUSD: String(cost),
       margen: String(margin), 
@@ -639,7 +639,7 @@ function ModalProducto({ producto, state, onClose, onSave, onUpdateLists }: { pr
   const syncFromPriceUSD = (cost: number, priceUSD: number) => {
     const margin = priceUSD > 0 ? ((priceUSD - cost) / priceUSD) * 100 : 0;
     const priceBS = priceUSD * state.tasa;
-    setDatos(prev => ({ 
+    setDatos((prev: any) => ({ 
       ...prev, 
       costoUSD: String(cost),
       margen: String(Utils.round(margin)), 
@@ -651,7 +651,7 @@ function ModalProducto({ producto, state, onClose, onSave, onUpdateLists }: { pr
   const syncFromPriceBS = (cost: number, priceBS: number) => {
     const priceUSD = priceBS / state.tasa;
     const margin = priceUSD > 0 ? ((priceUSD - cost) / priceUSD) * 100 : 0;
-    setDatos(prev => ({ 
+    setDatos((prev: any) => ({ 
       ...prev, 
       costoUSD: String(cost),
       margen: String(Utils.round(margin)), 
@@ -688,7 +688,7 @@ function ModalProducto({ producto, state, onClose, onSave, onUpdateLists }: { pr
     const newVal = prompt(`Ingrese nueva opción para ${listName.toUpperCase()}:`);
     if (newVal) {
       onUpdateLists({ [listName]: [...(state[listName] || []), newVal] });
-      setDatos({ ...datos, [listName === 'presentaciones' ? 'presentacion' : listName.slice(0, -1)]: newVal });
+      setDatos((prev: any) => ({ ...prev, [listName === 'presentaciones' ? 'presentacion' : listName.slice(0, -1)]: newVal }));
     }
   };
 
@@ -696,7 +696,7 @@ function ModalProducto({ producto, state, onClose, onSave, onUpdateLists }: { pr
     if (confirm(`¿Eliminar "${current}" de la lista?`)) {
       const newList = (state[listName] || []).filter(i => i !== current);
       onUpdateLists({ [listName]: newList });
-      setDatos({ ...datos, [listName === 'presentaciones' ? 'presentacion' : listName.slice(0, -1)]: newList[0] || '' });
+      setDatos((prev: any) => ({ ...prev, [listName === 'presentaciones' ? 'presentacion' : listName.slice(0, -1)]: newList[0] || '' }));
     }
   };
 

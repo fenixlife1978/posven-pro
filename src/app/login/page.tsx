@@ -85,8 +85,8 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F3F4F6] flex items-center justify-center p-6 font-sans">
-      <div className="w-full max-w-[440px] bg-white rounded-[32px] shadow-[0_20px_50px_rgba(0,0,0,0.05)] p-12 animate-in fade-in zoom-in duration-500">
+    <div className="min-h-screen bg-gradient-to-br from-[#D4C5A6] via-[#C8B99A] to-[#B8A98A] flex items-center justify-center p-6 font-sans">
+      <div className="w-full max-w-[440px] bg-white rounded-[32px] shadow-[0_20px_50px_rgba(0,0,0,0.25)] p-12 animate-in fade-in zoom-in duration-500">
         
         {/* LOGO SECCIÓN */}
         <div className="mb-10 text-center sm:text-left">
