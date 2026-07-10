@@ -29,8 +29,9 @@ import {
 } from 'lucide-react';
 import { Store, Utils, initialState } from '@/lib/db-store';
 import { AppState } from '@/lib/types';
-import { auth } from '@/lib/firebase';
+import { auth, db } from '@/lib/firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
 import DashboardModule from '@/components/modules/DashboardModule';
 import InventoryModule from '@/components/modules/InventoryModule';
 import SalesModule from '@/components/modules/SalesModule';
@@ -52,12 +53,32 @@ export default function LicoreriaPOS() {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   
+  // Estados de rol y apertura
+  const [userRole, setUserRole] = useState<string | null>(null);
+  const [userProfile, setUserProfile] = useState<any>(null);
+  const [showApertura, setShowApertura] = useState(false);
+  const [aperturaData, setAperturaData] = useState({ bs: '0', usd: '0' });
+
   useEffect(() => {
-    // Verificación de autenticación
-    const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
+    // Verificación de autenticación y rol
+    const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
       if (!currentUser) {
         router.push('/login');
       } else {
+        try {
+          const userDoc = await getDoc(doc(db, 'users', currentUser.email!.replace(/\W/g, '_')));
+          if (userDoc.exists()) {
+            const data = userDoc.data();
+            setUserRole(data.rol);
+            setUserProfile(data);
+            if (data.rol === 'cajero') {
+              setActiveModule('ventas');
+              setShowApertura(true);
+            }
+          }
+        } catch (error) {
+          console.error("Error fetching role:", error);
+        }
         setUser(currentUser);
         setLoading(false);
       }
@@ -106,6 +127,7 @@ export default function LicoreriaPOS() {
   };
 
   const handleModuleChange = (moduleId: string) => {
+    if (userRole === 'cajero' && moduleId !== 'ventas') return;
     setActiveModule(moduleId);
     setIsSidebarOpen(false);
   };
@@ -175,98 +197,182 @@ export default function LicoreriaPOS() {
     weekday: 'short', day: '2-digit', month: 'short', year: 'numeric', timeZone: 'America/Caracas'
   }) : '...';
 
+  const isCajero = userRole === 'cajero';
+
   return (
     <div className="flex min-h-screen bg-surface-warm text-ink">
-      {/* SIDEBAR */}
-      <aside className={`fixed lg:sticky top-0 left-0 w-[260px] h-screen bg-white border-r border-line flex flex-col z-50 transition-transform duration-300 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
-        <div className="p-6 border-b border-line flex flex-col gap-1">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 bg-ink border border-brand-gold rounded-[10px] flex items-center justify-center font-black text-brand-gold text-lg shadow-sm">
-              P
-            </div>
-            <div>
-              <div className="font-display font-[800] text-lg leading-none text-ink">
-                Pos<span className="text-brand-gold">VEN</span> Pro
+      
+      {/* PANTALLA DE APERTURA DE CAJA (BLOKEO) */}
+      {showApertura && (
+        <div className="fixed inset-0 z-[100] bg-surface-warm flex items-center justify-center p-6 no-print">
+           <div className="w-full max-w-lg bg-white rounded-[32px] shadow-[0_20px_50px_rgba(0,0,0,0.1)] p-10 space-y-8 animate-in fade-in zoom-in duration-500 border border-line">
+              <div className="text-center">
+                <div className="flex items-center justify-center gap-3 mb-2">
+                  <div className="w-12 h-12 bg-brand-gold rounded-xl flex items-center justify-center text-black font-black text-2xl shadow-lg">P</div>
+                  <div className="font-display font-black text-3xl text-ink tracking-tighter uppercase">
+                    Pos<span className="text-brand-gold">VEN</span> Pro
+                  </div>
+                </div>
+                <div className="h-1 w-12 bg-brand-gold rounded-full mx-auto mb-4"></div>
+                <h1 className="text-2xl font-extrabold text-ink tracking-tight uppercase italic">Apertura de Jornada</h1>
               </div>
-              <div className="text-[0.68rem] font-bold text-ink uppercase tracking-widest mt-1">
-                Soluciones Venezuela
+
+              <div className="space-y-6">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="p-4 bg-surface-soft rounded-2xl border border-line">
+                    <label className="text-[9px] font-black uppercase text-ink/50 block mb-1">Cajero(a) Responsable</label>
+                    <p className="text-sm font-black text-ink uppercase truncate">{userProfile?.nombre || 'Operador'}</p>
+                  </div>
+                  <div className="p-4 bg-surface-soft rounded-2xl border border-line">
+                    <label className="text-[9px] font-black uppercase text-ink/50 block mb-1">Recibo de Inicio</label>
+                    <p className="text-sm font-black text-brand-gold-deep"># {String(state.proximoRecibo).padStart(9, '0')}</p>
+                  </div>
+                </div>
+
+                <div className="p-4 bg-ink text-white rounded-2xl flex justify-between items-center shadow-inner">
+                  <div className="space-y-0.5">
+                    <label className="text-[8px] font-bold uppercase opacity-50 block tracking-widest">Fecha del Sistema</label>
+                    <p className="text-xs font-black uppercase">{dateStr}</p>
+                  </div>
+                  <div className="text-right space-y-0.5">
+                    <label className="text-[8px] font-bold uppercase opacity-50 block tracking-widest">Hora de Apertura</label>
+                    <p className="text-xs font-black uppercase">{timeStr}</p>
+                  </div>
+                </div>
+
+                <div className="space-y-5">
+                   <div className="form-group">
+                      <label className="text-ink text-[10px] font-black uppercase block mb-1.5 ml-1 opacity-70">Efectivo Inicial en Bolívares (Bs.)</label>
+                      <input 
+                        type="text" 
+                        className="form-input h-14 text-2xl font-black text-center text-ink bg-surface-soft/40 border-line focus:bg-white" 
+                        value={aperturaData.bs} 
+                        onChange={e => setAperturaData({...aperturaData, bs: e.target.value.replace(/[^0-9.]/g, '')})}
+                        placeholder="0.00"
+                      />
+                   </div>
+                   <div className="form-group">
+                      <label className="text-ink text-[10px] font-black uppercase block mb-1.5 ml-1 opacity-70">Efectivo Inicial en Divisas (USD)</label>
+                      <input 
+                        type="text" 
+                        className="form-input h-14 text-2xl font-black text-center text-brand-gold-deep bg-surface-soft/40 border-line focus:bg-white" 
+                        value={aperturaData.usd} 
+                        onChange={e => setAperturaData({...aperturaData, usd: e.target.value.replace(/[^0-9.]/g, '')})}
+                        placeholder="0.00"
+                      />
+                   </div>
+                </div>
+
+                <button 
+                  disabled={aperturaData.bs === '' || aperturaData.usd === ''}
+                  onClick={() => setShowApertura(false)}
+                  className="w-full h-16 bg-brand-gold text-ink font-black text-lg rounded-2xl shadow-xl shadow-brand-gold/20 hover:bg-brand-gold-deep hover:text-white transition-all uppercase tracking-[0.15em] disabled:opacity-20 active:scale-[0.98]"
+                >
+                  Aperturar Caja de Venta
+                </button>
               </div>
-            </div>
-          </div>
+
+              <div className="text-center pt-2">
+                 <p className="text-[9px] text-ink/30 font-bold uppercase tracking-widest">Asegúrese de contar el efectivo físico antes de aperturar.</p>
+              </div>
+           </div>
         </div>
-        
-        <nav className="flex-1 overflow-y-auto p-4 space-y-6">
-          {menuGroups.map((group) => (
-            <div key={group.id} className="space-y-1">
-              <div className="px-2.5 mb-2 text-[0.66rem] font-bold text-ink uppercase tracking-[0.18em]">
-                {group.label}
+      )}
+
+      {/* SIDEBAR - HIDDEN FOR CAJERO */}
+      {!isCajero && (
+        <aside className={`fixed lg:sticky top-0 left-0 w-[260px] h-screen bg-white border-r border-line flex flex-col z-50 transition-transform duration-300 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
+          <div className="p-6 border-b border-line flex flex-col gap-1">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 bg-ink border border-brand-gold rounded-[10px] flex items-center justify-center font-black text-brand-gold text-lg shadow-sm">
+                P
               </div>
-              <div className="space-y-1">
-                {group.items.map((item) => {
-                  const Icon = item.icon;
-                  const active = activeModule === item.id;
-                  return (
-                    <button
-                      key={item.id}
-                      onClick={() => handleModuleChange(item.id)}
-                      className={`w-full flex items-center justify-between gap-2.5 px-3 py-2 rounded-[10px] text-[0.9rem] font-bold transition-all group relative ${active ? 'bg-brand-gold-soft text-brand-gold-deep' : 'text-ink hover:bg-surface-soft hover:text-ink'}`}
-                    >
-                      {active && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 bg-brand-gold rounded-r-full" />}
-                      <div className="flex items-center gap-2.5">
-                        <Icon className={`w-4 h-4 ${active ? 'text-brand-gold-deep' : 'text-ink group-hover:text-ink'}`} />
-                        {item.label}
-                      </div>
-                      {item.count !== undefined && (
-                        <span className={`px-2 py-0.5 rounded-full text-[0.7rem] font-black ${active ? 'bg-brand-gold text-white' : 'bg-surface-soft text-ink'}`}>
-                          {item.count}
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
+              <div>
+                <div className="font-display font-[800] text-lg leading-none text-ink">
+                  Pos<span className="text-brand-gold">VEN</span> Pro
+                </div>
+                <div className="text-[0.68rem] font-bold text-ink uppercase tracking-widest mt-1">
+                  Soluciones Venezuela
+                </div>
               </div>
             </div>
-          ))}
-        </nav>
-        
-        <div className="p-4 border-t border-line bg-surface-warm/50 flex flex-col gap-2">
-          <div className="bg-brand-gold-soft border border-[#EFD9A4] rounded-lg p-3 flex items-center gap-3 shadow-sm">
-            <div className="w-7 h-7 rounded-full bg-gradient-to-b from-[#FFD700] via-[#003893] to-[#CF142B] border border-white/20 shadow-inner flex items-center justify-center overflow-hidden">
-              <div className="w-full h-full bg-white/10" />
-            </div>
-            <div className="flex-1">
-              <div className="text-[0.62rem] font-bold text-brand-gold-deep uppercase tracking-widest leading-none mb-1">Tasa BCV</div>
-              <div className="font-display font-[800] text-sm text-ink">{state.tasa.toFixed(2)} <span className="text-[0.7rem] font-black opacity-60">Bs/USD</span></div>
-            </div>
-            <button className="text-brand-gold-deep hover:rotate-180 transition-transform duration-500">
-              <RefreshCw className="w-3.5 h-3.5" />
-            </button>
           </div>
           
-          <button 
-            onClick={handleLogout}
-            className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-[10px] text-[0.8rem] font-black text-status-danger hover:bg-status-danger-soft transition-all uppercase tracking-widest"
-          >
-            <LogOut className="w-4 h-4" />
-            Cerrar Sistema
-          </button>
-        </div>
-      </aside>
+          <nav className="flex-1 overflow-y-auto p-4 space-y-6">
+            {menuGroups.map((group) => (
+              <div key={group.id} className="space-y-1">
+                <div className="px-2.5 mb-2 text-[0.66rem] font-bold text-ink uppercase tracking-[0.18em]">
+                  {group.label}
+                </div>
+                <div className="space-y-1">
+                  {group.items.map((item) => {
+                    const Icon = item.icon;
+                    const active = activeModule === item.id;
+                    return (
+                      <button
+                        key={item.id}
+                        onClick={() => handleModuleChange(item.id)}
+                        className={`w-full flex items-center justify-between gap-2.5 px-3 py-2 rounded-[10px] text-[0.9rem] font-bold transition-all group relative ${active ? 'bg-brand-gold-soft text-brand-gold-deep' : 'text-ink hover:bg-surface-soft hover:text-ink'}`}
+                      >
+                        {active && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 bg-brand-gold rounded-r-full" />}
+                        <div className="flex items-center gap-2.5">
+                          <Icon className={`w-4 h-4 ${active ? 'text-brand-gold-deep' : 'text-ink group-hover:text-ink'}`} />
+                          {item.label}
+                        </div>
+                        {item.count !== undefined && (
+                          <span className={`px-2 py-0.5 rounded-full text-[0.7rem] font-black ${active ? 'bg-brand-gold text-white' : 'bg-surface-soft text-ink'}`}>
+                            {item.count}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </nav>
+          
+          <div className="p-4 border-t border-line bg-surface-warm/50 flex flex-col gap-2">
+            <div className="bg-brand-gold-soft border border-[#EFD9A4] rounded-lg p-3 flex items-center gap-3 shadow-sm">
+              <div className="w-7 h-7 rounded-full bg-gradient-to-b from-[#FFD700] via-[#003893] to-[#CF142B] border border-white/20 shadow-inner flex items-center justify-center overflow-hidden">
+                <div className="w-full h-full bg-white/10" />
+              </div>
+              <div className="flex-1">
+                <div className="text-[0.62rem] font-bold text-brand-gold-deep uppercase tracking-widest leading-none mb-1">Tasa BCV</div>
+                <div className="font-display font-[800] text-sm text-ink">{state.tasa.toFixed(2)} <span className="text-[0.7rem] font-black opacity-60">Bs/USD</span></div>
+              </div>
+              <button className="text-brand-gold-deep hover:rotate-180 transition-transform duration-500">
+                <RefreshCw className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            
+            <button 
+              onClick={handleLogout}
+              className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-[10px] text-[0.8rem] font-black text-status-danger hover:bg-status-danger-soft transition-all uppercase tracking-widest"
+            >
+              <LogOut className="w-4 h-4" />
+              Cerrar Sistema
+            </button>
+          </div>
+        </aside>
+      )}
 
       {/* MAIN CONTENT */}
       <main className="flex-1 flex flex-col min-h-screen max-w-full overflow-hidden">
         {/* TOPBAR */}
         <header className="sticky top-0 z-30 bg-surface-warm/85 backdrop-blur-md border-b border-line px-7 py-3.5 flex items-center gap-6 no-print">
-          <button className="lg:hidden p-2 -ml-2 text-ink" onClick={() => setIsSidebarOpen(true)}>
-            <Menu className="w-[18px] h-[18px]" />
-          </button>
+          {!isCajero && (
+            <button className="lg:hidden p-2 -ml-2 text-ink" onClick={() => setIsSidebarOpen(true)}>
+              <Menu className="w-[18px] h-[18px]" />
+            </button>
+          )}
           
-          <div className="hidden sm:block shrink-0">
+          <div className="shrink-0">
             <h2 className="font-display text-lg font-[800] text-ink leading-tight">
               Pos<span className="text-brand-gold">VEN</span> pro
             </h2>
             <p className="text-[0.7rem] text-ink uppercase font-bold tracking-widest">
-              Soluciones Venezuela
+              {isCajero ? 'Terminal de Punto de Venta' : 'Soluciones Venezuela'}
             </p>
           </div>
 
@@ -298,19 +404,32 @@ export default function LicoreriaPOS() {
           </div>
 
           <div className="flex items-center gap-3 ml-auto">
-            <button className="relative w-[38px] h-[38px] rounded-[10px] bg-white border border-line flex items-center justify-center text-ink hover:text-brand-gold transition-colors shadow-sm-card">
-              <Bell className="w-4 h-4" />
-              <span className="absolute top-2.5 right-2.5 w-2 h-2 bg-status-danger rounded-full border-2 border-background" />
-            </button>
+            {!isCajero && (
+              <button className="relative w-[38px] h-[38px] rounded-[10px] bg-white border border-line flex items-center justify-center text-ink hover:text-brand-gold transition-colors shadow-sm-card">
+                <Bell className="w-4 h-4" />
+                <span className="absolute top-2.5 right-2.5 w-2 h-2 bg-status-danger rounded-full border-2 border-background" />
+              </button>
+            )}
+            
             <div className="flex items-center gap-2.5 pl-3 border-l border-line ml-1">
               <div className="text-right hidden sm:block">
-                <div className="text-sm font-bold text-ink leading-none">{user?.email?.split('@')[0] || 'Usuario'}</div>
-                <div className="text-[0.66rem] font-bold text-ink opacity-60 uppercase mt-1 tracking-wider">Perfil Activo</div>
+                <div className="text-sm font-bold text-ink leading-none">{userProfile?.nombre || 'Usuario'}</div>
+                <div className="text-[0.66rem] font-bold text-ink opacity-60 uppercase mt-1 tracking-wider">{userRole === 'administrador' ? 'Panel Control' : 'Modo Operativo'}</div>
               </div>
               <div className="w-[34px] h-[34px] rounded-full bg-gradient-to-br from-brand-gold to-[#E7B857] flex items-center justify-center text-white font-black text-xs border border-white/20 shadow-sm uppercase">
-                {user?.email?.charAt(0) || 'U'}
+                {userProfile?.nombre?.charAt(0) || 'U'}
               </div>
             </div>
+            
+            {isCajero && (
+               <button 
+                onClick={handleLogout}
+                className="w-10 h-10 bg-status-danger-soft text-status-danger rounded-xl flex items-center justify-center hover:bg-status-danger hover:text-white transition-all shadow-sm"
+                title="Cerrar Sistema"
+              >
+                <LogOut className="w-5 h-5" />
+              </button>
+            )}
           </div>
         </header>
         
@@ -321,10 +440,10 @@ export default function LicoreriaPOS() {
 
         {/* FOOTER */}
         <footer className="px-8 py-6 border-t border-line text-[0.76rem] font-black text-ink flex flex-col sm:flex-row justify-between gap-4 no-print bg-surface-warm/30">
-          <div>© 2026 PosVEN Pro · Conectado a Firebase RTDB</div>
+          <div>© 2026 PosVEN Pro · Conectado a Firebase Cloud</div>
           <div className="flex gap-4 items-center">
-            <span className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-status-success animate-pulse" /> Servidores Activos</span>
-            <span className="px-2 py-0.5 bg-white border border-line rounded text-[0.65rem] font-black">v2.5.0-cloud</span>
+            <span className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-status-success animate-pulse" /> Nube Activa</span>
+            <span className="px-2 py-0.5 bg-white border border-line rounded text-[0.65rem] font-black">v2.5.0-secure</span>
           </div>
         </footer>
       </main>
