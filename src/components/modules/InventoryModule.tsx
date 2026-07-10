@@ -243,9 +243,6 @@ export default function InventoryModule({ state, updateState }: { state: AppStat
   );
 }
 
-// ============================================================
-// ReporteGeneral (sin cambios)
-// ============================================================
 function ReporteGeneral({ state }: { state: AppState }) {
   const [groupBy, setGroupBy] = useState<'categoria' | 'departamento' | 'proveedor'>('categoria');
   const [filterValue, setFilterValue] = useState<string>('');
@@ -315,9 +312,6 @@ function ReporteGeneral({ state }: { state: AppState }) {
   );
 }
 
-// ============================================================
-// ReporteVentas (sin cambios)
-// ============================================================
 function ReporteVentas({ state }: { state: AppState }) {
   const [filter, setFilter] = useState('hoy');
   const ventas = state.ventas.filter(v => filter === 'hoy' ? v.fecha.startsWith(Utils.hoy()) : true);
@@ -365,9 +359,6 @@ function ReporteVentas({ state }: { state: AppState }) {
   );
 }
 
-// ============================================================
-// ReporteDevoluciones (sin cambios)
-// ============================================================
 function ReporteDevoluciones({ state }: { state: AppState }) {
   const devoluciones = state.devoluciones || [];
   const totalUSD = devoluciones.reduce((acc, d) => acc + d.totalUSD, 0);
@@ -410,24 +401,61 @@ function ReporteDevoluciones({ state }: { state: AppState }) {
   );
 }
 
-// ============================================================
-// ReporteKardex (sin cambios)
-// ============================================================
 function ReporteKardex({ state, selectedId, onSelect }: { state: AppState, selectedId: string | null, onSelect: (id: string) => void }) {
   const [search, setSearch] = useState('');
   const selectedProd = selectedId ? state.productos.find(p => p.id === selectedId) : null;
   const movs = selectedId ? state.movimientos.filter(m => m.productoId === selectedId).sort((a, b) => b.fecha.localeCompare(a.fecha)) : [];
 
+  const matches = useMemo(() => {
+    if (search.trim().length < 2) return [];
+    return state.productos.filter(p => 
+      p.activo && 
+      (p.nombre.toLowerCase().includes(search.toLowerCase()) || p.codigo.toLowerCase().includes(search.toLowerCase()))
+    ).slice(0, 5);
+  }, [search, state.productos]);
+
   return (
     <div className="space-y-4">
       <div className="card shadow-lg border-line rounded-xl overflow-hidden">
         <div className="card-head bg-ink border-b border-white/10 px-6 py-4 flex justify-between items-center">
-          <h3 className="text-white font-black text-xs uppercase italic tracking-tighter flex items-center gap-2">
-            <History className="w-5 h-5 text-brand-gold" /> KARDEX HISTÓRICO DE MOVIMIENTOS
-          </h3>
-          <div className="flex gap-2">
-            <input className="form-input h-8 text-[10px] uppercase font-black" placeholder="BUSCAR CODIGO..." value={search} onChange={e => setSearch(e.target.value)} />
-            <button className="btn btn-secondary h-8 px-4 font-black uppercase text-[9px]" onClick={() => selectedProd && exportarPDFKardex(selectedProd, movs, state.empresa)}>PDF</button>
+          <div className="flex flex-col">
+            <h3 className="text-white font-black text-xs uppercase italic tracking-tighter flex items-center gap-2">
+              <History className="w-5 h-5 text-brand-gold" /> KARDEX HISTÓRICO DE MOVIMIENTOS
+            </h3>
+            {selectedProd && <div className="text-[8px] text-brand-gold font-black uppercase mt-1 tracking-widest">PRODUCTO SELECCIONADO: {selectedProd.nombre}</div>}
+          </div>
+          <div className="flex gap-2 relative">
+            <div className="relative">
+              <input 
+                className="form-input h-9 text-[10px] uppercase font-black w-64 pr-8" 
+                placeholder="BUSCAR PRODUCTO O PALABRAS CLAVE..." 
+                value={search} 
+                onChange={e => setSearch(e.target.value)} 
+              />
+              <Search className="absolute right-2.5 top-2.5 w-3.5 h-3.5 text-ink/30" />
+              
+              {matches.length > 0 && (
+                <div className="absolute top-full right-0 w-64 bg-white border border-line rounded-lg shadow-2xl z-50 mt-1 overflow-hidden">
+                  {matches.map(p => (
+                    <div 
+                      key={p.id} 
+                      onClick={() => { onSelect(p.id); setSearch(''); }} 
+                      className="p-3 border-b border-line hover:bg-brand-gold/10 cursor-pointer flex flex-col transition-all"
+                    >
+                      <span className="text-[10px] font-black text-ink uppercase leading-tight">{p.nombre}</span>
+                      <span className="text-[8px] text-ink/40 mono mt-0.5">{p.codigo}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <button 
+              className="btn btn-secondary h-9 px-6 font-black uppercase text-[10px] shadow-sm flex items-center gap-2" 
+              onClick={() => selectedProd && exportarPDFKardex(selectedProd, movs, state.empresa)}
+              disabled={!selectedProd}
+            >
+              <FileText className="w-3.5 h-3.5" /> PDF
+            </button>
           </div>
         </div>
         <div className="table-wrap">
@@ -441,14 +469,18 @@ function ReporteKardex({ state, selectedId, onSelect }: { state: AppState, selec
               </tr>
             </thead>
             <tbody className="bg-white">
-              {movs.map(m => (
-                <tr key={m.id} className="border-b border-line/30">
-                  <td className="text-[11px] font-black text-ink">{m.fecha.slice(0, 16).replace('T', ' ')}</td>
-                  <td><span className="badge badge-neutral font-black uppercase text-[8px]">{m.tipo}</span></td>
-                  <td className={`mono font-black text-center ${m.cantidad > 0 ? 'text-status-success' : 'text-status-danger'}`}>{m.cantidad > 0 ? '+' : ''}{m.cantidad}</td>
-                  <td className="mono font-black text-ink text-center">{m.stockDespues}</td>
-                </tr>
-              ))}
+              {movs.length === 0 ? (
+                <tr><td colSpan={4} className="text-center py-20 text-ink/20 font-black uppercase italic">Utilice el buscador para localizar un ítem</td></tr>
+              ) : (
+                movs.map(m => (
+                  <tr key={m.id} className="border-b border-line/30">
+                    <td className="text-[11px] font-black text-ink">{m.fecha.slice(0, 16).replace('T', ' ')}</td>
+                    <td><span className="badge badge-neutral font-black uppercase text-[8px]">{m.tipo}</span></td>
+                    <td className={`mono font-black text-center ${m.cantidad > 0 ? 'text-status-success' : 'text-status-danger'}`}>{m.cantidad > 0 ? '+' : ''}{m.cantidad}</td>
+                    <td className="mono font-black text-ink text-center">{m.stockDespues}</td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
@@ -457,9 +489,6 @@ function ReporteKardex({ state, selectedId, onSelect }: { state: AppState, selec
   );
 }
 
-// ============================================================
-// HistorialAjustes (sin cambios)
-// ============================================================
 function HistorialAjustes({ state }: { state: AppState }) {
   const ajustes = state.movimientos.filter(m => ['ajuste_entrada', 'ajuste_salida', 'consumo', 'colaboracion', 'compra'].includes(m.tipo)).sort((a, b) => b.fecha.localeCompare(a.fecha));
   const efectoNetoUSD = Utils.round(ajustes.reduce((acc, m) => {
@@ -512,9 +541,6 @@ function HistorialAjustes({ state }: { state: AppState }) {
   );
 }
 
-// ============================================================
-// ReporteConsumo (sin cambios)
-// ============================================================
 function ReporteConsumo({ state }: { state: AppState }) {
   const movs = state.movimientos.filter(m => m.tipo === 'consumo' || m.tipo === 'colaboracion');
   const totalPerdidaUSD = Utils.round(movs.reduce((acc, m) => {
@@ -565,9 +591,6 @@ function ReporteConsumo({ state }: { state: AppState }) {
   );
 }
 
-// ============================================================
-// ModalAjuste (sin cambios)
-// ============================================================
 function ModalAjuste({ producto, onClose, onSave }: { producto: Product, onClose: () => void, onSave: (m: Movimiento, nuevoCosto?: number) => void }) {
   const [tipo, setTipo] = useState<'ajuste_entrada' | 'ajuste_salida' | 'consumo' | 'colaboracion'>('ajuste_entrada');
   const [cantidad, setCantidad] = useState<string>('1');
@@ -616,9 +639,6 @@ function ModalAjuste({ producto, onClose, onSave }: { producto: Product, onClose
   );
 }
 
-// ============================================================
-// ModalProducto (CORREGIDO: solo pestaña de precios)
-// ============================================================
 function ModalProducto({ producto, state, onClose, onSave, onUpdateLists }: { producto?: Product, state: AppState, onClose: () => void, onSave: (p: any) => void, onUpdateLists: (l: any) => void }) {
   const [activeTab, setActiveTab] = useState<'general' | 'precios' | 'kit'>('general');
   const [datos, setDatos] = useState<any>({
@@ -647,14 +667,8 @@ function ModalProducto({ producto, state, onClose, onSave, onUpdateLists }: { pr
     return state.productos.filter(p => !p.isKit && (p.nombre.toLowerCase().includes(kitSearch.toLowerCase()) || p.codigo.toLowerCase().includes(kitSearch.toLowerCase()))).slice(0, 5);
   }, [kitSearch, state.productos]);
 
-  // Función de validación para campos decimales (permite dígitos y un punto)
   const validarDecimal = (val: string) => /^[\d]*\.?[\d]*$/.test(val) || val === '';
 
-  // ============================================================
-  // LÓGICA TRIDIRECCIONAL (sin redondeo, máxima precisión)
-  // ============================================================
-
-  // Cambio en Margen % → recalcula Venta USD y Venta BS
   const handleMargenChange = (val: string) => {
     if (!validarDecimal(val)) return;
     setDatos((prev: any) => {
@@ -676,7 +690,6 @@ function ModalProducto({ producto, state, onClose, onSave, onUpdateLists }: { pr
     });
   };
 
-  // Cambio en Venta USD → recalcula Margen % y Venta BS
   const handlePriceUSDChange = (val: string) => {
     if (!validarDecimal(val)) return;
     setDatos((prev: any) => {
@@ -697,7 +710,6 @@ function ModalProducto({ producto, state, onClose, onSave, onUpdateLists }: { pr
     });
   };
 
-  // Cambio en Venta BS → recalcula Margen % y Venta USD
   const handlePriceBSChange = (val: string) => {
     if (!validarDecimal(val)) return;
     setDatos((prev: any) => {
@@ -718,15 +730,11 @@ function ModalProducto({ producto, state, onClose, onSave, onUpdateLists }: { pr
     });
   };
 
-  // Cambio en Costo USD → solo actualiza el valor, sin recálculo automático
   const handleCostoChange = (val: string) => {
     if (!validarDecimal(val)) return;
     setDatos((prev: any) => ({ ...prev, costoUSD: val }));
   };
 
-  // ============================================================
-  // Funciones para listas (sin cambios)
-  // ============================================================
   const handleAddListItem = (listName: 'categorias' | 'marcas' | 'presentaciones') => {
     const newVal = prompt(`Ingrese nueva opción para ${listName.toUpperCase()}:`);
     if (newVal) {
