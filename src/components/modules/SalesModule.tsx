@@ -85,8 +85,6 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   const [nuevaTasa, setNuevaTasa] = useState(state.tasa.toString());
 
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const printRef = useRef<HTMLDivElement | null>(null);
-  const reportPrintRef = useRef<HTMLDivElement | null>(null);
 
   // Helper: Cálculo de Stock Real (Considerando Kits dinámicos)
   const getStockDisponible = (p: Product) => {
@@ -549,6 +547,12 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     setSelectedSaleForReturn(null);
   };
 
+  const printReport = () => {
+    window.print();
+  };
+
+  const zReportData = showReport === 'Z' ? state.reportesZ[state.reportesZ.length - 1] : null;
+
   return (
     <div className="flex flex-col gap-2 h-[calc(100vh-100px)] max-w-7xl mx-auto w-full overflow-hidden">
       <div className="flex gap-2 no-print shrink-0 overflow-x-auto pb-1">
@@ -845,28 +849,37 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       {/* MODALES DE SOPORTE */}
       {showReport && (
         <div className="modal show no-print"><div className="modal-bg" onClick={() => setShowReport(null)}></div>
-          <div className="modal-box max-w-sm bg-white border-2 border-line">
-            <div className="modal-head py-3 px-4 border-b border-line flex justify-between items-center bg-surface-soft">
+          <div className="modal-box max-w-sm bg-white border-2 border-line thermal-80mm">
+            <div className="modal-head py-3 px-4 border-b border-line flex justify-between items-center bg-surface-soft no-print">
               <h3 className="text-ink font-black uppercase text-[10px]">INFORME DE AUDITORÍA (TIPO {showReport})</h3>
               <button onClick={() => setShowReport(null)} className="text-ink hover:text-brand-gold"><X className="w-4 h-4"/></button>
             </div>
-            <div className="modal-body p-6 font-mono text-[11px] leading-tight space-y-4">
+            <div className="modal-body p-6 font-mono text-[11px] leading-tight space-y-4 print:p-0 print:border-none print:shadow-none">
               <div className="text-center space-y-1">
                 <p className="font-black text-sm uppercase">{state.empresa.nombre}</p>
                 <p className="text-[10px]">RIF: {state.empresa.rif}</p>
                 <p className="text-[10px]">{state.empresa.direccion}</p>
-                <p className="pt-3 font-black border-t border-dashed border-black/30 mt-2 uppercase tracking-tighter">REPORTE DE VENTAS - {Utils.hoy()}</p>
+                <div className="border-t border-dashed border-black/30 my-2"></div>
+                <p className="font-black text-[11px] uppercase tracking-tighter">REPORTE DE VENTAS ({showReport})</p>
+                <p className="text-[10px] uppercase font-bold">{Utils.fmtFecha(Utils.hoy())}</p>
               </div>
 
-              <div className="space-y-1 text-[10px]">
+              <div className="space-y-1 text-[10px] border-b border-dashed border-black/30 pb-3">
+                {showReport === 'Z' && <div className="flex justify-between font-black"><span>REPORTE Z NÚMERO:</span><span>{String(state.ultimoZ).padStart(4, '0')}</span></div>}
                 <div className="flex justify-between"><span>HORA EMISIÓN:</span><span>{Utils.ahora().split('T')[1].slice(0, 8)}</span></div>
                 <div className="flex justify-between"><span>TERMINAL:</span><span>{getCurrentTerminal()?.nombre || 'S/T'}</span></div>
                 <div className="flex justify-between"><span>TASA BCV:</span><span>{state.tasa.toFixed(2)}</span></div>
+                {showReport === 'Z' && zReportData && (
+                  <>
+                    <div className="flex justify-between"><span>DESDE FACTURA:</span><span>{zReportData.desdeFactura}</span></div>
+                    <div className="flex justify-between"><span>HASTA FACTURA:</span><span>{zReportData.hastaFactura}</span></div>
+                  </>
+                )}
               </div>
 
-              <div className="border-t border-dashed border-black/30 pt-3 space-y-2">
-                <p className="font-black text-center mb-2 uppercase tracking-tighter">Resumen por Método</p>
-                {Object.entries(getReportSummary().breakdown).map(([m, val]: any) => {
+              <div className="space-y-2">
+                <p className="font-black text-center mb-2 uppercase tracking-tighter border-b border-dashed border-black/10 pb-1">Ventas por Método de Pago</p>
+                {Object.entries(breakdown).map(([m, val]: any) => {
                   const isUSD = m === 'efectivo_usd' || m === 'zelle' || m === 'credito';
                   return (
                     <div key={m} className="flex justify-between items-end gap-2 uppercase">
@@ -879,28 +892,45 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                 })}
               </div>
 
-              <div className="border-t border-dashed border-black/30 pt-3 space-y-1">
-                <div className="flex justify-between font-black text-[11px]">
-                  <span>TOTAL EN BS:</span>
-                  <span>{Utils.fmtBS(getReportSummary().totalBS)}</span>
+              {showReport === 'Z' && zReportData && (
+                 <div className="border-t border-dashed border-black/30 pt-3 space-y-1 text-[10px]">
+                    <div className="flex justify-between"><span>VENTA EXENTA:</span><span>{Utils.fmtUSD(0)}</span></div>
+                    <div className="flex justify-between"><span>BASE IMPONIBLE:</span><span>{Utils.fmtUSD(zReportData.baseImponibleUSD)}</span></div>
+                    <div className="flex justify-between"><span>IVA (16%):</span><span>{Utils.fmtUSD(zReportData.ivaUSD)}</span></div>
+                 </div>
+              )}
+
+              <div className="border-t border-dashed border-black/30 pt-3 space-y-1.5">
+                <div className="flex justify-between font-black text-[12px]">
+                  <span>TOTAL EN BOLÍVARES:</span>
+                  <span>{Utils.fmtBS(rTotalBS)}</span>
                 </div>
-                <div className="flex justify-between font-black text-[11px]">
+                <div className="flex justify-between font-black text-[12px]">
                   <span>TOTAL EN USD:</span>
-                  <span>{Utils.fmtUSD(getReportSummary().totalUSD)}</span>
+                  <span>{Utils.fmtUSD(rTotalUSD)}</span>
                 </div>
-                <div className="flex justify-between font-black text-[11px]">
+                <div className="flex justify-between font-black text-[12px]">
                   <span>TOTAL CRÉDITOS (USD):</span>
-                  <span>{Utils.fmtUSD(getReportSummary().totalCreditosUSD)}</span>
+                  <span>{Utils.fmtUSD(totalCreditosUSD)}</span>
                 </div>
               </div>
 
-              <div className="pt-4 space-y-1 opacity-60 text-center italic border-t border-dashed border-black/30">
+              {showReport === 'Z' && (
+                <div className="pt-3 border-t border-dashed border-black/30">
+                  <div className="flex justify-between font-black text-[10px] uppercase">
+                    <span>ACUMULADO HISTÓRICO:</span>
+                    <span>{Utils.fmtUSD(state.acumuladoHistorico)}</span>
+                  </div>
+                </div>
+              )}
+
+              <div className="pt-6 space-y-1 opacity-60 text-center italic border-t border-dashed border-black/30">
                 <p>FIN DEL DOCUMENTO</p>
-                <p className="text-[8px] uppercase">PosVEN Pro Cloud Sync</p>
+                <p className="text-[8px] uppercase tracking-widest">PosVEN Pro Cloud Sync · v2.5.0</p>
               </div>
 
-              <button onClick={() => window.print()} className="btn btn-primary w-full h-11 mt-4 font-black uppercase text-[10px] shadow-lg flex items-center justify-center gap-2">
-                <Printer className="w-4 h-4" /> Imprimir Informe
+              <button onClick={printReport} className="btn btn-primary w-full h-11 mt-4 font-black uppercase text-[10px] shadow-lg flex items-center justify-center gap-2 no-print">
+                <Printer className="w-4 h-4" /> Imprimir 80mm
               </button>
             </div>
           </div>
@@ -917,7 +947,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                 <div className="flex justify-between mb-3"><label className="text-ink text-[10px] font-black uppercase">MÉTODOS PAGO</label><button onClick={() => setShowAbonoMultiModal(true)} className="btn-icon h-6 w-6 bg-brand-gold text-white rounded shadow-sm"><Plus className="w-4 h-4"/></button></div>
                 <div className="space-y-2 max-h-[160px] overflow-y-auto">
                   {abonoPagos.map((p, idx) => (
-                    <div key={idx} className="flex justify-between items-center bg-white p-2 rounded border border-line text-[10px] font-bold"><button onClick={() => setAbonoPagos(abonoPagos.filter((_,i)=>i!==idx))}><Trash2 className="w-4 h-4 text-status-danger" /></button><span className="uppercase">{Utils.metodoLabel(p.metodo)}</span><span className="text-brand-gold-deep font-black">{Utils.fmtUSD(p.montoUSD)}</span></div>
+                    <div key={idx} className="flex justify-between items-center bg-white p-2 rounded border border-line text-[10px] font-bold"><button onClick={() => setAbnoPagos(abonoPagos.filter((_,i)=>i!==idx))}><Trash2 className="w-4 h-4 text-status-danger" /></button><span className="uppercase">{Utils.metodoLabel(p.metodo)}</span><span className="text-brand-gold-deep font-black">{Utils.fmtUSD(p.montoUSD)}</span></div>
                   ))}
                 </div>
               </div>

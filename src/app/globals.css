@@ -467,15 +467,44 @@
      body {
        background: white !important;
        color: black !important;
+       margin: 0 !important;
+       padding: 0 !important;
      }
      
      .card {
-       border: 1px solid #ddd;
+       border: none !important;
        box-shadow: none !important;
      }
      
      .modal-box {
        box-shadow: none !important;
+       border: none !important;
+       max-width: 100% !important;
+       width: 100% !important;
+     }
+
+     /* Formato para impresora térmica 80mm */
+     .thermal-80mm {
+       width: 80mm !important;
+       max-width: 80mm !important;
+       margin: 0 auto !important;
+       padding: 2mm !important;
+       font-family: 'JetBrains Mono', monospace !important;
+       font-size: 11px !important;
+       color: black !important;
+     }
+
+     /* Ocultar todo lo demás durante la impresión de un ticket */
+     body * {
+       visibility: hidden;
+     }
+     .thermal-80mm, .thermal-80mm * {
+       visibility: visible;
+     }
+     .thermal-80mm {
+       position: absolute;
+       left: 0;
+       top: 0;
      }
    }
    
