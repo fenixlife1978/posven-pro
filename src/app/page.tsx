@@ -132,7 +132,6 @@ export default function LicoreriaPOS() {
       items: [
         { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
         { id: 'inventario', label: 'Inventario', icon: Package, count: state.productos.length },
-        { id: 'ventas', label: 'Ventas', icon: ShoppingCart, count: state.ventas.filter(v => v.fecha.startsWith(Utils.hoy())).length },
         { id: 'compras', label: 'Entradas (Compras)', icon: ShoppingBag },
       ]
     },
