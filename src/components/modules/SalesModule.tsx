@@ -455,18 +455,31 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     const hoy = Utils.hoy();
     const ventasHoy = state.ventas.filter(v => v.fecha.startsWith(hoy));
     const breakdown: Record<string, { usd: number, bs: number }> = {};
-    let totalBS = 0; let totalUSD = 0;
+    let totalBS = 0; 
+    let totalUSD = 0;
+    let totalCreditosUSD = 0;
+
     ventasHoy.forEach(v => {
-      const payments = v.payments && v.payments.length > 0 ? v.payments : [{ metodo: v.metodoPago, montoUSD: v.totalUSD, montoBS: v.totalBS }];
+      const payments = v.payments && v.payments.length > 0 
+        ? v.payments 
+        : [{ metodo: v.metodoPago, montoUSD: v.totalUSD, montoBS: v.totalBS }];
+        
       payments.forEach((p: PagoRealizado) => {
         const m = p.metodo;
         if (!breakdown[m]) breakdown[m] = { usd: 0, bs: 0 };
-        breakdown[m].usd += p.montoUSD; breakdown[m].bs += p.montoBS;
-        if (m === 'efectivo_usd' || m === 'zelle') totalUSD += p.montoUSD;
-        else if (m !== 'credito') totalBS += p.montoBS;
+        breakdown[m].usd += p.montoUSD; 
+        breakdown[m].bs += p.montoBS;
+        
+        if (m === 'efectivo_usd' || m === 'zelle') {
+          totalUSD += p.montoUSD;
+        } else if (m === 'credito') {
+          totalCreditosUSD += p.montoUSD;
+        } else {
+          totalBS += p.montoBS;
+        }
       });
     });
-    return { breakdown, totalBS, totalUSD, ventasHoy };
+    return { breakdown, totalBS, totalUSD, totalCreditosUSD, ventasHoy };
   };
 
   const emitirReporteZ = () => {
@@ -486,7 +499,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     setShowReport('Z');
   };
 
-  const { breakdown, totalBS: rTotalBS, totalUSD: rTotalUSD, ventasHoy: rVentasHoy } = getReportSummary();
+  const { breakdown, totalBS: rTotalBS, totalUSD: rTotalUSD, totalCreditosUSD, ventasHoy: rVentasHoy } = getReportSummary();
 
   const buscarVentaParaDevolucion = () => {
     const sale = state.ventas.find(v => v.id === returnSaleSearch || v.id.endsWith(returnSaleSearch));
@@ -852,18 +865,33 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
               </div>
 
               <div className="border-t border-dashed border-black/30 pt-3 space-y-2">
-                <p className="font-black text-center mb-2">RESUMEN POR MÉTODO</p>
-                {Object.entries(breakdown).map(([m, val]: any) => (
-                  <div key={m} className="flex justify-between items-end gap-2">
-                    <span className="truncate">{Utils.metodoLabel(m).toUpperCase()}</span>
-                    <span className="shrink-0 font-bold">{Utils.fmtUSD(val.usd)}</span>
-                  </div>
-                ))}
+                <p className="font-black text-center mb-2 uppercase tracking-tighter">Resumen por Método</p>
+                {Object.entries(getReportSummary().breakdown).map(([m, val]: any) => {
+                  const isUSD = m === 'efectivo_usd' || m === 'zelle' || m === 'credito';
+                  return (
+                    <div key={m} className="flex justify-between items-end gap-2 uppercase">
+                      <span className="truncate">{Utils.metodoLabel(m)}</span>
+                      <span className="shrink-0 font-bold">
+                        {isUSD ? Utils.fmtUSD(val.usd) : Utils.fmtBS(val.bs)}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
 
               <div className="border-t border-dashed border-black/30 pt-3 space-y-1">
-                <div className="flex justify-between font-black text-xs"><span>VENTA TOTAL BRUTA:</span><span>{Utils.fmtUSD(rTotalUSD)}</span></div>
-                <div className="flex justify-between font-bold"><span>EQUIV. BOLÍVARES:</span><span>{Utils.fmtBS(rTotalBS)}</span></div>
+                <div className="flex justify-between font-black text-[11px]">
+                  <span>TOTAL EN BS:</span>
+                  <span>{Utils.fmtBS(getReportSummary().totalBS)}</span>
+                </div>
+                <div className="flex justify-between font-black text-[11px]">
+                  <span>TOTAL EN USD:</span>
+                  <span>{Utils.fmtUSD(getReportSummary().totalUSD)}</span>
+                </div>
+                <div className="flex justify-between font-black text-[11px]">
+                  <span>TOTAL CRÉDITOS (USD):</span>
+                  <span>{Utils.fmtUSD(getReportSummary().totalCreditosUSD)}</span>
+                </div>
               </div>
 
               <div className="pt-4 space-y-1 opacity-60 text-center italic border-t border-dashed border-black/30">
