@@ -884,7 +884,23 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       )}
 
       {showReceiptModal && lastProcessedSale && (
-        <ReceiptModal isOpen={showReceiptModal} onClose={() => setShowReceiptModal(false)} sale={{...lastProcessedSale, date: lastProcessedSale.fecha || lastProcessedSale.date, customerName: lastProcessedSale.cliente || lastProcessedSale.customerName, paymentMethod: Utils.metodoLabel(lastProcessedSale.metodoPago || lastProcessedSale.paymentMethod), items: (lastProcessedSale.items || []).map((it: any) => ({...it, qty: it.cantidad || it.qty, price: it.precioUnitUSD || it.price})), type: lastProcessedSale.metodoPago !== 'credito' ? 'CONTADO' : 'CRÉDITO'}} />
+        <ReceiptModal 
+          isOpen={showReceiptModal} 
+          onClose={() => setShowReceiptModal(false)} 
+          sale={{
+            ...lastProcessedSale, 
+            date: lastProcessedSale.fecha || lastProcessedSale.date, 
+            customerName: lastProcessedSale.cliente || lastProcessedSale.customerName, 
+            paymentMethod: Utils.metodoLabel(lastProcessedSale.metodoPago || lastProcessedSale.paymentMethod), 
+            items: (lastProcessedSale.items || []).map((it: any) => ({
+              ...it, 
+              name: it.nombre, // Aseguramos que ReceiptModal reciba 'name'
+              qty: it.cantidad || it.qty, 
+              price: it.precioUnitUSD || it.price
+            })), 
+            type: lastProcessedSale.metodoPago !== 'credito' ? 'CONTADO' : 'CRÉDITO'
+          }} 
+        />
       )}
     </div>
   );
