@@ -1,30 +1,38 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AppState } from '@/lib/types';
 import { Save, AlertTriangle, ShieldCheck } from 'lucide-react';
+import { toast } from '@/hooks/use-toast';
 
 export default function ConfigModule({ state, updateState }: { state: AppState, updateState: (s: Partial<AppState>) => void }) {
   const [tasa, setTasa] = useState<string | number>(state.tasa);
   const [empresa, setEmpresa] = useState(state.empresa);
   const [pinDevolucion, setPinDevolucion] = useState(state.pinDevolucion || '');
 
+  // Sincronizar estados locales cuando el estado global cambie (ej: desde otra pestaña)
+  useEffect(() => {
+    setTasa(state.tasa);
+    setEmpresa(state.empresa);
+    setPinDevolucion(state.pinDevolucion || '000000');
+  }, [state.tasa, state.empresa, state.pinDevolucion]);
+
   const guardarTasa = () => {
     const n = parseFloat(tasa.toString());
     if (isNaN(n)) return alert('Tasa inválida');
     updateState({ tasa: n });
-    alert('Tasa actualizada');
+    toast({ title: "Sincronizado", description: "Tasa de cambio actualizada en todos los terminales." });
   };
 
   const guardarEmpresa = () => {
     updateState({ empresa });
-    alert('Datos de empresa actualizados');
+    toast({ title: "Perfil Actualizado", description: "Los datos fiscales han sido guardados." });
   };
 
   const guardarPin = () => {
     if (pinDevolucion.length !== 6) return alert('El PIN debe ser de 6 dígitos exactos');
     updateState({ pinDevolucion });
-    alert('PIN de autorización actualizado correctamente');
+    toast({ title: "Seguridad Actualizada", description: "PIN de autorización establecido correctamente." });
   };
 
   return (
@@ -40,6 +48,7 @@ export default function ConfigModule({ state, updateState }: { state: AppState, 
             <div className="flex items-center gap-4">
               <input 
                 type="number" 
+                step="0.01"
                 className="form-input flex-1 h-12 text-xl font-black text-brand-gold-deep border-line bg-surface-soft/30 px-4" 
                 value={tasa} 
                 onChange={e => setTasa(e.target.value)} 
@@ -47,7 +56,7 @@ export default function ConfigModule({ state, updateState }: { state: AppState, 
               <span className="text-ink font-black text-sm uppercase tracking-tighter">Bolívares (BS)</span>
             </div>
             <p className="text-[0.7rem] text-ink font-bold mt-3 italic opacity-60">
-              Esta tasa se utiliza para todos los cálculos de conversión, precios en bolívares y reportes fiscales del sistema.
+              Esta tasa se sincroniza en tiempo real con todos los terminales de venta activos.
             </p>
           </div>
           <button className="btn btn-primary h-12 px-8 font-black uppercase text-xs shadow-md mt-2" onClick={guardarTasa}>
@@ -76,7 +85,7 @@ export default function ConfigModule({ state, updateState }: { state: AppState, 
                />
             </div>
             <p className="text-[0.7rem] text-ink font-bold mt-3 italic opacity-60">
-              Este código de seguridad será solicitado obligatoriamente para finalizar cada proceso de devolución de mercancía.
+              Este código de seguridad será solicitado para finalizar procesos de devolución.
             </p>
           </div>
           <button className="btn btn-primary h-12 px-8 font-black uppercase text-xs shadow-md mt-2" onClick={guardarPin}>
@@ -127,7 +136,7 @@ export default function ConfigModule({ state, updateState }: { state: AppState, 
         </div>
         <div className="card-body p-6">
           <p className="text-xs text-ink font-bold mb-5 uppercase leading-relaxed tracking-tight">
-            Restablecer el sistema borrará permanentemente todos los productos, historial de ventas, deudas y configuraciones. Esta acción es irreversible.
+            Esta acción borrará permanentemente la base de datos en la nube y reiniciará el sistema.
           </p>
           <button 
             className="btn btn-danger h-12 px-8 font-black uppercase text-xs shadow-xl" 

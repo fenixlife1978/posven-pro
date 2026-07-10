@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect } from 'react';
@@ -14,18 +13,13 @@ import {
   Settings,
   Users,
   Menu,
-  ChevronDown,
-  ChevronRight,
-  Search,
-  Calendar as CalendarIcon,
-  Bell,
   RefreshCw,
-  Plus,
   Wifi,
   WifiOff,
   Clock as ClockIcon,
   ShoppingBag,
-  LogOut
+  LogOut,
+  Bell
 } from 'lucide-react';
 import { Store, Utils, initialState } from '@/lib/db-store';
 import { AppState } from '@/lib/types';
@@ -53,14 +47,12 @@ export default function LicoreriaPOS() {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   
-  // Estados de rol y apertura
   const [userRole, setUserRole] = useState<string | null>(null);
   const [userProfile, setUserProfile] = useState<any>(null);
   const [showApertura, setShowApertura] = useState(false);
   const [aperturaData, setAperturaData] = useState({ bs: '0', usd: '0' });
 
   useEffect(() => {
-    // Verificación de autenticación y rol
     const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
       if (!currentUser) {
         router.push('/login');
@@ -86,15 +78,13 @@ export default function LicoreriaPOS() {
 
     setMounted(true);
     
-    // Conexión en tiempo real con Firebase RTDB
-    const unsubscribeStore = Store.subscribe((newState) => {
-      setState(newState);
+    // Suscripción a datos en tiempo real (Persistencia Global)
+    const unsubscribeStore = Store.subscribe((dbUpdate) => {
+      setState(prev => ({ ...prev, ...dbUpdate }));
     });
 
-    // Reloj en tiempo real
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
 
-    // Monitoreo de conexión
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
     
@@ -121,9 +111,12 @@ export default function LicoreriaPOS() {
   };
 
   const updateState = (newState: Partial<AppState>) => {
-    const updated = { ...state, ...newState };
-    setState(updated);
-    Store.set(updated);
+    setState(prev => {
+      const updated = { ...prev, ...newState };
+      // Solo sincronizamos a la nube si no es solo un cambio de carrito local
+      Store.set(updated);
+      return updated;
+    });
   };
 
   const handleModuleChange = (moduleId: string) => {
@@ -183,7 +176,7 @@ export default function LicoreriaPOS() {
       <div className="min-h-screen bg-surface-warm flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
           <div className="w-12 h-12 border-4 border-brand-gold/20 border-t-brand-gold rounded-full animate-spin" />
-          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-ink/40">Cargando PosVEN Pro...</p>
+          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-ink/40">Sincronizando con la nube...</p>
         </div>
       </div>
     );
@@ -202,7 +195,7 @@ export default function LicoreriaPOS() {
   return (
     <div className="flex min-h-screen bg-surface-warm text-ink">
       
-      {/* PANTALLA DE APERTURA DE CAJA (BLOKEO) */}
+      {/* PANTALLA DE APERTURA DE CAJA (BLOQUEO) */}
       {showApertura && (
         <div className="fixed inset-0 z-[100] bg-surface-warm flex items-center justify-center p-6 no-print">
            <div className="w-full max-w-lg bg-white rounded-[32px] shadow-[0_20px_50px_rgba(0,0,0,0.1)] p-10 space-y-8 animate-in fade-in zoom-in duration-500 border border-line">
@@ -440,7 +433,7 @@ export default function LicoreriaPOS() {
 
         {/* FOOTER */}
         <footer className="px-8 py-6 border-t border-line text-[0.76rem] font-black text-ink flex flex-col sm:flex-row justify-between gap-4 no-print bg-surface-warm/30">
-          <div>© 2026 PosVEN Pro · Conectado a Firebase Cloud</div>
+          <div>© 2026 PosVEN Pro · Datos persistidos en la nube</div>
           <div className="flex gap-4 items-center">
             <span className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-status-success animate-pulse" /> Nube Activa</span>
             <span className="px-2 py-0.5 bg-white border border-line rounded text-[0.65rem] font-black">v2.5.0-secure</span>

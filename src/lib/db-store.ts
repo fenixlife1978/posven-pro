@@ -4,7 +4,7 @@ import { AppState } from './types';
 import { rtdb } from './firebase';
 import { ref, set, onValue, off } from "firebase/database";
 
-const STORAGE_KEY = 'licoreriaPOS_v2';
+const STORAGE_KEY = 'licoreriaPOS_v2_cache';
 const RTDB_PATH = 'pos_system_data';
 
 export const initialState: AppState = {
@@ -38,19 +38,30 @@ export const initialState: AppState = {
 
 export const Store = {
   // Suscribirse a cambios en tiempo real
-  subscribe(callback: (state: AppState) => void) {
+  subscribe(callback: (state: Partial<AppState>) => void) {
     const dataRef = ref(rtdb, RTDB_PATH);
     onValue(dataRef, (snapshot) => {
       const val = snapshot.val();
       if (val) {
-        // Combinar con arrays vacíos si faltan nodos en DB
-        callback({ ...initialState, ...val });
+        // Combinar con initialState para asegurar que todos los campos existan
+        const merged = { ...initialState, ...val };
+        // El carrito NO se sincroniza, es local por pestaña
+        delete (merged as any).carrito; 
+        callback(merged);
+        // Guardar cache local
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
       } else {
+        // Si la DB está vacía, inicializar con el estado base
+        // Solo en el primer arranque del sistema
         const local = localStorage.getItem(STORAGE_KEY);
         const data = local ? JSON.parse(local) : initialState;
-        this.set(data);
-        callback(data);
+        // Omitimos carrito para la DB
+        const { carrito, ...toPersist } = data;
+        set(dataRef, toPersist);
+        callback(toPersist);
       }
+    }, (error) => {
+      console.error("RTDB Sync Error:", error);
     });
     return () => off(dataRef);
   },
@@ -68,9 +79,37 @@ export const Store = {
 
   set(state: AppState) {
     if (typeof window === 'undefined') return;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    
+    // Definimos qué datos son globales y deben persistir en la nube
+    const dataToPersist = {
+      tasa: state.tasa,
+      pinDevolucion: state.pinDevolucion,
+      productos: state.productos || [],
+      ventas: state.ventas || [],
+      cxc: state.cxc || [],
+      cxp: state.cxp || [],
+      clientes: state.clientes || [],
+      devoluciones: state.devoluciones || [],
+      movimientos: state.movimientos || [],
+      empresa: state.empresa,
+      departamentos: state.departamentos,
+      categorias: state.categorias,
+      marcas: state.marcas,
+      presentaciones: state.presentaciones,
+      proveedores: state.proveedores,
+      reportesZ: state.reportesZ || [],
+      ultimoZ: state.ultimoZ || 0,
+      proximoRecibo: state.proximoRecibo || 1,
+      proximaDevolucion: state.proximaDevolucion || 1,
+      acumuladoHistorico: state.acumuladoHistorico || 0
+    };
+
+    // Persistencia local
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(dataToPersist));
+    
+    // Persistencia en la nube (RTDB)
     const dataRef = ref(rtdb, RTDB_PATH);
-    set(dataRef, state).catch(err => console.error("Error RTDB Sync:", err));
+    set(dataRef, dataToPersist).catch(err => console.error("Error RTDB Write:", err));
   },
 
   uid(): string {

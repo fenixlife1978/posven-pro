@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect } from 'react';
@@ -12,7 +11,7 @@ import {
   ChevronDown 
 } from 'lucide-react';
 import { auth } from '@/lib/firebase';
-import { signInWithEmailAndPassword, onAuthStateChanged } from 'firebase/auth';
+import { signInWithEmailAndPassword, onAuthStateChanged, setPersistence, browserSessionPersistence } from 'firebase/auth';
 import { toast } from '@/hooks/use-toast';
 
 export default function LoginPage() {
@@ -39,6 +38,8 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
+      // Configuramos persistencia de sesión por pestaña
+      await setPersistence(auth, browserSessionPersistence);
       await signInWithEmailAndPassword(auth, email, password);
       toast({ title: "Acceso Concedido", description: "Bienvenido al sistema." });
       router.push('/');
@@ -146,13 +147,6 @@ export default function LoginPage() {
                 {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
               </button>
             </div>
-          </div>
-
-          {/* FORGOT PASSWORD */}
-          <div className="text-right">
-            <button type="button" className="text-xs font-bold text-[#C8952E] hover:text-[#A37619] transition-colors">
-              ¿Olvidaste tu contraseña?
-            </button>
           </div>
 
           {/* SUBMIT BUTTON */}
