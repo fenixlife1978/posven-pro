@@ -4,7 +4,7 @@
 import React, { useState, useEffect } from 'react';
 import { AppState, Product, Movimiento, KitItem } from '@/lib/types';
 import { Utils, Store } from '@/lib/db-store';
-import { Plus, Search, Edit2, Trash2, Boxes, X, BarChart3, FileText, History, Gift, Layers, Trash, ShoppingBag, TrendingUp, Printer, RotateCcw, Box } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, Boxes, X, BarChart3, FileText, History, Gift, Layers, Trash, ShoppingBag, TrendingUp, Printer, RotateCcw, Box, ClipboardList } from 'lucide-react';
 import { 
   generarPDFInventarioSimple, 
   exportarPDFInventarioGeneral, 
@@ -133,13 +133,13 @@ export default function InventoryModule({ state, updateState }: { state: AppStat
   return (
     <div className="space-y-6">
       <div className="tabs border-b border-line no-print">
-        <button onClick={() => setActiveTab('productos')} className={`tab ${activeTab === 'productos' ? 'active' : 'text-ink'}`}>Productos</button>
-        <button onClick={() => setActiveTab('reporte_general')} className={`tab ${activeTab === 'reporte_general' ? 'active' : 'text-ink'}`}>Inventario CPP</button>
-        <button onClick={() => setActiveTab('reporte_ventas')} className={`tab ${activeTab === 'reporte_ventas' ? 'active' : 'text-ink'}`}>Ventas</button>
-        <button onClick={() => setActiveTab('reporte_devoluciones')} className={`tab ${activeTab === 'reporte_devoluciones' ? 'active' : 'text-ink'}`}>Devoluciones</button>
-        <button onClick={() => setActiveTab('kardex')} className={`tab ${activeTab === 'kardex' ? 'active' : 'text-ink'}`}>Kardex</button>
-        <button onClick={() => setActiveTab('historial_ajustes')} className={`tab ${activeTab === 'historial_ajustes' ? 'active' : 'text-ink'}`}>Ajustes</button>
-        <button onClick={() => setActiveTab('consumo_colab')} className={`tab ${activeTab === 'consumo_colab' ? 'active' : 'text-ink'}`}>Consumo</button>
+        <button onClick={() => setActiveTab('productos')} className={`tab ${activeTab === 'productos' ? 'active' : 'text-ink font-black'}`}>Productos</button>
+        <button onClick={() => setActiveTab('reporte_general')} className={`tab ${activeTab === 'reporte_general' ? 'active' : 'text-ink font-black'}`}>Inventario CPP</button>
+        <button onClick={() => setActiveTab('reporte_ventas')} className={`tab ${activeTab === 'reporte_ventas' ? 'active' : 'text-ink font-black'}`}>Ventas</button>
+        <button onClick={() => setActiveTab('reporte_devoluciones')} className={`tab ${activeTab === 'reporte_devoluciones' ? 'active' : 'text-ink font-black'}`}>Devoluciones</button>
+        <button onClick={() => setActiveTab('kardex')} className={`tab ${activeTab === 'kardex' ? 'active' : 'text-ink font-black'}`}>Kardex</button>
+        <button onClick={() => setActiveTab('historial_ajustes')} className={`tab ${activeTab === 'historial_ajustes' ? 'active' : 'text-ink font-black'}`}>Ajustes</button>
+        <button onClick={() => setActiveTab('consumo_colab')} className={`tab ${activeTab === 'consumo_colab' ? 'active' : 'text-ink font-black'}`}>Consumo</button>
       </div>
 
       <div className="animate-in fade-in duration-300">
@@ -343,18 +343,6 @@ function ReporteVentas({ state }: { state: AppState }) {
 
   const ventas = filtrarVentas();
   const totalVendidos = ventas.reduce((acc, v) => acc + v.items.reduce((sum, item) => sum + item.cantidad, 0), 0);
-
-  const statsMap: Record<string, { nombre: string, cantidad: number, precio: number }> = {};
-  ventas.forEach(v => {
-    v.items.forEach(item => {
-      if (!statsMap[item.productoId]) {
-        statsMap[item.productoId] = { nombre: item.nombre, cantidad: 0, precio: item.precioUnitUSD };
-      }
-      statsMap[item.productoId].cantidad += item.cantidad;
-    });
-  });
-
-  const top3 = Object.values(statsMap).sort((a, b) => b.cantidad - a.cantidad).slice(0, 3);
 
   const handleExportPDF = () => {
     const meses = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
