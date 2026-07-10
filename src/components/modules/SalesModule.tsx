@@ -972,36 +972,38 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
               </div>
             </div>
           ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1 overflow-hidden">
-              <div className="lg:col-span-2 flex flex-col gap-4 overflow-hidden">
-                {!selectedSaleForReturn ? (
-                  <div className="card p-12 flex-1 flex flex-col items-center justify-center text-center space-y-6 bg-white border-dashed border-2 border-line">
-                    <div className="p-5 bg-surface-soft rounded-full"><Search className="w-10 h-10 text-ink/20" /></div>
-                    <div className="max-w-xs space-y-2">
-                      <h3 className="text-ink font-black uppercase text-sm">Localizar Venta Original</h3>
-                      <p className="text-[10px] text-ink font-bold uppercase opacity-60">Ingrese el número de recibo impreso para autorizar el proceso de devolución.</p>
-                    </div>
-                    <div className="flex gap-2 w-full max-sm:flex-col sm:max-w-sm">
-                      <input 
-                        className="form-input flex-1 h-11 bg-white border-line text-ink font-black uppercase" 
-                        placeholder="Ej: 000000024"
-                        value={returnSaleSearch}
-                        onChange={e => setReturnSaleSearch(e.target.value)}
-                        onKeyDown={e => e.key === 'Enter' && buscarVentaParaDevolucion()}
-                      />
-                      <button onClick={buscarVentaParaDevolucion} className="btn btn-primary h-11 px-6 font-black uppercase text-xs">Localizar Venta</button>
-                    </div>
+            <div className="flex flex-col flex-1 overflow-hidden">
+              {!selectedSaleForReturn ? (
+                /* ETAPA 1: BÚSQUEDA EXCLUSIVA */
+                <div className="card p-12 flex-1 flex flex-col items-center justify-center text-center space-y-6 bg-white border-dashed border-2 border-line">
+                  <div className="p-5 bg-surface-soft rounded-full"><Search className="w-10 h-10 text-ink/20" /></div>
+                  <div className="max-w-xs space-y-2">
+                    <h3 className="text-ink font-black uppercase text-sm">Localizar Venta Original</h3>
+                    <p className="text-[10px] text-ink font-bold uppercase opacity-60">Ingrese el número de recibo impreso para autorizar el proceso de devolución.</p>
                   </div>
-                ) : (
-                  <div className="flex flex-col gap-4 overflow-hidden flex-1">
+                  <div className="flex gap-2 w-full max-sm:flex-col sm:max-w-sm">
+                    <input 
+                      className="form-input flex-1 h-11 bg-white border-line text-ink font-black uppercase" 
+                      placeholder="Ej: 000000024"
+                      value={returnSaleSearch}
+                      onChange={e => setReturnSaleSearch(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && buscarVentaParaDevolucion()}
+                    />
+                    <button onClick={buscarVentaParaDevolucion} className="btn btn-primary h-11 px-6 font-black uppercase text-xs">Localizar Venta</button>
+                  </div>
+                </div>
+              ) : (
+                /* ETAPA 2: PROCESAMIENTO (CON SCROLL) */
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1 overflow-y-auto pr-1 animate-in slide-in-from-right-2 duration-300">
+                  <div className="lg:col-span-2 flex flex-col gap-4">
                     <div className="card bg-white border-status-info/30 flex flex-col min-h-[200px] rounded-xl overflow-hidden shadow-sm">
                       <div className="card-head py-3 px-6 bg-ink border-b border-white/10 flex justify-between items-center shrink-0">
                         <h3 className="text-white font-black uppercase italic text-[10px] tracking-tighter flex items-center gap-2">
-                          <Receipt className="w-4 h-4 text-brand-gold" /> VENTA ORIGINAL DETECTADA: {selectedSaleForReturn.id}
+                          <Receipt className="w-4 h-4 text-brand-gold" /> VENTA ORIGINAL: {selectedSaleForReturn.id}
                         </h3>
                         <button onClick={() => setSelectedSaleForReturn(null)} className="text-white/60 hover:text-white transition-colors"><X className="w-4 h-4"/></button>
                       </div>
-                      <div className="table-wrap flex-1 overflow-y-auto">
+                      <div className="table-wrap">
                         <table>
                           <thead>
                             <tr className="bg-surface-soft">
@@ -1018,7 +1020,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                                 <td className="text-ink font-black text-[11px] text-center">{item.cantidad}</td>
                                 <td className="text-ink font-black text-[11px] text-right">{Utils.fmtUSD(item.precioUnitUSD)}</td>
                                 <td className="text-center">
-                                  <button onClick={() => handleAddReturnItem(item.productoId, item.nombre, item.precioUnitUSD, item.cantidad)} className="btn btn-sm btn-secondary font-black text-[9px] h-7 px-3">Añadir al Lote</button>
+                                  <button onClick={() => handleAddReturnItem(item.productoId, item.nombre, item.precioUnitUSD, item.cantidad)} className="btn btn-sm btn-secondary font-black text-[9px] h-7 px-3">Seleccionar</button>
                                 </td>
                               </tr>
                             ))}
@@ -1030,16 +1032,16 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                     <div className="card bg-white border-line shadow-md flex-1 flex flex-col overflow-hidden rounded-xl">
                       <div className="card-head py-3 px-6 bg-ink border-b border-white/10 shrink-0">
                         <h3 className="text-white font-black uppercase italic text-[10px] tracking-tighter flex items-center gap-2">
-                          <Undo2 className="w-4 h-4 text-brand-gold"/> PRODUCTOS SELECCIONADOS PARA REINTEGRO
+                          <Undo2 className="w-4 h-4 text-brand-gold"/> LOTE PARA REINTEGRO
                         </h3>
                       </div>
-                      <div className="table-wrap flex-1 overflow-y-auto">
+                      <div className="table-wrap">
                         <table>
                           <thead>
                             <tr className="bg-surface-soft">
                               <th className="text-[9px] uppercase font-black text-ink">Producto</th>
                               <th className="text-[9px] uppercase text-center font-black text-ink">Cant</th>
-                              <th className="text-[9px] uppercase font-black text-ink">Estado Final</th>
+                              <th className="text-[9px] uppercase font-black text-ink">Estado</th>
                               <th className="text-[9px] uppercase text-right font-black text-ink">Total</th>
                               <th className="text-[9px] uppercase text-center"></th>
                             </tr>
@@ -1057,58 +1059,58 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                               </tr>
                             ))}
                             {returnItems.length === 0 && (
-                              <tr><td colSpan={5} className="text-center py-10 text-ink/20 font-black uppercase italic text-[10px]">Seleccione productos de la venta original para continuar</td></tr>
+                              <tr><td colSpan={5} className="text-center py-10 text-ink/20 font-black uppercase italic text-[10px]">Añada productos para continuar</td></tr>
                             )}
                           </tbody>
                         </table>
                       </div>
                     </div>
                   </div>
-                )}
-              </div>
 
-              <div className="flex flex-col gap-6 overflow-y-auto pr-1">
-                <div className="card bg-white border-line h-fit shadow-lg rounded-xl overflow-hidden mb-4">
-                  <div className="card-head py-3 px-6 bg-ink border-b border-white/10">
-                    <h3 className="text-white font-black uppercase italic text-[10px] tracking-widest">RESUMEN DE OPERACIÓN</h3>
-                  </div>
-                  <div className="card-body p-5 space-y-5">
-                    <div className="bg-surface-soft p-4 rounded-lg border border-line text-center shadow-inner">
-                      <p className="text-ink/60 text-[9px] font-black uppercase mb-1">Monto Total a Reembolsar</p>
-                      <p className="text-3xl font-black text-status-danger">
-                        {Utils.fmtUSD(returnItems.reduce((s, i) => s + (i.cantidad * i.precioUnitUSD), 0))}
-                      </p>
+                  <div className="flex flex-col gap-4">
+                    <div className="card bg-white border-line shadow-lg rounded-xl overflow-hidden sticky top-0">
+                      <div className="card-head py-3 px-6 bg-ink border-b border-white/10">
+                        <h3 className="text-white font-black uppercase italic text-[10px] tracking-widest">RESUMEN DE OPERACIÓN</h3>
+                      </div>
+                      <div className="card-body p-5 space-y-5">
+                        <div className="bg-surface-soft p-4 rounded-lg text-center border border-line shadow-inner">
+                          <p className="text-ink/60 text-[9px] font-black uppercase mb-1">Monto Total a Reembolsar</p>
+                          <p className="text-3xl font-black text-status-danger">
+                            {Utils.fmtUSD(returnItems.reduce((s, i) => s + (i.cantidad * i.precioUnitUSD), 0))}
+                          </p>
+                        </div>
+
+                        <div className="form-group">
+                          <label className="text-ink text-[10px] font-black uppercase block mb-1">Método de Reembolso</label>
+                          <select className="form-select bg-white text-ink h-10 text-xs font-black uppercase border-line" value={refundMethod} onChange={e => setRefundMethod(e.target.value as any)}>
+                            <option value="EFECTIVO">Efectivo de Caja</option>
+                            <option value="MISMO_METODO">Reverso (Mismo Método)</option>
+                            <option value="CREDITO_TIENDA">Nota de Crédito Interna</option>
+                          </select>
+                        </div>
+
+                        <div className="form-group">
+                          <label className="text-ink text-[10px] font-black uppercase block mb-1">Motivo / Observaciones</label>
+                          <textarea className="form-input bg-white text-ink text-xs min-h-[80px] border-line py-2" placeholder="Describa el motivo..." value={returnReason} onChange={e => setReturnReason(e.target.value)}></textarea>
+                        </div>
+
+                        <div className="p-3 bg-brand-gold-soft/20 border border-brand-gold/10 rounded-lg flex gap-3">
+                           <Lock className="w-5 h-5 text-brand-gold shrink-0 mt-0.5" />
+                           <p className="text-[9px] text-brand-gold-deep font-bold leading-tight">Se requiere el PIN de autorización para finalizar.</p>
+                        </div>
+
+                        <button 
+                          disabled={returnItems.length === 0 || !returnReason.trim()}
+                          onClick={procesarDevolucionPOS}
+                          className="btn btn-primary w-full h-14 font-black uppercase text-xs shadow-xl disabled:opacity-20 flex items-center justify-center gap-2"
+                        >
+                          <CheckCircle2 className="w-5 h-5" /> Finalizar Operación
+                        </button>
+                      </div>
                     </div>
-
-                    <div className="form-group">
-                      <label className="text-ink text-[10px] font-black uppercase block mb-1">Método de Devolución</label>
-                      <select className="form-select bg-white text-ink h-10 text-xs font-black uppercase border-line shadow-sm" value={refundMethod} onChange={e => setRefundMethod(e.target.value as any)}>
-                        <option value="EFECTIVO">Efectivo de Caja</option>
-                        <option value="MISMO_METODO">Reverso (Mismo Método)</option>
-                        <option value="CREDITO_TIENDA">Nota de Crédito Interna</option>
-                      </select>
-                    </div>
-
-                    <div className="form-group">
-                      <label className="text-ink text-[10px] font-black uppercase block mb-1">Motivo / Observaciones</label>
-                      <textarea className="form-input bg-white text-ink text-xs min-h-[80px] border-line py-2" placeholder="Describa el motivo de la devolución..." value={returnReason} onChange={e => setReturnReason(e.target.value)}></textarea>
-                    </div>
-
-                    <div className="p-3 bg-brand-gold-soft/20 border border-brand-gold/10 rounded-lg flex gap-3">
-                       <Lock className="w-5 h-5 text-brand-gold shrink-0 mt-0.5" />
-                       <p className="text-[9px] text-brand-gold-deep font-bold leading-tight">Para finalizar se solicitará el PIN de autorización de 6 dígitos establecido por el administrador.</p>
-                    </div>
-
-                    <button 
-                      disabled={returnItems.length === 0 || !returnReason.trim()}
-                      onClick={procesarDevolucionPOS}
-                      className="btn btn-primary w-full h-14 font-black uppercase text-xs shadow-xl shadow-status-danger/10 disabled:opacity-20 flex items-center justify-center gap-2"
-                    >
-                      <CheckCircle2 className="w-5 h-5" /> Finalizar y Autorizar
-                    </button>
                   </div>
                 </div>
-              </div>
+              )}
             </div>
           )}
         </div>
