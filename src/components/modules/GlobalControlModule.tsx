@@ -14,7 +14,8 @@ import {
   CheckCircle2, 
   AlertTriangle,
   Settings,
-  ArrowRight
+  ArrowRight,
+  RefreshCw
 } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { collection, doc, getDocs, updateDoc } from 'firebase/firestore';
