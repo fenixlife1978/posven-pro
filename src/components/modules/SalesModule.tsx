@@ -34,6 +34,7 @@ import {
 } from 'lucide-react';
 import { auth } from '@/lib/firebase';
 import { ReceiptModal } from '@/components/pos/ReceiptModal';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 // ✅ Soporte para impresión nativa
 declare global {
@@ -846,96 +847,106 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         </div>
       )}
 
-      {/* MODALES DE SOPORTE */}
-      {showReport && (
-        <div className="modal show no-print"><div className="modal-bg" onClick={() => setShowReport(null)}></div>
-          <div className="modal-box max-w-sm bg-white border-2 border-line thermal-80mm">
-            <div className="modal-head py-3 px-4 border-b border-line flex justify-between items-center bg-surface-soft no-print">
-              <h3 className="text-ink font-black uppercase text-[10px]">INFORME DE AUDITORÍA (TIPO {showReport})</h3>
-              <button onClick={() => setShowReport(null)} className="text-ink hover:text-brand-gold"><X className="w-4 h-4"/></button>
+      {/* MODAL DE REPORTES Y/Z - CONFIGURACIÓN DE VISTA E IMPRESIÓN IDÉNTICA A RECIBO */}
+      <Dialog open={!!showReport} onOpenChange={() => setShowReport(null)}>
+        <DialogContent className="sm:max-w-xs p-0 bg-transparent border-none overflow-visible shadow-none no-print">
+          <DialogHeader className="sr-only">
+            <DialogTitle>Informe de Auditoría {showReport}</DialogTitle>
+          </DialogHeader>
+
+          <div className="bg-white text-black p-6 font-mono text-[11px] leading-tight rounded-sm shadow-2xl relative">
+            <button 
+              className="absolute -top-4 -right-4 bg-brand-gold text-black rounded-full p-1.5 shadow-lg no-print hover:bg-brand-gold-deep hover:text-white transition-colors"
+              onClick={() => setShowReport(null)}
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            <div className="text-center space-y-1">
+              <p className="font-black text-sm uppercase">{state.empresa.nombre}</p>
+              <p className="text-[10px]">RIF: {state.empresa.rif}</p>
+              <p className="text-[10px]">{state.empresa.direccion}</p>
+              <div className="border-t border-dashed border-black/30 my-2"></div>
+              <p className="font-black text-[11px] uppercase tracking-tighter">REPORTE DE VENTAS ({showReport})</p>
+              <p className="text-[10px] uppercase font-bold">{Utils.fmtFecha(Utils.hoy())}</p>
             </div>
-            <div className="modal-body p-6 font-mono text-[11px] leading-tight space-y-4 print:p-0 print:border-none print:shadow-none">
-              <div className="text-center space-y-1">
-                <p className="font-black text-sm uppercase">{state.empresa.nombre}</p>
-                <p className="text-[10px]">RIF: {state.empresa.rif}</p>
-                <p className="text-[10px]">{state.empresa.direccion}</p>
-                <div className="border-t border-dashed border-black/30 my-2"></div>
-                <p className="font-black text-[11px] uppercase tracking-tighter">REPORTE DE VENTAS ({showReport})</p>
-                <p className="text-[10px] uppercase font-bold">{Utils.fmtFecha(Utils.hoy())}</p>
-              </div>
 
-              <div className="space-y-1 text-[10px] border-b border-dashed border-black/30 pb-3">
-                {showReport === 'Z' && <div className="flex justify-between font-black"><span>REPORTE Z NÚMERO:</span><span>{String(state.ultimoZ).padStart(4, '0')}</span></div>}
-                <div className="flex justify-between"><span>HORA EMISIÓN:</span><span>{Utils.ahora().split('T')[1].slice(0, 8)}</span></div>
-                <div className="flex justify-between"><span>TERMINAL:</span><span>{getCurrentTerminal()?.nombre || 'S/T'}</span></div>
-                <div className="flex justify-between"><span>TASA BCV:</span><span>{state.tasa.toFixed(2)}</span></div>
-                {showReport === 'Z' && zReportData && (
-                  <>
-                    <div className="flex justify-between"><span>DESDE FACTURA:</span><span>{zReportData.desdeFactura}</span></div>
-                    <div className="flex justify-between"><span>HASTA FACTURA:</span><span>{zReportData.hastaFactura}</span></div>
-                  </>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <p className="font-black text-center mb-2 uppercase tracking-tighter border-b border-dashed border-black/10 pb-1">Ventas por Método de Pago</p>
-                {Object.entries(breakdown).map(([m, val]: any) => {
-                  const isUSD = m === 'efectivo_usd' || m === 'zelle' || m === 'credito';
-                  return (
-                    <div key={m} className="flex justify-between items-end gap-2 uppercase">
-                      <span className="truncate">{Utils.metodoLabel(m)}</span>
-                      <span className="shrink-0 font-bold">
-                        {isUSD ? Utils.fmtUSD(val.usd) : Utils.fmtBS(val.bs)}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-
+            <div className="space-y-1 text-[10px] border-b border-dashed border-black/30 pb-3 mt-4">
+              {showReport === 'Z' && <div className="flex justify-between font-black"><span>REPORTE Z NÚMERO:</span><span>{String(state.ultimoZ).padStart(4, '0')}</span></div>}
+              <div className="flex justify-between"><span>HORA EMISIÓN:</span><span>{Utils.ahora().split('T')[1].slice(0, 8)}</span></div>
+              <div className="flex justify-between"><span>TERMINAL:</span><span>{getCurrentTerminal()?.nombre || 'S/T'}</span></div>
+              <div className="flex justify-between"><span>TASA BCV:</span><span>{state.tasa.toFixed(2)}</span></div>
               {showReport === 'Z' && zReportData && (
-                 <div className="border-t border-dashed border-black/30 pt-3 space-y-1 text-[10px]">
-                    <div className="flex justify-between"><span>VENTA EXENTA:</span><span>{Utils.fmtUSD(0)}</span></div>
-                    <div className="flex justify-between"><span>BASE IMPONIBLE:</span><span>{Utils.fmtUSD(zReportData.baseImponibleUSD)}</span></div>
-                    <div className="flex justify-between"><span>IVA (16%):</span><span>{Utils.fmtUSD(zReportData.ivaUSD)}</span></div>
-                 </div>
+                <>
+                  <div className="flex justify-between"><span>DESDE FACTURA:</span><span>{zReportData.desdeFactura}</span></div>
+                  <div className="flex justify-between"><span>HASTA FACTURA:</span><span>{zReportData.hastaFactura}</span></div>
+                </>
               )}
+            </div>
 
-              <div className="border-t border-dashed border-black/30 pt-3 space-y-1.5">
-                <div className="flex justify-between font-black text-[12px]">
-                  <span>TOTAL EN BOLÍVARES:</span>
-                  <span>{Utils.fmtBS(rTotalBS)}</span>
-                </div>
-                <div className="flex justify-between font-black text-[12px]">
-                  <span>TOTAL EN USD:</span>
-                  <span>{Utils.fmtUSD(rTotalUSD)}</span>
-                </div>
-                <div className="flex justify-between font-black text-[12px]">
-                  <span>TOTAL CRÉDITOS (USD):</span>
-                  <span>{Utils.fmtUSD(totalCreditosUSD)}</span>
-                </div>
-              </div>
-
-              {showReport === 'Z' && (
-                <div className="pt-3 border-t border-dashed border-black/30">
-                  <div className="flex justify-between font-black text-[10px] uppercase">
-                    <span>ACUMULADO HISTÓRICO:</span>
-                    <span>{Utils.fmtUSD(state.acumuladoHistorico)}</span>
+            <div className="space-y-2 mt-4">
+              <p className="font-black text-center mb-2 uppercase tracking-tighter border-b border-dashed border-black/10 pb-1">Ventas por Método de Pago</p>
+              {Object.entries(breakdown).map(([m, val]: any) => {
+                const isUSD = m === 'efectivo_usd' || m === 'zelle' || m === 'credito';
+                return (
+                  <div key={m} className="flex justify-between items-end gap-2 uppercase">
+                    <span className="truncate">{Utils.metodoLabel(m)}</span>
+                    <span className="shrink-0 font-bold">
+                      {isUSD ? Utils.fmtUSD(val.usd) : Utils.fmtBS(val.bs)}
+                    </span>
                   </div>
-                </div>
-              )}
+                );
+              })}
+            </div>
 
-              <div className="pt-6 space-y-1 opacity-60 text-center italic border-t border-dashed border-black/30">
-                <p>FIN DEL DOCUMENTO</p>
-                <p className="text-[8px] uppercase tracking-widest">PosVEN Pro Cloud Sync · v2.5.0</p>
+            {showReport === 'Z' && zReportData && (
+               <div className="border-t border-dashed border-black/30 pt-3 space-y-1 text-[10px] mt-4">
+                  <div className="flex justify-between"><span>VENTA EXENTA:</span><span>{Utils.fmtUSD(0)}</span></div>
+                  <div className="flex justify-between"><span>BASE IMPONIBLE:</span><span>{Utils.fmtUSD(zReportData.baseImponibleUSD)}</span></div>
+                  <div className="flex justify-between"><span>IVA (16%):</span><span>{Utils.fmtUSD(zReportData.ivaUSD)}</span></div>
+               </div>
+            )}
+
+            <div className="border-t border-dashed border-black/30 pt-3 space-y-1.5 mt-4">
+              <div className="flex justify-between font-black text-[12px]">
+                <span>TOTAL EN BOLÍVARES:</span>
+                <span>{Utils.fmtBS(rTotalBS)}</span>
               </div>
+              <div className="flex justify-between font-black text-[12px]">
+                <span>TOTAL EN USD:</span>
+                <span>{Utils.fmtUSD(rTotalUSD)}</span>
+              </div>
+              <div className="flex justify-between font-black text-[12px]">
+                <span>TOTAL CRÉDITOS (USD):</span>
+                <span>{Utils.fmtUSD(totalCreditosUSD)}</span>
+              </div>
+            </div>
 
-              <button onClick={printReport} className="btn btn-primary w-full h-11 mt-4 font-black uppercase text-[10px] shadow-lg flex items-center justify-center gap-2 no-print">
-                <Printer className="w-4 h-4" /> Imprimir 80mm
-              </button>
+            {showReport === 'Z' && (
+              <div className="pt-3 border-t border-dashed border-black/30 mt-4">
+                <div className="flex justify-between font-black text-[10px] uppercase">
+                  <span>ACUMULADO HISTÓRICO:</span>
+                  <span>{Utils.fmtUSD(state.acumuladoHistorico)}</span>
+                </div>
+              </div>
+            )}
+
+            <div className="pt-6 space-y-1 opacity-60 text-center italic border-t border-dashed border-black/30 mt-4">
+              <p>FIN DEL DOCUMENTO</p>
+              <p className="text-[8px] uppercase tracking-widest">PosVEN Pro Cloud Sync · v2.5.0</p>
             </div>
           </div>
-        </div>
-      )}
+
+          <div className="flex gap-2 mt-4 no-print">
+            <button 
+              onClick={printReport} 
+              className="flex-1 bg-white text-ink border border-line h-11 rounded-lg font-black uppercase text-[10px] shadow-sm flex items-center justify-center gap-2 hover:bg-surface-soft transition-all"
+            >
+              <Printer className="w-4 h-4" /> Imprimir 80mm
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {showAbonoModal && (
         <div className="modal show"><div className="modal-bg" onClick={() => setShowAbonoModal(null)}></div>
@@ -947,7 +958,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                 <div className="flex justify-between mb-3"><label className="text-ink text-[10px] font-black uppercase">MÉTODOS PAGO</label><button onClick={() => setShowAbonoMultiModal(true)} className="btn-icon h-6 w-6 bg-brand-gold text-white rounded shadow-sm"><Plus className="w-4 h-4"/></button></div>
                 <div className="space-y-2 max-h-[160px] overflow-y-auto">
                   {abonoPagos.map((p, idx) => (
-                    <div key={idx} className="flex justify-between items-center bg-white p-2 rounded border border-line text-[10px] font-bold"><button onClick={() => setAbnoPagos(abonoPagos.filter((_,i)=>i!==idx))}><Trash2 className="w-4 h-4 text-status-danger" /></button><span className="uppercase">{Utils.metodoLabel(p.metodo)}</span><span className="text-brand-gold-deep font-black">{Utils.fmtUSD(p.montoUSD)}</span></div>
+                    <div key={idx} className="flex justify-between items-center bg-white p-2 rounded border border-line text-[10px] font-bold"><button onClick={() => setAbonoPagos(abonoPagos.filter((_,i)=>i!==idx))}><Trash2 className="w-4 h-4 text-status-danger" /></button><span className="uppercase">{Utils.metodoLabel(p.metodo)}</span><span className="text-brand-gold-deep font-black">{Utils.fmtUSD(p.montoUSD)}</span></div>
                   ))}
                 </div>
               </div>
