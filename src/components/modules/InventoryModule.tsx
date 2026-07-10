@@ -673,7 +673,7 @@ function HistorialAjustes({ state }: { state: AppState }) {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div className={`kpi p-6 border-line shadow-md bg-white border-l-8 ${efectoNetoUSD >= 0 ? 'border-l-status-success' : 'border-l-status-danger'}`}>
+        <div className={`kpi p-6 border-line shadow-md border-l-8 ${efectoNetoUSD >= 0 ? 'bg-white border-l-status-success' : 'bg-status-danger-soft border-l-status-danger border-status-danger/20'}`}>
           <div className="text-[10px] font-black uppercase mb-1 text-ink">Variación Neta de Capital en Inventario ($)</div>
           <div className="text-3xl font-black text-ink">{Utils.fmtUSD(efectoNetoUSD)}</div>
           <div className="text-sm font-bold mt-1 italic text-ink/60">{Utils.fmtBS(efectoNetoUSD * state.tasa)}</div>
