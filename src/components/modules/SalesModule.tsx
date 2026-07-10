@@ -385,8 +385,14 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       setShowAbonoMultiModal(false);
     } else {
       if (montoUSD > (saldoRestanteUSD + 0.01)) return alert("Excede el saldo");
-      setPagos([...pagos, { metodo: metodoActual, montoUSD, montoBS }]);
-      setShowMultiModal(false);
+      const nuevosPagos = [...pagos, { metodo: metodoActual, montoUSD, montoBS }];
+      setPagos(nuevosPagos);
+      
+      // Solo cerrar el modal si el saldo total de la venta se ha completado
+      const totalPagadoLocal = nuevosPagos.reduce((s, p) => s + p.montoUSD, 0);
+      if (totalPagadoLocal >= (subtotalUSD - 0.01)) {
+        setShowMultiModal(false);
+      }
     }
     setMontoInput('');
   };
