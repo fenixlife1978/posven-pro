@@ -344,7 +344,7 @@ function ReporteVentas({ state }: { state: AppState }) {
               ) : (
                 ventas.flatMap(v => v.items.map((item, idx) => (
                   <tr key={`${v.id}-${idx}`} className="border-b border-line/30">
-                    <td className="text-xs font-bold text-ink">{idx === 0 ? Utils.fmtFecha(v.fecha) : ''}</td>
+                    <td className="text-xs font-bold text-ink">{idx === 0 ? v.fecha.slice(0, 10) : ''}</td>
                     <td className="font-black uppercase text-xs text-ink">{item.nombre}</td>
                     <td className="font-black mono text-ink text-center">{item.cantidad}</td>
                     <td className="mono font-black text-brand-gold-deep text-right">{Utils.fmtUSD(item.subtotalUSD)}</td>
@@ -658,6 +658,7 @@ function ModalProducto({ producto, state, onClose, onSave, onUpdateLists }: { pr
     stockMinimo: producto?.stockMinimo?.toString() ?? '3',
     aplicaIVA: producto?.aplicaIVA ?? false,
     isKit: producto?.isKit || false,
+    kitType: producto?.kitType || 'stock_propio',
     kitItems: producto?.kitItems || []
   });
 
@@ -795,23 +796,19 @@ function ModalProducto({ producto, state, onClose, onSave, onUpdateLists }: { pr
                   <label className="text-[10px] font-black uppercase text-ink/50 block">Nombre del Producto</label>
                   <input className="form-input h-10 font-black text-ink uppercase" value={datos.nombre} onChange={e => setDatos({...datos, nombre: e.target.value})} placeholder="Ej: RON SANTA TERESA 750ML" />
                 </div>
-                
-                <div className="grid grid-cols-1 gap-4">
-                  <div className="space-y-1">
-                    <div className="flex justify-between items-center mb-1">
-                      <label className="text-[10px] font-black uppercase text-ink/50">Categoría</label>
-                      <div className="flex gap-1">
-                        <button onClick={() => handleAddListItem('categorias')} className="text-brand-gold hover:text-brand-gold-deep"><PlusCircle className="w-3.5 h-3.5"/></button>
-                        <button onClick={() => handleRemoveListItem('categorias', datos.categoria)} className="text-status-danger"><MinusCircle className="w-3.5 h-3.5"/></button>
-                      </div>
+                <div className="space-y-1">
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="text-[10px] font-black uppercase text-ink/50">Categoría</label>
+                    <div className="flex gap-1">
+                      <button onClick={() => handleAddListItem('categorias')} className="text-brand-gold hover:text-brand-gold-deep"><PlusCircle className="w-3.5 h-3.5"/></button>
+                      <button onClick={() => handleRemoveListItem('categorias', datos.categoria)} className="text-status-danger"><MinusCircle className="w-3.5 h-3.5"/></button>
                     </div>
-                    <select className="form-select h-10 text-xs font-bold" value={datos.categoria} onChange={e => setDatos({...datos, categoria: e.target.value})}>
-                      {state.categorias.map(c => <option key={c} value={c}>{c}</option>)}
-                    </select>
                   </div>
+                  <select className="form-select h-10 text-xs font-bold" value={datos.categoria} onChange={e => setDatos({...datos, categoria: e.target.value})}>
+                    {state.categorias.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
                 </div>
               </div>
-
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1">
@@ -839,7 +836,6 @@ function ModalProducto({ producto, state, onClose, onSave, onUpdateLists }: { pr
                     </select>
                   </div>
                 </div>
-
                 <div className="grid grid-cols-2 gap-4 pt-2">
                   <div className="p-3 bg-surface-soft border border-line rounded-xl text-center">
                     <label className="text-[9px] font-black uppercase text-ink/50 block mb-1">Stock Inicial</label>
@@ -850,14 +846,8 @@ function ModalProducto({ producto, state, onClose, onSave, onUpdateLists }: { pr
                     <input className="bg-transparent border-none text-center font-black text-xl w-full text-status-danger focus:outline-none" type="text" inputMode="decimal" value={datos.stockMinimo} onChange={e => setDatos({...datos, stockMinimo: e.target.value})} />
                   </div>
                 </div>
-
                 <div className="flex items-center gap-3 p-4 bg-surface-soft rounded-xl border border-line">
-                  <button 
-                    onClick={() => setDatos({...datos, aplicaIVA: !datos.aplicaIVA})} 
-                    className={`w-12 h-6 rounded-full transition-all relative ${datos.aplicaIVA ? 'bg-status-success' : 'bg-ink/20'}`}
-                  >
-                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${datos.aplicaIVA ? 'right-1' : 'left-1'}`} />
-                  </button>
+                  <button onClick={() => setDatos({...datos, aplicaIVA: !datos.aplicaIVA})} className={`w-12 h-6 rounded-full transition-all relative ${datos.aplicaIVA ? 'bg-status-success' : 'bg-ink/20'}`}><div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${datos.aplicaIVA ? 'right-1' : 'left-1'}`} /></button>
                   <label className="text-[10px] font-black uppercase text-ink cursor-pointer" onClick={() => setDatos({...datos, aplicaIVA: !datos.aplicaIVA})}>Aplica IVA (16%)</label>
                 </div>
               </div>
@@ -867,176 +857,44 @@ function ModalProducto({ producto, state, onClose, onSave, onUpdateLists }: { pr
           {activeTab === 'precios' && (
             <div className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4 bg-surface-soft p-5 rounded-2xl border border-line shadow-inner">
-                <div className="space-y-1">
-                  <label className="text-[9px] font-black uppercase text-ink/50">Costo (USD)</label>
-                  <input
-                    className="form-input h-12 font-black text-lg bg-white border-line"
-                    type="text"
-                    inputMode="decimal"
-                    value={datos.costoUSD}
-                    onChange={(e) => handleCostoChange(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[9px] font-black uppercase text-brand-gold-deep">Margen % (Markup)</label>
-                  <input
-                    className="form-input h-12 font-black text-lg text-brand-gold-deep bg-white border-brand-gold/30"
-                    type="text"
-                    inputMode="decimal"
-                    value={datos.margen}
-                    onChange={(e) => handleMargenChange(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[9px] font-black uppercase text-status-success">Venta (USD)</label>
-                  <input
-                    className="form-input h-12 font-black text-lg text-status-success bg-white border-status-success/30"
-                    type="text"
-                    inputMode="decimal"
-                    value={datos.precioUSD}
-                    onChange={(e) => handlePriceUSDChange(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[9px] font-black uppercase text-ink">Venta (BS)</label>
-                  <input
-                    className="form-input h-12 font-black text-lg text-ink bg-white border-line"
-                    type="text"
-                    inputMode="decimal"
-                    value={datos.precioBS}
-                    onChange={(e) => handlePriceBSChange(e.target.value)}
-                  />
-                </div>
+                <div className="space-y-1"><label className="text-[9px] font-black uppercase text-ink/50">Costo ($)</label><input className="form-input h-12 font-black text-lg" type="text" value={datos.costoUSD} onChange={(e) => handleCostoChange(e.target.value)} /></div>
+                <div className="space-y-1"><label className="text-[9px] font-black uppercase text-brand-gold-deep">Margen %</label><input className="form-input h-12 font-black text-lg text-brand-gold-deep" type="text" value={datos.margen} onChange={(e) => handleMargenChange(e.target.value)} /></div>
+                <div className="space-y-1"><label className="text-[9px] font-black uppercase text-status-success">Venta ($)</label><input className="form-input h-12 font-black text-lg text-status-success" type="text" value={datos.precioUSD} onChange={(e) => handlePriceUSDChange(e.target.value)} /></div>
+                <div className="space-y-1"><label className="text-[9px] font-black uppercase text-ink">Venta (BS)</label><input className="form-input h-12 font-black text-lg text-ink" type="text" value={datos.precioBS} onChange={(e) => handlePriceBSChange(e.target.value)} /></div>
               </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                 <div className="space-y-1">
-                   <label className="text-[10px] font-black uppercase text-ink/50 block">Precio al Mayor (USD)</label>
-                   <div className="relative">
-                     <DollarSign className="absolute left-3 top-3 w-4 h-4 text-ink/30" />
-                     <input
-                       className="form-input h-10 pl-9 font-bold text-ink"
-                       type="text"
-                       inputMode="decimal"
-                       value={datos.precioMayorUSD}
-                       onChange={(e) => {
-                         const val = e.target.value;
-                         if (validarDecimal(val)) setDatos({...datos, precioMayorUSD: val});
-                       }}
-                     />
-                   </div>
-                 </div>
-                 <div className="space-y-1">
-                   <label className="text-[10px] font-black uppercase text-ink/50 block">Precio Promoción (USD)</label>
-                   <div className="relative">
-                     <Tag className="absolute left-3 top-3 w-4 h-4 text-ink/30" />
-                     <input
-                       className="form-input h-10 pl-9 font-bold text-status-info"
-                       type="text"
-                       inputMode="decimal"
-                       value={datos.precioPromoUSD}
-                       onChange={(e) => {
-                         const val = e.target.value;
-                         if (validarDecimal(val)) setDatos({...datos, precioPromoUSD: val});
-                       }}
-                     />
-                   </div>
-                 </div>
-                 <div className="space-y-1">
-                   <label className="text-[10px] font-black uppercase text-ink/50 block">Precio con Descuento (USD)</label>
-                   <div className="relative">
-                     <TrendingUp className="absolute left-3 top-3 w-4 h-4 text-ink/30" />
-                     <input
-                       className="form-input h-10 pl-9 font-bold text-status-danger"
-                       type="text"
-                       inputMode="decimal"
-                       value={datos.precioDescuentoUSD}
-                       onChange={(e) => {
-                         const val = e.target.value;
-                         if (validarDecimal(val)) setDatos({...datos, precioDescuentoUSD: val});
-                       }}
-                     />
-                   </div>
-                 </div>
-              </div>
-
-              <div className="p-4 bg-brand-gold-soft/20 rounded-xl border border-brand-gold/10 flex items-start gap-3">
-                 <Info className="w-5 h-5 text-brand-gold shrink-0 mt-0.5" />
-                 <p className="text-[10px] text-brand-gold-deep font-bold leading-tight">
-                   El recalculo tridireccional utiliza la tasa actual del sistema (Bs. {state.tasa.toFixed(2)}) y la fórmula de Markup sobre venta para proteger sus beneficios operativos.
-                 </p>
-              </div>
+              <div className="p-4 bg-brand-gold-soft/20 rounded-xl border border-brand-gold/10 flex items-start gap-3"><Info className="w-5 h-5 text-brand-gold shrink-0 mt-0.5" /><p className="text-[10px] text-brand-gold-deep font-bold leading-tight">El recalculo utiliza la tasa actual (Bs. {state.tasa.toFixed(2)}) y Markup sobre venta.</p></div>
             </div>
           )}
 
           {activeTab === 'kit' && (
             <div className="space-y-6">
-              <div className="flex items-center gap-3 p-4 bg-ink text-white rounded-xl">
-                <button 
-                  onClick={() => setDatos({...datos, isKit: !datos.isKit})} 
-                  className={`w-12 h-6 rounded-full transition-all relative ${datos.isKit ? 'bg-brand-gold' : 'bg-white/20'}`}
-                >
-                  <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${datos.isKit ? 'right-1' : 'left-1'}`} />
-                </button>
-                <label className="text-[11px] font-black uppercase tracking-widest cursor-pointer" onClick={() => setDatos({...datos, isKit: !datos.isKit})}>Habilitar como KIT / COMBO</label>
+              <div className="flex flex-col gap-4 p-4 bg-ink text-white rounded-xl">
+                <div className="flex items-center gap-3">
+                  <button onClick={() => setDatos({...datos, isKit: !datos.isKit})} className={`w-12 h-6 rounded-full transition-all relative ${datos.isKit ? 'bg-brand-gold' : 'bg-white/20'}`}><div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${datos.isKit ? 'right-1' : 'left-1'}`} /></button>
+                  <label className="text-[11px] font-black uppercase tracking-widest cursor-pointer" onClick={() => setDatos({...datos, isKit: !datos.isKit})}>Habilitar como KIT / COMBO</label>
+                </div>
+                {datos.isKit && (
+                  <div className="flex gap-6 border-t border-white/10 pt-4 mt-1">
+                    <div className="flex items-center gap-2"><input type="radio" id="sp" name="kitType" checked={datos.kitType === 'stock_propio'} onChange={() => setDatos({...datos, kitType: 'stock_propio'})} className="accent-brand-gold w-4 h-4" /><label htmlFor="sp" className="text-[9px] font-black uppercase cursor-pointer">Stock Propio (Pre-armado)</label></div>
+                    <div className="flex items-center gap-2"><input type="radio" id="sc" name="kitType" checked={datos.kitType === 'stock_componentes'} onChange={() => setDatos({...datos, kitType: 'stock_componentes'})} className="accent-brand-gold w-4 h-4" /><label htmlFor="sc" className="text-[9px] font-black uppercase cursor-pointer">Depende de Componentes</label></div>
+                  </div>
+                )}
               </div>
-
               {datos.isKit && (
                 <div className="space-y-4 animate-in slide-in-from-top-4 duration-300">
-                  <div className="relative">
-                    <Search className="absolute left-3 top-3 w-4 h-4 text-ink/30" />
-                    <input className="form-input h-12 pl-10 text-xs font-black uppercase" placeholder="Buscar componentes para el combo..." value={kitSearch} onChange={e => setKitSearch(e.target.value)} />
-                    {filteredProdsForKit.length > 0 && (
-                      <div className="absolute top-full left-0 right-0 bg-white border border-line rounded-lg shadow-2xl z-50 mt-1 overflow-hidden">
-                        {filteredProdsForKit.map(pk => (
-                          <div key={pk.id} onClick={() => { setDatos({...datos, kitItems: [...datos.kitItems, { productoId: pk.id, nombre: pk.nombre, cantidad: 1 }]}); setKitSearch(''); }} className="p-3 border-b border-line hover:bg-brand-gold-soft cursor-pointer flex justify-between items-center">
-                            <span className="text-xs font-black text-ink uppercase">{pk.nombre}</span>
-                            <Plus className="w-4 h-4 text-brand-gold"/>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="card border-line shadow-sm overflow-hidden">
-                    <div className="table-wrap">
-                      <table>
-                        <thead className="bg-surface-soft">
-                          <tr><th className="text-[10px] font-black uppercase">Componente</th><th className="text-[10px] font-black uppercase text-center">Cant</th><th className="text-[10px]"></th></tr>
-                        </thead>
-                        <tbody>
-                          {datos.kitItems.map((ki: KitItem, index: number) => (
-                            <tr key={index} className="border-b border-line/30">
-                              <td className="text-[11px] font-black uppercase text-ink">{ki.nombre}</td>
-                              <td className="text-center">
-                                <input className="w-12 h-8 text-center font-black bg-surface-soft rounded border border-line" type="number" value={ki.cantidad} onChange={e => {
-                                  const n = [...datos.kitItems];
-                                  n[index].cantidad = parseInt(e.target.value) || 1;
-                                  setDatos({...datos, kitItems: n});
-                                }} />
-                              </td>
-                              <td className="text-center"><button onClick={() => setDatos({...datos, kitItems: datos.kitItems.filter((_:any, i:number) => i !== index)})} className="text-status-danger"><Trash2 className="w-4 h-4"/></button></td>
-                            </tr>
-                          ))}
-                          {datos.kitItems.length === 0 && (
-                            <tr><td colSpan={3} className="py-10 text-center text-ink/20 font-black uppercase italic text-[10px]">Añada productos para conformar el combo</td></tr>
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
+                  <div className="relative"><Search className="absolute left-3 top-3 w-4 h-4 text-ink/30" /><input className="form-input h-12 pl-10 text-xs font-black uppercase" placeholder="Buscar componentes..." value={kitSearch} onChange={e => setKitSearch(e.target.value)} />{filteredProdsForKit.length > 0 && (<div className="absolute top-full left-0 right-0 bg-white border border-line rounded-lg shadow-2xl z-50 mt-1 overflow-hidden">{filteredProdsForKit.map(pk => (<div key={pk.id} onClick={() => { setDatos({...datos, kitItems: [...datos.kitItems, { productoId: pk.id, nombre: pk.nombre, cantidad: 1 }]}); setKitSearch(''); }} className="p-3 border-b border-line hover:bg-brand-gold-soft cursor-pointer flex justify-between items-center"><span className="text-xs font-black text-ink uppercase">{pk.nombre}</span><Plus className="w-4 h-4 text-brand-gold"/></div>))}</div>)}</div>
+                  <div className="card border-line shadow-sm overflow-hidden"><div className="table-wrap"><table><thead className="bg-surface-soft"><tr><th className="text-[10px] font-black uppercase">Componente</th><th className="text-[10px] font-black uppercase text-center">Cant</th><th></th></tr></thead><tbody>
+                    {datos.kitItems.map((ki: KitItem, index: number) => (
+                      <tr key={index} className="border-b border-line/30"><td className="text-[11px] font-black uppercase text-ink">{ki.nombre}</td><td className="text-center"><input className="w-12 h-8 text-center font-black bg-surface-soft rounded border border-line" type="number" value={ki.cantidad} onChange={e => { const n = [...datos.kitItems]; n[index].cantidad = parseInt(e.target.value) || 1; setDatos({...datos, kitItems: n}); }} /></td><td className="text-center"><button onClick={() => setDatos({...datos, kitItems: datos.kitItems.filter((_:any, i:number) => i !== index)})} className="text-status-danger"><Trash2 className="w-4 h-4"/></button></td></tr>
+                    ))}
+                    {datos.kitItems.length === 0 && (<tr><td colSpan={3} className="py-10 text-center text-ink/20 font-black uppercase italic text-[10px]">Añada productos para conformar el combo</td></tr>)}
+                  </tbody></table></div></div>
                 </div>
               )}
             </div>
           )}
         </div>
-
-        <div className="modal-foot p-5 bg-surface-soft border-t border-line flex justify-end gap-3 no-print">
-          <button className="btn btn-secondary px-8 font-black uppercase text-[10px]" onClick={onClose}>Cancelar Operación</button>
-          <button className="btn btn-primary px-10 font-black uppercase text-[10px] shadow-lg flex items-center gap-2" onClick={handleSave}>
-            <Check className="w-4 h-4" /> {producto ? 'GUARDAR CAMBIOS' : 'CREAR NUEVO PRODUCTO'}
-          </button>
-        </div>
+        <div className="modal-foot p-5 bg-surface-soft border-t border-line flex justify-end gap-3 no-print"><button className="btn btn-secondary px-8 font-black uppercase text-[10px]" onClick={onClose}>Cancelar Operación</button><button className="btn btn-primary px-10 font-black uppercase text-[10px] shadow-lg flex items-center gap-2" onClick={handleSave}><Check className="w-4 h-4" /> {producto ? 'GUARDAR CAMBIOS' : 'CREAR NUEVO PRODUCTO'}</button></div>
       </div>
     </div>
   );
