@@ -62,7 +62,6 @@ export default function UsersModule() {
         toast({ title: "Usuario actualizado con éxito" });
       } else {
         // Simulación de creación automática en Firestore
-        // En una implementación real con Admin SDK, aquí se llamaría a la creación de Auth también.
         const newId = formData.email.replace(/\W/g, '_');
         const userRef = doc(db, 'users', newId);
         await setDoc(userRef, {
@@ -146,7 +145,9 @@ export default function UsersModule() {
                         {u.rol}
                       </span>
                     </td>
-                    <td className="text-ink font-bold text-xs opacity-60">{u.fechaCreacion.slice(0,10)}</td>
+                    <td className="text-ink font-bold text-xs opacity-60">
+                      {u.fechaCreacion ? u.fechaCreacion.slice(0, 10) : '-'}
+                    </td>
                     <td className="text-center">
                        <div className="flex justify-center gap-2">
                           <button onClick={() => handleEdit(u)} className="btn-icon h-8 w-8 text-ink hover:text-brand-gold" title="Modificar Nombre"><Edit2 className="w-4 h-4"/></button>

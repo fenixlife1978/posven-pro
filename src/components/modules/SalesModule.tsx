@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -1462,8 +1461,6 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
           </div>
         </div>
       )}
-
-      {/* Modal Abono Individual (Omitido por brevedad en este bloque, se mantiene igual funcionalmente) */}
     </div>
   );
 }
