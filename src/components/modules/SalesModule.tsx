@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -1376,6 +1375,65 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                   )}
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL REPORTE Y/Z */}
+      {showReport && (
+        <div className="modal show">
+          <div className="modal-bg" onClick={() => setShowReport(null)}></div>
+          <div className="modal-box bg-white max-w-sm border-2 border-line">
+            <div className="modal-head py-3 px-4 border-b border-line flex justify-between items-center">
+              <h3 className="text-ink text-xs font-black uppercase">REPORTE FISCAL {showReport}</h3>
+              <button onClick={() => setShowReport(null)} className="text-ink/40 hover:text-ink"><X className="w-4 h-4"/></button>
+            </div>
+            <div className="modal-body p-4 space-y-4">
+               {/* Contenedor para impresión tradicional */}
+               <div ref={reportPrintRef} className="bg-white p-4 font-mono text-[10px] text-black border border-line shadow-inner leading-tight">
+                  <div className="text-center border-b border-dashed border-black pb-2 mb-2">
+                    <p className="font-bold text-sm">{state.empresa.nombre.toUpperCase()}</p>
+                    <p>RIF: {state.empresa.rif}</p>
+                    <p className="text-[9px]">{state.empresa.direccion}</p>
+                  </div>
+                  <div className="text-center font-bold mb-2">REPORTE DE VENTAS "{showReport}"</div>
+                  <div className="mb-2">
+                    <p>FECHA: {Utils.fmtFecha(Utils.hoy())}</p>
+                    <p>HORA: {Utils.ahora().split('T')[1].slice(0, 8)}</p>
+                    {showReport === 'Z' && state.reportesZ.length > 0 && (
+                      <p className="font-bold">REPORTE Z #: {String(state.reportesZ[state.reportesZ.length-1].numeroZ).padStart(4, '0')}</p>
+                    )}
+                  </div>
+                  <div className="border-t border-dashed border-black pt-1 mb-1">
+                    <p className="font-bold">RESUMEN OPERACIONES:</p>
+                    <div className="flex justify-between"><span>VENTAS DIRECTAS:</span><span>{Utils.fmtUSD(rVDirectas)}</span></div>
+                    <div className="flex justify-between"><span>COBROS DEUDA:</span><span>{Utils.fmtUSD(rVCobros)}</span></div>
+                  </div>
+                  <div className="border-t border-dashed border-black pt-1 mb-1">
+                    <p className="font-bold">DESGLOSE MÉTODOS:</p>
+                    {Object.entries(breakdown).map(([metodo, montos]) => (
+                      <div key={metodo} className="flex justify-between">
+                        <span className="uppercase">{Utils.metodoLabel(metodo)}:</span>
+                        <span>{(metodo === 'efectivo_usd' || metodo === 'zelle') ? Utils.fmtUSD(montos.usd) : Utils.fmtBS(montos.bs)}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="border-t border-black pt-1 mt-1 font-bold text-xs">
+                    <div className="flex justify-between"><span>TOTAL CAJA BS:</span><span>{Utils.fmtBS(rTotalBS)}</span></div>
+                    <div className="flex justify-between"><span>TOTAL CAJA USD:</span><span>{Utils.fmtUSD(rTotalUSD)}</span></div>
+                  </div>
+                  {showReport === 'Z' && state.reportesZ.length > 0 && (
+                    <div className="border-t border-dashed border-black pt-1 mt-1 text-[9px]">
+                      <p>ACUMULADO: {Utils.fmtUSD(state.reportesZ[state.reportesZ.length-1].acumuladoHistoricoUSD)}</p>
+                    </div>
+                  )}
+                  <div className="text-center mt-3 border-t border-dashed border-black pt-2">*** DOCUMENTO FISCAL ***</div>
+               </div>
+            </div>
+            <div className="modal-foot p-4 bg-surface-soft border-t border-line flex gap-2">
+               <button className="btn btn-secondary flex-1 font-black uppercase text-[10px]" onClick={() => setShowReport(null)}>Cerrar</button>
+               <button className="btn btn-primary flex-1 font-black uppercase text-[10px] gap-2" onClick={() => handleNativeReportPrint(showReport)}><Printer className="w-3.5 h-3.5" /> Imprimir</button>
             </div>
           </div>
         </div>
