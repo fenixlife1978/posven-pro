@@ -793,6 +793,14 @@ function ModalProducto({ producto, state, onClose, onSave, onUpdateLists }: { pr
 
   const handleSave = () => {
     if (!datos.nombre || !datos.codigo) return alert('Nombre y Código requeridos');
+    
+    // Validación de duplicidad de código
+    const existe = state.productos.find(p => p.activo && p.codigo === datos.codigo && p.id !== producto?.id);
+    if (existe) {
+      alert(`ERROR: El código "${datos.codigo}" ya se encuentra registrado para el producto "${existe.nombre}". No se permiten duplicados por seguridad de inventario.`);
+      return;
+    }
+
     onSave({
       ...datos,
       costoUSD: parseFloat(datos.costoUSD) || 0,
