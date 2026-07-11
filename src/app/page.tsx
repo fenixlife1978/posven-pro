@@ -30,7 +30,7 @@ import { auth, db } from '@/lib/firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { doc, getDoc, updateDoc, onSnapshot } from 'firebase/firestore';
 import DashboardModule from '@/components/modules/DashboardModule';
-import { InventoryModule } from '@/components/modules/InventoryModule';
+import InventoryModule  from '@/components/modules/InventoryModule';
 import SalesModule from '@/components/modules/SalesModule';
 import PurchaseModule from '@/components/modules/PurchaseModule';
 import CxCModule from '@/components/modules/CxCModule';
