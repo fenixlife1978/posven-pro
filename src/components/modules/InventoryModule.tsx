@@ -498,6 +498,14 @@ function HistorialAjustes({ state }: { state: AppState }) {
     return acc + (esEntrada ? (m.cantidad * costo) : -(Math.abs(m.cantidad) * costo));
   }, 0));
 
+  const handleExport = () => {
+    const dataForPDF = ajustes.map(m => {
+      const p = state.productos.find(prod => prod.id === m.productoId);
+      return { ...m, nombreProd: p?.nombre || 'ITEM ELIMINADO' };
+    });
+    exportarPDFHistorialAjustes(dataForPDF, state.empresa, efectoNetoUSD);
+  };
+
   return (
     <div className="space-y-4">
       <div className={`kpi p-6 border-line shadow-md border-l-8 ${efectoNetoUSD < 0 ? 'bg-status-danger-soft border-l-status-danger' : 'bg-white border-l-status-success'}`}>
@@ -510,6 +518,9 @@ function HistorialAjustes({ state }: { state: AppState }) {
           <h3 className="text-white font-black text-xs uppercase italic tracking-tighter flex items-center gap-2">
             <ClipboardList className="w-5 h-5 text-brand-gold" /> BITÁCORA DE AJUSTES DE ALMACÉN
           </h3>
+          <button className="btn btn-secondary h-8 px-4 font-black uppercase text-[9px] shadow-sm" onClick={handleExport}>
+            <FileText className="w-3.5 h-3.5" /> Exportar Ajustes
+          </button>
         </div>
         <div className="table-wrap">
           <table>
@@ -548,6 +559,20 @@ function ReporteConsumo({ state }: { state: AppState }) {
     return acc + (Math.abs(m.cantidad) * (p?.costoUSD || 0));
   }, 0));
 
+  const handleExport = () => {
+    const dataForPDF = movs.map(m => {
+      const p = state.productos.find(prod => prod.id === m.productoId);
+      const costo = p?.costoUSD || 0;
+      return { 
+        ...m, 
+        nombreProd: p?.nombre || 'ELIMINADO', 
+        costoUnit: costo, 
+        subtotal: Math.abs(m.cantidad) * costo 
+      };
+    });
+    exportarPDFConsumoInterno(dataForPDF, state.empresa, totalPerdidaUSD);
+  };
+
   return (
     <div className="space-y-6">
       <div className="card shadow-lg border-line rounded-xl overflow-hidden">
@@ -555,9 +580,14 @@ function ReporteConsumo({ state }: { state: AppState }) {
           <h3 className="text-white font-black text-xs uppercase italic tracking-tighter flex items-center gap-2">
             <TrendingUp className="w-5 h-5 text-brand-gold" /> SALIDAS POR CONSUMO INTERNO
           </h3>
-          <div className="text-right">
-            <span className="text-[9px] text-white/50 block font-black uppercase">Pérdida Total</span>
-            <span className="text-brand-gold font-black text-sm">{Utils.fmtUSD(totalPerdidaUSD)}</span>
+          <div className="flex items-center gap-4">
+            <div className="text-right">
+              <span className="text-[9px] text-white/50 block font-black uppercase">Pérdida Total</span>
+              <span className="text-brand-gold font-black text-sm">{Utils.fmtUSD(totalPerdidaUSD)}</span>
+            </div>
+            <button className="btn btn-secondary h-8 px-4 font-black uppercase text-[9px] shadow-sm" onClick={handleExport}>
+              <FileText className="w-3.5 h-3.5" /> PDF
+            </button>
           </div>
         </div>
         <div className="table-wrap">

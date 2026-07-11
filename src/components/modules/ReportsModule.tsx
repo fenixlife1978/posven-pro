@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { AppState } from '@/lib/types';
 import { Utils } from '@/lib/db-store';
 import { FileText, TrendingUp, Calendar, Printer, ArrowLeft, Monitor } from 'lucide-react';
+import { exportarPDFVentasDetallado } from '@/lib/pdf-generator';
 
 export default function ReportsModule({ state }: { state: AppState }) {
   const [tab, setTab] = useState('ventas');
@@ -13,7 +14,6 @@ export default function ReportsModule({ state }: { state: AppState }) {
   
   // Filtrado de Ventas por Fecha y Terminal
   const ventasFiltradas = (state.ventas || []).filter(v => {
-    // Normalizamos la fecha de la venta para comparar solo YYYY-MM-DD
     const fechaVenta = v.fecha ? v.fecha.split('T')[0] : '';
     const matchesFecha = fechaVenta >= desde && fechaVenta <= hasta;
     const matchesTerminal = terminalFilter === 'all' ? true : v.terminalId === terminalFilter;
@@ -30,6 +30,16 @@ export default function ReportsModule({ state }: { state: AppState }) {
     }, 0);
   }, 0);
   const gananciaNeta = totalVentasUSD - totalCostoVentas;
+
+  const handleExportPDF = () => {
+    const totalVendidos = ventasFiltradas.reduce((acc, v) => acc + v.items.reduce((sum, item) => sum + item.cantidad, 0), 0);
+    exportarPDFVentasDetallado(
+      ventasFiltradas, 
+      state.empresa, 
+      `Desde ${Utils.fmtFecha(desde)} Hasta ${Utils.fmtFecha(hasta)}`, 
+      { totalVendidos }
+    );
+  };
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto w-full">
@@ -94,12 +104,18 @@ export default function ReportsModule({ state }: { state: AppState }) {
                 />
               </div>
             </div>
-            <div className="flex-1 text-right">
+            <div className="flex-1 flex justify-end gap-2">
               <button 
-                className="btn btn-secondary h-10 px-6 border-line text-ink font-black uppercase text-[10px] tracking-widest flex items-center gap-2 ml-auto hover:bg-surface-soft" 
+                className="btn btn-secondary h-10 px-6 border-line text-ink font-black uppercase text-[10px] tracking-widest flex items-center gap-2 hover:bg-surface-soft" 
+                onClick={handleExportPDF}
+              >
+                <FileText className="w-4 h-4" /> Exportar PDF
+              </button>
+              <button 
+                className="btn btn-secondary h-10 px-6 border-line text-ink font-black uppercase text-[10px] tracking-widest flex items-center gap-2 hover:bg-surface-soft" 
                 onClick={() => window.print()}
               >
-                <Printer className="w-4 h-4" /> Imprimir Reporte
+                <Printer className="w-4 h-4" /> Imprimir Vista
               </button>
             </div>
           </div>

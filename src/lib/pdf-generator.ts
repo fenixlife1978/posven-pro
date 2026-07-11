@@ -1,9 +1,10 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { Product, Movimiento, Sale } from './types';
+import { Product, Movimiento, Sale, Supplier } from './types';
 
 // Helper para formatear moneda en USD
 const fmt = (v: number) => '$' + Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmt4 = (v: number) => '$' + Number(v).toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
 
 interface CompanyInfo {
   nombre: string;
@@ -14,7 +15,6 @@ interface CompanyInfo {
 
 /**
  * Dibuja el encabezado profesional de forma dinámica
- * Retorna la coordenada Y donde termina la cabecera para que el contenido empiece correctamente.
  */
 const drawHeader = (doc: jsPDF, title: string, empresa: CompanyInfo): number => {
   const pageWidth = doc.internal.pageSize.getWidth();
@@ -30,7 +30,6 @@ const drawHeader = (doc: jsPDF, title: string, empresa: CompanyInfo): number => 
   const companyLines = doc.splitTextToSize(companyName, usableWidth * 0.55);
   doc.text(companyLines, margin, 18);
   
-  // Calculamos el Y dinámico después del nombre (aprox 6.5mm por línea de 16pt)
   let leftY = 18 + (companyLines.length * 6.5);
 
   doc.setFont('helvetica', 'normal');
@@ -41,90 +40,85 @@ const drawHeader = (doc: jsPDF, title: string, empresa: CompanyInfo): number => 
   const addressLines = doc.splitTextToSize(address, usableWidth * 0.55);
   doc.text(addressLines, margin, leftY);
   
-  // El RIF y Teléfono se colocan después de las líneas de dirección (aprox 3.5mm por línea de 8pt)
   leftY += (addressLines.length * 3.5);
   doc.text(`RIF: ${empresa.rif} | TEL: ${empresa.telefono}`, margin, leftY);
-  leftY += 5; // Margen de seguridad inferior
+  leftY += 5;
 
   // 2. Bloque Derecho: Título y Fecha
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(13);
-  doc.setTextColor(0, 0, 0);
+  doc.setTextColor(200, 149, 46); // Color Brand Gold
   
   const titleLines = doc.splitTextToSize(title.toUpperCase(), usableWidth * 0.40);
   doc.text(titleLines, pageWidth - margin, 18, { align: 'right' });
   
-  // La fecha se coloca después del título
   let rightY = 18 + (titleLines.length * 5.5);
   
   const now = new Date().toLocaleString('es-VE', { timeZone: 'America/Caracas' });
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
+  doc.setTextColor(100, 100, 100);
   doc.text(`GENERADO EL: ${now}`, pageWidth - margin, rightY, { align: 'right' });
   rightY += 5;
 
-  // 3. Línea divisoria basada en el punto más bajo de ambos bloques
   const headerBottomY = Math.max(leftY, rightY) + 2;
   doc.setDrawColor(200, 200, 200);
   doc.setLineWidth(0.5);
   doc.line(margin, headerBottomY, pageWidth - margin, headerBottomY);
   
-  return headerBottomY + 5; // Retornamos el punto de inicio para el contenido
+  return headerBottomY + 5;
 };
 
-// 1. Reporte de Inventario Simple (Listado)
+// 1. Reporte de Inventario Simple (Catálogo)
 export const generarPDFInventarioSimple = (products: Product[], empresa: CompanyInfo) => {
   const doc = new jsPDF('p', 'mm', 'letter');
-  const startY = drawHeader(doc, 'Listado de Productos', empresa);
-
-  const tableRows = products.map(p => [
-    p.codigo,
-    p.nombre.toUpperCase(),
-    p.categoria.toUpperCase(),
-    fmt(p.costoUSD),
-    fmt(p.precioUSD),
-    p.stock.toString()
-  ]);
+  const startY = drawHeader(doc, 'Catálogo Maestro de Productos', empresa);
 
   autoTable(doc, {
     startY: startY,
-    head: [['CÓDIGO', 'NOMBRE', 'CATEGORÍA', 'COSTO', 'PRECIO', 'STOCK']],
-    body: tableRows,
-    headStyles: { fillColor: [40, 40, 40], textColor: [255, 255, 255] },
-    styles: { fontSize: 8 },
+    head: [['CÓDIGO', 'NOMBRE DEL PRODUCTO', 'CATEGORÍA', 'COSTO (USD)', 'VENTA (USD)', 'STOCK']],
+    body: products.map(p => [
+      p.codigo,
+      p.nombre.toUpperCase(),
+      p.categoria.toUpperCase(),
+      fmt(p.costoUSD),
+      fmt(p.precioUSD),
+      p.stock.toString()
+    ]),
+    headStyles: { fillColor: [20, 20, 20], textColor: [255, 255, 255], fontStyle: 'bold' },
+    styles: { fontSize: 8, cellPadding: 3 },
+    alternateRowStyles: { fillColor: [248, 246, 240] },
     margin: { left: 15, right: 15 }
   });
 
-  doc.save(`Inventario_Basico_${new Date().getTime()}.pdf`);
+  doc.save(`Inventario_Maestro_${new Date().getTime()}.pdf`);
 };
 
 // 2. Reporte General (Detallado por Grupo)
 export const exportarPDFInventarioGeneral = (productos: Product[], empresa: CompanyInfo, groupBy: string, totals: any) => {
   const doc = new jsPDF('p', 'mm', 'letter');
-  const headerY = drawHeader(doc, `Inventario Detallado por ${groupBy}`, empresa);
+  const headerY = drawHeader(doc, `Inventario Valorizado por ${groupBy}`, empresa);
 
-  // Resumen Ejecutivo
-  doc.setFillColor(240, 240, 240);
+  doc.setFillColor(248, 246, 240);
   doc.rect(15, headerY, 186, 12, 'F');
   doc.setFontSize(9);
   doc.setFont('helvetica', 'bold');
-  doc.setTextColor(0, 0, 0);
-  doc.text(`VALOR TOTAL AL COSTO: ${fmt(totals.costo)}`, 20, headerY + 8);
+  doc.setTextColor(20, 20, 20);
+  doc.text(`VALOR TOTAL AL COSTO (CPP): ${fmt(totals.costo)}`, 20, headerY + 8);
   doc.text(`VALOR TOTAL A LA VENTA: ${fmt(totals.venta)}`, 110, headerY + 8);
 
   const uniqueGroups = Array.from(new Set(productos.map(p => (p[groupBy as keyof Product] as string) || 'SIN ASIGNAR'))).sort();
-
   let currentY = headerY + 16;
 
   uniqueGroups.forEach((groupName) => {
     const groupProds = productos.filter(p => ((p[groupBy as keyof Product] as string) || 'SIN ASIGNAR') === groupName);
     
-    if (currentY > 240) {
+    if (currentY > 230) {
       doc.addPage();
-      currentY = drawHeader(doc, `Inventario Detallado por ${groupBy}`, empresa);
+      currentY = drawHeader(doc, `Inventario Valorizado por ${groupBy}`, empresa);
     }
 
-    doc.setFillColor(60, 60, 60);
+    doc.setFillColor(200, 149, 46);
     doc.rect(15, currentY, 186, 7, 'F');
     doc.setFontSize(8);
     doc.setTextColor(255, 255, 255);
@@ -141,91 +135,96 @@ export const exportarPDFInventarioGeneral = (productos: Product[], empresa: Comp
         p.stock,
         fmt(p.costoUSD * p.stock)
       ]),
-      headStyles: { fillColor: [100, 100, 100] },
-      styles: { fontSize: 7 },
-      margin: { left: 15, right: 15 },
-      theme: 'grid'
+      headStyles: { fillColor: [40, 40, 40] },
+      styles: { fontSize: 7.5 },
+      theme: 'grid',
+      margin: { left: 15, right: 15 }
     });
 
-    currentY = (doc as any).lastAutoTable.finalY + 5;
+    currentY = (doc as any).lastAutoTable.finalY + 8;
   });
 
-  doc.save(`Reporte_Inventario_Detallado_${groupBy}_${new Date().getTime()}.pdf`);
+  doc.save(`Reporte_Inventario_Valorizado_${new Date().getTime()}.pdf`);
 };
 
-// 3. Reporte de Ventas Detallado
+// 3. Reporte de Ventas Administrativo
 export const exportarPDFVentasDetallado = (ventas: any[], empresa: CompanyInfo, periodo: string, stats: any) => {
   const doc = new jsPDF('p', 'mm', 'letter');
-  const startY = drawHeader(doc, 'Reporte de Ventas Detallado', empresa);
+  const startY = drawHeader(doc, 'Reporte Administrativo de Ventas', empresa);
 
-  doc.setFontSize(10);
-  doc.setTextColor(0, 0, 0);
-  doc.text(`PERIODO: ${periodo.toUpperCase()}`, 15, startY + 5);
-  doc.text(`VOLUMEN TOTAL: ${stats.totalVendidos} UNIDADES`, 15, startY + 10);
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'bold');
+  doc.text(`PERIODO AUDITADO: ${periodo.toUpperCase()}`, 15, startY + 5);
+  doc.text(`VOLUMEN TOTAL: ${stats.totalVendidos} UNIDADES VENDIDAS`, 15, startY + 10);
 
   autoTable(doc, {
-    startY: startY + 18,
-    head: [['FECHA', 'PRODUCTO', 'MÉTODO', 'CANT.', 'PRECIO UNIT.', 'TOTAL (USD)']],
+    startY: startY + 15,
+    head: [['FECHA', 'RECIBO', 'PRODUCTO', 'MÉTODO', 'CANT.', 'P. UNIT.', 'TOTAL (USD)']],
     body: ventas.flatMap(v => v.items.map((item: any, idx: number) => [
       idx === 0 ? v.fecha.slice(0, 10) : '',
+      idx === 0 ? v.id : '',
       item.nombre.toUpperCase(),
       v.metodoPago.toUpperCase(),
       item.cantidad,
       fmt(item.precioUnitUSD),
       fmt(item.subtotalUSD)
     ])),
-    headStyles: { fillColor: [30, 30, 30] },
-    styles: { fontSize: 7 }
+    headStyles: { fillColor: [20, 20, 20] },
+    styles: { fontSize: 7 },
+    alternateRowStyles: { fillColor: [250, 250, 250] }
   });
 
-  doc.save(`Ventas_${periodo.replace(/\s+/g, '_')}_${new Date().getTime()}.pdf`);
+  doc.save(`Reporte_Ventas_${new Date().getTime()}.pdf`);
 };
 
-// 4. Reporte de Kardex (Ficha de Producto)
+// 4. Reporte de Kardex (Ficha Técnica)
 export const exportarPDFKardex = (producto: Product, movimientos: Movimiento[], empresa: CompanyInfo) => {
   const doc = new jsPDF('p', 'mm', 'letter');
-  const startY = drawHeader(doc, 'Kardex de Movimientos', empresa);
+  const startY = drawHeader(doc, 'Kardex Histórico de Movimientos', empresa);
 
+  doc.setFillColor(248, 246, 240);
+  doc.rect(15, startY, 186, 12, 'F');
   doc.setFontSize(10);
   doc.setFont('helvetica', 'bold');
-  doc.setTextColor(0, 0, 0);
-  doc.text(`PRODUCTO: ${producto.nombre.toUpperCase()}`, 15, startY + 5);
-  doc.setFont('helvetica', 'normal');
-  doc.text(`CÓDIGO: ${producto.codigo} | STOCK ACTUAL: ${producto.stock}`, 15, startY + 10);
+  doc.setTextColor(200, 149, 46);
+  doc.text(`ITEM: ${producto.nombre.toUpperCase()}`, 20, startY + 8);
+  doc.setFontSize(8);
+  doc.setTextColor(100, 100, 100);
+  doc.text(`CÓDIGO: ${producto.codigo} | STOCK ACTUAL: ${producto.stock}`, 120, startY + 8);
 
   autoTable(doc, {
-    startY: startY + 18,
-    head: [['FECHA / HORA', 'TIPO MOVIMIENTO', 'CANT.', 'ANTES', 'DESPUÉS', 'REFERENCIA']],
+    startY: startY + 16,
+    head: [['FECHA Y HORA', 'TIPO DE OPERACIÓN', 'CANT.', 'STOCK ANTERIOR', 'NUEVO STOCK', 'REFERENCIA']],
     body: movimientos.map(m => [
       m.fecha.replace('T', ' ').slice(0, 16),
       m.tipo.replace('_', ' ').toUpperCase(),
       m.cantidad > 0 ? `+${m.cantidad}` : m.cantidad,
       m.stockAntes,
       m.stockDespues,
-      m.referencia
+      m.referencia.toUpperCase()
     ]),
-    headStyles: { fillColor: [30, 30, 30] },
-    styles: { fontSize: 7 }
+    headStyles: { fillColor: [40, 40, 40] },
+    styles: { fontSize: 7, cellPadding: 2.5 }
   });
 
   doc.save(`Kardex_${producto.codigo}_${new Date().getTime()}.pdf`);
 };
 
-// 5. Historial de Ajustes
+// 5. Historial de Ajustes de Almacén
 export const exportarPDFHistorialAjustes = (ajustes: any[], empresa: CompanyInfo, efectoNeto: number) => {
   const doc = new jsPDF('p', 'mm', 'letter');
-  const startY = drawHeader(doc, 'Historial Cronológico de Ajustes', empresa);
+  const startY = drawHeader(doc, 'Bitácora de Ajustes Manuales', empresa);
 
-  doc.setFillColor(240, 240, 240);
+  doc.setFillColor(efectoNeto < 0 ? [255, 235, 235] : [235, 255, 235]);
   doc.rect(15, startY, 186, 10, 'F');
   doc.setFontSize(9);
   doc.setFont('helvetica', 'bold');
-  doc.setTextColor(0, 0, 0);
-  doc.text(`EFECTO NETO EN VALOR INVENTARIO: ${fmt(efectoNeto)}`, 20, startY + 6.5);
+  doc.setTextColor(20, 20, 20);
+  doc.text(`VARIACIÓN NETA DE CAPITAL EN INVENTARIO: ${fmt(efectoNeto)}`, 20, startY + 6.5);
 
   autoTable(doc, {
     startY: startY + 15,
-    head: [['FECHA', 'PRODUCTO', 'TIPO', 'CANT.', 'ANTES', 'DESPUÉS', 'REFERENCIA']],
+    head: [['FECHA', 'PRODUCTO AJUSTADO', 'MOVIMIENTO', 'CANT.', 'ANT.', 'ACT.', 'REFERENCIA']],
     body: ajustes.map(m => [
       m.fecha.replace('T', ' ').slice(0, 16),
       m.nombreProd.toUpperCase(),
@@ -233,31 +232,30 @@ export const exportarPDFHistorialAjustes = (ajustes: any[], empresa: CompanyInfo
       m.cantidad > 0 ? `+${m.cantidad}` : m.cantidad,
       m.stockAntes,
       m.stockDespues,
-      m.referencia
+      m.referencia.toUpperCase()
     ]),
-    headStyles: { fillColor: [30, 30, 30] },
+    headStyles: { fillColor: [40, 40, 40] },
     styles: { fontSize: 7 }
   });
 
-  doc.save(`Historial_Ajustes_${new Date().getTime()}.pdf`);
+  doc.save(`Ajustes_Almacen_${new Date().getTime()}.pdf`);
 };
 
 // 6. Reporte de Consumo y Colaboraciones
 export const exportarPDFConsumoInterno = (movs: any[], empresa: CompanyInfo, totalPerdida: number) => {
   const doc = new jsPDF('p', 'mm', 'letter');
-  const startY = drawHeader(doc, 'Consumo Interno y Colaboraciones', empresa);
+  const startY = drawHeader(doc, 'Reporte de Consumo Interno', empresa);
 
   doc.setFillColor(255, 235, 235);
   doc.rect(15, startY, 186, 10, 'F');
   doc.setFontSize(9);
   doc.setFont('helvetica', 'bold');
-  doc.setTextColor(200, 0, 0);
-  doc.text(`COSTO TOTAL DE SALIDA (PÉRDIDA): ${fmt(totalPerdida)}`, 20, startY + 6.5);
-  doc.setTextColor(0, 0, 0);
+  doc.setTextColor(180, 0, 0);
+  doc.text(`PÉRDIDA TOTAL POR CONSUMO/COLABORACIÓN: ${fmt(totalPerdida)}`, 20, startY + 6.5);
 
   autoTable(doc, {
     startY: startY + 15,
-    head: [['FECHA', 'PRODUCTO', 'TIPO', 'CANTIDAD', 'COSTO UNIT.', 'SUBTOTAL PÉRDIDA']],
+    head: [['FECHA', 'PRODUCTO', 'MOTIVO', 'CANTIDAD', 'COSTO UNIT.', 'SUBTOTAL COSTO']],
     body: movs.map(m => [
       m.fecha.slice(0, 10),
       m.nombreProd.toUpperCase(),
@@ -266,43 +264,103 @@ export const exportarPDFConsumoInterno = (movs: any[], empresa: CompanyInfo, tot
       fmt(m.costoUnit),
       fmt(m.subtotal)
     ]),
-    headStyles: { fillColor: [30, 30, 30] },
+    headStyles: { fillColor: [150, 0, 0] },
     styles: { fontSize: 8 }
   });
 
-  doc.save(`Reporte_Consumo_${new Date().getTime()}.pdf`);
+  doc.save(`Consumo_Interno_${new Date().getTime()}.pdf`);
 };
 
-// 7. Reporte de Devoluciones Detallado
+// 7. Reporte de Devoluciones
 export const exportarPDFDevoluciones = (devoluciones: any[], empresa: CompanyInfo, periodo: string, stats: any) => {
   const doc = new jsPDF('p', 'mm', 'letter');
-  const startY = drawHeader(doc, 'Reporte de Devoluciones Detallado', empresa);
+  const startY = drawHeader(doc, 'Auditoría de Devoluciones y Notas de Crédito', empresa);
 
-  doc.setFontSize(10);
-  doc.setTextColor(0, 0, 0);
-  doc.text(`PERIODO: ${periodo.toUpperCase()}`, 15, startY + 5);
-  doc.text(`TOTAL REEMBOLSADO: ${fmt(stats.totalUSD)}`, 15, startY + 10);
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'bold');
+  doc.text(`TOTAL REEMBOLSADO EN PERIODO: ${fmt(stats.totalUSD)}`, 15, startY + 5);
 
   autoTable(doc, {
-    startY: startY + 18,
-    head: [['FECHA', 'ID DEV.', 'PRODUCTO', 'CANT.', 'PRECIO UNIT.', 'TOTAL (USD)', 'MOTIVO']],
+    startY: startY + 12,
+    head: [['FECHA', 'ID DEV.', 'VENTA REF.', 'PRODUCTO', 'CANT.', 'P. UNIT.', 'TOTAL', 'MOTIVO']],
     body: devoluciones.flatMap(d => d.items.map((item: any, idx: number) => [
       idx === 0 ? d.fecha.slice(0, 10) : '',
       idx === 0 ? d.id : '',
+      idx === 0 ? d.ventaId : '',
       item.nombre.toUpperCase(),
       item.cantidad,
       fmt(item.precioUnitUSD),
       fmt(item.cantidad * item.precioUnitUSD),
       idx === 0 ? d.motivo.toUpperCase() : ''
     ])),
-    headStyles: { fillColor: [180, 0, 0] },
-    styles: { fontSize: 7 }
+    headStyles: { fillColor: [180, 50, 50] },
+    styles: { fontSize: 6.5 }
   });
 
-  doc.save(`Devoluciones_${periodo.replace(/\s+/g, '_')}_${new Date().getTime()}.pdf`);
+  doc.save(`Devoluciones_Auditoria_${new Date().getTime()}.pdf`);
 };
 
-// Mantenemos la función original para compatibilidad
+// 8. Reporte de Cuentas por Cobrar (CxC)
+export const exportarPDFCxC = (deudas: any[], empresa: CompanyInfo, totalUSD: number) => {
+  const doc = new jsPDF('p', 'mm', 'letter');
+  const startY = drawHeader(doc, 'Estado de Cuenta de Clientes (CxC)', empresa);
+
+  doc.setFillColor(240, 240, 240);
+  doc.rect(15, startY, 186, 10, 'F');
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'bold');
+  doc.text(`SALDO TOTAL PENDIENTE POR COBRAR: ${fmt(totalUSD)}`, 20, startY + 6.5);
+
+  autoTable(doc, {
+    startY: startY + 15,
+    head: [['EMISIÓN', 'VENCIMIENTO', 'CLIENTE', 'MONTO ORIGINAL', 'ABONADO', 'SALDO PENDIENTE']],
+    body: deudas.map(d => [
+      d.fecha,
+      d.fechaVencimiento === '2099-12-31' ? 'ABIERTO' : d.fechaVencimiento,
+      d.cliente.toUpperCase(),
+      fmt(d.montoUSD),
+      fmt(d.abonadoUSD),
+      fmt(d.saldoUSD)
+    ]),
+    headStyles: { fillColor: [37, 99, 235] },
+    styles: { fontSize: 8 },
+    alternateRowStyles: { fillColor: [240, 245, 255] }
+  });
+
+  doc.save(`Estado_CxC_${new Date().getTime()}.pdf`);
+};
+
+// 9. Reporte de Cuentas por Pagar (CxP)
+export const exportarPDFCxP = (deudas: any[], empresa: CompanyInfo, totalUSD: number) => {
+  const doc = new jsPDF('p', 'mm', 'letter');
+  const startY = drawHeader(doc, 'Compromisos de Pago a Proveedores (CxP)', empresa);
+
+  doc.setFillColor(255, 245, 240);
+  doc.rect(15, startY, 186, 10, 'F');
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(150, 50, 0);
+  doc.text(`DEUDA TOTAL POR LIQUIDAR: ${fmt4(totalUSD)}`, 20, startY + 6.5);
+
+  autoTable(doc, {
+    startY: startY + 15,
+    head: [['FECHA', 'VENCIMIENTO', 'PROVEEDOR', 'FACTURA', 'MONTO', 'SALDO']],
+    body: deudas.map(d => [
+      d.fecha,
+      d.fechaVencimiento,
+      d.proveedor.toUpperCase(),
+      d.numeroFactura || '-',
+      fmt4(d.montoUSD),
+      fmt4(d.saldoUSD)
+    ]),
+    headStyles: { fillColor: [150, 50, 0] },
+    styles: { fontSize: 8 }
+  });
+
+  doc.save(`Reporte_CxP_${new Date().getTime()}.pdf`);
+};
+
+// Legacy compatibility
 export const generarPDFInventario = async (products: Product[]) => {
   const doc = new jsPDF('l', 'mm', 'letter');
   autoTable(doc, {

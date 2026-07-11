@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { AppState } from '@/lib/types';
 import { Utils } from '@/lib/db-store';
 import { FileText, Calculator, Eye, X } from 'lucide-react';
+import { exportarPDFCxP } from '@/lib/pdf-generator';
 
 export default function CxPModule({ state, updateState }: { state: AppState, updateState: (s: Partial<AppState>) => void }) {
   const [showDetails, setShowDetails] = useState<any>(null);
@@ -14,18 +15,31 @@ export default function CxPModule({ state, updateState }: { state: AppState, upd
   // Helper local para 4 decimales
   const fmt4 = (v: number) => '$' + Number(v).toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
 
+  const handleExportPDF = () => {
+    exportarPDFCxP(pendientes, state.empresa, totalPendiente);
+  };
+
   return (
     <div className="space-y-6">
-      {/* KPIs DE ALTO CONTRASTE */}
+      <div className="flex justify-between items-center">
+        <div>
+          <h2 className="text-ink font-black uppercase italic tracking-tighter text-2xl">Cuentas por Pagar</h2>
+          <p className="text-[10px] text-ink font-bold uppercase tracking-widest opacity-60">Control de Obligaciones con Proveedores</p>
+        </div>
+        <button onClick={handleExportPDF} className="btn btn-secondary h-11 px-6 font-black uppercase text-xs flex items-center gap-2 shadow-md">
+          <FileText className="w-4 h-4" /> Exportar Reporte CxP
+        </button>
+      </div>
+
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
         <div className="kpi bg-white border-line p-7 rounded-2xl shadow-sm border-l-[6px] border-l-ink">
-          <div className="text-ink text-[10px] font-black uppercase mb-2 tracking-wider">Cuentas Pendientes</div>
+          <div className="text-ink text-[10px] font-black uppercase mb-2 tracking-wider">Facturas Pendientes</div>
           <div className="text-4xl font-black text-ink">{pendientes.length}</div>
-          <div className="text-ink/60 text-[10px] font-black mt-1.5 uppercase tracking-widest">Facturas por Liquidar</div>
+          <div className="text-ink/60 text-[10px] font-black mt-1.5 uppercase tracking-widest">Compromisos por Liquidar</div>
         </div>
         <div className="kpi bg-white border-line p-7 rounded-2xl shadow-sm border-l-[6px] border-l-status-danger">
           <div className="text-ink text-[10px] font-black uppercase mb-2 tracking-wider">Total a Pagar (USD)</div>
-          <div className="text-4xl font-black text-status-danger">{Utils.fmtUSD(totalPendiente)}</div>
+          <div className="text-4xl font-black text-status-danger">{fmt4(totalPendiente)}</div>
           <div className="text-ink font-bold text-sm mt-1.5 opacity-80">{Utils.fmtBS(totalPendiente * state.tasa)}</div>
         </div>
       </div>
@@ -33,7 +47,7 @@ export default function CxPModule({ state, updateState }: { state: AppState, upd
       <div className="card shadow-md border-line overflow-hidden bg-white rounded-xl">
         <div className="card-head bg-ink border-b border-white/10 px-6 py-4">
           <h3 className="text-white font-black text-xs uppercase italic tracking-tighter flex items-center gap-2">
-            <Calculator className="w-5 h-5 text-brand-gold" /> CUENTAS POR PAGAR A PROVEEDORES
+            <Calculator className="w-5 h-5 text-brand-gold" /> CUENTAS POR PAGAR ACTIVAS
           </h3>
         </div>
         <div className="table-wrap">

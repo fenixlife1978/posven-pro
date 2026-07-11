@@ -1,10 +1,10 @@
-
 "use client";
 
 import React, { useState } from 'react';
 import { AppState } from '@/lib/types';
 import { Utils, Store } from '@/lib/db-store';
-import { Plus, X, Save, HandCoins, Calendar, CheckSquare, Square, Eye, Trash2, Clock, ClipboardList, Box } from 'lucide-react';
+import { Plus, X, Save, HandCoins, Calendar, CheckSquare, Square, Eye, Trash2, Clock, ClipboardList, Box, FileText } from 'lucide-react';
+import { exportarPDFCxC } from '@/lib/pdf-generator';
 
 export default function CxCModule({ state, updateState }: { state: AppState, updateState: (s: Partial<AppState>) => void }) {
   const [showModal, setShowModal] = useState(false);
@@ -51,13 +51,25 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
     updateState({ cxc: nuevas, clientes: nuevosClientes });
   };
 
+  const handleExportPDF = () => {
+    exportarPDFCxC(pendientes, state.empresa, totalPendiente);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h2 className="text-ink font-black uppercase italic tracking-tighter text-2xl">Cobranzas</h2>
-        <button onClick={() => setShowModal(true)} className="btn btn-primary h-11 px-6 font-black uppercase text-xs flex items-center gap-2 shadow-lg">
-          <Plus className="w-4 h-4" /> Cargar Deuda Inicial
-        </button>
+        <div>
+          <h2 className="text-ink font-black uppercase italic tracking-tighter text-2xl">Cobranzas</h2>
+          <p className="text-[10px] text-ink font-bold uppercase tracking-widest opacity-60">Control de Cartera de Clientes</p>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={handleExportPDF} className="btn btn-secondary h-11 px-6 font-black uppercase text-xs flex items-center gap-2 shadow-md">
+            <FileText className="w-4 h-4" /> Reporte CxC
+          </button>
+          <button onClick={() => setShowModal(true)} className="btn btn-primary h-11 px-6 font-black uppercase text-xs flex items-center gap-2 shadow-lg">
+            <Plus className="w-4 h-4" /> Cargar Deuda Inicial
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -119,7 +131,7 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
         </div>
       </div>
 
-      {/* MODAL DETALLES AVANZADOS (LOGICA POS) */}
+      {/* MODAL DETALLES AVANZADOS */}
       {showDetails && (
         <div className="modal show"><div className="modal-bg" onClick={() => setShowDetails(null)}></div>
           <div className="modal-box max-w-[600px] bg-white border-2 border-line rounded-xl overflow-hidden shadow-2xl">
@@ -139,7 +151,7 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
                  </div>
               </div>
 
-              {/* DETALLE DE VENTA ORIGINAL SI APLICA */}
+              {/* DETALLE DE VENTA ORIGINAL */}
               {(() => {
                 const sale = state.ventas.find(v => v.id === showDetails.ventaId || v.id === showDetails.id);
                 if (!sale) return null;
