@@ -625,12 +625,14 @@ function ModalAjuste({ producto, onClose, onSave }: { producto: Product, onClose
   const [tipo, setTipo] = useState<'ajuste_entrada' | 'ajuste_salida' | 'consumo' | 'colaboracion'>('ajuste_entrada');
   const [cantidad, setCantidad] = useState<string>('1');
   const [nuevoCosto, setNuevoCosto] = useState<string>(String(producto.costoUSD));
-  const [ref, setRef] = useState('');
+  const [motivo, setMotivo] = useState('');
 
   const handleSave = () => {
     const pCant = parseFloat(cantidad) || 0;
     const pCosto = parseFloat(nuevoCosto) || 0;
     if (pCant <= 0) return alert('Cantidad invalida');
+    if (!motivo.trim()) return alert('Por favor indique el motivo del ajuste');
+
     const mov: Movimiento = {
       id: Store.uid(),
       productoId: producto.id,
@@ -639,14 +641,14 @@ function ModalAjuste({ producto, onClose, onSave }: { producto: Product, onClose
       stockAntes: producto.stock,
       stockDespues: tipo === 'ajuste_entrada' ? producto.stock + pCant : producto.stock - Math.abs(pCant),
       fecha: Utils.ahora(),
-      referencia: ref || 'Ajuste manual'
+      referencia: motivo.toUpperCase()
     };
     onSave(mov, tipo === 'ajuste_entrada' ? pCosto : undefined);
   };
 
   return (
     <div className="modal show"><div className="modal-bg" onClick={onClose}></div>
-      <div className="modal-box bg-white max-w-md border-2 border-line">
+      <div className="modal-box bg-white max-w-md border-2 border-line rounded-xl overflow-hidden shadow-2xl">
         <div className="modal-head px-5 py-4 border-b border-line bg-surface-soft">
           <h3 className="text-ink font-black uppercase text-sm">AJUSTAR: {producto.nombre.toUpperCase()}</h3>
           <button onClick={onClose}><X className="w-5 h-5 text-ink" /></button>
@@ -662,7 +664,16 @@ function ModalAjuste({ producto, onClose, onSave }: { producto: Product, onClose
                <input className="form-input h-10 text-center font-black" type="text" value={cantidad} onChange={e => setCantidad(e.target.value)} />
              </div>
           </div>
-          <button className="btn btn-primary w-full h-12 font-black uppercase text-xs shadow-md" onClick={handleSave}>Procesar Ajuste</button>
+          <div className="form-group">
+            <label className="text-[10px] font-black uppercase text-ink/60 mb-1 block">Motivo del Ajuste</label>
+            <input 
+              className="form-input h-10 text-xs font-black uppercase" 
+              placeholder="Ej: ERROR DE CONTEO, DAÑO, ETC..." 
+              value={motivo} 
+              onChange={e => setMotivo(e.target.value)} 
+            />
+          </div>
+          <button className="btn btn-primary w-full h-12 font-black uppercase text-xs shadow-md mt-2" onClick={handleSave}>Procesar Ajuste</button>
         </div>
       </div>
     </div>
