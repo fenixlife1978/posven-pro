@@ -765,9 +765,9 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       {/* MODAL DETALLES DE CREDITO CON HISTORIAL DE ABONOS */}
       {showDetailsModal && (
         <div className="modal show"><div className="modal-bg" onClick={() => setShowDetailsModal(null)}></div>
-          <div className="modal-box max-w-lg bg-white border-2 border-line">
+          <div className="modal-box max-w-[600px] bg-white border-2 border-line rounded-xl overflow-hidden shadow-2xl">
             <div className="modal-head py-4 px-6 border-b border-line bg-ink flex justify-between items-center"><h3 className="text-white font-black text-xs uppercase italic tracking-tighter">HISTORIAL DETALLADO: {showDetailsModal.id}</h3><button onClick={() => setShowDetailsModal(null)} className="text-white/40 hover:text-white"><X className="w-5 h-5"/></button></div>
-            <div className="modal-body p-6 space-y-6">
+            <div className="modal-body p-6 space-y-6 max-h-[75vh] overflow-y-auto">
               <div className="grid grid-cols-2 gap-4">
                  <div className="p-3 bg-surface-soft rounded-lg border border-line">
                     <label className="text-[8px] font-black uppercase text-ink/50 block mb-1">Monto Original</label>
@@ -779,9 +779,45 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                  </div>
               </div>
 
+              {/* DETALLE DE VENTA ORIGINAL */}
+              {(() => {
+                const sale = state.ventas.find(v => v.id === showDetailsModal.ventaId || v.id === showDetailsModal.id);
+                if (!sale) return null;
+                return (
+                  <div className="space-y-3 animate-in slide-in-from-top-2 duration-300">
+                    <div className="flex justify-between items-center border-b border-line pb-2">
+                       <h4 className="text-[10px] font-black uppercase text-ink/40 tracking-[0.2em]">DETALLE DE COMPRA ORIGINAL</h4>
+                       <span className="text-[9px] font-black text-ink/60 uppercase">{Utils.fmtFecha(sale.fecha)} - {sale.fecha.split('T')[1]?.slice(0,5)}</span>
+                    </div>
+                    <div className="bg-surface-soft/50 rounded-lg overflow-hidden border border-line/30">
+                       <table className="w-full">
+                          <thead>
+                            <tr className="bg-ink/5">
+                               <th className="text-[8px] font-black uppercase p-2 text-left">Cant</th>
+                               <th className="text-[8px] font-black uppercase p-2 text-left">Descripción</th>
+                               <th className="text-[8px] font-black uppercase p-2 text-right">P. Unit</th>
+                               <th className="text-[8px] font-black uppercase p-2 text-right">Total</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {sale.items.map((it: any, idx: number) => (
+                              <tr key={idx} className="border-b border-line/20">
+                                 <td className="text-[9px] font-bold p-2 text-ink">{it.cantidad}</td>
+                                 <td className="text-[9px] font-black uppercase p-2 text-ink truncate max-w-[180px]">{it.nombre}</td>
+                                 <td className="text-[9px] font-bold p-2 text-right text-ink">{Utils.fmtUSD(it.precioUnitUSD)}</td>
+                                 <td className="text-[9px] font-black p-2 text-right text-brand-gold-deep">{Utils.fmtUSD(it.subtotalUSD)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                       </table>
+                    </div>
+                  </div>
+                );
+              })()}
+
               <div className="space-y-3">
                  <h4 className="text-[10px] font-black uppercase text-ink/40 tracking-[0.2em] border-b border-line pb-2">CRONOLOGÍA DE ABONOS</h4>
-                 <div className="max-h-[250px] overflow-y-auto space-y-2 pr-1">
+                 <div className="max-h-[200px] overflow-y-auto space-y-2 pr-1">
                     {(!showDetailsModal.historialPagos || showDetailsModal.historialPagos.length === 0) ? (
                       <div className="py-10 text-center text-ink/20 font-black uppercase italic text-[10px]">No se han registrado abonos aún</div>
                     ) : (
@@ -802,7 +838,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
               </div>
             </div>
             <div className="modal-foot p-4 bg-surface-soft border-t border-line text-right">
-               <button onClick={() => setShowDetailsModal(null)} className="btn btn-primary px-8 font-black uppercase text-[10px]">Cerrar Ficha</button>
+               <button onClick={() => setShowDetailsModal(null)} className="btn btn-primary px-8 font-black uppercase text-[10px] rounded-lg">Cerrar Ficha</button>
             </div>
           </div>
         </div>
