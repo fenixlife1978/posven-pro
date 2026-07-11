@@ -372,18 +372,80 @@ function ReporteGeneral({ state }: { state: AppState }) {
 }
 
 function ReporteVentas({ state }: { state: AppState }) {
-  const [filter, setFilter] = useState('hoy');
-  const ventas = state.ventas.filter(v => filter === 'hoy' ? v.fecha.startsWith(Utils.hoy()) : true);
+  const [desde, setDesde] = useState(Utils.hoy());
+  const [hasta, setHasta] = useState(Utils.hoy());
+  const [useDates, setUseDates] = useState(false);
+
+  const applyQuickFilter = (type: string) => {
+    const today = new Date();
+    setUseDates(true);
+    if (type === 'hoy') {
+      setDesde(Utils.hoy()); setHasta(Utils.hoy());
+    } else if (type === 'ayer') {
+      const yesterday = new Date(today);
+      yesterday.setDate(today.getDate() - 1);
+      const yStr = yesterday.toISOString().split('T')[0];
+      setDesde(yStr); setHasta(yStr);
+    } else if (type === 'mes') {
+      const first = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
+      setDesde(first); setHasta(Utils.hoy());
+    } else if (type === '7dias') {
+      const last7 = new Date(today);
+      last7.setDate(today.getDate() - 6);
+      setDesde(last7.toISOString().split('T')[0]); setHasta(Utils.hoy());
+    }
+  };
+
+  const ventas = state.ventas.filter(v => {
+     if (!useDates && v.fecha.startsWith(Utils.hoy())) return true;
+     if (!useDates) return true; // Mostrar todas si no hay filtro aplicado
+     const d = v.fecha.slice(0, 10);
+     return d >= desde && d <= hasta;
+  });
+
   const totalVendidos = ventas.reduce((acc, v) => acc + v.items.reduce((sum, item) => sum + item.cantidad, 0), 0);
+
+  const handleExport = () => {
+    const label = useDates ? `Periodo ${Utils.fmtFecha(desde)} al ${Utils.fmtFecha(hasta)}` : 'Hoy';
+    exportarPDFVentasDetallado(ventas, state.empresa, label, { totalVendidos });
+  };
 
   return (
     <div className="space-y-4">
+      {/* Filtros de Periodo */}
+      <div className="card p-5 bg-white border-line flex flex-wrap gap-4 items-end shadow-sm no-print">
+        <div className="flex items-center gap-3 bg-surface-soft p-1 rounded-lg border border-line">
+           <button onClick={() => setUseDates(false)} className={`px-4 py-1.5 rounded-md text-[10px] font-black uppercase transition-all ${!useDates ? 'bg-ink text-white' : 'text-ink/40'}`}>Actual (Hoy)</button>
+           <button onClick={() => setUseDates(true)} className={`px-4 py-1.5 rounded-md text-[10px] font-black uppercase transition-all ${useDates ? 'bg-brand-gold text-white' : 'text-ink/40'}`}>Consultar Periodos</button>
+        </div>
+        
+        {useDates && (
+          <>
+            <div className="flex gap-2">
+               {['hoy', 'ayer', '7dias', 'mes'].map(f => (
+                 <button key={f} onClick={() => applyQuickFilter(f)} className="px-3 py-1.5 bg-surface-soft border border-line rounded text-[9px] font-black uppercase hover:bg-white transition-colors">{f === '7dias' ? '7 días' : f}</button>
+               ))}
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="form-group mb-0">
+                <label className="text-[8px] font-black uppercase opacity-40 block mb-0.5">Desde</label>
+                <input type="date" className="form-input h-8 text-xs font-bold px-2 w-32" value={desde} onChange={e => setDesde(e.target.value)} />
+              </div>
+              <div className="form-group mb-0">
+                <label className="text-[8px] font-black uppercase opacity-40 block mb-0.5">Hasta</label>
+                <input type="date" className="form-input h-8 text-xs font-bold px-2 w-32" value={hasta} onChange={e => setHasta(e.target.value)} />
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+
       <div className="card shadow-lg border-line rounded-xl overflow-hidden">
         <div className="card-head bg-ink border-b border-white/10 px-6 py-4 flex justify-between items-center">
           <h3 className="text-white font-black text-xs uppercase italic tracking-tighter flex items-center gap-2">
             <ShoppingBag className="w-5 h-5 text-brand-gold" /> BITÁCORA DE VENTAS REALES
           </h3>
-          <button className="btn btn-secondary h-8 px-4 font-black uppercase text-[9px] shadow-sm" onClick={() => exportarPDFVentasDetallado(ventas, state.empresa, filter, { totalVendidos })}>
+          <button className="btn btn-secondary h-8 px-4 font-black uppercase text-[9px] shadow-sm" onClick={handleExport}>
             <FileText className="w-3.5 h-3.5" /> Exportar Ventas
           </button>
         </div>
@@ -399,7 +461,7 @@ function ReporteVentas({ state }: { state: AppState }) {
             </thead>
             <tbody className="bg-white">
               {ventas.length === 0 ? (
-                <tr><td colSpan={4} className="text-center py-20 text-ink/20 font-black italic uppercase">Sin operaciones reales</td></tr>
+                <tr><td colSpan={4} className="text-center py-20 text-ink/20 font-black italic uppercase">Sin operaciones reales en el periodo seleccionado</td></tr>
               ) : (
                 ventas.flatMap(v => v.items.map((item: any, idx: number) => (
                   <tr key={`${v.id}-${idx}`} className="border-b border-line/30">
@@ -477,7 +539,6 @@ function HistorialAjustes({ state }: { state: AppState }) {
   const [hasta, setHasta] = useState(Utils.hoy());
   const [useDates, setUseDates] = useState(false);
 
-  // Filtrar fuera los movimientos "INICIAL" y aplicar filtros de fecha
   const ajustesRaw = state.movimientos.filter(m => 
     ['ajuste_entrada', 'ajuste_salida', 'consumo', 'colaboracion', 'compra'].includes(m.tipo) && 
     m.referencia !== 'INICIAL'

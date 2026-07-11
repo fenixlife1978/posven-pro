@@ -1,30 +1,59 @@
-"use client";
-
 import React, { useState } from 'react';
-import { AppState, LibroDiarioEntry } from '@/lib/types';
+import { AppState, Debt, LibroDiarioEntry } from '@/lib/types';
 import { Utils, Store } from '@/lib/db-store';
-import { FileText, Calculator, Eye, X, Banknote } from 'lucide-react';
-import { exportarPDFCxP } from '@/lib/pdf-generator';
+import { 
+  FileText, 
+  Calculator, 
+  Eye, 
+  X, 
+  Banknote,
+  Search,
+  Plus,
+  ArrowLeft
+} from 'lucide-react';
+import { toast } from '@/hooks/use-toast';
+import { format } from 'date-fns';
+
+interface CxPModuleProps {
+  state: AppState;
+  updateState: (newState: Partial<AppState>) => void;
+}
 
 export default function CxPModule({ state, updateState }: { state: AppState, updateState: (s: Partial<AppState>) => void }) {
   const [showDetails, setShowDetails] = useState<any>(null);
   const [showPaymentModal, setShowPaymentModal] = useState<any>(null);
-  const [paymentAmount, setPaymentModalAmount] = useState('');
+  const [paymentAmount, setPaymentAmount] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<any>('efectivo_usd');
 
-  const pendientes = state.cxp.filter(x => x.estado !== 'pagada');
+  const pendientes = (state.cxp || []).filter(x => x.estado !== 'pagada');
   const totalPendiente = pendientes.reduce((s, x) => s + x.saldoUSD, 0);
 
-  // Helper local para 4 decimales
   const fmt4 = (v: number) => '$' + Number(v).toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
 
-  const handleExportPDF = () => {
-    exportarPDFCxP(pendientes, state.empresa, totalPendiente);
+  const handleOpenPayment = (debt: any) => {
+    setShowPaymentModal(debt);
+    setPaymentAmount(debt.saldoUSD.toString());
+    setPaymentMethod('efectivo_usd');
   };
 
   const handleProcessPayment = () => {
-    const montoUSD = parseFloat(paymentAmount) || 0;
-    if (montoUSD <= 0 || montoUSD > (showPaymentModal.saldoUSD + 0.001)) {
-       return alert('Monto inválido o superior al saldo');
+    const amount = parseFloat(paymentAmount) || 0;
+    if (amount <= 0) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "El monto debe ser mayor a cero."
+      });
+      return;
+    }
+
+    if (amount > (showPaymentModal.saldoUSD + 0.001)) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "El monto no puede ser mayor al saldo pendiente."
+      });
+      return;
     }
 
     const ahoraStr = Utils.ahora();
@@ -32,12 +61,20 @@ export default function CxPModule({ state, updateState }: { state: AppState, upd
     // 1. Actualizar CxP
     const nuevasCxP = state.cxp.map(c => {
       if (c.id === showPaymentModal.id) {
-        const nuevoSaldo = Math.max(0, c.saldoUSD - montoUSD);
+        const nuevoSaldo = Math.max(0, c.saldoUSD - amount);
+        const historialPagos = c.historialPagos || [];
         return {
           ...c,
-          abonadoUSD: c.abonadoUSD + montoUSD,
+          abonadoUSD: c.abonadoUSD + amount,
           saldoUSD: nuevoSaldo,
-          estado: nuevoSaldo <= 0.001 ? 'pagada' : 'parcial'
+          estado: nuevoSaldo <= 0.001 ? 'pagada' : 'parcial',
+          historialPagos: [...historialPagos, {
+            fecha: ahoraStr,
+            montoUSD: amount,
+            montoBS: amount * state.tasa,
+            metodo: paymentMethod,
+            reciboId: `PAY-${Store.uid().toUpperCase().slice(0, 4)}`
+          }]
         };
       }
       return c;
@@ -49,10 +86,11 @@ export default function CxPModule({ state, updateState }: { state: AppState, upd
       fecha: ahoraStr,
       tipo: 'egreso',
       categoria: 'PAGO_PROVEEDOR',
+      pointOfSale: "ADMIN",
       concepto: `PAGO DEUDA A: ${showPaymentModal.proveedor.toUpperCase()} - REF FACT: ${showPaymentModal.numeroFactura || 'S/N'}`,
-      montoUSD: montoUSD,
-      montoBS: montoUSD * state.tasa,
-      metodo: 'efectivo_usd',
+      montoUSD: amount,
+      montoBS: amount * state.tasa,
+      metodo: paymentMethod,
       referencia: showPaymentModal.id
     };
 
@@ -61,9 +99,13 @@ export default function CxPModule({ state, updateState }: { state: AppState, upd
       libroDiario: [nuevoAsiento, ...(state.libroDiario || [])] 
     });
 
-    alert('Pago registrado correctamente');
+    toast({
+      title: "Pago registrado",
+      description: `Se ha registrado el pago de ${Utils.fmtUSD(amount)}`
+    });
+    
     setShowPaymentModal(null);
-    setPaymentModalAmount('');
+    setPaymentAmount('');
   };
 
   return (
@@ -73,9 +115,6 @@ export default function CxPModule({ state, updateState }: { state: AppState, upd
           <h2 className="text-ink font-black uppercase italic tracking-tighter text-2xl">Cuentas por Pagar</h2>
           <p className="text-[10px] text-ink font-bold uppercase tracking-widest opacity-60">Control de Obligaciones con Proveedores</p>
         </div>
-        <button onClick={handleExportPDF} className="btn btn-secondary h-11 px-6 font-black uppercase text-xs flex items-center gap-2 shadow-md">
-          <FileText className="w-4 h-4" /> Exportar Reporte CxP
-        </button>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
@@ -132,7 +171,7 @@ export default function CxPModule({ state, updateState }: { state: AppState, upd
                        <div className="flex justify-center gap-1">
                           <button onClick={() => setShowDetails(x)} className="btn-icon h-8 w-8 text-ink hover:text-brand-gold" title="Ver Detalle de Compra"><Eye className="w-4 h-4"/></button>
                           {x.estado !== 'pagada' && (
-                             <button onClick={() => { setShowPaymentModal(x); setPaymentModalAmount(x.saldoUSD.toString()); }} className="btn btn-primary h-8 px-4 font-black text-[9px] uppercase shadow-sm">Pagar</button>
+                             <button onClick={() => handleOpenPayment(x)} className="btn btn-primary h-8 px-4 font-black text-[9px] uppercase shadow-sm">Pagar</button>
                           )}
                        </div>
                     </td>
@@ -190,10 +229,32 @@ export default function CxPModule({ state, updateState }: { state: AppState, upd
                             </tr>
                           ))}
                         </tbody>
-                     </table>
+                       </table>
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
+
+              <div className="space-y-3">
+                 <h4 className="text-[10px] font-black uppercase text-ink/40 tracking-[0.2em] border-b border-line pb-2">CRONOLOGÍA DE ABONOS</h4>
+                 <div className="max-h-[200px] overflow-y-auto space-y-2 pr-1">
+                    {(!showDetails.historialPagos || showDetails.historialPagos.length === 0) ? (
+                      <div className="py-10 text-center text-ink/20 font-black uppercase italic text-[10px]">No se han registrado abonos aún</div>
+                    ) : (
+                      showDetails.historialPagos.map((p: any, idx: number) => (
+                        <div key={idx} className="flex justify-between items-center p-3 bg-surface-soft border border-line rounded-lg">
+                           <div className="space-y-0.5">
+                              <p className="text-[10px] font-black text-ink uppercase">{Utils.fmtFecha(p.fecha)} - {p.fecha.split('T')[1]?.slice(0,5)}</p>
+                              <p className="text-[8px] font-bold text-ink/40 mono">REF RECIBO: {p.reciboId}</p>
+                           </div>
+                           <div className="text-right">
+                              <p className="text-xs font-black text-status-success">+{Utils.fmtUSD(p.montoUSD)}</p>
+                              <p className="text-[8px] font-black text-ink/40 uppercase">{Utils.metodoLabel(p.metodo || 'otros')}</p>
+                           </div>
+                        </div>
+                      ))
+                    )}
+                 </div>
+              </div>
             </div>
             <div className="modal-foot p-4 bg-surface-soft border-t border-line text-right">
                <button onClick={() => setShowDetails(null)} className="btn btn-primary px-8 font-black uppercase text-[10px] rounded-lg">Cerrar Ficha</button>
@@ -202,31 +263,46 @@ export default function CxPModule({ state, updateState }: { state: AppState, upd
         </div>
       )}
 
-      {/* MODAL REGISTRAR PAGO (EGRESO CONTABLE) */}
+      {/* MODAL REGISTRAR PAGO DE DEUDA */}
       {showPaymentModal && (
         <div className="modal show"><div className="modal-bg" onClick={() => setShowPaymentModal(null)}></div>
           <div className="modal-box bg-white max-w-sm border-2 border-line rounded-2xl overflow-hidden shadow-2xl">
-            <div className="modal-head py-4 px-6 bg-ink border-b border-white/10">
-              <h3 className="text-white font-black uppercase text-xs">Registrar Pago de Deuda</h3>
+            <div className="modal-head py-4 px-6 bg-ink border-b border-white/10 flex justify-between items-center">
+              <h3 className="text-white font-black uppercase text-xs">REGISTRAR PAGO DE DEUDA</h3>
+              <button onClick={() => setShowPaymentModal(null)} className="text-white/40 hover:text-white"><X className="w-5 h-5"/></button>
             </div>
             <div className="modal-body p-8 space-y-6">
-               <div className="bg-surface-soft p-4 rounded-xl text-center border border-line">
-                  <p className="text-[9px] font-black text-ink/40 uppercase mb-1">Saldo Pendiente</p>
-                  <p className="text-2xl font-black text-status-danger">{fmt4(showPaymentModal.saldoUSD)}</p>
+               <div className="bg-surface-soft p-8 rounded-[20px] text-center border border-line shadow-inner">
+                  <p className="text-ink/40 text-[9px] font-black uppercase tracking-[0.2em] mb-2">SALDO PENDIENTE</p>
+                  <p className="text-3xl font-black text-status-danger">{fmt4(showPaymentModal.saldoUSD)}</p>
                </div>
+               
                <div className="form-group">
-                 <label className="text-ink text-[10px] font-black uppercase block mb-1">Monto a Pagar (USD)</label>
+                 <label className="text-ink text-[10px] font-black uppercase block mb-1">METODO DE PAGO</label>
+                 <select 
+                    className="form-select h-12 text-sm font-black uppercase border-line bg-surface-soft/50"
+                    value={paymentMethod}
+                    onChange={e => setPaymentMethod(e.target.value)}
+                  >
+                    <option value="efectivo_usd">Efectivo USD</option>
+                    <option value="efectivo_bs">Efectivo BS</option>
+                    <option value="pagomovil">Pago Movil</option>
+                    <option value="zelle">Zelle</option>
+                  </select>
+               </div>
+
+               <div className="form-group">
+                 <label className="text-ink text-[10px] font-black uppercase block mb-1">MONTO A PAGAR (USD)</label>
                  <div className="relative">
-                   <Banknote className="absolute left-3 top-3 w-5 h-5 text-brand-gold" />
                    <input 
-                     className="form-input pl-11 h-12 text-xl font-black text-ink" 
+                     className="form-input h-12 text-xl font-black text-ink" 
                      type="number" 
                      value={paymentAmount} 
-                     onChange={e => setPaymentModalAmount(e.target.value)} 
+                     onChange={e => setPaymentAmount(e.target.value)} 
                    />
                  </div>
                </div>
-               <button onClick={handleProcessPayment} className="btn btn-primary w-full h-14 font-black uppercase text-xs shadow-xl">Confirmar y Asentar Pago</button>
+               <button onClick={handleProcessPayment} className="btn btn-primary w-full h-14 font-black uppercase text-xs shadow-xl">CONFIRMAR Y ASENTAR PAGO</button>
             </div>
           </div>
         </div>
