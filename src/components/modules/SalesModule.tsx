@@ -86,6 +86,14 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
 
   const searchInputRef = useRef<HTMLInputElement>(null);
 
+  // Cálculos para el Modal de Abono (Deuda que disminuye en tiempo real)
+  const totalDeudaAbonoUSD = showAbonoModal 
+    ? state.cxc.filter(c => c.cliente === showAbonoModal && c.estado !== 'pagada').reduce((s, c) => s + c.saldoUSD, 0)
+    : 0;
+  const totalAbonadoEnModalUSD = abonoPagos.reduce((s, p) => s + p.montoUSD, 0);
+  const deudaRestanteAbonoUSD = Math.max(0, totalDeudaAbonoUSD - totalAbonadoEnModalUSD);
+  const deudaRestanteAbonoBS = deudaRestanteAbonoUSD * state.tasa;
+
   // Helper: Cálculo de Stock Real (Considerando Kits dinámicos)
   const getStockDisponible = (p: Product) => {
     let avail = p.stock || 0;
@@ -893,9 +901,12 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
             </div>
             <div className="modal-body p-8 space-y-6">
               <div className="bg-surface-soft p-8 rounded-[20px] text-center border border-line shadow-inner">
-                <p className="text-ink/40 text-[9px] font-black uppercase tracking-[0.2em] mb-2">DEUDA TOTAL</p>
+                <p className="text-ink/40 text-[9px] font-black uppercase tracking-[0.2em] mb-2">DEUDA PENDIENTE</p>
                 <p className="text-5xl font-black text-status-info tracking-tighter">
-                  {Utils.fmtUSD(state.cxc.filter(c => c.cliente === showAbonoModal && c.estado !== 'pagada').reduce((s, c) => s + c.saldoUSD, 0))}
+                  {Utils.fmtUSD(deudaRestanteAbonoUSD)}
+                </p>
+                <p className="text-xl font-bold text-ink/60 mt-2">
+                  {Utils.fmtBS(deudaRestanteAbonoBS)}
                 </p>
               </div>
 
