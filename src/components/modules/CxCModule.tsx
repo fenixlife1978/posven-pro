@@ -4,12 +4,11 @@
 import React, { useState } from 'react';
 import { AppState } from '@/lib/types';
 import { Utils, Store } from '@/lib/db-store';
-import { Plus, X, Save, HandCoins, Calendar, CheckSquare, Square, Eye, Trash2, Clock, ClipboardList } from 'lucide-react';
+import { Plus, X, Save, HandCoins, Calendar, CheckSquare, Square, Eye, Trash2, Clock, ClipboardList, Box } from 'lucide-react';
 
 export default function CxCModule({ state, updateState }: { state: AppState, updateState: (s: Partial<AppState>) => void }) {
   const [showModal, setShowModal] = useState(false);
   const [showDetails, setShowDetails] = useState<any>(null);
-  const [showHistory, setShowHistory] = useState<any>(null);
 
   const [nuevaDeuda, setNuevaDeuda] = useState({
     cliente: '',
@@ -108,8 +107,7 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
                     <td><span className={`badge ${x.estado === 'pagada' ? 'badge-ok' : (x.estado === 'parcial' ? 'badge-info' : 'badge-warn')} font-black text-[9px] uppercase`}>{x.estado}</span></td>
                     <td className="text-center">
                        <div className="flex justify-center gap-1">
-                          <button onClick={() => setShowDetails(x)} className="btn-icon h-8 w-8 text-ink hover:text-brand-gold" title="Ver Detalles"><Eye className="w-4 h-4"/></button>
-                          <button onClick={() => setShowHistory(x)} className="btn-icon h-8 w-8 text-ink hover:text-status-info" title="Historial"><Clock className="w-4 h-4"/></button>
+                          <button onClick={() => setShowDetails(x)} className="btn-icon h-8 w-8 text-ink hover:text-brand-gold" title="Ver Historial Detallado"><Eye className="w-4 h-4"/></button>
                           <button onClick={() => eliminarDeuda(x)} className="btn-icon h-8 w-8 text-ink hover:text-status-danger" title="Eliminar"><Trash2 className="w-4 h-4"/></button>
                        </div>
                     </td>
@@ -120,6 +118,91 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
           </table>
         </div>
       </div>
+
+      {/* MODAL DETALLES AVANZADOS (LOGICA POS) */}
+      {showDetails && (
+        <div className="modal show"><div className="modal-bg" onClick={() => setShowDetails(null)}></div>
+          <div className="modal-box max-w-[600px] bg-white border-2 border-line rounded-xl overflow-hidden shadow-2xl">
+            <div className="modal-head py-4 px-6 border-b border-line bg-ink flex justify-between items-center">
+              <h3 className="text-white font-black text-xs uppercase italic tracking-tighter">HISTORIAL DETALLADO: {showDetails.id}</h3>
+              <button onClick={() => setShowDetails(null)} className="text-white/40 hover:text-white"><X className="w-5 h-5"/></button>
+            </div>
+            <div className="modal-body p-6 space-y-6 max-h-[75vh] overflow-y-auto">
+              <div className="grid grid-cols-2 gap-4">
+                 <div className="p-3 bg-surface-soft rounded-lg border border-line">
+                    <label className="text-[8px] font-black uppercase text-ink/50 block mb-1">Monto Original</label>
+                    <p className="text-lg font-black text-ink">{Utils.fmtUSD(showDetails.montoUSD)}</p>
+                 </div>
+                 <div className="p-3 bg-brand-gold-soft border border-brand-gold/20 rounded-lg">
+                    <label className="text-[8px] font-black uppercase text-brand-gold-deep block mb-1">Saldo Actual</label>
+                    <p className="text-lg font-black text-brand-gold-deep">{Utils.fmtUSD(showDetails.saldoUSD)}</p>
+                 </div>
+              </div>
+
+              {/* DETALLE DE VENTA ORIGINAL SI APLICA */}
+              {(() => {
+                const sale = state.ventas.find(v => v.id === showDetails.ventaId || v.id === showDetails.id);
+                if (!sale) return null;
+                return (
+                  <div className="space-y-3 animate-in slide-in-from-top-2 duration-300">
+                    <div className="flex justify-between items-center border-b border-line pb-2">
+                       <h4 className="text-[10px] font-black uppercase text-ink/40 tracking-[0.2em]">DETALLE DE COMPRA ORIGINAL</h4>
+                       <span className="text-[9px] font-black text-ink/60 uppercase">{Utils.fmtFecha(sale.fecha)} - {sale.fecha.split('T')[1]?.slice(0,5)}</span>
+                    </div>
+                    <div className="bg-surface-soft/50 rounded-lg overflow-hidden border border-line/30">
+                       <table className="w-full">
+                          <thead>
+                            <tr className="bg-ink/5">
+                               <th className="text-[8px] font-black uppercase p-2 text-left">Cant</th>
+                               <th className="text-[8px] font-black uppercase p-2 text-left">Descripción</th>
+                               <th className="text-[8px] font-black uppercase p-2 text-right">P. Unit</th>
+                               <th className="text-[8px] font-black uppercase p-2 text-right">Total</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {sale.items.map((it: any, idx: number) => (
+                              <tr key={idx} className="border-b border-line/20">
+                                 <td className="text-[9px] font-bold p-2 text-ink">{it.cantidad}</td>
+                                 <td className="text-[9px] font-black uppercase p-2 text-ink truncate max-w-[180px]">{it.nombre}</td>
+                                 <td className="text-[9px] font-bold p-2 text-right text-ink">{Utils.fmtUSD(it.precioUnitUSD)}</td>
+                                 <td className="text-[9px] font-black p-2 text-right text-brand-gold-deep">{Utils.fmtUSD(it.subtotalUSD)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                       </table>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              <div className="space-y-3">
+                 <h4 className="text-[10px] font-black uppercase text-ink/40 tracking-[0.2em] border-b border-line pb-2">CRONOLOGÍA DE ABONOS</h4>
+                 <div className="max-h-[200px] overflow-y-auto space-y-2 pr-1">
+                    {(!showDetails.historialPagos || showDetails.historialPagos.length === 0) ? (
+                      <div className="py-10 text-center text-ink/20 font-black uppercase italic text-[10px]">No se han registrado abonos aún</div>
+                    ) : (
+                      showDetails.historialPagos.map((p: any, idx: number) => (
+                        <div key={idx} className="flex justify-between items-center p-3 bg-surface-soft border border-line rounded-lg">
+                           <div className="space-y-0.5">
+                              <p className="text-[10px] font-black text-ink uppercase">{Utils.fmtFecha(p.fecha)} - {p.fecha.split('T')[1]?.slice(0,5)}</p>
+                              <p className="text-[8px] font-bold text-ink/40 mono">REF RECIBO: {p.reciboId}</p>
+                           </div>
+                           <div className="text-right">
+                              <p className="text-xs font-black text-status-success">+{Utils.fmtUSD(p.montoUSD)}</p>
+                              <p className="text-[8px] font-black text-ink/40 uppercase">{Utils.metodoLabel(p.metodo || 'otros')}</p>
+                           </div>
+                        </div>
+                      ))
+                    )}
+                 </div>
+              </div>
+            </div>
+            <div className="modal-foot p-4 bg-surface-soft border-t border-line text-right">
+               <button onClick={() => setShowDetails(null)} className="btn btn-primary px-8 font-black uppercase text-[10px] rounded-lg">Cerrar Ficha</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showModal && (
         <div className="modal show">
@@ -165,8 +248,6 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
           </div>
         </div>
       )}
-
-      {/* Otros modales (Detalles e Historial) se mantienen igual funcionalmente */}
     </div>
   );
 }
