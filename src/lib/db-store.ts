@@ -4,7 +4,7 @@ import { AppState } from './types';
 import { db } from './firebase';
 import { doc, setDoc, onSnapshot, getDoc } from "firebase/firestore";
 
-const STORAGE_KEY = 'licoreriaPOS_v2_cache';
+const STORAGE_KEY = 'licoreriaPOS_v2_cache_session';
 const COLLECTION = 'pos_system_data';
 const DOC_ID = 'state';
 
@@ -51,25 +51,24 @@ export const Store = {
         // El carrito NO se sincroniza, es local por pestaña
         delete (merged as any).carrito; 
         callback(merged);
-        // Guardar cache local
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+        // Guardar cache de sesión
+        if (typeof window !== 'undefined') {
+          sessionStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+        }
       } else {
-        // Si el documento no existe (primer arranque), inicializarlo
-        // Notificamos con initialState inmediatamente para no bloquear la UI
         callback(initialState);
         const { carrito, ...toPersist } = initialState;
         setDoc(docRef, toPersist).catch(e => console.error("Error init firestore:", e));
       }
     }, (error) => {
       console.error("Firestore Sync Error:", error);
-      // En caso de error, proveer el estado inicial o el cache para no colgar el sistema
       callback(initialState);
     });
   },
 
   get(): AppState {
     if (typeof window === 'undefined') return initialState;
-    const d = localStorage.getItem(STORAGE_KEY);
+    const d = sessionStorage.getItem(STORAGE_KEY);
     if (!d) return initialState;
     try {
       return JSON.parse(d);
@@ -106,8 +105,8 @@ export const Store = {
       acumuladoHistorico: state.acumuladoHistorico || 0
     };
 
-    // Persistencia local
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(dataToPersist));
+    // Persistencia en sesión local
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(dataToPersist));
     
     // Persistencia en la nube (Firestore)
     const docRef = doc(db, COLLECTION, DOC_ID);

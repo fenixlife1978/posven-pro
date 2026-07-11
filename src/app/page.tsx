@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect } from 'react';
@@ -45,10 +44,10 @@ export default function LicoreriaPOS() {
   const router = useRouter();
   const [state, setState] = useState<AppState>(initialState);
   
-  // Persistencia de módulo activo
+  // Persistencia de módulo activo POR PESTAÑA (sessionStorage)
   const [activeModule, setActiveModule] = useState(() => {
     if (typeof window !== 'undefined') {
-      return localStorage.getItem('posven_active_module') || '';
+      return sessionStorage.getItem('posven_active_module') || '';
     }
     return '';
   });
@@ -63,7 +62,7 @@ export default function LicoreriaPOS() {
   const [userRole, setUserRole] = useState<string | null>(null);
   const [userProfile, setUserProfile] = useState<any>(null);
   
-  // Persistencia de estado de apertura
+  // Persistencia de estado de apertura POR PESTAÑA
   const [showApertura, setShowApertura] = useState(false);
   const [aperturaData, setAperturaData] = useState({ bs: '0', usd: '0' });
 
@@ -88,9 +87,9 @@ export default function LicoreriaPOS() {
                 return;
               }
 
-              // Lógica de recuperación de sesión
-              const savedModule = localStorage.getItem('posven_active_module');
-              const aperturaConfirmada = localStorage.getItem('posven_apertura_done');
+              // Lógica de recuperación de sesión independiente por pestaña
+              const savedModule = sessionStorage.getItem('posven_active_module');
+              const aperturaConfirmada = sessionStorage.getItem('posven_apertura_done');
 
               if (data.rol === 'cajero') {
                  const configSnap = await getDoc(doc(db, 'pos_system_data', 'state'));
@@ -117,12 +116,14 @@ export default function LicoreriaPOS() {
               setUser(currentUser);
               setLoading(false);
             } else {
+              // Manejo preventivo para administradores o perfiles migrados
               setUserRole('administrador');
               if (!activeModule) setActiveModule('dashboard');
               setLoading(false);
             }
           }, (err) => {
             console.error("Error en tiempo real de perfil:", err);
+            // En caso de error de red, permitimos el acceso si ya estaba autenticado
             setLoading(false);
           });
 
@@ -158,18 +159,18 @@ export default function LicoreriaPOS() {
     };
   }, [router]);
 
-  // Efecto para guardar módulo activo en cada cambio
+  // Efecto para guardar módulo activo en cada cambio por pestaña
   useEffect(() => {
     if (activeModule) {
-      localStorage.setItem('posven_active_module', activeModule);
+      sessionStorage.setItem('posven_active_module', activeModule);
     }
   }, [activeModule]);
 
   const handleLogout = async () => {
     if (confirm('¿Cerrar sesión del sistema?')) {
-      // Limpiar rastro de sesión UI
-      localStorage.removeItem('posven_active_module');
-      localStorage.removeItem('posven_apertura_done');
+      // Limpiar rastro de sesión UI exclusiva de esta pestaña
+      sessionStorage.removeItem('posven_active_module');
+      sessionStorage.removeItem('posven_apertura_done');
       
       if (userRole === 'cajero' && user) {
         try {
@@ -206,14 +207,14 @@ export default function LicoreriaPOS() {
         { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
         { id: 'inventario', label: 'Inventario', icon: Package, count: state.productos.length },
         { id: 'compras', label: 'Entradas (Compras)', icon: ShoppingBag },
-        { id: 'proveedores', label: 'Proveedores', icon: Truck, count: state.proveedores.length },
+        { id: 'proveedores', label: 'Proveedores', icon: Truck, count: (state.proveedores || []).length },
       ]
     },
     {
       id: 'finanzas',
       label: 'Finanzas',
       items: [
-        { id: 'cxc', label: 'Cuentas por Cobrar', icon: HandCoins, count: state.cxc.filter(x => x.estado !== 'pagada').length },
+        { id: 'cxc', label: 'Cuentas por Cobrar', icon: HandCoins, count: (state.cxc || []).filter(x => x.estado !== 'pagada').length },
         { id: 'cxp', label: 'Cuentas por Pagar', icon: FileText },
       ]
     },
@@ -273,56 +274,56 @@ export default function LicoreriaPOS() {
       
       {showApertura && isCajero && (
         <div className="fixed inset-0 z-[100] bg-surface-warm flex items-center justify-center p-4 no-print">
-           <div className="w-full max-w-md bg-white rounded-[24px] shadow-[0_20px_50px_rgba(0,0,0,0.1)] p-6 space-y-4 animate-in fade-in zoom-in duration-500 border border-line">
+           <div className="w-full max-w-sm bg-white rounded-[24px] shadow-[0_20px_50px_rgba(0,0,0,0.1)] p-5 space-y-3 animate-in fade-in zoom-in duration-500 border border-line">
               <div className="text-center">
-                <div className="flex items-center justify-center gap-3 mb-1">
-                  <div className="w-9 h-9 bg-brand-gold rounded-lg flex items-center justify-center text-black font-black text-xl shadow-lg">P</div>
-                  <div className="font-display font-black text-xl text-ink tracking-tighter uppercase">
+                <div className="flex items-center justify-center gap-2.5 mb-1">
+                  <div className="w-8 h-8 bg-brand-gold rounded-lg flex items-center justify-center text-black font-black text-lg shadow-lg">P</div>
+                  <div className="font-display font-black text-lg text-ink tracking-tighter uppercase">
                     Pos<span className="text-brand-gold">VEN</span> Pro
                   </div>
                 </div>
-                <div className="h-0.5 w-10 bg-brand-gold rounded-full mx-auto mb-2"></div>
-                <h1 className="text-lg font-extrabold text-ink tracking-tight uppercase italic">Apertura de Jornada</h1>
+                <div className="h-0.5 w-8 bg-brand-gold rounded-full mx-auto mb-1"></div>
+                <h1 className="text-sm font-extrabold text-ink tracking-tight uppercase italic">Apertura de Jornada</h1>
               </div>
 
-              <div className="space-y-3">
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="p-2.5 bg-surface-soft rounded-xl border border-line">
-                    <label className="text-[8px] font-black uppercase text-ink/50 block mb-0.5">Responsable</label>
-                    <p className="text-[10px] font-black text-ink uppercase truncate">{userProfile?.nombre || 'Operador'}</p>
+              <div className="space-y-2.5">
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div className="p-2 bg-surface-soft rounded-xl border border-line">
+                    <label className="text-[7px] font-black uppercase text-ink/50 block mb-0.5">Responsable</label>
+                    <p className="text-[9px] font-black text-ink uppercase truncate">{userProfile?.nombre || 'Operador'}</p>
                   </div>
-                  <div className="p-2.5 bg-surface-soft rounded-xl border border-line">
-                    <label className="text-[8px] font-black uppercase text-ink/50 block mb-0.5">Recibo Inicio</label>
-                    <p className="text-[10px] font-black text-brand-gold-deep"># {String(state.proximoRecibo).padStart(9, '0')}</p>
+                  <div className="p-2 bg-surface-soft rounded-xl border border-line">
+                    <label className="text-[7px] font-black uppercase text-ink/50 block mb-0.5">Recibo Inicio</label>
+                    <p className="text-[9px] font-black text-brand-gold-deep"># {String(state.proximoRecibo).padStart(9, '0')}</p>
                   </div>
                 </div>
 
-                <div className="p-2.5 bg-ink text-white rounded-xl flex justify-between items-center">
+                <div className="p-2 bg-ink text-white rounded-xl flex justify-between items-center">
                   <div className="space-y-0">
-                    <label className="text-7px font-bold uppercase opacity-50 block tracking-widest">Fecha</label>
-                    <p className="text-9px font-black uppercase">{dateStr}</p>
+                    <label className="text-[7px] font-bold uppercase opacity-50 block tracking-widest">Fecha</label>
+                    <p className="text-[8px] font-black uppercase">{dateStr}</p>
                   </div>
                   <div className="text-right space-y-0">
-                    <label className="text-7px font-bold uppercase opacity-50 block tracking-widest">Hora</label>
-                    <p className="text-9px font-black uppercase">{timeStr}</p>
+                    <label className="text-[7px] font-bold uppercase opacity-50 block tracking-widest">Hora</label>
+                    <p className="text-[8px] font-black uppercase">{timeStr}</p>
                   </div>
                 </div>
 
-                <div className="space-y-3">
+                <div className="space-y-2.5">
                    <div className="form-group">
-                      <label className="text-ink text-[9px] font-black uppercase block mb-1 ml-1 opacity-70">Fondo Efectivo Bs.</label>
+                      <label className="text-ink text-[8px] font-black uppercase block mb-1 ml-1 opacity-70">Fondo Efectivo Bs.</label>
                       <input 
                         type="text" 
-                        className="form-input h-10 text-lg font-black text-center text-ink bg-surface-soft/40 border-line" 
+                        className="form-input h-9 text-base font-black text-center text-ink bg-surface-soft/40 border-line" 
                         value={aperturaData.bs} 
                         onChange={e => setAperturaData({...aperturaData, bs: e.target.value.replace(/[^0-9.]/g, '')})}
                       />
                    </div>
                    <div className="form-group">
-                      <label className="text-ink text-[9px] font-black uppercase block mb-1 ml-1 opacity-70">Fondo Efectivo USD</label>
+                      <label className="text-ink text-[8px] font-black uppercase block mb-1 ml-1 opacity-70">Fondo Efectivo USD</label>
                       <input 
                         type="text" 
-                        className="form-input h-10 text-lg font-black text-center text-brand-gold-deep bg-surface-soft/40 border-line" 
+                        className="form-input h-9 text-base font-black text-center text-brand-gold-deep bg-surface-soft/40 border-line" 
                         value={aperturaData.usd} 
                         onChange={e => setAperturaData({...aperturaData, usd: e.target.value.replace(/[^0-9.]/g, '')})}
                       />
@@ -332,10 +333,10 @@ export default function LicoreriaPOS() {
                 <button 
                   disabled={aperturaData.bs === '' || aperturaData.usd === ''}
                   onClick={() => {
-                    localStorage.setItem('posven_apertura_done', 'true');
+                    sessionStorage.setItem('posven_apertura_done', 'true');
                     setShowApertura(false);
                   }}
-                  className="w-full h-12 bg-brand-gold text-ink font-black text-sm rounded-xl shadow-xl shadow-brand-gold/10 hover:bg-brand-gold-deep hover:text-white transition-all uppercase tracking-widest"
+                  className="w-full h-10 bg-brand-gold text-ink font-black text-xs rounded-xl shadow-xl shadow-brand-gold/10 hover:bg-brand-gold-deep hover:text-white transition-all uppercase tracking-widest"
                 >
                   Confirmar Apertura
                 </button>
