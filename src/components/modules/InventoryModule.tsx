@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
-import { AppState, Product, Movimiento, KitItem, SaleItem } from '@/lib/types';
+import React, { useState, useMemo } from 'react';
+import { AppState, Product, Movimiento, KitItem } from '@/lib/types';
 import { Utils, Store } from '@/lib/db-store';
 import { 
   Plus, 
@@ -27,7 +27,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import {
@@ -127,61 +127,61 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
             </div>
           </div>
 
-          <div className="card bg-white border-line shadow-xl rounded-xl overflow-hidden">
+          <Card className="bg-white border-line shadow-xl rounded-xl overflow-hidden">
             <div className="card-head bg-ink border-b border-white/10 px-6 py-4">
                <h3 className="text-white font-black text-xs uppercase italic tracking-tighter flex items-center gap-2">
                  <Box className="w-5 h-5 text-brand-gold" /> CATALOGO MAESTRO DE INVENTARIO
                </h3>
             </div>
             <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr className="bg-surface-soft">
-                    <th className="text-ink font-black uppercase text-[10px]">Código</th>
-                    <th className="text-ink font-black uppercase text-[10px]">Nombre Producto</th>
-                    <th className="text-ink font-black uppercase text-[10px]">Categoría</th>
-                    <th className="text-ink font-black uppercase text-[10px] text-right">Costo ($)</th>
-                    <th className="text-ink font-black uppercase text-[10px] text-right">Venta ($)</th>
-                    <th className="text-ink font-black uppercase text-[10px] text-center">Stock</th>
-                    <th className="text-ink font-black uppercase text-[10px] text-center">Acciones</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-surface-soft">
+                    <TableHead className="text-ink font-black uppercase text-[10px]">Código</TableHead>
+                    <TableHead className="text-ink font-black uppercase text-[10px]">Nombre Producto</TableHead>
+                    <TableHead className="text-ink font-black uppercase text-[10px]">Categoría</TableHead>
+                    <TableHead className="text-ink font-black uppercase text-[10px] text-right">Costo ($)</TableHead>
+                    <TableHead className="text-ink font-black uppercase text-[10px] text-right">Venta ($)</TableHead>
+                    <TableHead className="text-ink font-black uppercase text-[10px] text-center">Stock</TableHead>
+                    <TableHead className="text-ink font-black uppercase text-[10px] text-center">Acciones</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody className="bg-white">
                   {prods.length === 0 ? (
-                    <tr><TableCell colSpan={7} className="text-center py-20 text-ink/20 font-black italic uppercase">No se encontraron productos coincidentes</TableCell></tr>
+                    <TableRow><TableCell colSpan={7} className="text-center py-20 text-ink/20 font-black italic uppercase">No se encontraron productos coincidentes</TableCell></TableRow>
                   ) : (
                     prods.map(p => (
-                      <tr key={p.id} className="border-b border-line/30 hover:bg-surface-warm/20 transition-colors">
-                        <td className="mono text-xs font-black text-ink">{p.codigo}</td>
-                        <td className="font-bold text-ink uppercase">
+                      <TableRow key={p.id} className="border-b border-line/30 hover:bg-surface-warm/20 transition-colors">
+                        <TableCell className="mono text-xs font-black text-ink">{p.codigo}</TableCell>
+                        <TableCell className="font-bold text-ink uppercase">
                           <div className="flex items-center gap-2">
                             {p.isKit && <Layers className="w-3.5 h-3.5 text-brand-gold" />}
                             {p.nombre}
                           </div>
-                        </td>
-                        <td><span className="badge badge-neutral text-ink font-black uppercase text-[9px]">{p.categoria}</span></td>
-                        <td className="mono font-bold text-ink/50 text-right">{Utils.fmtUSD(p.costoUSD)}</td>
-                        <td className="mono text-brand-gold-deep font-black text-right">{Utils.fmtUSD(p.precioUSD)}</td>
-                        <td className="text-center">
+                        </TableCell>
+                        <TableCell><span className="badge badge-neutral text-ink font-black uppercase text-[9px]">{p.categoria}</span></TableCell>
+                        <TableCell className="mono font-bold text-ink/50 text-right">{Utils.fmtUSD(p.costoUSD)}</TableCell>
+                        <TableCell className="mono text-brand-gold-deep font-black text-right">{Utils.fmtUSD(p.precioUSD)}</TableCell>
+                        <TableCell className="text-center">
                           <span className={`badge ${p.stock <= (p.stockMinimo || 0) ? 'badge-err' : 'badge-neutral'} font-black text-xs min-w-[40px]`}>
                             {p.stock}
                           </span>
-                        </td>
-                        <td>
+                        </TableCell>
+                        <TableCell>
                           <div className="flex justify-center gap-1">
                             <button className="btn-icon h-8 w-8 text-ink hover:text-brand-gold" onClick={() => setShowProducto(p.id)}><Edit2 className="w-4 h-4" /></button>
                             <button className="btn-icon h-8 w-8 text-ink hover:text-status-info" onClick={() => { setSelectedKardexId(p.id); setActiveTab('kardex'); }}><History className="w-4 h-4" /></button>
                             <button className="btn-icon h-8 w-8 text-ink hover:text-status-success" onClick={() => setShowAjuste(p.id)}><Boxes className="w-4 h-4" /></button>
                             <button className="btn-icon h-8 w-8 text-ink hover:text-status-danger" onClick={() => eliminar(p.id)}><Trash2 className="w-4 h-4" /></button>
                           </div>
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                     ))
                   )}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
-          </div>
+          </Card>
         </div>
       );
       case 'reporte_general': return <ReporteGeneral state={state} />;
@@ -230,7 +230,7 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
                 const mov: Movimiento = {
                   id: Store.uid(),
                   productoId: nuevo.id,
-                  tipo: 'inicial' as any,
+                  tipo: 'inicial',
                   cantidad: nuevo.stock,
                   stockAntes: 0,
                   stockDespues: nuevo.stock,
@@ -301,7 +301,7 @@ function ReporteGeneral({ state }: { state: AppState }) {
         </div>
       </div>
       
-      <div className="card shadow-lg border-line rounded-xl overflow-hidden bg-white">
+      <Card className="shadow-lg border-line rounded-xl overflow-hidden bg-white">
         <div className="card-head bg-ink border-b border-white/10 px-6 py-4 flex justify-between items-center">
           <h3 className="text-white font-black text-xs uppercase italic tracking-tighter flex items-center gap-2">
             <Boxes className="w-5 h-5 text-brand-gold" /> INVENTARIO VALORIZADO ACTUAL
@@ -311,32 +311,32 @@ function ReporteGeneral({ state }: { state: AppState }) {
           </button>
         </div>
         <div className="table-wrap">
-          <table>
-            <thead>
-              <tr className="bg-surface-soft">
-                <th className="font-black text-ink uppercase text-[10px]">Cod.</th>
-                <th className="font-black text-ink uppercase text-[10px]">Producto</th>
-                <th className="font-black text-ink uppercase text-[10px] text-right">Costo Unit.</th>
-                <th className="font-black text-ink uppercase text-[10px] text-right">Venta Unit.</th>
-                <th className="font-black text-ink uppercase text-[10px] text-center">Stock</th>
-                <th className="font-black text-ink uppercase text-[10px] text-right">Subtotal Costo</th>
-              </tr>
-            </thead>
-            <tbody>
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-surface-soft">
+                <TableHead className="font-black text-ink uppercase text-[10px]">Cod.</TableHead>
+                <TableHead className="font-black text-ink uppercase text-[10px]">Producto</TableHead>
+                <TableHead className="font-black text-ink uppercase text-[10px] text-right">Costo Unit.</TableHead>
+                <TableHead className="font-black text-ink uppercase text-[10px] text-right">Venta Unit.</TableHead>
+                <TableHead className="font-black text-ink uppercase text-[10px] text-center">Stock</TableHead>
+                <TableHead className="font-black text-ink uppercase text-[10px] text-right">Subtotal Costo</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {filteredProducts.map(p => (
-                <tr key={p.id} className="border-b border-line/30">
-                  <td className="mono text-[11px] font-black text-ink">{p.codigo}</td>
-                  <td className="font-black uppercase text-xs text-ink">{p.nombre}</td>
-                  <td className="mono text-right text-xs font-bold text-ink/60">{Utils.fmtUSD(p.costoUSD)}</td>
-                  <td className="mono text-right text-brand-gold-deep font-black">{Utils.fmtUSD(p.precioUSD)}</td>
-                  <td className="text-center py-3 px-4"><span className="badge badge-neutral font-black">{p.stock}</span></td>
-                  <td className="mono text-right font-black text-ink">{Utils.fmtUSD(Utils.round(p.costoUSD * p.stock))}</td>
-                </tr>
+                <TableRow key={p.id} className="border-b border-line/30">
+                  <TableCell className="mono text-[11px] font-black text-ink">{p.codigo}</TableCell>
+                  <TableCell className="font-black uppercase text-xs text-ink">{p.nombre}</TableCell>
+                  <TableCell className="mono text-right text-xs font-bold text-ink/60">{Utils.fmtUSD(p.costoUSD)}</TableCell>
+                  <TableCell className="mono text-right text-brand-gold-deep font-black">{Utils.fmtUSD(p.precioUSD)}</TableCell>
+                  <TableCell className="text-center py-3 px-4"><span className="badge badge-neutral font-black">{p.stock}</span></TableCell>
+                  <TableCell className="mono text-right font-black text-ink">{Utils.fmtUSD(Utils.round(p.costoUSD * p.stock))}</TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
-      </div>
+      </Card>
     </div>
   );
 }
@@ -370,7 +370,7 @@ function ReporteVentas({ state }: { state: AppState }) {
 
   return (
     <div className="space-y-4">
-      <div className="card p-5 bg-white border-line flex flex-wrap gap-4 items-end shadow-sm no-print">
+      <Card className="p-5 bg-white border-line flex flex-wrap gap-4 items-end shadow-sm no-print">
         <div className="flex items-center gap-3 bg-surface-soft p-1 rounded-lg border border-line">
            <button onClick={() => setUseDates(false)} className={`px-4 py-1.5 rounded-md text-[10px] font-black uppercase transition-all ${!useDates ? 'bg-ink text-white' : 'text-ink/40'}`}>Hoy</button>
            <button onClick={() => setUseDates(true)} className={`px-4 py-1.5 rounded-md text-[10px] font-black uppercase transition-all ${useDates ? 'bg-brand-gold text-white' : 'text-ink/40'}`}>Periodo</button>
@@ -381,37 +381,37 @@ function ReporteVentas({ state }: { state: AppState }) {
               <input type="date" className="form-input h-8 text-xs font-bold" value={hasta} onChange={e => setHasta(e.target.value)} />
            </div>
         )}
-      </div>
+      </Card>
 
-      <div className="card bg-white shadow-lg border-line rounded-xl overflow-hidden">
+      <Card className="bg-white shadow-lg border-line rounded-xl overflow-hidden">
         <div className="card-head bg-ink border-b border-white/10 px-6 py-4 text-white">
            <h3 className="font-black text-xs uppercase italic tracking-tighter">RESUMEN DE VENTAS POR PRODUCTO</h3>
         </div>
         <div className="table-wrap">
-          <table>
-            <thead>
-              <tr className="bg-surface-soft">
-                <th className="font-black text-ink uppercase text-[10px]">Producto / Ítem</th>
-                <th className="font-black text-ink uppercase text-[10px] text-center">Unidades Vendidas</th>
-                <th className="font-black text-ink uppercase text-[10px] text-right">Recaudado (USD)</th>
-              </tr>
-            </thead>
-            <tbody>
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-surface-soft">
+                <TableHead className="font-black text-ink uppercase text-[10px]">Producto / Ítem</TableHead>
+                <TableHead className="font-black text-ink uppercase text-[10px] text-center">Unidades Vendidas</TableHead>
+                <TableHead className="font-black text-ink uppercase text-[10px] text-right">Recaudado (USD)</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {groupedVentas.length === 0 ? (
-                <tr><TableCell colSpan={3} className="text-center py-20 text-ink/20 font-black italic uppercase">Sin ventas registradas</TableCell></tr>
+                <TableRow><TableCell colSpan={3} className="text-center py-20 text-ink/20 font-black italic uppercase">Sin ventas registradas</TableCell></TableRow>
               ) : (
                 groupedVentas.map((g, idx) => (
-                  <tr key={idx} className="border-b border-line/30 hover:bg-surface-warm/20 transition-colors">
-                    <td className="font-black uppercase text-xs text-ink">{g.nombre}</td>
-                    <td className="text-center font-black mono text-ink">{g.cantidad}</td>
-                    <td className="text-right font-black text-brand-gold-deep mono">{Utils.fmtUSD(g.totalUSD)}</td>
-                  </tr>
+                  <TableRow key={idx} className="border-b border-line/30 hover:bg-surface-warm/20 transition-colors">
+                    <TableCell className="font-black uppercase text-xs text-ink">{g.nombre}</TableCell>
+                    <TableCell className="text-center font-black mono text-ink">{g.cantidad}</TableCell>
+                    <TableCell className="text-right font-black text-brand-gold-deep mono">{Utils.fmtUSD(g.totalUSD)}</TableCell>
+                  </TableRow>
                 ))
               )}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
-      </div>
+      </Card>
     </div>
   );
 }
@@ -422,34 +422,34 @@ function ReporteDevoluciones({ state }: { state: AppState }) {
 
   return (
     <div className="space-y-4">
-      <div className="card shadow-lg border-line rounded-xl overflow-hidden bg-white">
+      <Card className="shadow-lg border-line rounded-xl overflow-hidden bg-white">
         <div className="card-head bg-ink border-b border-white/10 px-6 py-4 flex justify-between items-center text-white">
           <h3 className="font-black text-xs uppercase italic tracking-tighter">HISTORIAL DE DEVOLUCIONES</h3>
           <button className="btn btn-secondary h-8 px-4 font-black text-[9px]" onClick={() => exportarPDFDevoluciones(devoluciones, state.empresa, 'Histórico', { totalUSD })}>PDF</button>
         </div>
         <div className="table-wrap">
-          <table>
-            <thead>
-              <tr className="bg-surface-soft">
-                <th className="text-[10px] font-black uppercase text-left">Fecha</th>
-                <th className="text-[10px] font-black uppercase text-left">Venta Ref.</th>
-                <th className="text-[10px] font-black uppercase text-right">Total Dev.</th>
-                <th className="text-[10px] font-black uppercase text-left">Motivo</th>
-              </tr>
-            </thead>
-            <tbody>
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-surface-soft">
+                <TableHead className="text-[10px] font-black uppercase text-left">Fecha</TableHead>
+                <TableHead className="text-[10px] font-black uppercase text-left">Venta Ref.</TableHead>
+                <TableHead className="text-[10px] font-black uppercase text-right">Total Dev.</TableHead>
+                <TableHead className="text-[10px] font-black uppercase text-left">Motivo</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
                {devoluciones.map(d => (
-                 <tr key={d.id} className="border-b border-line/30">
-                   <td className="text-xs font-bold text-ink">{Utils.fmtFecha(d.fecha)}</td>
-                   <td className="text-xs font-black mono text-ink">{d.ventaId}</td>
-                   <td className="text-right font-black text-status-danger">{Utils.fmtUSD(d.totalUSD)}</td>
-                   <td className="text-xs italic uppercase opacity-60 text-ink">{d.motivo}</td>
-                 </tr>
+                 <TableRow key={d.id} className="border-b border-line/30">
+                   <TableCell className="text-xs font-bold text-ink">{Utils.fmtFecha(d.fecha)}</TableCell>
+                   <TableCell className="text-xs font-black mono text-ink">{d.ventaId}</TableCell>
+                   <TableCell className="text-right font-black text-status-danger">{Utils.fmtUSD(d.totalUSD)}</TableCell>
+                   <TableCell className="text-xs italic uppercase opacity-60 text-ink">{d.motivo}</TableCell>
+                 </TableRow>
                ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
-      </div>
+      </Card>
     </div>
   );
 }
@@ -460,62 +460,62 @@ function HistorialAjustes({ state }: { state: AppState }) {
   ).sort((a,b) => b.fecha.localeCompare(a.fecha));
 
   return (
-    <div className="card shadow-lg border-line rounded-xl overflow-hidden bg-white">
+    <Card className="shadow-lg border-line rounded-xl overflow-hidden bg-white">
       <div className="table-wrap">
-        <table>
-          <thead className="bg-surface-soft">
-            <tr>
-              <th className="font-black text-ink uppercase text-[10px]">Fecha</th>
-              <th className="font-black text-ink uppercase text-[10px]">Producto</th>
-              <th className="font-black text-ink uppercase text-[10px]">Operación</th>
-              <th className="font-black text-ink uppercase text-[10px] text-center">Cant</th>
-              <th className="font-black text-ink uppercase text-[10px]">Motivo / Ref</th>
-            </tr>
-          </thead>
-          <tbody>
+        <Table>
+          <TableHeader className="bg-surface-soft">
+            <TableRow>
+              <TableHead className="font-black text-ink uppercase text-[10px]">Fecha</TableHead>
+              <TableHead className="font-black text-ink uppercase text-[10px]">Producto</TableHead>
+              <TableHead className="font-black text-ink uppercase text-[10px]">Operación</TableHead>
+              <TableHead className="font-black text-ink uppercase text-[10px] text-center">Cant</TableHead>
+              <TableHead className="font-black text-ink uppercase text-[10px]">Motivo / Ref</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {ajustes.map(m => (
-              <tr key={m.id} className="border-b border-line/30">
-                <td className="text-xs font-bold text-ink">{m.fecha.slice(0,16).replace('T', ' ')}</td>
-                <td className="font-black uppercase text-xs text-ink">{state.productos.find(p => p.id === m.productoId)?.nombre || 'ELIMINADO'}</td>
-                <td><span className="badge badge-neutral text-[9px] font-black uppercase">{m.tipo}</span></td>
-                <td className={`text-center font-black ${m.cantidad > 0 ? 'text-status-success' : 'text-status-danger'}`}>{m.cantidad}</td>
-                <td className="text-[10px] opacity-40 italic uppercase text-ink">{m.referencia}</td>
-              </tr>
+              <TableRow key={m.id} className="border-b border-line/30">
+                <TableCell className="text-xs font-bold text-ink">{m.fecha.slice(0,16).replace('T', ' ')}</TableCell>
+                <TableCell className="font-black uppercase text-xs text-ink">{state.productos.find(p => p.id === m.productoId)?.nombre || 'ELIMINADO'}</TableCell>
+                <TableCell><span className="badge badge-neutral text-[9px] font-black uppercase">{m.tipo}</span></TableCell>
+                <TableCell className={`text-center font-black ${m.cantidad > 0 ? 'text-status-success' : 'text-status-danger'}`}>{m.cantidad}</TableCell>
+                <TableCell className="text-[10px] opacity-40 italic uppercase text-ink">{m.referencia}</TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
-    </div>
+    </Card>
   );
 }
 
 function ReporteConsumo({ state }: { state: AppState }) {
   const consumos = state.movimientos.filter(m => ['consumo', 'colaboracion'].includes(m.tipo)).sort((a,b) => b.fecha.localeCompare(a.fecha));
   return (
-    <div className="card shadow-lg border-line rounded-xl overflow-hidden bg-white">
+    <Card className="shadow-lg border-line rounded-xl overflow-hidden bg-white">
       <div className="table-wrap">
-        <table>
-          <thead className="bg-surface-soft">
-            <tr>
-              <th className="font-black text-ink uppercase text-[10px]">Fecha</th>
-              <th className="font-black text-ink uppercase text-[10px]">Producto</th>
-              <th className="font-black text-ink uppercase text-[10px] text-center">Cant</th>
-              <th className="font-black text-ink uppercase text-[10px]">Motivo</th>
-            </tr>
-          </thead>
-          <tbody>
+        <Table>
+          <TableHeader className="bg-surface-soft">
+            <TableRow>
+              <TableHead className="font-black text-ink uppercase text-[10px]">Fecha</TableHead>
+              <TableHead className="font-black text-ink uppercase text-[10px]">Producto</TableHead>
+              <TableHead className="font-black text-ink uppercase text-[10px] text-center">Cant</TableHead>
+              <TableHead className="font-black text-ink uppercase text-[10px]">Motivo</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {consumos.map(m => (
-              <tr key={m.id} className="border-b border-line/30">
-                <td className="text-xs font-bold text-ink">{m.fecha.slice(0,10)}</td>
-                <td className="font-black uppercase text-xs text-ink">{state.productos.find(p => p.id === m.productoId)?.nombre}</td>
-                <td className={`text-center font-black text-status-danger`}>{Math.abs(m.cantidad)}</td>
-                <td className="text-[10px] uppercase font-bold opacity-40 text-ink">{m.referencia}</td>
-              </tr>
+              <TableRow key={m.id} className="border-b border-line/30">
+                <TableCell className="text-xs font-bold text-ink">{m.fecha.slice(0,10)}</TableCell>
+                <TableCell className="font-black uppercase text-xs text-ink">{state.productos.find(p => p.id === m.productoId)?.nombre}</TableCell>
+                <TableCell className={`text-center font-black text-status-danger`}>{Math.abs(m.cantidad)}</TableCell>
+                <TableCell className="text-[10px] uppercase font-bold opacity-40 text-ink">{m.referencia}</TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -534,7 +534,7 @@ function ReporteKardex({ state, selectedId, onSelect }: { state: AppState, selec
 
   return (
     <div className="space-y-4">
-      <div className="card p-5 bg-white border-line shadow-sm rounded-xl">
+      <Card className="p-5 bg-white border-line shadow-sm rounded-xl">
         <label className="text-[10px] font-black uppercase text-ink opacity-40 block mb-2">Buscar producto para ver Kardex</label>
         <div className="relative">
           <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Escriba nombre o código..." className="h-12 text-sm font-bold bg-white" />
@@ -549,39 +549,39 @@ function ReporteKardex({ state, selectedId, onSelect }: { state: AppState, selec
             </div>
           )}
         </div>
-      </div>
+      </Card>
 
       {selectedProd && (
-        <div className="card overflow-hidden shadow-lg border-line rounded-xl bg-white">
+        <Card className="overflow-hidden shadow-lg border-line rounded-xl bg-white">
           <div className="card-head bg-ink text-white px-6 py-3 flex justify-between items-center">
             <h3 className="font-black text-xs uppercase tracking-widest text-brand-gold">{selectedProd.nombre}</h3>
             <button className="btn btn-secondary h-8 px-4 font-black uppercase text-[9px]" onClick={() => exportarPDFKardex(selectedProd, movs, state.empresa)}>Exportar Kardex</button>
           </div>
           <div className="table-wrap">
-             <table>
-                <thead className="bg-surface-soft">
-                   <tr>
-                      <th className="font-black text-ink uppercase text-[10px]">Fecha</th>
-                      <th className="font-black text-ink uppercase text-[10px]">Tipo</th>
-                      <th className="font-black text-ink uppercase text-[10px] text-center">Cant</th>
-                      <th className="font-black text-ink uppercase text-[10px] text-center">Stock Final</th>
-                      <th className="font-black text-ink uppercase text-[10px]">Referencia</th>
-                   </tr>
-                </thead>
-                <tbody>
+             <Table>
+                <TableHeader className="bg-surface-soft">
+                   <TableRow>
+                      <TableHead className="font-black text-ink uppercase text-[10px]">Fecha</TableHead>
+                      <TableHead className="font-black text-ink uppercase text-[10px]">Tipo</TableHead>
+                      <TableHead className="font-black text-ink uppercase text-[10px] text-center">Cant</TableHead>
+                      <TableHead className="font-black text-ink uppercase text-[10px] text-center">Stock Final</TableHead>
+                      <TableHead className="font-black text-ink uppercase text-[10px]">Referencia</TableHead>
+                   </TableRow>
+                </TableHeader>
+                <TableBody>
                    {movs.map(m => (
-                      <tr key={m.id} className="border-b border-line/30">
-                         <td className="text-xs font-bold text-ink">{m.fecha.replace('T', ' ')}</td>
-                         <td><span className="badge badge-neutral text-[9px] uppercase font-black">{m.tipo}</span></td>
-                         <td className={`text-center font-black ${m.cantidad > 0 ? 'text-status-success' : 'text-status-danger'}`}>{m.cantidad > 0 ? '+' : ''}{m.cantidad}</td>
-                         <td className="text-center font-bold text-ink">{m.stockDespues}</td>
-                         <td className="text-[10px] italic opacity-40 uppercase text-ink">{m.referencia}</td>
-                      </tr>
+                      <TableRow key={m.id} className="border-b border-line/30">
+                         <TableCell className="text-xs font-bold text-ink">{m.fecha.replace('T', ' ')}</TableCell>
+                         <TableCell><span className="badge badge-neutral text-[9px] uppercase font-black">{m.tipo}</span></TableCell>
+                         <TableCell className={`text-center font-black ${m.cantidad > 0 ? 'text-status-success' : 'text-status-danger'}`}>{m.cantidad > 0 ? '+' : ''}{m.cantidad}</TableCell>
+                         <TableCell className="text-center font-bold text-ink">{m.stockDespues}</TableCell>
+                         <TableCell className="text-[10px] italic opacity-40 uppercase text-ink">{m.referencia}</TableCell>
+                      </TableRow>
                    ))}
-                </tbody>
-             </table>
+                </TableBody>
+             </Table>
           </div>
-        </div>
+        </Card>
       )}
     </div>
   );
@@ -621,18 +621,18 @@ function ModalAjuste({ producto, onClose, onSave }: { producto: Product, onClose
         </div>
         <div className="modal-body p-6 space-y-4 bg-white">
           <div className="grid grid-cols-2 gap-4">
-             <div className="form-group"><label className="text-[10px] font-black uppercase text-ink/60 mb-1 block">Tipo</label>
+             <div className="form-group"><Label className="text-[10px] font-black uppercase text-ink/60 mb-1 block">Tipo</Label>
                <select className="form-select h-10 text-xs font-bold" value={tipo} onChange={e => setTipo(e.target.value as any)}>
                  <option value="ajuste_entrada">Entrada (+)</option>
                  <option value="ajuste_salida">Salida (-)</option>
                </select>
              </div>
-             <div className="form-group"><label className="text-[10px] font-black uppercase text-ink/60 mb-1 block">Cantidad</label>
+             <div className="form-group"><Label className="text-[10px] font-black uppercase text-ink/60 mb-1 block">Cantidad</Label>
                <Input className="h-10 text-center font-black bg-white" type="text" value={cantidad} onChange={e => setCantidad(e.target.value)} />
              </div>
           </div>
           <div className="form-group">
-            <label className="text-[10px] font-black uppercase text-ink/60 mb-1 block">Motivo del Ajuste</label>
+            <Label className="text-[10px] font-black uppercase text-ink/60 mb-1 block">Motivo del Ajuste</Label>
             <Input 
               className="h-10 text-xs font-black uppercase bg-white" 
               placeholder="Ej: ERROR DE CONTEO, DAÑO, ETC..." 
@@ -640,7 +640,7 @@ function ModalAjuste({ producto, onClose, onSave }: { producto: Product, onClose
               onChange={e => setMotivo(e.target.value)} 
             />
           </div>
-          <Button className="btn btn-primary w-full h-12 font-black uppercase text-xs shadow-md mt-2" onClick={handleSave}>Procesar Ajuste</Button>
+          <Button className="w-full h-12 font-black uppercase text-xs shadow-md mt-2" onClick={handleSave}>Procesar Ajuste</Button>
         </div>
       </div>
     </div>
@@ -740,9 +740,6 @@ function ModalProducto({ producto, state, onClose, onSave, onUpdateLists }: { pr
       costoUSD: parseFloat(datos.costoUSD) || 0,
       margen: parseFloat(datos.margen) || 0,
       precioUSD: parseFloat(datos.precioUSD) || 0,
-      precioMayorUSD: parseFloat(datos.precioMayorUSD) || 0,
-      precioOfertaUSD: parseFloat(datos.precioOfertaUSD) || 0,
-      precioPromoUSD: parseFloat(datos.precioPromoUSD) || 0,
       stock: parseFloat(datos.stock) || 0,
       stockMinimo: parseFloat(datos.stockMinimo) || 0
     });
@@ -769,33 +766,32 @@ function ModalProducto({ producto, state, onClose, onSave, onUpdateLists }: { pr
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-4">
                 <div className="space-y-1">
-                  <label className="text-[10px] font-black uppercase text-ink/50 block">Código (Scanner/Manual)</label>
+                  <Label className="text-[10px] font-black uppercase text-ink/50 block">Código (Scanner/Manual)</Label>
                   <Input className="h-10 font-black text-ink bg-white" value={datos.codigo} onChange={e => setDatos({...datos, codigo: e.target.value})} placeholder="00000000" autoFocus />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[10px] font-black uppercase text-ink/50 block">Nombre del Producto</label>
+                  <Label className="text-[10px] font-black uppercase text-ink/50 block">Nombre del Producto</Label>
                   <Input className="h-10 font-black text-ink uppercase bg-white" value={datos.nombre} onChange={e => setDatos({...datos, nombre: e.target.value})} />
                 </div>
                 <div className="space-y-1">
                   <div className="flex justify-between items-center mb-1">
-                    <label className="text-[10px] font-black uppercase text-ink/50">Categoría</label>
+                    <Label className="text-[10px] font-black uppercase text-ink/50">Categoría</Label>
                     <div className="flex gap-1">
                       <button onClick={() => handleAddListItem('categorias')} className="text-brand-gold"><PlusCircle className="w-3.5 h-3.5"/></button>
                       <button onClick={() => handleRemoveListItem('categorias', datos.categoria)} className="text-status-danger"><MinusCircle className="w-3.5 h-3.5"/></button>
                     </div>
                   </div>
                   <select className="form-select h-10 text-xs font-bold bg-white" value={datos.categoria} onChange={e => setDatos({...datos, categoria: e.target.value})}>
-                    {(state.categorias || []).map(c => <option key={c} value={c}>{c}</option>)}
+                    {(state.categorias || []).map((cat: string) => <option key={cat} value={cat}>{cat}</option>)}
                   </select>
                 </div>
                 <div className="space-y-1">
-                   <label className="text-[10px] font-black uppercase text-ink/50 block">Proveedor</label>
+                   <Label className="text-[10px] font-black uppercase text-ink/50 block">Proveedor</Label>
                    <select className="form-select h-10 text-xs font-bold bg-white" value={datos.proveedor} onChange={e => setDatos({...datos, proveedor: e.target.value})}>
                      <option value="">SIN ASIGNAR</option>
                      {state.proveedores.map((p: any) => {
                        const name = typeof p === 'string' ? p : p.nombre;
-                       const id = typeof p === 'string' ? p : p.id;
-                       return <option key={id} value={name}>{name?.toUpperCase()}</option>;
+                       return <option key={typeof p === 'string' ? p : p.id} value={name}>{name?.toUpperCase() || 'S/N'}</option>;
                      })}
                    </select>
                  </div>
@@ -803,7 +799,7 @@ function ModalProducto({ producto, state, onClose, onSave, onUpdateLists }: { pr
               <div className="space-y-4">
                  <div className="grid grid-cols-2 gap-4">
                    <div className={`p-3 bg-surface-soft border border-line rounded-xl text-center ${producto ? 'opacity-50' : ''}`}>
-                     <label className="text-[9px] font-black uppercase text-ink/50 block mb-1">Stock Inicial</label>
+                     <Label className="text-[9px] font-black uppercase text-ink/50 block mb-1">Stock Inicial</Label>
                      <Input 
                         className="bg-transparent border-none text-center font-black text-xl w-full focus:outline-none" 
                         disabled={!!producto}
@@ -812,13 +808,13 @@ function ModalProducto({ producto, state, onClose, onSave, onUpdateLists }: { pr
                       />
                    </div>
                    <div className="p-3 bg-status-danger-soft border border-status-danger/20 rounded-xl text-center">
-                     <label className="text-[9px] font-black uppercase text-status-danger/70 block mb-1">Mínimo</label>
+                     <Label className="text-[9px] font-black uppercase text-status-danger/70 block mb-1">Mínimo</Label>
                      <Input className="bg-transparent border-none text-center font-black text-xl w-full text-status-danger focus:outline-none" value={datos.stockMinimo} onChange={e => setDatos({...datos, stockMinimo: e.target.value})} />
                    </div>
                  </div>
                  <div className="flex items-center gap-3 p-4 bg-surface-soft rounded-xl border border-line">
                    <button onClick={() => setDatos({...datos, aplicaIVA: !datos.aplicaIVA})} className={`w-12 h-6 rounded-full transition-all relative ${datos.aplicaIVA ? 'bg-status-success' : 'bg-ink/20'}`}><div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${datos.aplicaIVA ? 'right-1' : 'left-1'}`} /></button>
-                   <label className="text-[10px] font-black uppercase text-ink cursor-pointer" onClick={() => setDatos({...datos, aplicaIVA: !datos.aplicaIVA})}>Aplica IVA (16%)</label>
+                   <Label className="text-[10px] font-black uppercase text-ink cursor-pointer" onClick={() => setDatos({...datos, aplicaIVA: !datos.aplicaIVA})}>Aplica IVA (16%)</Label>
                  </div>
               </div>
             </div>
@@ -827,15 +823,15 @@ function ModalProducto({ producto, state, onClose, onSave, onUpdateLists }: { pr
           {activeTab === 'precios' && (
             <div className="space-y-6">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-surface-soft p-5 rounded-2xl border border-line shadow-inner">
-                <div className="space-y-1"><label className="text-[9px] font-black uppercase text-ink/50">Costo ($)</label><Input className="h-12 font-black text-lg bg-white" value={datos.costoUSD} onChange={e => setDatos({...datos, costoUSD: e.target.value})} /></div>
-                <div className="space-y-1"><label className="text-[9px] font-black uppercase text-brand-gold-deep">Margen %</label><Input className="h-12 font-black text-lg text-brand-gold-deep bg-white" value={datos.margen} onChange={e => recalcularTridireccional('margen', e.target.value)} /></div>
-                <div className="space-y-1"><label className="text-[9px] font-black uppercase text-status-success">Venta ($)</label><Input className="h-12 font-black text-lg text-status-success bg-white" value={datos.precioUSD} onChange={e => recalcularTridireccional('precioUSD', e.target.value)} /></div>
-                <div className="space-y-1"><label className="text-[9px] font-black uppercase text-ink">Venta (BS)</label><Input className="h-12 font-black text-lg bg-white" value={datos.precioBS} onChange={e => recalcularTridireccional('precioBS', e.target.value)} /></div>
+                <div className="space-y-1"><Label className="text-[9px] font-black uppercase text-ink/50">Costo ($)</Label><Input className="h-12 font-black text-lg bg-white" value={datos.costoUSD} onChange={e => setDatos({...datos, costoUSD: e.target.value})} /></div>
+                <div className="space-y-1"><Label className="text-[9px] font-black uppercase text-brand-gold-deep">Margen %</Label><Input className="h-12 font-black text-lg text-brand-gold-deep bg-white" value={datos.margen} onChange={e => recalcularTridireccional('margen', e.target.value)} /></div>
+                <div className="space-y-1"><Label className="text-[9px] font-black uppercase text-status-success">Venta ($)</Label><Input className="h-12 font-black text-lg text-status-success bg-white" value={datos.precioUSD} onChange={e => recalcularTridireccional('precioUSD', e.target.value)} /></div>
+                <div className="space-y-1"><Label className="text-[9px] font-black uppercase text-ink">Venta (BS)</Label><Input className="h-12 font-black text-lg bg-white" value={datos.precioBS} onChange={e => recalcularTridireccional('precioBS', e.target.value)} /></div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                 <div className="space-y-1"><label className="text-[9px] font-black uppercase text-ink/40">P. Mayor ($)</label><Input className="h-10 font-bold bg-white" value={datos.precioMayorUSD} onChange={e => setDatos({...datos, precioMayorUSD: e.target.value})} /></div>
-                 <div className="space-y-1"><label className="text-[9px] font-black uppercase text-ink/40">P. Descuento ($)</label><Input className="h-10 font-bold bg-white" value={datos.precioOfertaUSD} onChange={e => setDatos({...datos, precioOfertaUSD: e.target.value})} /></div>
-                 <div className="space-y-1"><label className="text-[9px] font-black uppercase text-ink/40">P. Promo ($)</label><Input className="h-10 font-bold bg-white" value={datos.precioPromoUSD} onChange={e => setDatos({...datos, precioPromoUSD: e.target.value})} /></div>
+                 <div className="space-y-1"><Label className="text-[9px] font-black uppercase text-ink/40">P. Mayor ($)</Label><Input className="h-10 font-bold bg-white" value={datos.precioMayorUSD} onChange={e => setDatos({...datos, precioMayorUSD: e.target.value})} /></div>
+                 <div className="space-y-1"><Label className="text-[9px] font-black uppercase text-ink/40">P. Descuento ($)</Label><Input className="h-10 font-bold bg-white" value={datos.precioOfertaUSD} onChange={e => setDatos({...datos, precioOfertaUSD: e.target.value})} /></div>
+                 <div className="space-y-1"><Label className="text-[9px] font-black uppercase text-ink/40">P. Promo ($)</Label><Input className="h-10 font-bold bg-white" value={datos.precioPromoUSD} onChange={e => setDatos({...datos, precioPromoUSD: e.target.value})} /></div>
               </div>
             </div>
           )}
@@ -845,7 +841,7 @@ function ModalProducto({ producto, state, onClose, onSave, onUpdateLists }: { pr
               <div className="flex flex-col gap-4 p-4 bg-ink text-white rounded-xl">
                 <div className="flex items-center gap-3">
                   <button onClick={() => setDatos({...datos, isKit: !datos.isKit})} className={`w-12 h-6 rounded-full transition-all relative ${datos.isKit ? 'bg-brand-gold' : 'bg-white/20'}`}><div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${datos.isKit ? 'right-1' : 'left-1'}`} /></button>
-                  <label className="text-[11px] font-black uppercase tracking-widest cursor-pointer" onClick={() => setDatos({...datos, isKit: !datos.isKit})}>Habilitar KIT / COMBO</label>
+                  <Label className="text-[11px] font-black uppercase tracking-widest cursor-pointer" onClick={() => setDatos({...datos, isKit: !datos.isKit})}>Habilitar KIT / COMBO</Label>
                 </div>
                 {datos.isKit && (
                   <div className="flex gap-6 border-t border-white/10 pt-4">
@@ -857,12 +853,12 @@ function ModalProducto({ producto, state, onClose, onSave, onUpdateLists }: { pr
               {datos.isKit && (
                 <div className="space-y-4">
                   <div className="relative"><Search className="absolute left-3 top-3 w-4 h-4 text-ink/30" /><Input className="h-12 pl-10 text-xs font-black uppercase bg-white" placeholder="Buscar productos componentes..." value={kitSearch} onChange={e => setKitSearch(e.target.value)} />{filteredProdsForKit.length > 0 && (<div className="absolute top-full left-0 right-0 bg-white border border-line rounded-lg shadow-2xl z-50 mt-1 overflow-hidden">{filteredProdsForKit.map(pk => (<div key={pk.id} onClick={() => { setDatos({...datos, kitItems: [...datos.kitItems, { productoId: pk.id, nombre: pk.nombre, cantidad: 1 }]}); setKitSearch(''); }} className="p-3 border-b border-line hover:bg-brand-gold-soft cursor-pointer flex justify-between items-center"><span className="text-xs font-black uppercase text-ink">{pk.nombre}</span><Plus className="w-4 h-4 text-brand-gold"/></div>))}</div>)}</div>
-                  <div className="card border-line shadow-sm overflow-hidden bg-white"><div className="table-wrap"><table><thead className="bg-surface-soft"><tr><th className="text-[10px] font-black uppercase text-ink">Componente</th><th className="text-[10px] font-black uppercase text-center text-ink">Cant</th><th /></tr></thead><tbody>
+                  <Card className="border-line shadow-sm overflow-hidden bg-white"><div className="table-wrap"><table><thead className="bg-surface-soft"><tr><th className="text-[10px] font-black uppercase text-ink">Componente</th><th className="text-[10px] font-black uppercase text-center text-ink">Cant</th><th /></tr></thead><tbody>
                     {datos.kitItems.map((ki: KitItem, index: number) => (
                       <tr key={index} className="border-b border-line/30"><td className="text-[11px] font-black uppercase text-ink">{ki.nombre}</td><td className="text-center"><Input className="w-12 h-8 text-center font-black bg-surface-soft border-line inline-block" type="number" value={ki.cantidad} onChange={e => { const n = [...datos.kitItems]; n[index].cantidad = parseInt(e.target.value) || 1; setDatos({...datos, kitItems: n}); }} /></td><td className="text-center"><button onClick={() => setDatos({...datos, kitItems: datos.kitItems.filter((_:any, i:number) => i !== index)})} className="text-status-danger"><Trash2 className="w-4 h-4"/></button></td></tr>
                     ))}
                     {datos.kitItems.length === 0 && (<tr><td colSpan={3} className="py-10 text-center text-ink/20 font-black uppercase italic text-[10px]">Añada productos componentes</td></tr>)}
-                  </tbody></table></div></div>
+                  </tbody></table></div></Card>
                 </div>
               )}
             </div>

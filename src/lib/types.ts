@@ -22,6 +22,7 @@ export interface Product {
   isKit?: boolean;
   kitType?: 'stock_propio' | 'stock_componentes';
   kitItems?: KitItem[];
+  proveedor?: string;
 }
 
 export interface KitItem {
@@ -41,17 +42,19 @@ export interface Movimiento {
   referencia: string;
 }
 
+export interface SaleItem {
+  productoId: string;
+  nombre: string;
+  cantidad: number;
+  precioUnitUSD: number;
+  subtotalUSD: number;
+}
+
 export interface Sale {
   id: string;
   fecha: string;
   cliente: string;
-  items: Array<{
-    productoId: string;
-    nombre: string;
-    cantidad: number;
-    precioUnitUSD: number;
-    subtotalUSD: number;
-  }>;
+  items: SaleItem[];
   subtotalUSD: number;
   descuentoUSD: number;
   totalUSD: number;
@@ -92,7 +95,85 @@ export interface Debt {
     metodo: string;
     reciboId: string;
   }>;
+  ventaId?: string;
   items?: any[];
+}
+
+export interface LibroDiarioEntry {
+  id: string;
+  fecha: string;
+  tipo: 'ingreso' | 'egreso';
+  categoria: string;
+  concepto: string;
+  montoUSD: number;
+  montoBS: number;
+  metodo: string;
+  referencia: string;
+}
+
+export interface Terminal {
+  id: string;
+  nombre: string;
+  usuarioId: string | null;
+  activo: boolean;
+}
+
+export interface Supplier {
+  id: string;
+  nombre: string;
+  rif: string;
+  contacto: string;
+  direccion: string;
+  telefono: string;
+}
+
+export interface ReturnItem {
+  productoId: string;
+  nombre: string;
+  cantidad: number;
+  precioUnitUSD: number;
+  estadoProducto: 'REINTEGRADO_STOCK' | 'MERMA_DANADO';
+}
+
+export interface Return {
+  id: string;
+  ventaId: string;
+  fecha: string;
+  items: ReturnItem[];
+  totalUSD: number;
+  metodoReembolso: string;
+  motivo: string;
+}
+
+export interface AppState {
+  tasa: number;
+  pinDevolucion: string;
+  productos: Product[];
+  ventas: Sale[];
+  cxc: Debt[];
+  cxp: Debt[];
+  clientes: Customer[];
+  devoluciones: Return[];
+  movimientos: Movimiento[];
+  libroDiario: LibroDiarioEntry[];
+  carrito: SaleItem[];
+  terminales: Terminal[];
+  reportesZ: any[];
+  ultimoZ: number;
+  proximoRecibo: number;
+  proximaDevolucion: number;
+  acumuladoHistorico: number;
+  empresa: {
+    nombre: string;
+    rif: string;
+    direccion: string;
+    telefono: string;
+  };
+  departamentos: string[];
+  categorias: string[];
+  marcas: string[];
+  presentaciones: string[];
+  proveedores: Supplier[];
 }
 
 export type PaymentMethod = 'efectivo_usd' | 'efectivo_bs' | 'punto_venta' | 'biopago' | 'pagomovil' | 'zelle' | 'transferencia';

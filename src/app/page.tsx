@@ -16,15 +16,15 @@ import {
   Wifi,
   WifiOff,
   Clock as ClockIcon,
-  ShoppingBag,
   LogOut,
   Bell,
   ShieldCheck,
   Truck,
-  BookOpen
+  BookOpen,
+  ShoppingBag
 } from 'lucide-react';
-import { Store, initialState } from '@/lib/db-store';
-import { AppState } from '@/lib/types';
+import { Store, initialState, Utils } from '@/lib/db-store';
+import { AppState, Terminal } from '@/lib/types';
 import { auth, db } from '@/lib/firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { doc, updateDoc, onSnapshot, getDoc } from 'firebase/firestore';
@@ -93,9 +93,8 @@ export default function LicoreriaPOS() {
 
               if (data.rol === 'cajero') {
                  const configSnap = await getDoc(doc(db, 'pos_system_data', 'state'));
-                 const terminals = configSnap.data()?.terminales || [];
-                 const terminalsArr = Array.isArray(terminals) ? terminals : Object.values(terminals);
-                 const hasTerminal = terminalsArr.some((t: any) => t.usuarioId === userDocId);
+                 const terminals = (configSnap.data()?.terminales || []) as Terminal[];
+                 const hasTerminal = terminals.some((t: Terminal) => t.usuarioId === userDocId);
                  
                  if (!hasTerminal) {
                     await signOut(auth);
@@ -135,8 +134,8 @@ export default function LicoreriaPOS() {
       }
     });
 
-    const unsubscribeStore = Store.subscribe((dbUpdate) => {
-      setState(prev => ({ ...prev, ...dbUpdate }));
+    const unsubscribeStore = Store.subscribe((dbUpdate: Partial<AppState>) => {
+      setState(prev => ({ ...prev, ...dbUpdate }) as AppState);
     });
 
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -167,7 +166,7 @@ export default function LicoreriaPOS() {
         try {
           const items = JSON.parse(savedCart);
           if (items.length > 0) {
-            setState(prev => ({ ...prev, carrito: items }));
+            setState(prev => ({ ...prev, carrito: items }) as AppState);
           }
         } catch (e) {}
       }
@@ -205,7 +204,7 @@ export default function LicoreriaPOS() {
 
   const updateState = (newState: Partial<AppState>) => {
     setState(prev => {
-      const updated = { ...prev, ...newState };
+      const updated = { ...prev, ...newState } as AppState;
       Store.set(updated);
       return updated;
     });
@@ -223,7 +222,7 @@ export default function LicoreriaPOS() {
       label: 'Operaciones',
       items: [
         { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-        { id: 'inventario', label: 'Inventario', icon: Package, count: state.productos.length },
+        { id: 'inventario', label: 'Inventario', icon: Package, count: (state.productos || []).length },
         { id: 'compras', label: 'Entradas (Compras)', icon: ShoppingBag },
         { id: 'proveedores', label: 'Proveedores', icon: Truck, count: (state.proveedores || []).length },
       ]
@@ -233,8 +232,8 @@ export default function LicoreriaPOS() {
       label: 'Finanzas',
       items: [
         { id: 'contabilidad', label: 'Contabilidad', icon: BookOpen },
-        { id: 'cxc', label: 'Cuentas por Cobrar', icon: HandCoins, count: (state.cxc || []).filter(x => x.estado !== 'pagada').length },
-        { id: 'cxp', label: 'Cuentas por Pagar', icon: FileText, count: (state.cxp || []).filter(x => x.estado !== 'pagada').length },
+        { id: 'cxc', label: 'Cuentas por Cobrar', icon: HandCoins, count: (state.cxc || []).filter((x: any) => x.estado !== 'pagada').length },
+        { id: 'cxp', label: 'Cuentas por Pagar', icon: FileText, count: (state.cxp || []).filter((x: any) => x.estado !== 'pagada').length },
       ]
     },
     {
