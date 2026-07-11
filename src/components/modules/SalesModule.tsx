@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -41,6 +40,7 @@ declare global {
   interface Window {
     electronAPI?: {
       printTicket: (data: any) => Promise<void>;
+      getAppVersion: () => Promise<string>;
     };
   }
 }
@@ -282,135 +282,73 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     setCliente('Consumidor final');
   };
 
-  const ejecutarVentaACredito = () => {
-    let finalClient = selectedClient;
-    const terminal = getCurrentTerminal();
-    
-    if (showNewClientForm) {
-      if (!newClient.name || !newClient.cedula) return alert('Nombre y Cédula requeridos');
-      const nc: Customer = {
-        id: Store.uid(),
-        name: newClient.name,
-        cedula: newClient.cedula,
-        phone: newClient.phone,
-        address: newClient.address,
-        debt: subtotalUSD
-      };
-      updateState({ clientes: [...(state.clientes || []), nc] });
-      finalClient = nc;
+  const emitirReporteZ = () => {
+    if (!confirm('¿Desea realizar el CIERRE FISCAL Z?')) return;
+    const hoy = Utils.hoy();
+    const ventasHoy = state.ventas.filter(v => v.fecha.startsWith(hoy));
+    const totalHoy = ventasHoy.reduce((s, v) => s + v.totalUSD, 0);
+    const nuevoZ: ReportZ = {
+      id: `Z-${String(state.ultimoZ + 1).padStart(4, '0')}`,
+      fecha: hoy, numeroZ: state.ultimoZ + 1,
+      desdeFactura: ventasHoy[0]?.id || '000000000',
+      hastaFactura: ventasHoy[ventasHoy.length - 1]?.id || '000000000',
+      baseImponibleUSD: totalHoy / 1.16, ivaUSD: totalHoy - (totalHoy / 1.16),
+      exentoUSD: 0, totalBrutoUSD: totalHoy, acumuladoHistoricoUSD: state.acumuladoHistorico
+    };
+    updateState({ reportesZ: [...state.reportesZ, nuevoZ], ultimoZ: state.ultimoZ + 1 });
+    setShowReport('Z');
+  };
+
+  const handlePrintRoccia = (reportType: 'Y' | 'Z') => {
+    if (!window.electronAPI) {
+      window.print();
+      return;
     }
 
-    if (!finalClient) return alert('Seleccione un cliente');
-
-    const reciboId = String(state.proximoRecibo).padStart(9, '0');
-    const ahoraStr = Utils.ahora();
+    const { breakdown, totalBS, totalUSD, totalCreditosUSD } = getReportSummary();
+    const terminal = getCurrentTerminal();
     
-    let prodsActualizados = [...state.productos];
-    let nuevosMovimientos: Movimiento[] = [];
-
-    state.carrito.forEach(item => {
-      const pIdx = prodsActualizados.findIndex(x => x.id === item.productoId);
-      if (pIdx === -1) return;
-      const p = { ...prodsActualizados[pIdx] };
-      
-      if (p.isKit && p.kitType === 'stock_componentes' && p.kitItems) {
-        p.kitItems.forEach(ki => {
-          const cpIdx = prodsActualizados.findIndex(cp => cp.id === ki.productoId);
-          if (cpIdx !== -1) {
-            const cp = { ...prodsActualizados[cpIdx] };
-            const cantidadADescontar = item.cantidad * ki.cantidad;
-            const stockAntes = cp.stock;
-            cp.stock -= cantidadADescontar;
-            
-            nuevosMovimientos.push({
-              id: Store.uid(),
-              productoId: cp.id,
-              tipo: 'venta',
-              cantidad: -Math.abs(cantidadADescontar),
-              stockAntes,
-              stockDespues: cp.stock,
-              fecha: ahoraStr,
-              referencia: `COMPONENTE DE KIT (CREDITO): ${p.nombre} - VENTA ${reciboId}`
-            });
-            prodsActualizados[cpIdx] = cp;
-          }
-        });
-        nuevosMovimientos.push({
-          id: Store.uid(),
-          productoId: p.id,
-          tipo: 'venta',
-          cantidad: -Math.abs(item.cantidad),
-          stockAntes: p.stock,
-          stockDespues: p.stock,
-          fecha: ahoraStr,
-          referencia: `VENTA KIT VIRTUAL (CREDITO) ${reciboId}`
-        });
-      } else {
-        const stockAntes = p.stock;
-        p.stock -= item.cantidad;
-        
-        nuevosMovimientos.push({
-          id: Store.uid(),
-          productoId: p.id,
-          tipo: 'venta',
-          cantidad: -Math.abs(item.cantidad),
-          stockAntes,
-          stockDespues: p.stock,
-          fecha: ahoraStr,
-          referencia: `CRÉDITO ${reciboId} - TERM: ${terminal?.nombre || 'Gral'}`
-        });
-      }
-      prodsActualizados[pIdx] = p;
-    });
-
-    const nuevaVenta: Sale = {
-      id: reciboId,
-      fecha: ahoraStr,
-      cliente: finalClient.name,
-      items: [...state.carrito],
-      subtotalUSD,
-      descuentoUSD: 0,
-      totalUSD: subtotalUSD,
-      totalBS,
-      metodoPago: 'credito',
-      estado: 'pendiente',
-      type: 'VENTA',
-      received: 0,
-      change: 0,
-      terminalId: terminal?.id,
-      cajeroId: auth.currentUser?.email?.replace(/\W/g, '_')
+    const printData = {
+      id: reportType === 'Z' ? String(state.ultimoZ).padStart(4, '0') : 'Y-REPORT',
+      reportTitle: reportType === 'Z' ? 'CIERRE FISCAL Z' : 'REPORTE X/Y AUDITORIA',
+      date: Utils.ahora().replace('T', ' ').slice(0, 19),
+      empresa: state.empresa,
+      totals: [
+        { label: 'TOTAL EN BOLIVARES', value: Utils.fmtBS(totalBS) },
+        { label: 'TOTAL EN USD', value: Utils.fmtUSD(totalUSD) },
+        { label: 'TOTAL CREDITOS', value: Utils.fmtUSD(totalCreditosUSD) }
+      ],
+      breakdown: Object.entries(breakdown).map(([m, val]: any) => ({
+        label: Utils.metodoLabel(m),
+        value: m.includes('usd') || m === 'zelle' ? Utils.fmtUSD(val.usd) : Utils.fmtBS(val.bs)
+      }))
     };
 
-    const nuevaCxC = {
-      id: reciboId,
-      fecha: Utils.hoy(),
-      fechaVencimiento: '2099-12-31',
-      cliente: finalClient.name,
-      montoUSD: subtotalUSD,
-      abonadoUSD: 0,
-      saldoUSD: subtotalUSD,
-      estado: 'pendiente',
-      ventaId: reciboId,
-      historialPagos: []
-    };
-
-    updateState({
-      productos: prodsActualizados,
-      ventas: [...state.ventas, nuevaVenta],
-      cxc: [...state.cxc, nuevaCxC],
-      movimientos: [...state.movimientos, ...nuevosMovimientos],
-      carrito: [],
-      proximoRecibo: state.proximoRecibo + 1,
-      clientes: (state.clientes || []).map(c => c.id === finalClient?.id ? { ...c, debt: (c.debt || 0) + subtotalUSD } : c)
-    });
-
-    setLastProcessedSale(nuevaVenta);
-    setShowReceiptModal(true);
-    setShowMultiModal(false);
-    setIsCreditView(false);
-    setSelectedClient(null);
-    setShowNewClientForm(false);
+    window.electronAPI.printTicket(printData);
   };
+
+  const getReportSummary = () => {
+    const hoy = Utils.hoy();
+    const ventasHoy = state.ventas.filter(v => v.fecha.startsWith(hoy));
+    const breakdown: Record<string, { usd: number, bs: number }> = {};
+    let totalBS = 0; let totalUSD = 0; let totalCreditosUSD = 0;
+
+    ventasHoy.forEach(v => {
+      const payments = v.payments && v.payments.length > 0 ? v.payments : [{ metodo: v.metodoPago, montoUSD: v.totalUSD, montoBS: v.totalBS }];
+      payments.forEach((p: PagoRealizado) => {
+        const m = p.metodo;
+        if (!breakdown[m]) breakdown[m] = { usd: 0, bs: 0 };
+        breakdown[m].usd += p.montoUSD; breakdown[m].bs += p.montoBS;
+        if (m === 'efectivo_usd' || m === 'zelle') totalUSD += p.montoUSD;
+        else if (m === 'credito') totalCreditosUSD += p.montoUSD;
+        else totalBS += p.montoBS;
+      });
+    });
+    return { breakdown, totalBS, totalUSD, totalCreditosUSD, ventasHoy };
+  };
+
+  const { breakdown, totalBS: rTotalBS, totalUSD: rTotalUSD, totalCreditosUSD, ventasHoy: rVentasHoy } = getReportSummary();
+  const zReportData = showReport === 'Z' ? state.reportesZ[state.reportesZ.length - 1] : null;
 
   const addPago = (isAbono: boolean = false) => {
     let monto = parseFloat(montoInput);
@@ -502,45 +440,6 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     setAbonoPagos([]);
   };
 
-  const getReportSummary = () => {
-    const hoy = Utils.hoy();
-    const ventasHoy = state.ventas.filter(v => v.fecha.startsWith(hoy));
-    const breakdown: Record<string, { usd: number, bs: number }> = {};
-    let totalBS = 0; let totalUSD = 0; let totalCreditosUSD = 0;
-
-    ventasHoy.forEach(v => {
-      const payments = v.payments && v.payments.length > 0 ? v.payments : [{ metodo: v.metodoPago, montoUSD: v.totalUSD, montoBS: v.totalBS }];
-      payments.forEach((p: PagoRealizado) => {
-        const m = p.metodo;
-        if (!breakdown[m]) breakdown[m] = { usd: 0, bs: 0 };
-        breakdown[m].usd += p.montoUSD; breakdown[m].bs += p.montoBS;
-        if (m === 'efectivo_usd' || m === 'zelle') totalUSD += p.montoUSD;
-        else if (m === 'credito') totalCreditosUSD += p.montoUSD;
-        else totalBS += p.montoBS;
-      });
-    });
-    return { breakdown, totalBS, totalUSD, totalCreditosUSD, ventasHoy };
-  };
-
-  const emitirReporteZ = () => {
-    if (!confirm('¿Desea realizar el CIERRE FISCAL Z?')) return;
-    const hoy = Utils.hoy();
-    const ventasHoy = state.ventas.filter(v => v.fecha.startsWith(hoy));
-    const totalHoy = ventasHoy.reduce((s, v) => s + v.totalUSD, 0);
-    const nuevoZ: ReportZ = {
-      id: `Z-${String(state.ultimoZ + 1).padStart(4, '0')}`,
-      fecha: hoy, numeroZ: state.ultimoZ + 1,
-      desdeFactura: ventasHoy[0]?.id || '000000000',
-      hastaFactura: ventasHoy[ventasHoy.length - 1]?.id || '000000000',
-      baseImponibleUSD: totalHoy / 1.16, ivaUSD: totalHoy - (totalHoy / 1.16),
-      exentoUSD: 0, totalBrutoUSD: totalHoy, acumuladoHistoricoUSD: state.acumuladoHistorico
-    };
-    updateState({ reportesZ: [...state.reportesZ, nuevoZ], ultimoZ: state.ultimoZ + 1 });
-    setShowReport('Z');
-  };
-
-  const { breakdown, totalBS: rTotalBS, totalUSD: rTotalUSD, totalCreditosUSD, ventasHoy: rVentasHoy } = getReportSummary();
-
   const buscarVentaParaDevolucion = () => {
     const sale = state.ventas.find(v => v.id === returnSaleSearch || v.id.endsWith(returnSaleSearch));
     if (!sale) return alert('Venta no encontrada');
@@ -577,8 +476,6 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     updateState({ productos: nuevosProds, devoluciones: [{ id: idDev, ventaId: selectedSaleForReturn.id, fecha: ahoraStr, items: [...returnItems], totalUSD: totalDev, metodoReembolso: refundMethod, motivo: returnReason }, ...(state.devoluciones || [])], movimientos: [...state.movimientos, ...nuevosMovs], proximaDevolucion: state.proximaDevolucion + 1 });
     alert('Procesada'); setReturnView('list'); setSelectedSaleForReturn(null);
   };
-
-  const zReportData = showReport === 'Z' ? state.reportesZ[state.reportesZ.length - 1] : null;
 
   return (
     <div className="flex flex-col gap-2 h-[calc(100vh-100px)] max-w-7xl mx-auto w-full overflow-hidden">
@@ -805,8 +702,11 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
           </div>
 
           <div className="flex gap-2 mt-4 no-print">
-            <button onClick={() => window.print()} className="flex-1 bg-white text-ink border border-line h-11 rounded-lg font-black uppercase text-[10px] shadow-sm flex items-center justify-center gap-2 hover:bg-surface-soft transition-all">
-              <Printer className="w-4 h-4" /> Imprimir USB (Roccia 80mm)
+            <button 
+              onClick={() => handlePrintRoccia(showReport)} 
+              className="flex-1 bg-white text-ink border border-line h-11 rounded-lg font-black uppercase text-[10px] shadow-sm flex items-center justify-center gap-2 hover:bg-surface-soft transition-all"
+            >
+              <Printer className="w-4 h-4" /> {window.electronAPI ? 'Imprimir USB (Roccia 80mm)' : 'Imprimir'}
             </button>
           </div>
         </DialogContent>

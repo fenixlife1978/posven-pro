@@ -5,6 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button';
 import { Sale } from '@/lib/types';
 import { Printer, Download, X } from 'lucide-react';
+import { Store } from '@/lib/db-store';
 
 interface Props {
   isOpen: boolean;
@@ -13,14 +14,36 @@ interface Props {
 }
 
 export function ReceiptModal({ isOpen, onClose, sale }: Props) {
+  const state = Store.get();
+  
   const handlePrint = () => {
-    window.print();
+    // Detectamos si estamos en Electron para impresión directa Roccia
+    if (window.electronAPI) {
+      const printData = {
+        id: sale.id,
+        date: new Date(sale.date).toLocaleString('es-VE'),
+        customerName: sale.customerName,
+        empresa: state.empresa,
+        items: sale.items.map((it: any) => ({
+          name: it.name || it.nombre,
+          qty: it.qty || it.cantidad,
+          subtotal: it.subtotalUSD || (it.price * it.qty)
+        })),
+        totals: [
+          { label: 'TOTAL BS', value: sale.totalBS.toFixed(2) },
+          { label: 'TOTAL USD', value: sale.totalUSD.toFixed(2) }
+        ],
+        type: sale.type || 'RECIBO'
+      };
+      window.electronAPI.printTicket(printData);
+    } else {
+      window.print();
+    }
   };
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-xs p-0 bg-transparent border-none overflow-visible shadow-none">
-        {/* Título requerido por accesibilidad (Radix UI) - Oculto visualmente */}
         <DialogHeader className="sr-only">
           <DialogTitle>Informe de Venta {sale.id}</DialogTitle>
         </DialogHeader>
@@ -31,10 +54,10 @@ export function ReceiptModal({ isOpen, onClose, sale }: Props) {
           </Button>
 
           <div className="text-center mb-4">
-            <h3 className="font-bold text-sm uppercase">PosVEN pro</h3>
-            <p>RIF: J-00000000-0</p>
-            <p>SISTEMA POS PROFESIONAL</p>
-            <p>VENEZUELA CLOUD SYNC</p>
+            <h3 className="font-bold text-sm uppercase">{state.empresa.nombre}</h3>
+            <p>RIF: {state.empresa.rif}</p>
+            <p>{state.empresa.direccion}</p>
+            <p>TEL: {state.empresa.telefono}</p>
           </div>
 
           <div className="border-t border-dashed border-black/30 my-2"></div>
@@ -56,9 +79,9 @@ export function ReceiptModal({ isOpen, onClose, sale }: Props) {
             {sale.items.map((item: any, i) => (
               <div key={i} className="flex justify-between mb-1">
                 <span className="flex-1 uppercase">
-                  {(item.name || item.nombre)} <span className="font-bold">x{item.qty}</span>
+                  {(item.name || item.nombre)} <span className="font-bold">x{item.qty || item.cantidad}</span>
                 </span>
-                <span className="w-16 text-right">{(item.price * item.qty).toFixed(2)}</span>
+                <span className="w-16 text-right">{(item.subtotalUSD || (item.price * item.qty)).toFixed(2)}</span>
               </div>
             ))}
           </div>
@@ -76,25 +99,17 @@ export function ReceiptModal({ isOpen, onClose, sale }: Props) {
             </div>
           </div>
 
-          {(sale.type === 'CONTADO' || sale.paymentMethod !== 'Crédito') && (
-            <div className="mt-4 space-y-1">
-              <div className="flex justify-between italic uppercase"><span>METODO:</span><span>{sale.paymentMethod}</span></div>
-              <div className="flex justify-between italic uppercase"><span>RECIBIDO:</span><span>{(sale.received || 0).toFixed(2)}</span></div>
-              <div className="flex justify-between italic uppercase"><span>CAMBIO:</span><span>{(sale.change || 0).toFixed(2)}</span></div>
-            </div>
-          )}
-
           <div className="border-t border-dashed border-black/30 my-4"></div>
 
           <div className="text-center italic">
             <p>¡Gracias por su confianza!</p>
-            <p className="mt-2 text-[8px] opacity-50 uppercase">Generado por PosVEN Pro Cloud</p>
+            <p className="mt-2 text-[8px] opacity-50 uppercase">PosVEN Pro Cloud Sync · v2.5.0</p>
           </div>
         </div>
 
         <div className="flex gap-2 mt-4 no-print">
           <Button variant="secondary" className="flex-1 gap-2 uppercase font-black text-[10px]" onClick={handlePrint}>
-            <Printer className="w-4 h-4" /> Imprimir
+            <Printer className="w-4 h-4" /> {window.electronAPI ? 'Imprimir Roccia' : 'Imprimir'}
           </Button>
           <Button variant="default" className="flex-1 gap-2 bg-primary uppercase font-black text-[10px]">
             <Download className="w-4 h-4" /> Guardar PDF
