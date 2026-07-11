@@ -36,7 +36,7 @@ export default function SuppliersModule({ state, updateState }: { state: AppStat
   // Normalización de proveedores para evitar errores de tipo con datos antiguos
   const safeProveedores = useMemo(() => {
     return (state.proveedores || []).map(p => 
-      typeof p === 'string' ? { id: p, nombre: p, rif: '', contacto: '', direccion: '', telefono: '' } : p
+      typeof p === 'string' ? { id: p, nombre: p, rif: p, contacto: '', direccion: '', telefono: '' } : p
     );
   }, [state.proveedores]);
 
@@ -46,16 +46,21 @@ export default function SuppliersModule({ state, updateState }: { state: AppStat
   );
 
   const handleSave = () => {
-    if (!formData.nombre.trim() || !formData.rif.trim()) return alert('Nombre y RIF son obligatorios');
+    if (!formData.nombre.trim() || !formData.rif.trim()) {
+      alert('Nombre y RIF son obligatorios');
+      return;
+    }
     
     const rifLimpio = formData.rif.trim().toUpperCase();
+    
+    // Verificar si el RIF ya existe en otro proveedor (distinto al que estamos editando)
     const existeRif = safeProveedores.find(p => p.rif === rifLimpio && p.id !== editingId);
     
     if (existeRif) {
       toast({ 
         variant: "destructive", 
-        title: "RIF Duplicado", 
-        description: `El RIF ${rifLimpio} ya está registrado bajo el nombre: ${existeRif.nombre}` 
+        title: "RIF ya registrado", 
+        description: `El RIF ${rifLimpio} ya pertenece al proveedor: ${existeRif.nombre}` 
       });
       return;
     }
@@ -64,24 +69,33 @@ export default function SuppliersModule({ state, updateState }: { state: AppStat
 
     if (editingId) {
       const idx = nuevosProveedores.findIndex(p => p.id === editingId);
+      if (idx === -1) return;
+
       const viejoNombre = nuevosProveedores[idx].nombre;
-      nuevosProveedores[idx] = { ...formData, id: editingId, rif: rifLimpio };
       
-      // Actualización en cascada para productos
+      // Actualizamos el proveedor. El ID ahora es el nuevo RIF.
+      nuevosProveedores[idx] = { 
+        ...formData, 
+        id: rifLimpio, // El RIF es el nuevo ID
+        rif: rifLimpio 
+      };
+      
+      // Actualización en cascada para productos que referencian a este proveedor por NOMBRE
       const nuevosProductos = state.productos.map(p => 
         p.proveedor === viejoNombre ? { ...p, proveedor: formData.nombre } : p
       );
       
       updateState({ proveedores: nuevosProveedores, productos: nuevosProductos });
-      toast({ title: "Proveedor Actualizado" });
+      toast({ title: "Proveedor Actualizado", description: "Cambios guardados correctamente." });
     } else {
+      // Registro nuevo: Usamos el RIF como ID único
       const nuevo: Supplier = {
         ...formData,
-        id: 'PROV-' + Store.uid().toUpperCase().slice(0, 4),
+        id: rifLimpio,
         rif: rifLimpio
       };
       updateState({ proveedores: [...safeProveedores, nuevo] });
-      toast({ title: "Proveedor Registrado" });
+      toast({ title: "Proveedor Registrado", description: `Se ha añadido ${formData.nombre} al sistema.` });
     }
     
     setShowModal(false);
@@ -155,8 +169,8 @@ export default function SuppliersModule({ state, updateState }: { state: AppStat
               {filtered.length === 0 ? (
                 <tr><td colSpan={4} className="text-center py-20 text-ink/20 font-black uppercase italic">No se registran proveedores coincidentes</td></tr>
               ) : (
-                filtered.map((p, idx) => (
-                  <tr key={`${p.id}-${idx}`} className="border-b border-line/30 hover:bg-surface-warm/20 transition-colors">
+                filtered.map((p) => (
+                  <tr key={p.id} className="border-b border-line/30 hover:bg-surface-warm/20 transition-colors">
                     <td className="py-4 px-6">
                        <div className="text-ink font-black text-xs uppercase">{p.nombre}</div>
                        <div className="text-brand-gold-deep font-black text-[9px] mono">{p.rif}</div>
@@ -167,8 +181,8 @@ export default function SuppliersModule({ state, updateState }: { state: AppStat
                     </td>
                     <td className="text-right py-4 px-6">
                       <div className="flex justify-end gap-1">
-                        <button onClick={() => handleEdit(p)} className="btn-icon h-8 w-8 text-ink hover:text-brand-gold"><Edit2 className="w-4 h-4" /></button>
-                        <button onClick={() => handleDelete(p)} className="btn-icon h-8 w-8 text-ink hover:text-status-danger"><Trash2 className="w-4 h-4" /></button>
+                        <button onClick={() => handleEdit(p)} className="btn-icon h-8 w-8 text-ink hover:text-brand-gold" title="Modificar Datos"><Edit2 className="w-4 h-4" /></button>
+                        <button onClick={() => handleDelete(p)} className="btn-icon h-8 w-8 text-ink hover:text-status-danger" title="Eliminar"><Trash2 className="w-4 h-4" /></button>
                       </div>
                     </td>
                   </tr>
@@ -198,7 +212,7 @@ export default function SuppliersModule({ state, updateState }: { state: AppStat
                     </div>
                   </div>
                   <div className="form-group col-span-2 sm:col-span-1">
-                    <label className="text-ink text-[10px] font-black uppercase block mb-1.5 opacity-60">RIF Fiscal</label>
+                    <label className="text-ink text-[10px] font-black uppercase block mb-1.5 opacity-60">RIF Fiscal (ID ÚNICO)</label>
                     <div className="relative">
                       <Hash className="absolute left-3 top-3 w-4 h-4 text-brand-gold opacity-30" />
                       <input className="form-input pl-10 h-11 text-xs font-black uppercase" value={formData.rif} onChange={e => setFormData({...formData, rif: e.target.value})} placeholder="J-12345678-0" />
@@ -233,7 +247,7 @@ export default function SuppliersModule({ state, updateState }: { state: AppStat
 
                <div className="p-4 bg-brand-gold-soft/20 rounded-xl border border-brand-gold/10 flex items-start gap-3">
                   <AlertTriangle className="w-5 h-5 text-brand-gold-deep shrink-0 mt-0.5" />
-                  <p className="text-[9px] text-brand-gold-deep font-bold uppercase leading-tight">La duplicidad de RIF está prohibida por seguridad. Verifique los datos antes de guardar.</p>
+                  <p className="text-[9px] text-brand-gold-deep font-bold uppercase leading-tight">El RIF es el identificador único del proveedor. No se permite duplicidad por seguridad fiscal.</p>
                </div>
 
                <button onClick={handleSave} className="btn btn-primary w-full h-14 font-black uppercase text-xs shadow-xl tracking-widest">
