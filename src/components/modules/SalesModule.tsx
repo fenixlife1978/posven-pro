@@ -1,5 +1,7 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { ShoppingCart, Search, Trash2, Plus, Minus, User, Printer, Trash, Package, History, FileText, CheckCircle2, ArrowLeft, Clock, AlertCircle, Eye, X } from 'lucide-react';
+"use client";
+
+import React, { useState } from 'react';
+import { ShoppingCart, Search, Trash2, Plus, Minus, User, Printer, Trash, Package, History, FileText, CheckCircle2, ArrowLeft, Clock, AlertCircle, Eye, X, HandCoins } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
@@ -12,7 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { AppState, Product, SaleItem, Sale, LibroDiarioEntry, PaymentMethod } from '@/lib/types';
+import { AppState, Product, SaleItem, Sale, PaymentMethod } from '@/lib/types';
 import { Utils, Store } from '@/lib/db-store';
 import { exportarPDFVentasDetallado } from '@/lib/pdf-generator';
 import { toast } from '@/hooks/use-toast';

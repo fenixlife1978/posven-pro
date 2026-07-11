@@ -13,11 +13,7 @@ import {
   FileText, 
   History, 
   Layers, 
-  ShoppingBag, 
-  TrendingUp, 
   Box, 
-  ClipboardList, 
-  Info, 
   PlusCircle, 
   MinusCircle, 
   Check, 
@@ -28,7 +24,6 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import {
   Table,
@@ -41,10 +36,7 @@ import {
 import { 
   generarPDFInventarioSimple, 
   exportarPDFInventarioGeneral, 
-  exportarPDFVentasDetallado, 
   exportarPDFKardex, 
-  exportarPDFHistorialAjustes, 
-  exportarPDFConsumoInterno,
   exportarPDFDevoluciones
 } from '@/lib/pdf-generator';
 
@@ -791,7 +783,8 @@ function ModalProducto({ producto, state, onClose, onSave, onUpdateLists }: { pr
                      <option value="">SIN ASIGNAR</option>
                      {state.proveedores.map((p: any) => {
                        const name = typeof p === 'string' ? p : p.nombre;
-                       return <option key={typeof p === 'string' ? p : p.id} value={name}>{name?.toUpperCase() || 'S/N'}</option>;
+                       const id = typeof p === 'string' ? p : p.id;
+                       return <option key={id} value={name}>{name?.toUpperCase() || 'S/N'}</option>;
                      })}
                    </select>
                  </div>
