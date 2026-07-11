@@ -61,7 +61,6 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   const [showAbonoMultiModal, setShowAbonoMultiModal] = useState(false);
   
   const [showDetailsModal, setShowDetailsModal] = useState<any | null>(null);
-  const [showHistoryModal, setShowHistoryModal] = useState<any | null>(null);
   
   const [lastProcessedSale, setLastProcessedSale] = useState<any | null>(null);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
@@ -183,44 +182,66 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     const terminal = getCurrentTerminal();
     
     let prodsActualizados = [...state.productos];
+    let nuevosMovimientos: Movimiento[] = [];
+
     state.carrito.forEach(item => {
       const pIdx = prodsActualizados.findIndex(x => x.id === item.productoId);
       if (pIdx === -1) return;
       
       const p = { ...prodsActualizados[pIdx] };
+      
+      // LOGICA DE DESCUENTO POR TIPO DE PRODUCTO
       if (p.isKit && p.kitType === 'stock_componentes' && p.kitItems) {
-        let cantVendida = item.cantidad;
-        let dePropio = Math.min(cantVendida, Math.max(0, p.stock));
-        p.stock -= dePropio;
-        let deComponentes = cantVendida - dePropio;
-        if (deComponentes > 0) {
-          p.kitItems.forEach(ki => {
-            const cpIdx = prodsActualizados.findIndex(cp => cp.id === ki.productoId);
-            if (cpIdx !== -1) {
-              const cp = { ...prodsActualizados[cpIdx] };
-              cp.stock -= (ki.cantidad * deComponentes);
-              prodsActualizados[cpIdx] = cp;
-            }
-          });
-        }
+        // Venta de Kit/Combo sin stock propio: Descontar de componentes y registrar en cada Kardex
+        p.kitItems.forEach(ki => {
+          const cpIdx = prodsActualizados.findIndex(cp => cp.id === ki.productoId);
+          if (cpIdx !== -1) {
+            const cp = { ...prodsActualizados[cpIdx] };
+            const cantidadADescontar = item.cantidad * ki.cantidad;
+            const stockAntes = cp.stock;
+            cp.stock -= cantidadADescontar;
+            
+            nuevosMovimientos.push({
+              id: Store.uid(),
+              productoId: cp.id,
+              tipo: 'venta',
+              cantidad: -Math.abs(cantidadADescontar),
+              stockAntes,
+              stockDespues: cp.stock,
+              fecha: ahoraStr,
+              referencia: `COMPONENTE DE KIT: ${p.nombre} - VENTA ${reciboId}`
+            });
+            prodsActualizados[cpIdx] = cp;
+          }
+        });
+        // Registrar movimiento virtual del kit para historial de ventas del kit
+        nuevosMovimientos.push({
+          id: Store.uid(),
+          productoId: p.id,
+          tipo: 'venta',
+          cantidad: -Math.abs(item.cantidad),
+          stockAntes: p.stock,
+          stockDespues: p.stock,
+          fecha: ahoraStr,
+          referencia: `VENTA KIT VIRTUAL ${reciboId}`
+        });
       } else {
+        // Venta normal o Kit con stock propio (físico)
+        const stockAntes = p.stock;
         p.stock -= item.cantidad;
+        
+        nuevosMovimientos.push({
+          id: Store.uid(),
+          productoId: p.id,
+          tipo: 'venta',
+          cantidad: -Math.abs(item.cantidad),
+          stockAntes,
+          stockDespues: p.stock,
+          fecha: ahoraStr,
+          referencia: `VENTA ${reciboId} - TERM: ${terminal?.nombre || 'Gral'}`
+        });
       }
       prodsActualizados[pIdx] = p;
-    });
-
-    const nuevosMovimientos: Movimiento[] = state.carrito.map(item => {
-      const p = state.productos.find(prod => prod.id === item.productoId);
-      return {
-        id: Store.uid(),
-        productoId: item.productoId,
-        tipo: 'venta',
-        cantidad: -Math.abs(item.cantidad),
-        stockAntes: p?.stock || 0,
-        stockDespues: (prodsActualizados.find(x => x.id === item.productoId)?.stock) || 0,
-        fecha: ahoraStr,
-        referencia: `VENTA ${reciboId} - TERM: ${terminal?.nombre || 'Gral'}`
-      };
     });
 
     const nuevaVenta: Sale & { payments?: PagoRealizado[] } = {
@@ -281,43 +302,61 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     const ahoraStr = Utils.ahora();
     
     let prodsActualizados = [...state.productos];
+    let nuevosMovimientos: Movimiento[] = [];
+
     state.carrito.forEach(item => {
       const pIdx = prodsActualizados.findIndex(x => x.id === item.productoId);
       if (pIdx === -1) return;
       const p = { ...prodsActualizados[pIdx] };
+      
       if (p.isKit && p.kitType === 'stock_componentes' && p.kitItems) {
-        let cantVendida = item.cantidad;
-        let dePropio = Math.min(cantVendida, Math.max(0, p.stock));
-        p.stock -= dePropio;
-        let deComponentes = cantVendida - dePropio;
-        if (deComponentes > 0) {
-          p.kitItems.forEach(ki => {
-            const cpIdx = prodsActualizados.findIndex(cp => cp.id === ki.productoId);
-            if (cpIdx !== -1) {
-              const cp = { ...prodsActualizados[cpIdx] };
-              cp.stock -= (ki.cantidad * deComponentes);
-              prodsActualizados[cpIdx] = cp;
-            }
-          });
-        }
+        p.kitItems.forEach(ki => {
+          const cpIdx = prodsActualizados.findIndex(cp => cp.id === ki.productoId);
+          if (cpIdx !== -1) {
+            const cp = { ...prodsActualizados[cpIdx] };
+            const cantidadADescontar = item.cantidad * ki.cantidad;
+            const stockAntes = cp.stock;
+            cp.stock -= cantidadADescontar;
+            
+            nuevosMovimientos.push({
+              id: Store.uid(),
+              productoId: cp.id,
+              tipo: 'venta',
+              cantidad: -Math.abs(cantidadADescontar),
+              stockAntes,
+              stockDespues: cp.stock,
+              fecha: ahoraStr,
+              referencia: `COMPONENTE DE KIT (CREDITO): ${p.nombre} - VENTA ${reciboId}`
+            });
+            prodsActualizados[cpIdx] = cp;
+          }
+        });
+        nuevosMovimientos.push({
+          id: Store.uid(),
+          productoId: p.id,
+          tipo: 'venta',
+          cantidad: -Math.abs(item.cantidad),
+          stockAntes: p.stock,
+          stockDespues: p.stock,
+          fecha: ahoraStr,
+          referencia: `VENTA KIT VIRTUAL (CREDITO) ${reciboId}`
+        });
       } else {
+        const stockAntes = p.stock;
         p.stock -= item.cantidad;
+        
+        nuevosMovimientos.push({
+          id: Store.uid(),
+          productoId: p.id,
+          tipo: 'venta',
+          cantidad: -Math.abs(item.cantidad),
+          stockAntes,
+          stockDespues: p.stock,
+          fecha: ahoraStr,
+          referencia: `CRÉDITO ${reciboId} - TERM: ${terminal?.nombre || 'Gral'}`
+        });
       }
       prodsActualizados[pIdx] = p;
-    });
-
-    const nuevosMovimientos: Movimiento[] = state.carrito.map(item => {
-      const p = state.productos.find(prod => prod.id === item.productoId);
-      return {
-        id: Store.uid(),
-        productoId: item.productoId,
-        tipo: 'venta',
-        cantidad: -Math.abs(item.cantidad),
-        stockAntes: p?.stock || 0,
-        stockDespues: (prodsActualizados.find(x => x.id === item.productoId)?.stock) || 0,
-        fecha: ahoraStr,
-        referencia: `CRÉDITO ${reciboId} - TERM: ${terminal?.nombre || 'Gral'}`
-      };
     });
 
     const nuevaVenta: Sale = {
