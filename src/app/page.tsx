@@ -8,7 +8,6 @@ import {
   ShoppingCart, 
   HandCoins, 
   FileText, 
-  RotateCcw, 
   BarChart3, 
   Settings,
   Users,
@@ -24,13 +23,13 @@ import {
   Truck,
   BookOpen
 } from 'lucide-react';
-import { Store, Utils, initialState } from '@/lib/db-store';
+import { Store, initialState } from '@/lib/db-store';
 import { AppState } from '@/lib/types';
 import { auth, db } from '@/lib/firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { doc, getDoc, updateDoc, onSnapshot } from 'firebase/firestore';
+import { doc, updateDoc, onSnapshot, getDoc } from 'firebase/firestore';
 import DashboardModule from '@/components/modules/DashboardModule';
-import InventoryModule  from '@/components/modules/InventoryModule';
+import { InventoryModule } from '@/components/modules/InventoryModule';
 import SalesModule from '@/components/modules/SalesModule';
 import PurchaseModule from '@/components/modules/PurchaseModule';
 import CxCModule from '@/components/modules/CxCModule';
@@ -516,7 +515,7 @@ export default function LicoreriaPOS() {
           </div>
         </header>
         
-        <div className="p-7 flex-1">
+        <div className="p-7 flex-1 overflow-y-auto">
           {renderModule()}
         </div>
 

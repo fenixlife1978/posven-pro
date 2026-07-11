@@ -1,42 +1,3 @@
-export type PaymentMethod = 'efectivo_usd' | 'efectivo_bs' | 'punto_venta' | 'biopago' | 'pagomovil' | 'zelle' | 'credito' | 'mixto';
-export type EntityStatus = 'completada' | 'cancelada' | 'pendiente' | 'parcial' | 'pagada' | 'parcialmente_devuelta' | 'totalmente_devuelta' | 'procesada';
-
-export interface KitItem {
-  productoId: string;
-  nombre: string;
-  cantidad: number;
-}
-
-export interface Terminal {
-  id: string;
-  nombre: string;
-  usuarioId: string | null; // ID del cajero asignado
-  activo: boolean;
-}
-
-export interface Movimiento {
-  id: string;
-  productoId: string;
-  tipo: 'compra' | 'venta' | 'devolucion' | 'ajuste_entrada' | 'ajuste_salida' | 'consumo' | 'colaboracion' | 'cobro_deuda' | 'venta';
-  cantidad: number;
-  stockAntes: number;
-  stockDespues: number;
-  fecha: string;
-  referencia: string;
-}
-
-export interface LibroDiarioEntry {
-  id: string;
-  fecha: string;
-  tipo: 'ingreso' | 'egreso';
-  categoria: 'VENTA' | 'COBRO_DEUDA' | 'COMPRA' | 'PAGO_PROVEEDOR' | 'NOMINA' | 'SERVICIOS' | 'IMPUESTOS' | 'OTROS_GASTOS' | 'DEVOLUCION_DINERO';
-  concepto: string;
-  montoUSD: number;
-  montoBS: number;
-  metodo: PaymentMethod;
-  referencia?: string; // ID de factura, recibo, etc.
-}
-
 export interface Product {
   id: string;
   codigo: string;
@@ -46,7 +7,7 @@ export interface Product {
   cantidad: string;
   marca: string;
   costoUSD: number;
-  precioUSD: number; // Precio activo para el POS
+  precioUSD: number;
   precioEstandarUSD?: number;
   precioMayorUSD?: number;
   precioOfertaUSD?: number;
@@ -55,225 +16,83 @@ export interface Product {
   margen: number;
   stock: number;
   stockMinimo: number;
-  proveedor: string;
   fechaCreacion: string;
   activo: boolean;
   aplicaIVA?: boolean;
   isKit?: boolean;
   kitType?: 'stock_propio' | 'stock_componentes';
   kitItems?: KitItem[];
-  codigoBarras?: string;
-  precio?: number;
 }
 
-export interface Supplier {
-  id: string;
-  nombre: string;
-  rif: string;
-  contacto: string;
-  direccion: string;
-  telefono: string;
-}
-
-export interface PagoRealizado {
-  metodo: PaymentMethod;
-  montoUSD: number;
-  montoBS: number;
-}
-
-export interface SaleItem {
+export interface KitItem {
   productoId: string;
   nombre: string;
-  precioUnitUSD: number;
   cantidad: number;
-  subtotalUSD: number;
+}
+
+export interface Movimiento {
+  id: string;
+  productoId: string;
+  tipo: 'ajuste_entrada' | 'ajuste_salida' | 'consumo' | 'colaboracion' | 'compra' | 'venta' | 'devolucion' | 'cobro_deuda' | 'inicial';
+  cantidad: number;
+  stockAntes: number;
+  stockDespues: number;
+  fecha: string;
+  referencia: string;
 }
 
 export interface Sale {
   id: string;
   fecha: string;
   cliente: string;
-  items: SaleItem[];
+  items: Array<{
+    productoId: string;
+    nombre: string;
+    cantidad: number;
+    precioUnitUSD: number;
+    subtotalUSD: number;
+  }>;
   subtotalUSD: number;
   descuentoUSD: number;
   totalUSD: number;
   totalBS: number;
-  metodoPago: PaymentMethod;
-  estado: EntityStatus;
-  type?: 'VENTA' | 'COBRO DEUDA' | 'DEVOLUCION';
+  metodoPago: string;
+  estado: string;
+  type?: string;
   received?: number;
   change?: number;
-  customerName?: string;
-  cuentaCobrarId?: string | null;
-  payments?: PagoRealizado[]; 
-  terminalId?: string; // Nuevo: Identificador del terminal
-  cajeroId?: string; // Nuevo: Identificador del cajero
-}
-
-export interface ReturnItem {
-  productoId: string;
-  nombre: string;
-  cantidad: number;
-  precioUnitUSD: number;
-  estadoProducto: 'REINTEGRADO_STOCK' | 'MERMA_DANADO';
-}
-
-export interface Return {
-  id: string;
-  ventaId: string;
-  fecha: string;
-  items: ReturnItem[];
-  totalUSD: number;
-  metodoReembolso: 'EFECTIVO' | 'MISMO_METODO' | 'CREDITO_TIENDA';
-  motivo: string;
-}
-
-export interface ReportZ {
-  id: string;
-  fecha: string;
-  numeroZ: number;
-  desdeFactura: string;
-  hastaFactura: string;
-  baseImponibleUSD: number;
-  exentoUSD: number;
-  ivaUSD: number;
-  totalBrutoUSD: number;
-  acumuladoHistoricoUSD: number;
+  terminalId?: string;
+  cajeroId?: string;
 }
 
 export interface Customer {
   id: string;
   name: string;
   cedula: string;
-  phone?: string;
-  address?: string;
+  phone: string;
+  address: string;
   debt: number;
 }
 
-export interface CashSession {
-  openDate: string;
-  openAmount: number;
-  openNotes: string;
-  closeDate: string | null;
-  closeAmount: number | null;
-  closeNotes: string | null;
-  totalSales: number;
-  totalCollections: number;
-  saleCount: number;
-  difference?: number;
-}
-
-export interface AppState {
-  tasa: number;
-  pinDevolucion: string;
-  productos: Product[];
-  ventas: Sale[];
-  cxc: any[];
-  cxp: any[];
-  clientes: Customer[];
-  devoluciones: Return[];
-  movimientos: Movimiento[];
-  libroDiario: LibroDiarioEntry[];
-  carrito: SaleItem[];
-  terminales: Terminal[]; // Nuevo
-  empresa: {
-    nombre: string;
-    rif: string;
-    direccion: string;
-    telefono: string;
-  };
-  departamentos: string[];
-  categorias: string[];
-  marcas: string[];
-  presentaciones: string[];
-  proveedores: Supplier[];
-  reportesZ: ReportZ[];
-  ultimoZ: number;
-  proximoRecibo: number;
-  proximaDevolucion: number;
-  acumuladoHistorico: number;
-}
-
-export function getProductDisplayName(product: Product): string {
-  return product.nombre;
-}
-
-export function getProductBarcode(product: Product): string {
-  return product.codigoBarras || product.codigo || '';
-}
-
-export function getProductPrice(product: Product): number {
-  return product.precio || product.precioUSD || 0;
-}
-
-export function getProductCategory(product: Product): string {
-  return product.categoria;
-}
-
-export function getProductMinStock(product: Product): number {
-  return product.stockMinimo || 0;
-}
-
-export function getProductStock(product: Product): number {
-  return product.stock || 0;
-}
-
-export function normalizeProductForPDF(product: Product): {
+export interface Debt {
   id: string;
-  nombre: string;
-  codigoBarras: string;
-  categoria: string;
-  precio: number;
-  stock: number;
-  stockMinimo: number;
-} {
-  return {
-    id: product.id,
-    nombre: product.nombre,
-    codigoBarras: getProductBarcode(product),
-    categoria: product.categoria,
-    precio: getProductPrice(product),
-    stock: product.stock || 0,
-    stockMinimo: product.stockMinimo || 0,
-  };
+  fecha: string;
+  fechaVencimiento: string;
+  cliente?: string;
+  proveedor?: string;
+  numeroFactura?: string;
+  montoUSD: number;
+  abonadoUSD: number;
+  saldoUSD: number;
+  estado: 'pendiente' | 'parcial' | 'pagada';
+  historialPagos: Array<{
+    fecha: string;
+    montoUSD: number;
+    montoBS: number;
+    metodo: string;
+    reciboId: string;
+  }>;
+  items?: any[];
 }
 
-export function getMetodoLabel(metodo: PaymentMethod): string {
-  const labels: Record<PaymentMethod, string> = {
-    'efectivo_usd': 'Efectivo USD',
-    'efectivo_bs': 'Efectivo BS',
-    'punto_venta': 'Punto de Venta',
-    'biopago': 'Biopago',
-    'pagomovil': 'Pago Móvil',
-    'zelle': 'Zelle',
-    'credito': 'Crédito',
-    'mixto': 'Mixto'
-  };
-  return labels[metodo] || metodo;
-}
-
-export function fmtUSD(amount: number): string {
-  return `$${amount.toFixed(2)}`;
-}
-
-export function fmtBS(amount: number): string {
-  return `Bs. ${amount.toFixed(2)}`;
-}
-
-export function fmtFecha(fecha: string): string {
-  if (!fecha) return '';
-  const d = new Date(fecha);
-  return d.toLocaleDateString('es-VE', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric'
-  });
-}
-
-export function hoy(): string {
-  return new Date().toISOString().split('T')[0];
-}
-
-export function ahora(): string {
-  return new Date().toISOString();
-}
+export type PaymentMethod = 'efectivo_usd' | 'efectivo_bs' | 'punto_venta' | 'biopago' | 'pagomovil' | 'zelle' | 'transferencia';
