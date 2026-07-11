@@ -382,7 +382,7 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
             </div>
 
             <div className="card-foot p-6 bg-surface-soft flex flex-col sm:flex-row gap-4 items-center justify-between">
-              <div className="flex gap-4">
+              <div className="flex flex-wrap gap-4">
                 <div className="bg-white p-3 px-6 rounded-xl border border-line text-center shadow-sm">
                    <span className="text-[9px] font-black uppercase opacity-40 block mb-0.5">Total Factura</span>
                    <p className="text-lg font-black text-ink leading-none">{fmt4(totalUSD)}</p>
@@ -390,6 +390,14 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
                 <div className="bg-white p-3 px-6 rounded-xl border border-line text-center shadow-sm">
                    <span className="text-[9px] font-black uppercase opacity-40 block mb-0.5">Equiv. BS</span>
                    <p className="text-lg font-black text-ink leading-none">{Utils.fmtBS(totalUSD * tasaActual)}</p>
+                </div>
+                <div className="bg-white p-3 px-6 rounded-xl border border-line text-center shadow-sm">
+                   <span className="text-[9px] font-black uppercase opacity-40 block mb-0.5">Total Pagado USD</span>
+                   <p className="text-lg font-black text-ink leading-none">{fmt4(pMontoPagadoUSD)}</p>
+                </div>
+                <div className="bg-white p-3 px-6 rounded-xl border border-line text-center shadow-sm">
+                   <span className="text-[9px] font-black uppercase opacity-40 block mb-0.5">Total Pendiente</span>
+                   <p className="text-lg font-black text-ink leading-none">{fmt4(saldoPendienteUSD)}</p>
                 </div>
               </div>
               <button onClick={handleProcessPurchase} disabled={loteTemporal.length === 0} className="btn btn-primary h-14 px-10 font-black uppercase text-xs shadow-xl disabled:opacity-20 transition-all flex items-center gap-3">
