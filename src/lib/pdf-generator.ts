@@ -224,14 +224,14 @@ export const exportarPDFHistorialAjustes = (ajustes: any[], empresa: CompanyInfo
 
   autoTable(doc, {
     startY: startY + 15,
-    head: [['FECHA', 'PRODUCTO AJUSTADO', 'MOVIMIENTO', 'CANT.', 'ANT.', 'ACT.', 'REFERENCIA']],
+    head: [['FECHA', 'PRODUCTO AJUSTADO', 'TIPO', 'CANT.', 'COSTO UNIT.', 'TOTAL $', 'REFERENCIA']],
     body: ajustes.map(m => [
       m.fecha.replace('T', ' ').slice(0, 16),
       m.nombreProd.toUpperCase(),
       m.tipo.toUpperCase(),
       m.cantidad > 0 ? `+${m.cantidad}` : m.cantidad,
-      m.stockAntes,
-      m.stockDespues,
+      fmt(m.costo || 0),
+      fmt(Math.abs(m.cantidad) * (m.costo || 0)),
       m.referencia.toUpperCase()
     ]),
     headStyles: { fillColor: [40, 40, 40] },
@@ -255,13 +255,13 @@ export const exportarPDFConsumoInterno = (movs: any[], empresa: CompanyInfo, tot
 
   autoTable(doc, {
     startY: startY + 15,
-    head: [['FECHA', 'PRODUCTO', 'MOTIVO', 'CANTIDAD', 'COSTO UNIT.', 'SUBTOTAL COSTO']],
+    head: [['FECHA', 'PRODUCTO', 'MOTIVO', 'P. UNITARIO', 'CANTIDAD', 'SUBTOTAL COSTO']],
     body: movs.map(m => [
       m.fecha.slice(0, 10),
       m.nombreProd.toUpperCase(),
       m.tipo.toUpperCase(),
-      Math.abs(m.cantidad),
       fmt(m.costoUnit),
+      Math.abs(m.cantidad),
       fmt(m.subtotal)
     ]),
     headStyles: { fillColor: [150, 0, 0] },
@@ -282,17 +282,16 @@ export const exportarPDFDevoluciones = (devoluciones: any[], empresa: CompanyInf
 
   autoTable(doc, {
     startY: startY + 12,
-    head: [['FECHA', 'ID DEV.', 'VENTA REF.', 'PRODUCTO', 'CANT.', 'P. UNIT.', 'TOTAL', 'MOTIVO']],
-    body: devoluciones.flatMap(d => d.items.map((item: any, idx: number) => [
-      idx === 0 ? d.fecha.slice(0, 10) : '',
-      idx === 0 ? d.id : '',
-      idx === 0 ? d.ventaId : '',
-      item.nombre.toUpperCase(),
-      item.cantidad,
-      fmt(item.precioUnitUSD),
-      fmt(item.cantidad * item.precioUnitUSD),
-      idx === 0 ? d.motivo.toUpperCase() : ''
-    ])),
+    head: [['FECHA', 'ID DEV.', 'VENTA REF.', 'ITEMS DEVUELTOS', 'CANT. TOTAL', 'TOTAL $', 'MOTIVO']],
+    body: devoluciones.map(d => [
+      d.fecha.slice(0, 10),
+      d.id,
+      d.ventaId,
+      d.items.map((it: any) => it.nombre.toUpperCase()).join('\n'),
+      d.items.reduce((s: number, it: any) => s + it.cantidad, 0),
+      fmt(d.totalUSD),
+      d.motivo.toUpperCase()
+    ]),
     headStyles: { fillColor: [180, 50, 50] },
     styles: { fontSize: 6.5 }
   });

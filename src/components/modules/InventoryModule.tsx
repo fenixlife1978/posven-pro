@@ -29,7 +29,8 @@ import {
   PlusCircle,
   MinusCircle,
   AlertTriangle,
-  Check
+  Check,
+  Calendar
 } from 'lucide-react';
 import { 
   generarPDFInventarioSimple, 
@@ -186,16 +187,16 @@ export default function InventoryModule({ state, updateState }: { state: AppStat
                 activo: true
               };
               nuevosProds = [...state.productos, nuevo];
-              if (nuevo.stock > 0) {
+              if (parseFloat(nuevo.stock.toString()) > 0) {
                 const mov: Movimiento = {
                   id: Store.uid(),
                   productoId: nuevo.id,
-                  tipo: 'compra',
-                  cantidad: nuevo.stock,
+                  tipo: 'inicial' as any,
+                  cantidad: parseFloat(nuevo.stock.toString()),
                   stockAntes: 0,
-                  stockDespues: nuevo.stock,
+                  stockDespues: parseFloat(nuevo.stock.toString()),
                   fecha: Utils.ahora(),
-                  referencia: 'Stock inicial'
+                  referencia: 'INICIAL'
                 };
                 updateState({ productos: nuevosProds, movimientos: [...state.movimientos, mov] });
               } else {
@@ -246,13 +247,71 @@ export default function InventoryModule({ state, updateState }: { state: AppStat
 function ReporteGeneral({ state }: { state: AppState }) {
   const [groupBy, setGroupBy] = useState<'categoria' | 'departamento' | 'proveedor'>('categoria');
   const [filterValue, setFilterValue] = useState<string>('');
-  const uniqueValues = Array.from(new Set(state.productos.filter(p => p.activo).map(p => (p[groupBy] as string) || 'Sin asignar'))).sort();
-  const filteredProducts = state.productos.filter(p => p.activo && (filterValue === '' || ((p[groupBy] as string) || 'Sin asignar') === filterValue));
+  const [desde, setDesde] = useState(Utils.hoy());
+  const [hasta, setHasta] = useState(Utils.hoy());
+  const [useDates, setUseDates] = useState(false);
+
+  const applyQuickFilter = (type: string) => {
+    const today = new Date();
+    setUseDates(true);
+    if (type === 'hoy') {
+      setDesde(Utils.hoy()); setHasta(Utils.hoy());
+    } else if (type === 'ayer') {
+      const yesterday = new Date(today);
+      yesterday.setDate(today.getDate() - 1);
+      const yStr = yesterday.toISOString().split('T')[0];
+      setDesde(yStr); setHasta(yStr);
+    } else if (type === 'mes') {
+      const first = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
+      setDesde(first); setHasta(Utils.hoy());
+    } else if (type === '7dias') {
+      const last7 = new Date(today);
+      last7.setDate(today.getDate() - 6);
+      setDesde(last7.toISOString().split('T')[0]); setHasta(Utils.hoy());
+    }
+  };
+
+  const filteredProducts = state.productos.filter(p => {
+    const matchesGroup = (filterValue === '' || ((p[groupBy] as string) || 'Sin asignar') === filterValue);
+    const date = p.fechaCreacion ? p.fechaCreacion.slice(0, 10) : '';
+    const matchesDate = !useDates || (date >= desde && date <= hasta);
+    return p.activo && matchesGroup && matchesDate;
+  });
+
   const totalCosto = Utils.round(filteredProducts.reduce((acc, p) => acc + (p.costoUSD * p.stock), 0));
   const totalVenta = Utils.round(filteredProducts.reduce((acc, p) => acc + (p.precioUSD * p.stock), 0));
+  const uniqueValues = Array.from(new Set(state.productos.filter(p => p.activo).map(p => (p[groupBy] as string) || 'Sin asignar'))).sort();
 
   return (
     <div className="space-y-6">
+      {/* Filtros de Periodo */}
+      <div className="card p-5 bg-white border-line flex flex-wrap gap-4 items-end shadow-sm no-print">
+        <div className="flex items-center gap-3 bg-surface-soft p-1 rounded-lg border border-line">
+           <button onClick={() => setUseDates(!useDates)} className={`px-4 py-1.5 rounded-md text-[10px] font-black uppercase transition-all ${!useDates ? 'bg-ink text-white' : 'text-ink/40'}`}>Actual</button>
+           <button onClick={() => setUseDates(!useDates)} className={`px-4 py-1.5 rounded-md text-[10px] font-black uppercase transition-all ${useDates ? 'bg-brand-gold text-white' : 'text-ink/40'}`}>Por Periodo</button>
+        </div>
+        
+        {useDates && (
+          <>
+            <div className="flex gap-2">
+               {['hoy', 'ayer', '7dias', 'mes'].map(f => (
+                 <button key={f} onClick={() => applyQuickFilter(f)} className="px-3 py-1.5 bg-surface-soft border border-line rounded text-[9px] font-black uppercase hover:bg-white transition-colors">{f}</button>
+               ))}
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="form-group mb-0">
+                <label className="text-[8px] font-black uppercase opacity-40 block mb-0.5">Desde</label>
+                <input type="date" className="form-input h-8 text-xs font-bold px-2 w-32" value={desde} onChange={e => setDesde(e.target.value)} />
+              </div>
+              <div className="form-group mb-0">
+                <label className="text-[8px] font-black uppercase opacity-40 block mb-0.5">Hasta</label>
+                <input type="date" className="form-input h-8 text-xs font-bold px-2 w-32" value={hasta} onChange={e => setHasta(e.target.value)} />
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="kpi p-6 border-line shadow-md bg-white">
           <div className="text-[10px] font-black uppercase mb-1 text-ink opacity-60">Valor al Costo (CPP Total)</div>
@@ -380,6 +439,8 @@ function ReporteDevoluciones({ state }: { state: AppState }) {
               <tr className="bg-surface-soft">
                 <th className="font-black text-ink uppercase text-[10px]">Fecha</th>
                 <th className="font-black text-ink uppercase text-[10px]">Venta Ref.</th>
+                <th className="font-black text-ink uppercase text-[10px]">Items / Productos</th>
+                <th className="font-black text-ink uppercase text-[10px] text-center">Cant.</th>
                 <th className="font-black text-ink uppercase text-[10px] text-right">Total Devuelto</th>
                 <th className="font-black text-ink uppercase text-[10px]">Motivo</th>
               </tr>
@@ -389,10 +450,216 @@ function ReporteDevoluciones({ state }: { state: AppState }) {
                 <tr key={d.id} className="border-b border-line/30">
                   <td className="text-xs font-bold text-ink">{Utils.fmtFecha(d.fecha)}</td>
                   <td className="text-ink font-black mono text-xs">{d.ventaId}</td>
+                  <td className="py-2">
+                     <div className="space-y-0.5">
+                        {d.items.map((it, idx) => (
+                           <p key={idx} className="text-[9px] font-black uppercase text-ink/70 leading-tight">• {it.nombre}</p>
+                        ))}
+                     </div>
+                  </td>
+                  <td className="text-center font-black text-ink text-xs">
+                     {d.items.reduce((s, it) => s + it.cantidad, 0)}
+                  </td>
                   <td className="mono text-right font-black text-status-danger">{Utils.fmtUSD(d.totalUSD)}</td>
                   <td className="text-xs uppercase italic font-bold text-ink/70">{d.motivo}</td>
                 </tr>
               ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function HistorialAjustes({ state }: { state: AppState }) {
+  const [desde, setDesde] = useState(Utils.hoy());
+  const [hasta, setHasta] = useState(Utils.hoy());
+  const [useDates, setUseDates] = useState(false);
+
+  // Filtrar fuera los movimientos "INICIAL" y aplicar filtros de fecha
+  const ajustesRaw = state.movimientos.filter(m => 
+    ['ajuste_entrada', 'ajuste_salida', 'consumo', 'colaboracion', 'compra'].includes(m.tipo) && 
+    m.referencia !== 'INICIAL'
+  );
+
+  const ajustes = ajustesRaw.filter(m => {
+     if (!useDates) return true;
+     const d = m.fecha.slice(0, 10);
+     return d >= desde && d <= hasta;
+  }).sort((a, b) => b.fecha.localeCompare(a.fecha));
+
+  const efectoNetoUSD = Utils.round(ajustes.reduce((acc, m) => {
+    const p = state.productos.find(prod => prod.id === m.productoId);
+    const costo = p?.costoUSD || 0;
+    const esEntrada = m.tipo.includes('entrada') || m.tipo === 'compra' || m.tipo === 'devolucion';
+    return acc + (esEntrada ? (m.cantidad * costo) : -(Math.abs(m.cantidad) * costo));
+  }, 0));
+
+  const handleExport = () => {
+    const dataForPDF = ajustes.map(m => {
+      const p = state.productos.find(prod => prod.id === m.productoId);
+      return { ...m, nombreProd: p?.nombre || 'ITEM ELIMINADO', costo: p?.costoUSD || 0 };
+    });
+    exportarPDFHistorialAjustes(dataForPDF, state.empresa, efectoNetoUSD);
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="card p-4 bg-white border-line flex flex-wrap gap-6 items-end shadow-sm no-print">
+         <div className="flex items-center gap-2">
+            <button onClick={() => setUseDates(!useDates)} className={`btn h-8 px-4 text-[9px] font-black uppercase ${!useDates ? 'btn-primary' : 'btn-secondary'}`}>Todo el historial</button>
+            <button onClick={() => setUseDates(!useDates)} className={`btn h-8 px-4 text-[9px] font-black uppercase ${useDates ? 'btn-primary' : 'btn-secondary'}`}>Filtrar Periodo</button>
+         </div>
+         {useDates && (
+           <div className="flex items-center gap-3">
+              <div className="form-group mb-0"><input type="date" className="form-input h-8 text-xs font-bold" value={desde} onChange={e => setDesde(e.target.value)} /></div>
+              <span className="text-[10px] font-black text-ink/30 uppercase">al</span>
+              <div className="form-group mb-0"><input type="date" className="form-input h-8 text-xs font-bold" value={hasta} onChange={e => setHasta(e.target.value)} /></div>
+           </div>
+         )}
+      </div>
+
+      <div className={`kpi p-6 border-line shadow-md border-l-8 ${efectoNetoUSD < 0 ? 'bg-status-danger-soft border-l-status-danger' : 'bg-white border-l-status-success'}`}>
+        <div className="text-[10px] font-black uppercase mb-1 text-ink opacity-60">Variación Neta de Capital en Inventario ($)</div>
+        <div className={`text-3xl font-black ${efectoNetoUSD < 0 ? 'text-status-danger' : 'text-ink'}`}>{Utils.fmtUSD(efectoNetoUSD)}</div>
+      </div>
+
+      <div className="card shadow-lg border-line rounded-xl overflow-hidden">
+        <div className="card-head bg-ink border-b border-white/10 px-6 py-4 flex justify-between items-center">
+          <h3 className="text-white font-black text-xs uppercase italic tracking-tighter flex items-center gap-2">
+            <ClipboardList className="w-5 h-5 text-brand-gold" /> BITÁCORA DE AJUSTES DE ALMACÉN
+          </h3>
+          <button className="btn btn-secondary h-8 px-4 font-black uppercase text-[9px] shadow-sm" onClick={handleExport}>
+            <FileText className="w-3.5 h-3.5" /> Exportar Ajustes
+          </button>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr className="bg-surface-soft">
+                <th className="font-black text-ink uppercase text-[10px]">Fecha</th>
+                <th className="font-black text-ink uppercase text-[10px]">Producto</th>
+                <th className="font-black text-ink uppercase text-[10px]">Tipo</th>
+                <th className="font-black text-ink uppercase text-[10px] text-center">Cant.</th>
+                <th className="font-black text-ink uppercase text-[10px] text-right">Costo Unit.</th>
+                <th className="font-black text-ink uppercase text-[10px] text-right">Total $</th>
+                <th className="font-black text-ink uppercase text-[10px]">Motivo</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white">
+              {ajustes.map(m => {
+                const p = state.productos.find(prod => prod.id === m.productoId);
+                const costo = p?.costoUSD || 0;
+                const sub = Math.abs(m.cantidad) * costo;
+                return (
+                  <tr key={m.id} className="border-b border-line/30">
+                    <td className="text-[11px] font-bold text-ink">{m.fecha.slice(0, 16).replace('T', ' ')}</td>
+                    <td className="font-black uppercase text-ink text-xs">{p?.nombre || 'ELIMINADO'}</td>
+                    <td><span className="badge badge-neutral uppercase text-[8px] font-black">{m.tipo}</span></td>
+                    <td className="mono font-black text-center text-xs">{m.cantidad}</td>
+                    <td className="mono text-right text-xs text-ink/60 font-bold">{Utils.fmtUSD(costo)}</td>
+                    <td className="mono font-black text-brand-gold-deep text-right text-xs">{Utils.fmtUSD(sub)}</td>
+                    <td className="text-[9px] font-black uppercase text-ink/40 italic">{m.referencia}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ReporteConsumo({ state }: { state: AppState }) {
+  const [desde, setDesde] = useState(Utils.hoy());
+  const [hasta, setHasta] = useState(Utils.hoy());
+  const [useDates, setUseDates] = useState(false);
+
+  const movsRaw = state.movimientos.filter(m => m.tipo === 'consumo' || m.tipo === 'colaboracion');
+  
+  const movs = movsRaw.filter(m => {
+     if (!useDates) return true;
+     const d = m.fecha.slice(0, 10);
+     return d >= desde && d <= hasta;
+  }).sort((a, b) => b.fecha.localeCompare(a.fecha));
+
+  const totalPerdidaUSD = Utils.round(movs.reduce((acc, m) => {
+    const p = state.productos.find(prod => prod.id === m.productoId);
+    return acc + (Math.abs(m.cantidad) * (p?.costoUSD || 0));
+  }, 0));
+
+  const handleExport = () => {
+    const dataForPDF = movs.map(m => {
+      const p = state.productos.find(prod => prod.id === m.productoId);
+      const costo = p?.costoUSD || 0;
+      return { 
+        ...m, 
+        nombreProd: p?.nombre || 'ELIMINADO', 
+        costoUnit: costo, 
+        subtotal: Math.abs(m.cantidad) * costo 
+      };
+    });
+    exportarPDFConsumoInterno(dataForPDF, state.empresa, totalPerdidaUSD);
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="card p-4 bg-white border-line flex flex-wrap gap-4 items-end shadow-sm no-print">
+         <div className="flex gap-2">
+            <button onClick={() => setUseDates(false)} className={`btn h-8 px-4 text-[9px] font-black uppercase ${!useDates ? 'btn-primary' : 'btn-secondary'}`}>Todo</button>
+            <button onClick={() => setUseDates(true)} className={`btn h-8 px-4 text-[9px] font-black uppercase ${useDates ? 'btn-primary' : 'btn-secondary'}`}>Periodo</button>
+         </div>
+         {useDates && (
+           <div className="flex items-center gap-3">
+              <input type="date" className="form-input h-8 text-xs font-bold w-32" value={desde} onChange={e => setDesde(e.target.value)} />
+              <input type="date" className="form-input h-8 text-xs font-bold w-32" value={hasta} onChange={e => setHasta(e.target.value)} />
+           </div>
+         )}
+      </div>
+
+      <div className="card shadow-lg border-line rounded-xl overflow-hidden">
+        <div className="card-head bg-ink border-b border-white/10 px-6 py-4 flex justify-between items-center">
+          <h3 className="text-white font-black text-xs uppercase italic tracking-tighter flex items-center gap-2">
+            <TrendingUp className="w-5 h-5 text-brand-gold" /> SALIDAS POR CONSUMO INTERNO
+          </h3>
+          <div className="flex items-center gap-4">
+            <div className="text-right">
+              <span className="text-[9px] text-white/50 block font-black uppercase">Pérdida Total</span>
+              <span className="text-brand-gold font-black text-sm">{Utils.fmtUSD(totalPerdidaUSD)}</span>
+            </div>
+            <button className="btn btn-secondary h-8 px-4 font-black uppercase text-[9px] shadow-sm" onClick={handleExport}>
+              <FileText className="w-3.5 h-3.5" /> PDF
+            </button>
+          </div>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr className="bg-surface-soft">
+                <th className="font-black text-ink uppercase text-[10px]">Fecha</th>
+                <th className="font-black text-ink uppercase text-[10px]">Producto</th>
+                <th className="font-black text-ink uppercase text-[10px] text-right">Precio Unit. $</th>
+                <th className="font-black text-ink uppercase text-[10px] text-center">Cant.</th>
+                <th className="font-black text-ink uppercase text-[10px] text-right">Costo Total</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white">
+              {movs.map(m => {
+                const p = state.productos.find(prod => prod.id === m.productoId);
+                const cost = p?.costoUSD || 0;
+                const sub = Math.abs(m.cantidad) * cost;
+                return (
+                  <tr key={m.id} className="border-b border-line/30">
+                    <td className="text-xs font-bold text-ink">{m.fecha.slice(0, 10)}</td>
+                    <td className="font-black uppercase text-xs text-ink">{p?.nombre}</td>
+                    <td className="mono text-right text-xs font-bold text-ink/60">{Utils.fmtUSD(cost)}</td>
+                    <td className="font-black mono text-center text-xs">{Math.abs(m.cantidad)}</td>
+                    <td className="mono font-black text-status-danger text-right text-xs">{Utils.fmtUSD(sub)}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -466,153 +733,23 @@ function ReporteKardex({ state, selectedId, onSelect }: { state: AppState, selec
                 <th className="font-black text-ink uppercase text-[10px]">Movimiento</th>
                 <th className="font-black text-ink uppercase text-[10px] text-center">Cant.</th>
                 <th className="font-black text-ink uppercase text-[10px] text-center">Stock Después</th>
+                <th className="font-black text-ink uppercase text-[10px]">Referencia</th>
               </tr>
             </thead>
             <tbody className="bg-white">
               {movs.length === 0 ? (
-                <tr><td colSpan={4} className="text-center py-20 text-ink/20 font-black uppercase italic">Utilice el buscador para localizar un ítem</td></tr>
+                <tr><td colSpan={5} className="text-center py-20 text-ink/20 font-black uppercase italic">Utilice el buscador para localizar un ítem</td></tr>
               ) : (
                 movs.map(m => (
                   <tr key={m.id} className="border-b border-line/30">
                     <td className="text-[11px] font-black text-ink">{m.fecha.slice(0, 16).replace('T', ' ')}</td>
-                    <td><span className="badge badge-neutral font-black uppercase text-[8px]">{m.tipo}</span></td>
+                    <td><span className={`badge ${m.tipo === 'inicial' ? 'badge-info' : 'badge-neutral'} font-black uppercase text-[8px]`}>{m.tipo === 'inicial' ? 'INICIAL' : m.tipo}</span></td>
                     <td className={`mono font-black text-center ${m.cantidad > 0 ? 'text-status-success' : 'text-status-danger'}`}>{m.cantidad > 0 ? '+' : ''}{m.cantidad}</td>
                     <td className="mono font-black text-ink text-center">{m.stockDespues}</td>
+                    <td className="text-[10px] font-black uppercase text-ink/40 italic">{m.referencia}</td>
                   </tr>
                 ))
               )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function HistorialAjustes({ state }: { state: AppState }) {
-  const ajustes = state.movimientos.filter(m => ['ajuste_entrada', 'ajuste_salida', 'consumo', 'colaboracion', 'compra'].includes(m.tipo)).sort((a, b) => b.fecha.localeCompare(a.fecha));
-  const efectoNetoUSD = Utils.round(ajustes.reduce((acc, m) => {
-    const p = state.productos.find(prod => prod.id === m.productoId);
-    const costo = p?.costoUSD || 0;
-    const esEntrada = m.tipo.includes('entrada') || m.tipo === 'compra' || m.tipo === 'devolucion';
-    return acc + (esEntrada ? (m.cantidad * costo) : -(Math.abs(m.cantidad) * costo));
-  }, 0));
-
-  const handleExport = () => {
-    const dataForPDF = ajustes.map(m => {
-      const p = state.productos.find(prod => prod.id === m.productoId);
-      return { ...m, nombreProd: p?.nombre || 'ITEM ELIMINADO' };
-    });
-    exportarPDFHistorialAjustes(dataForPDF, state.empresa, efectoNetoUSD);
-  };
-
-  return (
-    <div className="space-y-4">
-      <div className={`kpi p-6 border-line shadow-md border-l-8 ${efectoNetoUSD < 0 ? 'bg-status-danger-soft border-l-status-danger' : 'bg-white border-l-status-success'}`}>
-        <div className="text-[10px] font-black uppercase mb-1 text-ink opacity-60">Variación Neta de Capital en Inventario ($)</div>
-        <div className={`text-3xl font-black ${efectoNetoUSD < 0 ? 'text-status-danger' : 'text-ink'}`}>{Utils.fmtUSD(efectoNetoUSD)}</div>
-      </div>
-
-      <div className="card shadow-lg border-line rounded-xl overflow-hidden">
-        <div className="card-head bg-ink border-b border-white/10 px-6 py-4 flex justify-between items-center">
-          <h3 className="text-white font-black text-xs uppercase italic tracking-tighter flex items-center gap-2">
-            <ClipboardList className="w-5 h-5 text-brand-gold" /> BITÁCORA DE AJUSTES DE ALMACÉN
-          </h3>
-          <button className="btn btn-secondary h-8 px-4 font-black uppercase text-[9px] shadow-sm" onClick={handleExport}>
-            <FileText className="w-3.5 h-3.5" /> Exportar Ajustes
-          </button>
-        </div>
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr className="bg-surface-soft">
-                <th className="font-black text-ink uppercase text-[10px]">Fecha</th>
-                <th className="font-black text-ink uppercase text-[10px]">Producto</th>
-                <th className="font-black text-ink uppercase text-[10px]">Ajuste</th>
-                <th className="font-black text-ink uppercase text-[10px] text-center">Cantidad</th>
-              </tr>
-            </thead>
-            <tbody className="bg-white">
-              {ajustes.map(m => {
-                const p = state.productos.find(prod => prod.id === m.productoId);
-                return (
-                  <tr key={m.id} className="border-b border-line/30">
-                    <td className="text-[11px] font-bold text-ink">{m.fecha.slice(0, 16).replace('T', ' ')}</td>
-                    <td className="font-black uppercase text-ink text-xs">{p?.nombre || 'ELIMINADO'}</td>
-                    <td><span className="badge badge-neutral uppercase text-[8px] font-black">{m.tipo}</span></td>
-                    <td className="mono font-black text-center">{m.cantidad}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ReporteConsumo({ state }: { state: AppState }) {
-  const movs = state.movimientos.filter(m => m.tipo === 'consumo' || m.tipo === 'colaboracion');
-  const totalPerdidaUSD = Utils.round(movs.reduce((acc, m) => {
-    const p = state.productos.find(prod => prod.id === m.productoId);
-    return acc + (Math.abs(m.cantidad) * (p?.costoUSD || 0));
-  }, 0));
-
-  const handleExport = () => {
-    const dataForPDF = movs.map(m => {
-      const p = state.productos.find(prod => prod.id === m.productoId);
-      const costo = p?.costoUSD || 0;
-      return { 
-        ...m, 
-        nombreProd: p?.nombre || 'ELIMINADO', 
-        costoUnit: costo, 
-        subtotal: Math.abs(m.cantidad) * costo 
-      };
-    });
-    exportarPDFConsumoInterno(dataForPDF, state.empresa, totalPerdidaUSD);
-  };
-
-  return (
-    <div className="space-y-6">
-      <div className="card shadow-lg border-line rounded-xl overflow-hidden">
-        <div className="card-head bg-ink border-b border-white/10 px-6 py-4 flex justify-between items-center">
-          <h3 className="text-white font-black text-xs uppercase italic tracking-tighter flex items-center gap-2">
-            <TrendingUp className="w-5 h-5 text-brand-gold" /> SALIDAS POR CONSUMO INTERNO
-          </h3>
-          <div className="flex items-center gap-4">
-            <div className="text-right">
-              <span className="text-[9px] text-white/50 block font-black uppercase">Pérdida Total</span>
-              <span className="text-brand-gold font-black text-sm">{Utils.fmtUSD(totalPerdidaUSD)}</span>
-            </div>
-            <button className="btn btn-secondary h-8 px-4 font-black uppercase text-[9px] shadow-sm" onClick={handleExport}>
-              <FileText className="w-3.5 h-3.5" /> PDF
-            </button>
-          </div>
-        </div>
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr className="bg-surface-soft">
-                <th className="font-black text-ink uppercase text-[10px]">Fecha</th>
-                <th className="font-black text-ink uppercase text-[10px]">Producto</th>
-                <th className="font-black text-ink uppercase text-[10px] text-center">Cant.</th>
-                <th className="font-black text-ink uppercase text-[10px] text-right">Costo Total</th>
-              </tr>
-            </thead>
-            <tbody className="bg-white">
-              {movs.map(m => {
-                const p = state.productos.find(prod => prod.id === m.productoId);
-                const sub = Math.abs(m.cantidad) * (p?.costoUSD || 0);
-                return (
-                  <tr key={m.id} className="border-b border-line/30">
-                    <td className="text-xs font-bold text-ink">{m.fecha.slice(0, 10)}</td>
-                    <td className="font-black uppercase text-xs text-ink">{p?.nombre}</td>
-                    <td className="font-black mono text-center">{Math.abs(m.cantidad)}</td>
-                    <td className="mono font-black text-status-danger text-right">{Utils.fmtUSD(sub)}</td>
-                  </tr>
-                );
-              })}
             </tbody>
           </table>
         </div>
