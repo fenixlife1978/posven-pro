@@ -15,10 +15,11 @@ import {
   AlertTriangle,
   Settings,
   ArrowRight,
-  RefreshCw
+  RefreshCw,
+  X
 } from 'lucide-react';
 import { db } from '@/lib/firebase';
-import { collection, doc, getDocs, updateDoc } from 'firebase/firestore';
+import { collection, doc, getDocs, updateDoc, onSnapshot } from 'firebase/firestore';
 import { toast } from '@/hooks/use-toast';
 
 export default function GlobalControlModule({ state, updateState }: { state: AppState, updateState: (s: Partial<AppState>) => void }) {
@@ -27,33 +28,43 @@ export default function GlobalControlModule({ state, updateState }: { state: App
   const [newTerminalName, setNewTerminalName] = useState('');
   const [showAddTerminal, setShowAddTerminal] = useState(false);
 
-  const fetchUsers = async () => {
+  // Sincronización en TIEMPO REAL de los perfiles de usuario
+  useEffect(() => {
+    if (!db) return;
+    
     setLoadingUsers(true);
-    try {
-      const querySnapshot = await getDocs(collection(db, 'users'));
+    const unsubscribe = onSnapshot(collection(db, 'users'), (snapshot) => {
       const list: any[] = [];
-      querySnapshot.forEach(doc => {
+      snapshot.forEach(doc => {
         list.push({ id: doc.id, ...doc.data() });
       });
       setUsers(list);
-    } catch (e) {
-      console.error(e);
-    } finally {
       setLoadingUsers(false);
-    }
-  };
+    }, (error) => {
+      console.error("Error monitoreando usuarios:", error);
+      setLoadingUsers(false);
+    });
 
-  useEffect(() => {
-    fetchUsers();
+    return () => unsubscribe();
   }, []);
 
   const toggleAccess = async (userId: string, currentStatus: boolean) => {
     try {
-      await updateDoc(doc(db, 'users', userId), { accesoBloqueado: !currentStatus });
-      toast({ title: currentStatus ? "Acceso Bloqueado" : "Acceso Concedido" });
-      fetchUsers();
+      const userRef = doc(db, 'users', userId);
+      // Invertimos el estado de accesoBloqueado
+      await updateDoc(userRef, { accesoBloqueado: !currentStatus });
+      
+      toast({ 
+        title: !currentStatus ? "Acceso Concedido" : "Acceso Bloqueado",
+        description: `El estado del operador ha sido actualizado con éxito.`
+      });
     } catch (e) {
-      toast({ variant: "destructive", title: "Error", description: "No se pudo actualizar el estado." });
+      console.error("Error al actualizar acceso:", e);
+      toast({ 
+        variant: "destructive", 
+        title: "Error de Seguridad", 
+        description: "No se pudo comunicar con el servidor para autorizar al usuario." 
+      });
     }
   };
 
@@ -104,9 +115,10 @@ export default function GlobalControlModule({ state, updateState }: { state: App
               <h3 className="text-white font-black text-xs uppercase italic tracking-tighter flex items-center gap-2">
                 <Users className="w-5 h-5 text-brand-gold" /> ESTADO DE ACCESO DE OPERADORES
               </h3>
-              <button onClick={fetchUsers} className="text-white/40 hover:text-white transition-colors">
-                <RefreshCw className="w-4 h-4" />
-              </button>
+              <div className="flex items-center gap-2">
+                 <div className="w-2 h-2 rounded-full bg-status-success animate-pulse"></div>
+                 <span className="text-[8px] text-white/40 font-black uppercase tracking-widest">Live Sync</span>
+              </div>
             </div>
             <div className="table-wrap">
               <table>
@@ -120,7 +132,7 @@ export default function GlobalControlModule({ state, updateState }: { state: App
                 </thead>
                 <tbody className="bg-white">
                   {loadingUsers ? (
-                    <tr><td colSpan={4} className="text-center py-10 animate-pulse text-ink/20 font-black uppercase">Cargando perfiles...</td></tr>
+                    <tr><td colSpan={4} className="text-center py-10 animate-pulse text-ink/20 font-black uppercase">Sincronizando perfiles...</td></tr>
                   ) : users.filter(u => u.rol === 'cajero').map(u => (
                     <tr key={u.id} className="border-b border-line/30 hover:bg-surface-warm/20 transition-colors">
                       <td className="text-ink font-black text-xs uppercase">{u.nombre}</td>
@@ -214,9 +226,10 @@ export default function GlobalControlModule({ state, updateState }: { state: App
       {/* MODAL CREAR TERMINAL */}
       {showAddTerminal && (
         <div className="modal show"><div className="modal-bg" onClick={() => setShowAddTerminal(false)}></div>
-          <div className="modal-box bg-white max-w-sm border-2 border-line">
-            <div className="modal-head py-3 px-5 border-b border-line bg-surface-soft">
+          <div className="modal-box bg-white max-w-sm border-2 border-line rounded-2xl overflow-hidden shadow-2xl">
+            <div className="modal-head py-3 px-5 border-b border-line bg-surface-soft flex justify-between items-center">
               <h3 className="text-ink font-black uppercase text-xs">Añadir Nuevo Terminal</h3>
+              <button onClick={() => setShowAddTerminal(false)}><X className="w-4 h-4 text-ink/40" /></button>
             </div>
             <div className="modal-body p-6 space-y-4">
                <div className="form-group">
