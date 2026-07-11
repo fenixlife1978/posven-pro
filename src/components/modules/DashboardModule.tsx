@@ -36,7 +36,8 @@ export default function DashboardModule({ state }: { state: AppState }) {
   const totalVentasHoyUSD = ventasHoy.reduce((s, v) => s + v.totalUSD, 0);
   const ticketPromedio = ventasHoy.length > 0 ? totalVentasHoyUSD / ventasHoy.length : 0;
   
-  const stockCritico = state.productos.filter(p => p.activo && p.stock <= p.stockMinimo).length;
+  const productosActivos = state.productos.filter(p => p.activo);
+  const stockCritico = productosActivos.filter(p => p.stock <= p.stockMinimo).length;
   const clientesActivos = state.clientes.length;
 
   const totalVentasBs = ventasHoy.reduce((s, v) => s + v.totalBS, 0);
@@ -182,7 +183,7 @@ export default function DashboardModule({ state }: { state: AppState }) {
           </div>
           <div className="mt-5">
             <div className="text-[0.74rem] font-bold text-ink-subtle uppercase tracking-wider">Productos</div>
-            <div className="font-display text-[1.7rem] font-[800] text-ink mt-0.5">{state.productos.length}</div>
+            <div className="font-display text-[1.7rem] font-[800] text-ink mt-0.5">{productosActivos.length}</div>
           </div>
           <div className="mt-2.5 pt-3 border-t border-line text-[0.74rem] font-medium text-ink-subtle/80 uppercase">Catálogo Activo</div>
         </div>
