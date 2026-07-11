@@ -50,6 +50,12 @@ export interface SaleItem {
   subtotalUSD: number;
 }
 
+export interface PagoRealizado {
+  metodo: PaymentMethod;
+  montoUSD: number;
+  montoBS: number;
+}
+
 export interface Sale {
   id: string;
   fecha: string;
@@ -66,6 +72,7 @@ export interface Sale {
   change?: number;
   terminalId?: string;
   cajeroId?: string;
+  payments?: PagoRealizado[];
 }
 
 export interface Customer {
@@ -145,6 +152,19 @@ export interface Return {
   motivo: string;
 }
 
+export interface ReportZ {
+  id: string;
+  fecha: string;
+  numeroZ: number;
+  desdeFactura: string;
+  hastaFactura: string;
+  baseImponibleUSD: number;
+  ivaUSD: number;
+  exentoUSD: number;
+  totalBrutoUSD: number;
+  acumuladoHistoricoUSD: number;
+}
+
 export interface AppState {
   tasa: number;
   pinDevolucion: string;
@@ -158,7 +178,7 @@ export interface AppState {
   libroDiario: LibroDiarioEntry[];
   carrito: SaleItem[];
   terminales: Terminal[];
-  reportesZ: any[];
+  reportesZ: ReportZ[];
   ultimoZ: number;
   proximoRecibo: number;
   proximaDevolucion: number;
@@ -176,4 +196,4 @@ export interface AppState {
   proveedores: Supplier[];
 }
 
-export type PaymentMethod = 'efectivo_usd' | 'efectivo_bs' | 'punto_venta' | 'biopago' | 'pagomovil' | 'zelle' | 'transferencia';
+export type PaymentMethod = 'efectivo_usd' | 'efectivo_bs' | 'punto_venta' | 'biopago' | 'pagomovil' | 'zelle' | 'transferencia' | 'credito' | 'mixto' | 'otros';

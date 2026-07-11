@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from 'react';
-import { AppState, SaleItem, Sale, PaymentMethod, ReportZ, Movimiento, PagoRealizado, Customer, Return, ReturnItem, Product } from '@/lib/types';
+import { AppState, SaleItem, Sale, PaymentMethod, ReportZ, Movimiento, PagoRealizado, Customer, Return, ReturnItem, Product, Debt } from '@/lib/types';
 import { Utils, Store } from '@/lib/db-store';
 import { 
   Search, 
@@ -29,13 +29,16 @@ import {
   Lock,
   RefreshCw,
   Check,
-  RotateCcw
+  RotateCcw,
+  HandCoins
 } from 'lucide-react';
 import { auth } from '@/lib/firebase';
 import { ReceiptModal } from '@/components/pos/ReceiptModal';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Card, CardFooter } from '@/components/ui/card';
 
-// ✅ Soporte para impresión nativa
+// Soporte para impresión nativa
 declare global {
   interface Window {
     electronAPI?: {
@@ -86,7 +89,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
 
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // Cálculos para el Modal de Abono (Deuda que disminuye en tiempo real)
+  // Cálculos para el Modal de Abono
   const totalDeudaAbonoUSD = showAbonoModal 
     ? state.cxc.filter(c => c.cliente === showAbonoModal && c.estado !== 'pagada').reduce((s, c) => s + c.saldoUSD, 0)
     : 0;
@@ -94,7 +97,6 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   const deudaRestanteAbonoUSD = Math.max(0, totalDeudaAbonoUSD - totalAbonadoEnModalUSD);
   const deudaRestanteAbonoBS = deudaRestanteAbonoUSD * state.tasa;
 
-  // Helper: Cálculo de Stock Real (Considerando Kits dinámicos)
   const getStockDisponible = (p: Product) => {
     let avail = p.stock || 0;
     if (p.isKit && p.kitType === 'stock_componentes' && p.kitItems) {
@@ -248,7 +250,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       prodsActualizados[pIdx] = p;
     });
 
-    const nuevaVenta: Sale & { payments?: PagoRealizado[] } = {
+    const nuevaVenta: Sale = {
       id: reciboId,
       fecha: ahoraStr,
       cliente,
@@ -282,21 +284,105 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     setCliente('Consumidor final');
   };
 
-  const emitirReporteZ = () => {
-    if (!confirm('¿Desea realizar el CIERRE FISCAL Z?')) return;
+  const ejecutarVentaACredito = () => {
+    if (state.carrito.length === 0 || !selectedClient) return;
+    
+    const reciboId = String(state.proximoRecibo).padStart(9, '0');
+    const ahoraStr = Utils.ahora();
+    const terminal = getCurrentTerminal();
+    
+    let prodsActualizados = [...state.productos];
+    let nuevosMovimientos: Movimiento[] = [];
+
+    state.carrito.forEach(item => {
+      const pIdx = prodsActualizados.findIndex(x => x.id === item.productoId);
+      if (pIdx === -1) return;
+      const p = { ...prodsActualizados[pIdx] };
+      const stockAntes = p.stock;
+      p.stock -= item.cantidad;
+      nuevosMovimientos.push({
+        id: Store.uid(),
+        productoId: item.productoId,
+        tipo: 'venta',
+        cantidad: -Math.abs(item.cantidad),
+        stockAntes,
+        stockDespues: p.stock,
+        fecha: ahoraStr,
+        referencia: `VENTA CRÉDITO ${reciboId} - CLIENTE: ${selectedClient.name}`
+      });
+      prodsActualizados[pIdx] = p;
+    });
+
+    const nuevaVenta: Sale = {
+      id: reciboId,
+      fecha: ahoraStr,
+      cliente: selectedClient.name,
+      items: [...state.carrito],
+      subtotalUSD,
+      descuentoUSD: 0,
+      totalUSD: subtotalUSD,
+      totalBS,
+      metodoPago: 'credito',
+      estado: 'completada',
+      type: 'VENTA CRÉDITO',
+      received: 0,
+      change: 0,
+      terminalId: terminal?.id,
+      cajeroId: auth.currentUser?.email?.replace(/\W/g, '_')
+    };
+
+    const nuevaDeuda: Debt = {
+      id: 'CRD-' + reciboId.slice(-6),
+      fecha: ahoraStr.slice(0, 10),
+      fechaVencimiento: '2099-12-31',
+      cliente: selectedClient.name,
+      montoUSD: subtotalUSD,
+      abonadoUSD: 0,
+      saldoUSD: subtotalUSD,
+      estado: 'pendiente',
+      historialPagos: [],
+      ventaId: reciboId
+    };
+
+    const nuevosClientes = (state.clientes || []).map(c => 
+      c.id === selectedClient.id ? { ...c, debt: (c.debt || 0) + subtotalUSD } : c
+    );
+
+    updateState({
+      productos: prodsActualizados,
+      ventas: [...state.ventas, nuevaVenta],
+      movimientos: [...state.movimientos, ...nuevosMovimientos],
+      cxc: [...state.cxc, nuevaDeuda],
+      clientes: nuevosClientes,
+      carrito: [],
+      proximoRecibo: state.proximoRecibo + 1
+    });
+
+    setLastProcessedSale(nuevaVenta);
+    setShowReceiptModal(true);
+    setShowMultiModal(false);
+    setIsCreditView(false);
+    setSelectedClient(null);
+  };
+
+  const getReportSummary = () => {
     const hoy = Utils.hoy();
     const ventasHoy = state.ventas.filter(v => v.fecha.startsWith(hoy));
-    const totalHoy = ventasHoy.reduce((s, v) => s + v.totalUSD, 0);
-    const nuevoZ: ReportZ = {
-      id: `Z-${String(state.ultimoZ + 1).padStart(4, '0')}`,
-      fecha: hoy, numeroZ: state.ultimoZ + 1,
-      desdeFactura: ventasHoy[0]?.id || '000000000',
-      hastaFactura: ventasHoy[ventasHoy.length - 1]?.id || '000000000',
-      baseImponibleUSD: totalHoy / 1.16, ivaUSD: totalHoy - (totalHoy / 1.16),
-      exentoUSD: 0, totalBrutoUSD: totalHoy, acumuladoHistoricoUSD: state.acumuladoHistorico
-    };
-    updateState({ reportesZ: [...state.reportesZ, nuevoZ], ultimoZ: state.ultimoZ + 1 });
-    setShowReport('Z');
+    const breakdown: Record<string, { usd: number, bs: number }> = {};
+    let totalBS = 0; let totalUSD = 0; let totalCreditosUSD = 0;
+
+    ventasHoy.forEach(v => {
+      const payments = v.payments && v.payments.length > 0 ? v.payments : [{ metodo: v.metodoPago as PaymentMethod, montoUSD: v.totalUSD, montoBS: v.totalBS }];
+      payments.forEach((p: PagoRealizado) => {
+        const m = p.metodo;
+        if (!breakdown[m]) breakdown[m] = { usd: 0, bs: 0 };
+        breakdown[m].usd += p.montoUSD; breakdown[m].bs += p.montoBS;
+        if (m === 'efectivo_usd' || m === 'zelle') totalUSD += p.montoUSD;
+        else if (m === 'credito') totalCreditosUSD += p.montoUSD;
+        else totalBS += p.montoBS;
+      });
+    });
+    return { breakdown, totalBS, totalUSD, totalCreditosUSD, ventasHoy };
   };
 
   const handlePrintRoccia = (reportType: 'Y' | 'Z') => {
@@ -306,7 +392,6 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     }
 
     const { breakdown, totalBS, totalUSD, totalCreditosUSD } = getReportSummary();
-    const terminal = getCurrentTerminal();
     
     const printData = {
       id: reportType === 'Z' ? String(state.ultimoZ).padStart(4, '0') : 'Y-REPORT',
@@ -327,24 +412,21 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     window.electronAPI.printTicket(printData);
   };
 
-  const getReportSummary = () => {
+  const emitirReporteZ = () => {
+    if (!confirm('¿Desea realizar el CIERRE FISCAL Z?')) return;
     const hoy = Utils.hoy();
     const ventasHoy = state.ventas.filter(v => v.fecha.startsWith(hoy));
-    const breakdown: Record<string, { usd: number, bs: number }> = {};
-    let totalBS = 0; let totalUSD = 0; let totalCreditosUSD = 0;
-
-    ventasHoy.forEach(v => {
-      const payments = v.payments && v.payments.length > 0 ? v.payments : [{ metodo: v.metodoPago, montoUSD: v.totalUSD, montoBS: v.totalBS }];
-      payments.forEach((p: PagoRealizado) => {
-        const m = p.metodo;
-        if (!breakdown[m]) breakdown[m] = { usd: 0, bs: 0 };
-        breakdown[m].usd += p.montoUSD; breakdown[m].bs += p.montoBS;
-        if (m === 'efectivo_usd' || m === 'zelle') totalUSD += p.montoUSD;
-        else if (m === 'credito') totalCreditosUSD += p.montoUSD;
-        else totalBS += p.montoBS;
-      });
-    });
-    return { breakdown, totalBS, totalUSD, totalCreditosUSD, ventasHoy };
+    const totalHoy = ventasHoy.reduce((s, v) => s + v.totalUSD, 0);
+    const nuevoZ: ReportZ = {
+      id: `Z-${String(state.ultimoZ + 1).padStart(4, '0')}`,
+      fecha: hoy, numeroZ: state.ultimoZ + 1,
+      desdeFactura: ventasHoy[0]?.id || '000000000',
+      hastaFactura: ventasHoy[ventasHoy.length - 1]?.id || '000000000',
+      baseImponibleUSD: totalHoy / 1.16, ivaUSD: totalHoy - (totalHoy / 1.16),
+      exentoUSD: 0, totalBrutoUSD: totalHoy, acumuladoHistoricoUSD: state.acumuladoHistorico
+    };
+    updateState({ reportesZ: [...state.reportesZ, nuevoZ], ultimoZ: state.ultimoZ + 1 });
+    setShowReport('Z');
   };
 
   const { breakdown, totalBS: rTotalBS, totalUSD: rTotalUSD, totalCreditosUSD, ventasHoy: rVentasHoy } = getReportSummary();
@@ -382,7 +464,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     
     const nuevasDeudas = [...state.cxc].sort((a, b) => a.fecha.localeCompare(b.fecha));
     
-    const actualizadas = nuevasDeudas.map(d => {
+    const actualizadas: Debt[] = nuevasDeudas.map(d => {
       if (d.cliente === showAbonoModal && d.estado !== 'pagada' && restante > 0) {
         const abonoAplicado = Math.min(restante, d.saldoUSD);
         restante -= abonoAplicado;
@@ -397,18 +479,20 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         });
         
         const nuevoSaldo = d.saldoUSD - abonoAplicado;
+        const nuevoEstado: 'pendiente' | 'parcial' | 'pagada' = nuevoSaldo <= 0.01 ? 'pagada' : 'parcial';
+        
         return { 
           ...d, 
           abonadoUSD: (d.abonadoUSD || 0) + abonoAplicado, 
           saldoUSD: nuevoSaldo, 
-          estado: nuevoSaldo <= 0.01 ? 'pagada' : 'parcial', 
+          estado: nuevoEstado, 
           historialPagos 
         };
       }
       return d;
     });
 
-    const registroAbono: Sale & { payments?: PagoRealizado[] } = {
+    const registroAbono: Sale = {
       id: reciboId,
       fecha: ahoraStr,
       cliente: showAbonoModal,
@@ -618,7 +702,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                     <td className="text-center">
                       <div className="flex justify-center gap-2">
                         <button onClick={() => setShowDetailsModal(c)} className="btn-icon h-8 w-8 text-ink hover:text-brand-gold" title="Ver Historial Detallado"><Eye className="w-4 h-4"/></button>
-                        <button onClick={() => { setShowAbonoModal(c.cliente); setAbonoPagos([]); }} className="btn btn-sm btn-primary font-black text-[9px] uppercase px-4">Abonar</button>
+                        <button onClick={() => { setShowAbonoModal(c.cliente || null); setAbonoPagos([]); }} className="btn btn-sm btn-primary font-black text-[9px] uppercase px-4">Abonar</button>
                       </div>
                     </td>
                   </tr>
@@ -667,7 +751,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         </div>
       )}
 
-      {/* DIALOG DE AUDITORIA Y/Z CON SCROLL Y BOTÓN ROCCIA */}
+      {/* DIALOG DE AUDITORIA Y/Z */}
       <Dialog open={!!showReport} onOpenChange={() => setShowReport(null)}>
         <DialogContent className="sm:max-w-xs p-0 bg-transparent border-none overflow-visible shadow-none no-print">
           <DialogHeader className="sr-only"><DialogTitle>Informe Auditoría {showReport}</DialogTitle></DialogHeader>
@@ -703,7 +787,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
 
           <div className="flex gap-2 mt-4 no-print">
             <button 
-              onClick={() => handlePrintRoccia(showReport)} 
+              onClick={() => showReport && handlePrintRoccia(showReport)} 
               className="flex-1 bg-white text-ink border border-line h-11 rounded-lg font-black uppercase text-[10px] shadow-sm flex items-center justify-center gap-2 hover:bg-surface-soft transition-all"
             >
               <Printer className="w-4 h-4" /> {window.electronAPI ? 'Imprimir USB (Roccia 80mm)' : 'Imprimir'}
@@ -794,7 +878,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         </div>
       )}
 
-      {/* MODAL ABONO UNIFICADO (SEGÚN IMAGEN) */}
+      {/* MODAL ABONO UNIFICADO */}
       {showAbonoModal && (
         <div className="modal show"><div className="modal-bg" onClick={() => setShowAbonoModal(null)}></div>
           <div className="modal-box max-w-[500px] bg-white border-none rounded-[24px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
