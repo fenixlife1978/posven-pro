@@ -7,6 +7,8 @@ import { getDatabase, Database } from "firebase/database";
 // CONFIGURACIÓN DE FIREBASE
 // ============================================================
 
+const databaseURL = process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL;
+
 export const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "dummy",
   authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || "dummy",
@@ -14,7 +16,8 @@ export const firebaseConfig = {
   storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || "dummy",
   messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || "dummy",
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || "dummy",
-  databaseURL: process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL || "",
+  // Solo incluimos databaseURL si existe y tiene contenido para evitar errores de parseo en el build
+  ...(databaseURL && databaseURL.startsWith('https') ? { databaseURL } : {}),
 };
 
 // ============================================================
@@ -56,6 +59,7 @@ export const db: Firestore = typeof window !== "undefined" && isConfigValid
     })
   : getFirestore(app);
 
+// Inicialización segura de RTDB
 export const rtdb: Database = getDatabase(app);
 
 export default app;
