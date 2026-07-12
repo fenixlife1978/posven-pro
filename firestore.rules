@@ -10,9 +10,9 @@ service cloud.firestore {
       return request.auth != null;
     }
     
+    // Simplificamos isAdmin para evitar recursión innecesaria durante el login
     function isAdmin() {
       return isAuthenticated() && 
-             exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.rol == 'administrador';
     }
     
@@ -24,7 +24,9 @@ service cloud.firestore {
     // REGLAS PARA USUARIOS
     // ============================================================
     match /users/{userId} {
+      // Un usuario autenticado puede leer perfiles (necesario para validación de roles)
       allow read: if isAuthenticated();
+      // Un usuario puede crear su propio perfil o el admin puede editar cualquiera
       allow write: if isOwner(userId) || isAdmin();
     }
 
@@ -32,11 +34,11 @@ service cloud.firestore {
     // REGLAS PARA POS_SYSTEM_DATA (CONFIGURACIÓN)
     // ============================================================
     match /pos_system_data/{document} {
-      // Permitimos lectura pública para que el Login pueda verificar si el sistema está inicializado
-      // y obtener la tasa de cambio actual.
+      // Lectura pública del estado para permitir el flujo de "Primer Uso" y Tasa BCV
       allow read: if true;
       
-      // Solo usuarios autenticados pueden escribir configuraciones
+      // Permitimos escritura si el usuario está autenticado. 
+      // El primer admin se autentica vía Auth antes de escribir este doc.
       allow write: if isAuthenticated();
       
       match /{subcollection}/{subdocument} {

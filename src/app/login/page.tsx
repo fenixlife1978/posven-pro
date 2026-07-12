@@ -35,24 +35,20 @@ export default function LoginPage() {
   const [systemEmpty, setSystemEmpty] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
 
-  // Verificar si el sistema requiere configuración inicial (Primer Uso)
+  // Verificar si el sistema requiere configuración inicial
   useEffect(() => {
     const checkSystemStatus = async () => {
       if (!db) return;
       try {
-        // Consultamos el documento de estado global que ahora es público para lectura
         const stateDoc = await getDoc(doc(db, 'pos_system_data', 'state'));
         if (stateDoc.exists()) {
           const data = stateDoc.data();
-          // Si isInitialized es false, permitimos el registro inicial
           setSystemEmpty(!data.isInitialized);
         } else {
-          // Si el documento ni siquiera existe, asumimos sistema nuevo
           setSystemEmpty(true);
         }
       } catch (e) {
-        console.warn("Verificando integridad...");
-        // En caso de error de red, no mostramos el registro por seguridad
+        // Si falla por permisos, asumimos que no es nuevo (seguridad)
         setSystemEmpty(false);
       }
     };
@@ -76,7 +72,7 @@ export default function LoginPage() {
             }
             router.push('/');
           } else {
-            await signOut(auth);
+            // Si el usuario existe en Auth pero no en Firestore (ej. registro interrumpido)
             setAuthChecked(true);
           }
         } catch (e) {
@@ -113,8 +109,8 @@ export default function LoginPage() {
       const userDocRef = doc(db, 'users', user.uid);
       const userDoc = await getDoc(userDocRef);
       
-      if (!userDoc.exists()) {
-        // Crear perfil vinculado al UID
+      if (!userDoc.exists() || isRegistering) {
+        // Crear o sobreescribir perfil vinculado al UID
         const newUserData = {
           email: user.email!.toLowerCase(),
           nombre: email.split('@')[0].toUpperCase(),
@@ -127,13 +123,20 @@ export default function LoginPage() {
 
         // Si es el registro inicial, marcar el sistema como inicializado
         if (isRegistering) {
-          await updateDoc(doc(db, 'pos_system_data', 'state'), { isInitialized: true });
+          const stateRef = doc(db, 'pos_system_data', 'state');
+          const stateSnap = await getDoc(stateRef);
+          if (stateSnap.exists()) {
+            await updateDoc(stateRef, { isInitialized: true });
+          } else {
+            // Si el documento ni siquiera existe, lo creamos con el flag
+            await setDoc(stateRef, { isInitialized: true, tasa: 36.5, proximoRecibo: 1 }, { merge: true });
+          }
         }
-      } else if (!isRegistering) {
+      } else {
         const userData = userDoc.data();
         if (userData.rol !== role) {
           await signOut(auth);
-          toast({ variant: "destructive", title: "Rol Incorrecto", description: `Usted es ${userData.rol.toUpperCase()}.` });
+          toast({ variant: "destructive", title: "Rol Incorrecto", description: `Usted está registrado como ${userData.rol.toUpperCase()}.` });
           setLoading(false);
           return;
         }
@@ -141,8 +144,12 @@ export default function LoginPage() {
 
       router.push('/');
     } catch (err: any) {
-      console.error('Error:', err);
-      toast({ variant: "destructive", title: "Error", description: "Credenciales inválidas o fallo de conexión." });
+      console.error('Error de Auth:', err);
+      let mensaje = "Credenciales inválidas o fallo de conexión.";
+      if (err.code === 'auth/email-already-in-use') mensaje = "El correo ya está registrado.";
+      if (err.code === 'auth/weak-password') mensaje = "La contraseña es muy débil.";
+      
+      toast({ variant: "destructive", title: "Error de Acceso", description: mensaje });
     } finally {
       setLoading(false);
     }
