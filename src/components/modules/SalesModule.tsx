@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -31,7 +30,8 @@ import {
   RefreshCw,
   Check,
   RotateCcw,
-  HandCoins
+  HandCoins,
+  Calculator
 } from 'lucide-react';
 import { auth } from '@/lib/firebase';
 import { ReceiptModal } from '@/components/pos/ReceiptModal';
@@ -173,7 +173,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     : [];
 
   const getCurrentTerminal = () => {
-    const currentUserId = auth.currentUser?.email?.replace(/\W/g, '_');
+    if (!auth) return null;
+    const currentUserId = auth.currentUser?.email?.toLowerCase().replace(/\W/g, '_');
     return state.terminales.find(t => t.usuarioId === currentUserId);
   };
 
@@ -223,7 +224,6 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
             prodsActualizados[cpIdx] = cp;
           }
         });
-        // Venta del KIT (No se registra movimiento para el kit virtual para evitar duplicidad)
       } else {
         const stockAntes = p.stock;
         p.stock -= item.cantidad;
@@ -258,7 +258,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       change: Math.max(0, totalPagadoUSD - subtotalUSD),
       payments: [...pagos],
       terminalId: terminal?.id,
-      cajeroId: auth.currentUser?.email?.replace(/\W/g, '_')
+      cajeroId: auth?.currentUser?.email?.toLowerCase().replace(/\W/g, '_')
     };
 
     updateState({
@@ -314,7 +314,6 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
             prodsActualizados[cpIdx] = cp;
           }
         });
-        // No se registra movimiento para el kit virtual
       } else {
         const stockAntes = p.stock;
         p.stock -= item.cantidad;
@@ -347,7 +346,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       received: 0,
       change: 0,
       terminalId: terminal?.id,
-      cajeroId: auth.currentUser?.email?.replace(/\W/g, '_')
+      cajeroId: auth?.currentUser?.email?.toLowerCase().replace(/\W/g, '_')
     };
 
     const nuevaDeuda: Debt = {
@@ -527,7 +526,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       change: 0,
       payments: [...abonoPagos],
       terminalId: terminal?.id,
-      cajeroId: auth.currentUser?.email?.replace(/\W/g, '_')
+      cajeroId: auth?.currentUser?.email?.toLowerCase().replace(/\W/g, '_')
     };
 
     updateState({ 
