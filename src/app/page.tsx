@@ -12,7 +12,6 @@ import {
   Settings,
   Users,
   Menu,
-  RefreshCw,
   Wifi,
   WifiOff,
   Clock as ClockIcon,
@@ -184,11 +183,13 @@ export default function LicoreriaPOS() {
 
   const handleLogout = async () => {
     if (confirm('¿Cerrar sesión del sistema?')) {
-      if (userRole === 'cajero' && user && db) {
+      if (userRole === 'cajero' && userProfile?.email && db) {
         try {
-          const userDocId = user.email.toLowerCase().replace(/\W/g, '_');
+          const userDocId = userProfile.email.toLowerCase().replace(/\W/g, '_');
           await updateDoc(doc(db, 'users', userDocId), { accesoBloqueado: true });
-        } catch (e) {}
+        } catch (e) {
+          console.error("Error al bloquear salida:", e);
+        }
       }
       if (typeof sessionStorage !== 'undefined') {
         sessionStorage.clear();

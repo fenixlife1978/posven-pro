@@ -11,15 +11,12 @@ import {
   Lock, 
   Unlock, 
   Trash2, 
-  CheckCircle2, 
   AlertTriangle,
-  Settings,
-  ArrowRight,
-  RefreshCw,
-  X
+  X,
+  Mail
 } from 'lucide-react';
 import { db } from '@/lib/firebase';
-import { collection, doc, getDocs, updateDoc, onSnapshot } from 'firebase/firestore';
+import { collection, doc, updateDoc, onSnapshot } from 'firebase/firestore';
 import { toast } from '@/hooks/use-toast';
 
 export default function GlobalControlModule({ state, updateState }: { state: AppState, updateState: (s: Partial<AppState>) => void }) {
@@ -56,7 +53,7 @@ export default function GlobalControlModule({ state, updateState }: { state: App
       
       toast({ 
         title: !currentStatus ? "Acceso Concedido" : "Acceso Bloqueado",
-        description: `El estado del operador ha sido actualizado con éxito.`
+        description: `El estado del operador [${userId}] ha sido actualizado.`
       });
     } catch (e) {
       console.error("Error al actualizar acceso:", e);
@@ -124,7 +121,7 @@ export default function GlobalControlModule({ state, updateState }: { state: App
               <table>
                 <thead>
                   <tr className="bg-surface-soft">
-                    <th className="text-ink font-black text-[10px] uppercase">Operador</th>
+                    <th className="text-ink font-black text-[10px] uppercase">Operador / Identificador</th>
                     <th className="text-ink font-black text-[10px] uppercase">Rol</th>
                     <th className="text-ink font-black text-[10px] uppercase">Estado de Seguridad</th>
                     <th className="text-ink font-black text-[10px] uppercase text-right">Acción</th>
@@ -135,7 +132,12 @@ export default function GlobalControlModule({ state, updateState }: { state: App
                     <tr><td colSpan={4} className="text-center py-10 animate-pulse text-ink/20 font-black uppercase">Sincronizando perfiles...</td></tr>
                   ) : users.filter(u => u.rol === 'cajero').map(u => (
                     <tr key={u.id} className="border-b border-line/30 hover:bg-surface-warm/20 transition-colors">
-                      <td className="text-ink font-black text-xs uppercase">{u.nombre}</td>
+                      <td className="py-4 px-6">
+                        <div className="text-ink font-black text-xs uppercase">{u.nombre}</div>
+                        <div className="flex items-center gap-1.5 text-[9px] font-bold text-ink/40 lowercase">
+                          <Mail className="w-3 h-3" /> {u.email}
+                        </div>
+                      </td>
                       <td><span className="badge badge-neutral font-black text-[8px] uppercase">{u.rol}</span></td>
                       <td>
                         <div className="flex items-center gap-2">
@@ -145,9 +147,9 @@ export default function GlobalControlModule({ state, updateState }: { state: App
                           </span>
                         </div>
                       </td>
-                      <td className="text-right">
+                      <td className="text-right px-6">
                         <button 
-                          onClick={() => toggleAccess(u.id, u.accesoBloqueado)}
+                          onClick={() => toggleAccess(u.id, !!u.accesoBloqueado)}
                           className={`btn h-8 px-4 font-black text-[9px] uppercase shadow-sm ${u.accesoBloqueado ? 'btn-primary' : 'bg-status-danger text-white hover:bg-status-danger/80'}`}
                         >
                           {u.accesoBloqueado ? <><Unlock className="w-3 h-3" /> Conceder Acceso</> : <><Lock className="w-3 h-3" /> Bloquear</>}
