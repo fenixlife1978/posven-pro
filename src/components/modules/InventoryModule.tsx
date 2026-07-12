@@ -381,7 +381,7 @@ function ReporteGeneral({ state, onAction }: { state: AppState, onAction: (type:
             >
               <option value="">TODOS LOS PROVEEDORES</option>
               {safeProveedores.map(p => (
-                <option key={p.id} value={p.nombre}>{p.nombre?.toUpperCase()}</option>
+                <option key={p.id} value={p.nombre}>{p.nombre?.toUpperCase() || 'S/N'}</option>
               ))}
             </select>
           </div>
@@ -463,7 +463,7 @@ function ModalCPP({ producto, movimientos, onClose }: { producto: Product, movim
   return (
     <div className="modal show"><div className="modal-bg" onClick={onClose}></div>
       <div className="modal-box bg-white max-w-sm border-none rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-        <div className="modal-head py-3 px-5 border-none bg-[#1A2C4E] flex justify-between items-center rounded-t-xl">
+        <div className="modal-head py-3 px-5 border-none bg-black flex justify-between items-center rounded-t-xl">
           <div className="flex items-center gap-2 text-white">
             <Calculator className="w-4 h-4" />
             <h3 className="font-bold text-xs uppercase tracking-wider">Detalle de Costo - CPP</h3>
