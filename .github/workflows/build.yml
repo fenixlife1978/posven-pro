@@ -12,6 +12,9 @@ on:
 jobs:
   release:
     runs-on: windows-latest
+    # Se otorgan permisos explícitos para crear el Release y subir artefactos
+    permissions:
+      contents: write
 
     steps:
       - name: Check out Git repository
