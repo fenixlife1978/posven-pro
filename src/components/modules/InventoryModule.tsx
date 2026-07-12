@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useMemo } from 'react';
@@ -299,11 +300,7 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
                 }
               });
               
-              // El kit en sí no cambia su stock real porque es virtual (se registra el movimiento para auditoría)
-              nuevosMovimientos.push({
-                ...mov,
-                stockDespues: productoOriginal.stock // Se mantiene el stock antes del ajuste
-              }); 
+              // El kit virtual no genera su propio registro de movimiento para evitar duplicidad de pérdida
             } else {
               // LOGICA NORMAL
               prodsActualizados = prodsActualizados.map(p => {
@@ -465,7 +462,7 @@ function ReporteVentas({ state }: { state: AppState }) {
         </div>
         {useDates && (
            <div className="flex items-center gap-2">
-              <input type="date" className="form-input h-8 text-xs font-bold" value={desde} onChange={e => setDesde(setDesde(e.target.value))} />
+              <input type="date" className="form-input h-8 text-xs font-bold" value={desde} onChange={e => setDesde(e.target.value)} />
               <input type="date" className="form-input h-8 text-xs font-bold" value={hasta} onChange={e => setHasta(e.target.value)} />
            </div>
         )}

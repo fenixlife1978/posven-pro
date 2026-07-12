@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -222,17 +223,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
             prodsActualizados[cpIdx] = cp;
           }
         });
-        // Venta del KIT (No descuenta stock propio)
-        nuevosMovimientos.push({
-          id: Store.uid(),
-          productoId: p.id,
-          tipo: 'venta',
-          cantidad: -Math.abs(item.cantidad),
-          stockAntes: p.stock,
-          stockDespues: p.stock,
-          fecha: ahoraStr,
-          referencia: `VENTA KIT VIRTUAL ${reciboId}`
-        });
+        // Venta del KIT (No se registra movimiento para el kit virtual para evitar duplicidad)
       } else {
         const stockAntes = p.stock;
         p.stock -= item.cantidad;
@@ -323,16 +314,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
             prodsActualizados[cpIdx] = cp;
           }
         });
-        nuevosMovimientos.push({
-          id: Store.uid(),
-          productoId: p.id,
-          tipo: 'venta',
-          cantidad: -Math.abs(item.cantidad),
-          stockAntes: p.stock,
-          stockDespues: p.stock,
-          fecha: ahoraStr,
-          referencia: `VENTA CRÉDITO KIT VIRTUAL ${reciboId}`
-        });
+        // No se registra movimiento para el kit virtual
       } else {
         const stockAntes = p.stock;
         p.stock -= item.cantidad;
