@@ -104,6 +104,7 @@ export interface Debt {
   }>;
   ventaId?: string;
   items?: any[];
+  concepto?: string;
 }
 
 export interface LibroDiarioEntry {
@@ -197,3 +198,15 @@ export interface AppState {
 }
 
 export type PaymentMethod = 'efectivo_usd' | 'efectivo_bs' | 'punto_venta' | 'biopago' | 'pagomovil' | 'zelle' | 'transferencia' | 'credito' | 'mixto' | 'otros';
+
+// ============================================================
+// FUNCIONES AGREGADAS PARA CORREGIR ERRORES
+// ============================================================
+
+export function getProductBarcode(product: Product | any): string {
+  return product?.codigo || product?.barcode || product?.sku || '';
+}
+
+export function getProductPrice(product: Product | any): number {
+  return product?.precioUSD || product?.price || product?.precio || 0;
+}

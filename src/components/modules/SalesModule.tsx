@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -173,8 +174,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     : [];
 
   const getCurrentTerminal = () => {
-    if (!auth) return null;
-    const currentUserId = auth.currentUser?.email?.toLowerCase().replace(/\W/g, '_');
+    if (!auth || !auth.currentUser) return null;
+    const currentUserId = auth.currentUser.email?.toLowerCase().replace(/\W/g, '_');
     return state.terminales.find(t => t.usuarioId === currentUserId);
   };
 
@@ -363,7 +364,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     };
 
     const nuevosClientes = (state.clientes || []).map(c => 
-      c.id === selectedClient.id ? { ...c, debt: (c.debt || 0) + subtotalUSD } : c
+      c.id === selectedClient!.id ? { ...c, debt: (c.debt || 0) + subtotalUSD } : c
     );
 
     updateState({

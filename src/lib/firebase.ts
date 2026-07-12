@@ -13,30 +13,32 @@ export const firebaseConfig = {
   databaseURL: process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL,
 };
 
-// Validar configuración mínima para evitar bloqueos
-const isConfigValid = typeof window !== "undefined" && !!firebaseConfig.apiKey;
+const isConfigValid = !!firebaseConfig.apiKey;
 
-let app: FirebaseApp | null = null;
-if (isConfigValid) {
-  try {
-    app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
-  } catch (e) {
-    console.error("Error initializing Firebase App:", e);
-  }
+if (!isConfigValid && typeof window !== "undefined") {
+  console.error("❌ Firebase: Variables de entorno no configuradas correctamente");
 }
 
-export const auth = app ? getAuth(app) : null;
+let app: FirebaseApp;
+try {
+  app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
+} catch (e) {
+  console.error("❌ Error inicializando Firebase:", e);
+  app = initializeApp({
+    apiKey: "dummy",
+    authDomain: "dummy",
+    projectId: "dummy",
+  });
+}
 
-// Inicializar Firestore con persistencia solo si estamos en el cliente
-export const db = app 
-  ? (typeof window !== "undefined" 
-      ? initializeFirestore(app, {
-          localCache: persistentLocalCache({
-            tabManager: persistentMultipleTabManager()
-          })
-        })
-      : getFirestore(app))
-  : null;
+export const auth: Auth = getAuth(app);
+export const db: Firestore = typeof window !== "undefined" 
+  ? initializeFirestore(app, {
+      localCache: persistentLocalCache({
+        tabManager: persistentMultipleTabManager()
+      })
+    })
+  : getFirestore(app);
+export const rtdb: Database = getDatabase(app);
 
-export const rtdb = app ? getDatabase(app) : null;
 export default app;

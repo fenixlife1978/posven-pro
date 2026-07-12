@@ -17,7 +17,7 @@ import {
   Boxes
 } from 'lucide-react';
 import { Store, Utils } from '@/lib/db-store';
-import { AppState, Product, Movimiento, PaymentMethod, KitItem, Supplier, LibroDiarioEntry } from '@/lib/types';
+import { AppState, Product, Movimiento, PaymentMethod, KitItem, Supplier, LibroDiarioEntry, Debt } from '@/lib/types';
 
 interface PurchaseItemTemp {
   productoId: string;
@@ -186,26 +186,28 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
         concepto: `COMPRA MERCANCIA FACT #${numeroFactura} - PROV: ${proveedor.toUpperCase()}`,
         montoUSD: pMontoPagadoUSD,
         montoBS: pMontoPagadoUSD * tasaActual,
-        metodo: 'efectivo_usd', // Simplificado, idealmente elegir método
+        metodo: 'efectivo_usd',
         referencia: numeroFactura
       });
     }
 
     const nuevasCxP = [...state.cxp];
     if (saldoPendienteUSD > 0.0001) {
-      nuevasCxP.push({
+      const nuevaDeuda: Debt = {
         id: 'CXP-' + Store.uid().slice(0, 6).toUpperCase(),
         fecha: fecha,
-        fechaVencimiento,
-        proveedor,
+        fechaVencimiento: fechaVencimiento,
+        proveedor: proveedor,
         concepto: `FACTURA COMPRA #${numeroFactura}`,
         montoUSD: totalUSD,
         abonadoUSD: pMontoPagadoUSD,
         saldoUSD: saldoPendienteUSD,
         estado: Math.abs(saldoPendienteUSD - totalUSD) < 0.0001 ? 'pendiente' : 'parcial',
         items: [...loteTemporal],
-        numeroFactura: numeroFactura
-      });
+        numeroFactura: numeroFactura,
+        historialPagos: []
+      };
+      nuevasCxP.push(nuevaDeuda);
     }
 
     updateState({
