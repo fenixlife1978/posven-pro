@@ -26,7 +26,7 @@ import { Store, initialState, Utils } from '@/lib/db-store';
 import { AppState, Terminal } from '@/lib/types';
 import { auth, db } from '@/lib/firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { doc, updateDoc, onSnapshot, getDoc } from 'firebase/firestore';
+import { doc, onSnapshot, getDoc } from 'firebase/firestore';
 import DashboardModule from '@/components/modules/DashboardModule';
 import { InventoryModule } from '@/components/modules/InventoryModule';
 import SalesModule from '@/components/modules/SalesModule';
@@ -75,7 +75,6 @@ export default function LicoreriaPOS() {
           const userDocId = currentUser.email!.toLowerCase().replace(/\W/g, '_');
           
           unsubscribeProfile = onSnapshot(doc(db, 'users', userDocId), (docSnap) => {
-            // Evitar procesar si el usuario está en proceso de salida
             if (!auth.currentUser) return;
 
             if (docSnap.exists()) {
@@ -127,7 +126,6 @@ export default function LicoreriaPOS() {
               setLoading(false);
             }
           }, (err) => {
-            // Ignorar errores de permisos durante el logout
             if (err.code === 'permission-denied') return;
             console.error("Profile sync error:", err);
             setLoading(false);
@@ -165,7 +163,6 @@ export default function LicoreriaPOS() {
     };
   }, [router]);
 
-  // Persistencia de Carrito
   useEffect(() => {
     if (mounted) {
       const savedCart = sessionStorage.getItem('posven_current_cart');
@@ -196,12 +193,6 @@ export default function LicoreriaPOS() {
     if (confirm('¿Cerrar sesión del sistema?')) {
       setLoading(true);
       try {
-        if (userRole === 'cajero' && userProfile?.email && db) {
-          const userDocId = userProfile.email.toLowerCase().replace(/\W/g, '_');
-          // Bloquear acceso ANTES de salir para asegurar permisos
-          await updateDoc(doc(db, 'users', userDocId), { accesoBloqueado: true });
-        }
-        
         if (typeof sessionStorage !== 'undefined') {
           sessionStorage.clear();
         }
@@ -210,7 +201,6 @@ export default function LicoreriaPOS() {
         router.push('/login');
       } catch (e) {
         console.error("Error al cerrar sesión:", e);
-        // Fallback forzoso
         if (auth) await signOut(auth);
         router.push('/login');
       }
