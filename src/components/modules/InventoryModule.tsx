@@ -23,7 +23,8 @@ import {
   Truck,
   Calculator,
   TrendingUp,
-  LayoutGrid
+  LayoutGrid,
+  Monitor
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -504,14 +505,16 @@ function ReporteVentas({ state }: { state: AppState }) {
   const [desde, setDesde] = useState(Utils.hoy());
   const [hasta, setHasta] = useState(Utils.hoy());
   const [useDates, setUseDates] = useState(false);
+  const [terminalId, setTerminalId] = useState('all');
 
   const filteredVentas = useMemo(() => {
     return state.ventas.filter(v => {
       const d = v.fecha.slice(0, 10);
-      if (!useDates) return d === Utils.hoy();
-      return d >= desde && d <= hasta;
+      const dateMatch = !useDates ? d === Utils.hoy() : (d >= desde && d <= hasta);
+      const terminalMatch = terminalId === 'all' || v.terminalId === terminalId;
+      return dateMatch && terminalMatch;
     });
-  }, [state.ventas, desde, hasta, useDates]);
+  }, [state.ventas, desde, hasta, useDates, terminalId]);
 
   const groupedVentas = useMemo(() => {
     const groups: Record<string, { nombre: string, cantidad: number, totalUSD: number }> = {};
@@ -540,11 +543,29 @@ function ReporteVentas({ state }: { state: AppState }) {
               <input type="date" className="form-input h-8 text-xs font-bold" value={hasta} onChange={e => setHasta(e.target.value)} />
            </div>
         )}
+        <div className="form-group mb-0">
+          <label className="text-ink text-[10px] font-black uppercase block mb-1.5 opacity-70">Punto de Venta / Terminal</label>
+          <div className="relative">
+            <Monitor className="absolute left-3 top-2.5 w-3.5 h-3.5 text-brand-gold opacity-50" />
+            <select 
+              className="form-select pl-9 h-8 text-[10px] font-black uppercase bg-surface-soft border-line rounded-md"
+              value={terminalId}
+              onChange={e => setTerminalId(e.target.value)}
+            >
+              <option value="all">TODOS LOS TERMINALES (GLOBAL)</option>
+              {state.terminales.map(t => (
+                <option key={t.id} value={t.id}>{t.nombre}</option>
+              ))}
+            </select>
+          </div>
+        </div>
       </Card>
 
       <Card className="bg-white shadow-lg border-line rounded-xl overflow-hidden">
         <div className="card-head bg-ink border-b border-white/10 px-6 py-4 text-white">
-           <h3 className="font-black text-xs uppercase italic tracking-tighter">RESUMEN DE VENTAS POR PRODUCTO</h3>
+           <h3 className="font-black text-xs uppercase italic tracking-tighter">
+             RESUMEN DE VENTAS {terminalId === 'all' ? 'GENERAL' : `TERMINAL: ${state.terminales.find(t => t.id === terminalId)?.nombre || terminalId}`}
+           </h3>
         </div>
         <div className="table-wrap">
           <Table>
@@ -557,7 +578,7 @@ function ReporteVentas({ state }: { state: AppState }) {
             </TableHeader>
             <TableBody>
               {groupedVentas.length === 0 ? (
-                <TableRow><TableCell colSpan={3} className="text-center py-20 text-ink/20 font-black italic uppercase">Sin ventas registradas</TableCell></TableRow>
+                <TableRow><TableCell colSpan={3} className="text-center py-20 text-ink/20 font-black italic uppercase">Sin ventas registradas para la selección actual</TableCell></TableRow>
               ) : (
                 groupedVentas.map((g, idx) => (
                   <TableRow key={idx} className="border-b border-line/30 hover:bg-surface-warm/20 transition-colors">
