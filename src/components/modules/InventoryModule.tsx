@@ -1013,9 +1013,15 @@ function ModalProducto({ producto, state, onClose, onSave, onUpdateLists }: { pr
   });
 
   const [kitSearch, setKitSearch] = useState('');
+  
+  // CORRECCIÓN: Filtramos productos para que solo aparezcan los ACTIVOS y que no sean Kits
   const filteredProdsForKit = useMemo(() => {
     if (kitSearch.length < 2) return [];
-    return state.productos.filter(p => !p.isKit && (p.nombre.toLowerCase().includes(kitSearch.toLowerCase()) || p.codigo.toLowerCase().includes(kitSearch.toLowerCase()))).slice(0, 5);
+    return state.productos.filter(p => 
+      p.activo && 
+      !p.isKit && 
+      (p.nombre.toLowerCase().includes(kitSearch.toLowerCase()) || p.codigo.toLowerCase().includes(kitSearch.toLowerCase()))
+    ).slice(0, 5);
   }, [kitSearch, state.productos]);
 
   const validarDecimal = (val: string) => /^[\d]*\.?[\d]*$/.test(val) || val === '';
