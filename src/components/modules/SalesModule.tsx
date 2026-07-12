@@ -277,7 +277,30 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   };
 
   const ejecutarVentaACredito = () => {
-    if (state.carrito.length === 0 || !selectedClient) return;
+    if (state.carrito.length === 0) return;
+
+    let targetClient: Customer | null = selectedClient;
+
+    // LÓGICA QUIRÚRGICA: SI EL FORMULARIO DE NUEVO CLIENTE ESTÁ ACTIVO
+    if (showNewClientForm) {
+      if (!newClient.name || !newClient.cedula) {
+        alert("Por favor ingrese el Nombre y la Cédula del cliente para continuar.");
+        return;
+      }
+      targetClient = {
+        id: Store.uid(),
+        name: newClient.name.toUpperCase(),
+        cedula: newClient.cedula.toUpperCase(),
+        phone: newClient.phone,
+        address: newClient.address,
+        debt: 0
+      };
+    }
+
+    if (!targetClient) {
+      alert("Por favor seleccione un cliente de la lista o registre uno nuevo.");
+      return;
+    }
     
     const reciboId = String(state.proximoRecibo).padStart(9, '0');
     const ahoraStr = Utils.ahora();
@@ -325,7 +348,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
           stockAntes,
           stockDespues: p.stock,
           fecha: ahoraStr,
-          referencia: `VENTA CRÉDITO ${reciboId} - CLIENTE: ${selectedClient.name}`
+          referencia: `VENTA CRÉDITO ${reciboId} - CLIENTE: ${targetClient!.name}`
         });
         prodsActualizados[pIdx] = p;
       }
@@ -334,7 +357,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     const nuevaVenta: Sale = {
       id: reciboId,
       fecha: ahoraStr,
-      cliente: selectedClient.name,
+      cliente: targetClient.name,
       items: [...state.carrito],
       subtotalUSD,
       descuentoUSD: 0,
@@ -353,7 +376,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       id: 'CRD-' + reciboId.slice(-6),
       fecha: ahoraStr.slice(0, 10),
       fechaVencimiento: '2099-12-31',
-      cliente: selectedClient.name,
+      cliente: targetClient.name,
       montoUSD: subtotalUSD,
       abonadoUSD: 0,
       saldoUSD: subtotalUSD,
@@ -362,9 +385,15 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       ventaId: reciboId
     };
 
-    const nuevosClientes = (state.clientes || []).map(c => 
-      c.id === selectedClient!.id ? { ...c, debt: (c.debt || 0) + subtotalUSD } : c
-    );
+    let nuevosClientes;
+    if (showNewClientForm) {
+      targetClient.debt = subtotalUSD;
+      nuevosClientes = [...(state.clientes || []), targetClient];
+    } else {
+      nuevosClientes = (state.clientes || []).map(c => 
+        c.id === targetClient!.id ? { ...c, debt: (c.debt || 0) + subtotalUSD } : c
+      );
+    }
 
     updateState({
       productos: prodsActualizados,
@@ -381,6 +410,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     setShowMultiModal(false);
     setIsCreditView(false);
     setSelectedClient(null);
+    setShowNewClientForm(false);
+    setNewClient({ name: '', cedula: 'V-', phone: '', address: '' });
   };
 
   const getReportSummary = () => {
@@ -586,7 +617,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         <button onClick={() => setView('history')} className={`btn btn-sm ${view === 'history' ? 'btn-primary shadow-md' : 'bg-white text-ink font-bold border-line border'}`}><History className="w-3.5 h-3.5"/> Historial</button>
         <button onClick={() => setView('credits')} className={`btn btn-sm ${view === 'credits' ? 'btn-primary shadow-md' : 'bg-white text-ink font-bold border-line border'}`}><ClipboardList className="w-3.5 h-3.5"/> Consultar Créditos</button>
         <button onClick={() => setShowReport('Y')} className="btn btn-sm bg-white text-ink font-bold border-line border"><FileText className="w-3.5 h-3.5"/> Reporte Y</button>
-        <button onClick={emitirReporteZ} className="btn btn-sm bg-white text-ink font-bold border-line border"><Receipt className="w-3.5 h-3.5"/> Reporte Z</button>
+        <button onClick={emititReporteZ} className="btn btn-sm bg-white text-ink font-bold border-line border"><Receipt className="w-3.5 h-3.5"/> Reporte Z</button>
         <button onClick={() => setView('returns')} className={`btn btn-sm ${view === 'returns' ? 'btn-primary shadow-md' : 'bg-white text-ink font-bold border-line border'}`}><RotateCcw className="w-3.5 h-3.5"/> Devoluciones</button>
       </div>
 
@@ -1000,10 +1031,10 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                   ) : (
                     <div className="space-y-3">
                        <div className="space-y-2">
-                         <div className="space-y-1"><label className="text-[9px] font-black uppercase text-ink/60">Nombre</label><input className="form-input h-9 text-xs" value={newClient.name} onChange={e => setNewClient({...newClient, name: e.target.value})} /></div>
-                         <div className="space-y-1"><label className="text-[9px] font-black uppercase text-ink/60">Cédula</label><input className="form-input h-9 text-xs" value={newClient.cedula} onChange={e => setNewClient({...newClient, cedula: e.target.value})} /></div>
+                         <div className="space-y-1"><label className="text-[9px] font-black uppercase text-ink/60">Nombre</label><input className="form-input h-9 text-xs uppercase" value={newClient.name} onChange={e => setNewClient({...newClient, name: e.target.value})} /></div>
+                         <div className="space-y-1"><label className="text-[9px] font-black uppercase text-ink/60">Cédula</label><input className="form-input h-9 text-xs uppercase" value={newClient.cedula} onChange={e => setNewClient({...newClient, cedula: e.target.value})} /></div>
                        </div>
-                       <button className="btn btn-primary w-full h-12 font-black uppercase text-xs" onClick={ejecutarVentaACredito}>Cargar Deuda</button>
+                       <button className="btn btn-primary w-full h-12 font-black uppercase text-xs shadow-md" onClick={ejecutarVentaACredito}>Cargar Deuda</button>
                        <button className="text-[9px] text-ink/40 uppercase font-black text-center w-full" onClick={() => setShowNewClientForm(false)}>Volver a buscar</button>
                     </div>
                   )}
