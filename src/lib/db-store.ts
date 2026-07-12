@@ -1,3 +1,4 @@
+
 "use client";
 
 import { AppState } from './types';
@@ -8,6 +9,10 @@ const STORAGE_KEY = 'posven_pro_session_data_cache';
 const COLLECTION = 'pos_system_data';
 const DOC_ID = 'state';
 
+/**
+ * Estado inicial del sistema.
+ * Al resetear, el sistema volverá exactamente a estos valores.
+ */
 export const initialState: AppState = {
   tasa: 36.50,
   pinDevolucion: '000000',
@@ -40,6 +45,10 @@ export const initialState: AppState = {
 };
 
 export const Store = {
+  /**
+   * Suscribe los componentes a los cambios en Firestore.
+   * Si el documento no existe, lo inicializa con los valores por defecto.
+   */
   subscribe(callback: (state: Partial<AppState>) => void) {
     if (typeof window === 'undefined' || !db) return () => {};
 
@@ -49,13 +58,16 @@ export const Store = {
       if (snapshot.exists()) {
         const val = snapshot.data();
         const merged = { ...initialState, ...val };
+        // El carrito no se sincroniza en la nube por terminal, es local por sesión
         delete (merged as any).carrito; 
         callback(merged);
         sessionStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
       } else {
+        // Si no existe en la nube, usamos el local o el inicial
         const local = Store.get();
         callback(local);
         
+        // Inicializamos la nube si está vacía
         const { carrito, ...toPersist } = initialState;
         if (db) setDoc(docRef, toPersist).catch(e => console.error("Error init firestore:", e));
       }
@@ -70,7 +82,8 @@ export const Store = {
     const d = sessionStorage.getItem(STORAGE_KEY);
     if (!d) return initialState;
     try {
-      return JSON.parse(d);
+      const parsed = JSON.parse(d);
+      return { ...initialState, ...parsed };
     } catch {
       return initialState;
     }
@@ -79,6 +92,7 @@ export const Store = {
   set(state: AppState) {
     if (typeof window === 'undefined') return;
     
+    // Filtramos solo los datos que deben persistir en Firestore
     const dataToPersist = {
       tasa: state.tasa,
       pinDevolucion: state.pinDevolucion,
@@ -104,12 +118,14 @@ export const Store = {
       acumuladoHistorico: state.acumuladoHistorico || 0
     };
 
-    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(dataToPersist));
+    // Actualizamos cache local para velocidad inmediata
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ ...state, ...dataToPersist }));
     
+    // Persistimos en Firestore (Asíncrono)
     if (db) {
       const docRef = doc(db, COLLECTION, DOC_ID);
       setDoc(docRef, dataToPersist).catch(err => {
-          console.error("Firestore Error (Will retry automatically):", err);
+          console.error("Firestore Write Error:", err);
       });
     }
   },
@@ -160,7 +176,8 @@ export const Utils = {
       pagomovil: 'PagoMovil',
       zelle: 'Zelle',
       credito: 'Crédito', 
-      mixto: 'Mixto' 
+      mixto: 'Mixto',
+      otros: 'Otros'
     };
     return map[m] || m;
   }

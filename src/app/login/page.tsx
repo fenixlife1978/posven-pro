@@ -36,24 +36,25 @@ export default function LoginPage() {
   const [systemEmpty, setSystemEmpty] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
 
-  // Verificar si existen usuarios en el sistema para permitir el registro inicial
+  // Verificar si existen usuarios en el sistema para permitir el registro inicial (Primer Uso)
   useEffect(() => {
     const checkSystemStatus = async () => {
       if (!db) return;
       try {
-        // Intentamos una lectura mínima. Si falla por permisos, asumimos que no está vacío 
-        // (porque las reglas solo permiten leer a autenticados).
+        // Realizamos una consulta limitada para verificar si la colección de usuarios está vacía
         const q = query(collection(db, 'users'), limit(1));
         const snap = await getDocs(q);
         setSystemEmpty(snap.empty);
       } catch (e) {
-        // Ignoramos el error de permisos aquí, es normal si no estamos logueados
+        // Si hay error de permisos, asumimos que no está vacío (porque las reglas solo permiten leer a autenticados)
+        console.log("Verificando integridad del sistema...");
         setSystemEmpty(false);
       }
     };
     checkSystemStatus();
   }, []);
 
+  // Listener de autenticación para redirección automática
   useEffect(() => {
     if (!auth) return;
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -66,14 +67,18 @@ export default function LoginPage() {
             const userData = userDoc.data();
             if (userData.accesoBloqueado) {
               await signOut(auth);
-              toast({ variant: "destructive", title: "Acceso Bloqueado", description: "Su acceso ha sido suspendido por administración." });
+              toast({ 
+                variant: "destructive", 
+                title: "Acceso Bloqueado", 
+                description: "Su acceso ha sido suspendido por administración." 
+              });
               setAuthChecked(true);
               return;
             }
+            // Usuario válido, vamos al dashboard/pos
             router.push('/');
           } else {
-            // Si el usuario de Auth existe pero no tiene perfil en Firestore
-            console.warn('Perfil no encontrado para UID:', user.uid);
+            // Documento de perfil no encontrado para este UID
             await signOut(auth);
             setAuthChecked(true);
           }
@@ -97,7 +102,9 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      if (!auth) throw new Error("Firebase Auth no disponible");
+      if (!auth || !db) throw new Error("Servicios de seguridad no disponibles");
+      
+      // Persistencia solo por sesión del navegador
       await setPersistence(auth, browserSessionPersistence);
       
       let user;
@@ -114,9 +121,10 @@ export default function LoginPage() {
       const userDoc = await getDoc(userDocRef);
       
       if (!userDoc.exists()) {
+        // Si estamos registrando o el perfil no existe, lo creamos vinculándolo al UID
         const newUserData = {
           email: user.email!.toLowerCase(),
-          nombre: email.split('@')[0] || 'Usuario',
+          nombre: email.split('@')[0].toUpperCase(),
           rol: role,
           uid: user.uid,
           fechaCreacion: new Date().toISOString(),
@@ -126,7 +134,7 @@ export default function LoginPage() {
       } else if (!isRegistering) {
         const userData = userDoc.data();
         
-        // Verificación de integridad: Rol y Estado
+        // Verificación de integridad: Estado y Rol
         if (userData.accesoBloqueado) {
           await signOut(auth);
           toast({ variant: "destructive", title: "Acceso Bloqueado", description: "Consulte con el administrador del sistema." });
@@ -173,7 +181,7 @@ export default function LoginPage() {
       <div className="min-h-screen bg-surface-warm flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
           <div className="w-10 h-10 border-4 border-brand-gold border-t-transparent rounded-full animate-spin"></div>
-          <p className="text-[10px] font-black uppercase tracking-widest text-ink/40">Verificando Seguridad...</p>
+          <p className="text-[10px] font-black uppercase tracking-widest text-ink/40">Iniciando Protocolos...</p>
         </div>
       </div>
     );
