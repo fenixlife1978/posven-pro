@@ -99,7 +99,7 @@ export default function GlobalControlModule({ state, updateState }: { state: App
       });
     } catch (e) {
       console.error("Error en migración:", e);
-      toast({ variant: "destructive", title: "Fallo de Migración", description: "Fallo al procesar los IDs de usuario." });
+      toast({ variant: "destructive", title: "Fallo en Migración", description: "Fallo al procesar los IDs de usuario." });
     } finally {
       setIsMigrating(false);
     }

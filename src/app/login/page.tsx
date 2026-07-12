@@ -35,9 +35,11 @@ export default function LoginPage() {
           const data = stateDoc.data();
           setSystemEmpty(data.isInitialized === false);
         } else {
+          // Si el documento no existe, asumimos que el sistema está nuevo
           setSystemEmpty(true);
         }
       } catch (e) {
+        console.warn("Silent status check:", e);
         setSystemEmpty(false);
       }
     };
@@ -108,6 +110,7 @@ export default function LoginPage() {
         await setDoc(userDocRef, newUserData);
 
         if (isRegistering) {
+          // Marcar sistema como inicializado inmediatamente
           const stateRef = doc(db, 'pos_system_data', 'state');
           await setDoc(stateRef, { isInitialized: true }, { merge: true });
           

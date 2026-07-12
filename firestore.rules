@@ -2,43 +2,49 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // FUNCIONES DE VALIDACIÓN
+    // FUNCIONES DE SOPORTE
     function isAuthenticated() {
       return request.auth != null;
     }
     
-    // Verifica si el usuario es administrador buscando su UID en la colección users
-    function isAdmin() {
-      return isAuthenticated() && 
-             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.rol == 'administrador';
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
     
-    function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
+    function isAdmin() {
+      return isAuthenticated() && 
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+             getUserData().rol == 'administrador';
     }
 
-    // EL ESTADO DEL SISTEMA ES PÚBLICO PARA LECTURA (Para detectar si el sistema es nuevo)
-    match /pos_system_data/state {
+    // EL ESTADO DEL SISTEMA (Público para lectura inicial)
+    match /pos_system_data/{docId} {
       allow read: if true;
-      allow write: if isAdmin() || (request.resource.data.isInitialized == true);
+      allow write: if isAdmin() || (docId == 'state' && request.resource.data.isInitialized == true);
     }
 
-    // ADMINISTRADORES: Acceso total a todo el sistema
-    match /{document=**} {
-      allow read, write: if isAdmin();
-    }
-
-    // REGLAS ESPECÍFICAS PARA USUARIOS NO-ADMIN
+    // PERFILES DE USUARIO
     match /users/{userId} {
-      allow read: if isAuthenticated() && (isOwner(userId) || isAdmin());
-      // Solo el dueño o el admin escriben, pero solo el admin cambia el rol o el bloqueo
-      allow write: if isAuthenticated() && (isOwner(userId) || isAdmin());
+      // Un usuario puede leer su propio perfil. Un admin puede leer todos.
+      allow read: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+      
+      // El administrador tiene control total. 
+      // El usuario puede crear su perfil inicial si el UID coincide.
+      allow create: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+      allow update: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+      allow delete: if isAdmin();
     }
 
-    // Colecciones operativas (Lectura/Escritura para cualquier autenticado no bloqueado)
+    // REGLA MAESTRA PARA OPERACIONES (Productos, Ventas, CXC, CXP, etc.)
     match /{collectionName}/{docId} {
+      // El administrador siempre tiene acceso
+      allow read, write: if isAdmin();
+      
+      // Los cajeros tienen acceso si NO están bloqueados
       allow read, write: if isAuthenticated() && 
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.accesoBloqueado == false;
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        getUserData().rol == 'cajero' && 
+        getUserData().accesoBloqueado == false;
     }
   }
 }
