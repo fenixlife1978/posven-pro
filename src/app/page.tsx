@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
   LayoutDashboard, 
@@ -56,6 +56,9 @@ export default function LicoreriaPOS() {
   const [userProfile, setUserProfile] = useState<any>(null);
   const [showApertura, setShowApertura] = useState(false);
   const [aperturaData, setAperturaData] = useState({ bs: '0', usd: '0' });
+  
+  // Ref para evitar que el cambio de modulo dispare el efecto principal
+  const moduleInitialized = useRef(false);
 
   useEffect(() => {
     setMounted(true);
@@ -80,39 +83,44 @@ export default function LicoreriaPOS() {
             return;
           }
 
-          unsubscribeProfile = onSnapshot(doc(db, 'users', userDocId), async (docSnap) => {
+          unsubscribeProfile = onSnapshot(doc(db, 'users', userDocId), (docSnap) => {
             if (docSnap.exists()) {
               const data = docSnap.data();
               
               if (data.accesoBloqueado) {
-                await signOut(auth);
-                router.push('/login');
+                signOut(auth).then(() => router.push('/login'));
                 return;
               }
 
-              const savedModule = sessionStorage.getItem('posven_active_module');
-              const aperturaConfirmada = sessionStorage.getItem('posven_apertura_done');
+              // Lógica de módulo inicial
+              if (!moduleInitialized.current) {
+                const savedModule = sessionStorage.getItem('posven_active_module');
+                const aperturaConfirmada = sessionStorage.getItem('posven_apertura_done');
 
-              if (data.rol === 'cajero') {
-                 const configSnap = await getDoc(doc(db, 'pos_system_data', 'state'));
-                 const terminals = (configSnap.data()?.terminales || []) as Terminal[];
-                 const hasTerminal = terminals.some((t: Terminal) => t.usuarioId === userDocId);
-                 
-                 if (!hasTerminal) {
-                    await signOut(auth);
-                    alert("ACCESO RESTRINGIDO: Su usuario no tiene un terminal de venta asignado.");
-                    router.push('/login');
-                    return;
-                 }
-                 
-                 if (!savedModule) setActiveTab('ventas');
-                 else setActiveTab(savedModule);
-                 
-                 setShowApertura(!aperturaConfirmada);
-              } else {
-                 if (!savedModule) setActiveTab('dashboard');
-                 else setActiveTab(savedModule);
-                 setShowApertura(false);
+                if (data.rol === 'cajero') {
+                   // Para cajeros, verificamos terminal por fuera del listener sincrónico para no bloquear
+                   getDoc(doc(db, 'pos_system_data', 'state')).then(configSnap => {
+                      const terminals = (configSnap.data()?.terminales || []) as Terminal[];
+                      const hasTerminal = terminals.some((t: Terminal) => t.usuarioId === userDocId);
+                      
+                      if (!hasTerminal) {
+                         signOut(auth).then(() => {
+                           alert("ACCESO RESTRINGIDO: Su usuario no tiene un terminal de venta asignado.");
+                           router.push('/login');
+                         });
+                         return;
+                      }
+                      
+                      if (!savedModule) setActiveTab('ventas');
+                      else setActiveTab(savedModule);
+                      setShowApertura(!aperturaConfirmada);
+                   });
+                } else {
+                   if (!savedModule) setActiveTab('dashboard');
+                   else setActiveTab(savedModule);
+                   setShowApertura(false);
+                }
+                moduleInitialized.current = true;
               }
 
               setUserRole(data.rol);
@@ -120,12 +128,12 @@ export default function LicoreriaPOS() {
               setUser(currentUser);
               setLoading(false);
             } else {
-              // Si no existe el perfil, por seguridad cerramos sesión
-              await signOut(auth);
-              router.push('/login');
+              // Si no existe el perfil después de logueado, es un error de integridad
+              console.warn("Perfil de usuario no encontrado en Firestore.");
+              setLoading(false);
             }
           }, (err) => {
-            console.warn("Perfil cargando en modo offline...");
+            console.error("Error en suscripción de perfil:", err);
             setLoading(false);
           });
 
@@ -159,7 +167,7 @@ export default function LicoreriaPOS() {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
-  }, [router, activeModule]);
+  }, [router]); // ELIMINADO activeModule de las dependencias para evitar bucle
 
   useEffect(() => {
     if (mounted) {
@@ -189,17 +197,15 @@ export default function LicoreriaPOS() {
 
   const handleLogout = async () => {
     if (confirm('¿Cerrar sesión del sistema?')) {
-      sessionStorage.clear();
-      
       if (userRole === 'cajero' && user && db) {
         try {
-          // Normalizar email al bloquear tras logout
           const userDocId = user.email.toLowerCase().replace(/\W/g, '_');
           await updateDoc(doc(db, 'users', userDocId), { accesoBloqueado: true });
         } catch (e) {
           console.error("Error al activar bloqueo de seguridad:", e);
         }
       }
+      sessionStorage.clear();
       if (auth) await signOut(auth);
       router.push('/login');
     }
