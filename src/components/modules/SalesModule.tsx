@@ -2,7 +2,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { AppState, SaleItem, Sale, PaymentMethod, ReportZ, PagoRealizado, Customer, Return, ReturnItem, Product, Debt, Movimiento } from '@/lib/types';
+import { AppState, SaleItem, Sale, PaymentMethod, ReportZ, PagoRealizado, Customer, Return, ReturnItem, Product, Debt, Movimiento, LibroDiarioEntry } from '@/lib/types';
 import { Utils, Store } from '@/lib/db-store';
 import { 
   Search, 
@@ -264,10 +264,24 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       cajeroId: auth?.currentUser?.uid
     };
 
+    // GENERAR ASIENTOS CONTABLES
+    const nuevasEntradasDiario: LibroDiarioEntry[] = pagos.map(p => ({
+      id: 'ACC-' + Store.uid().toUpperCase().slice(0, 5),
+      fecha: ahoraStr,
+      tipo: 'ingreso',
+      categoria: 'VENTA',
+      concepto: `VENTA RECIBO #${reciboId} - CLIENTE: ${cliente.toUpperCase()}`,
+      montoUSD: p.montoUSD,
+      montoBS: p.montoBS,
+      metodo: p.metodo,
+      referencia: reciboId
+    }));
+
     updateState({
       productos: prodsActualizados,
       ventas: [...state.ventas, nuevaVenta],
       movimientos: [...state.movimientos, ...nuevosMovimientos],
+      libroDiario: [...nuevasEntradasDiario, ...(state.libroDiario || [])],
       carrito: [],
       proximoRecibo: state.proximoRecibo + 1,
       acumuladoHistorico: state.acumuladoHistorico + subtotalUSD
@@ -614,10 +628,24 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       cajeroId: auth?.currentUser?.uid
     };
 
+    // GENERAR ASIENTOS CONTABLES POR COBRO DE CRÉDITO
+    const nuevasEntradasDiario: LibroDiarioEntry[] = abonoPagos.map(p => ({
+      id: 'ACC-' + Store.uid().toUpperCase().slice(0, 5),
+      fecha: ahoraStr,
+      tipo: 'ingreso',
+      categoria: 'COBRO_DEUDA',
+      concepto: `COBRO DEUDA - CLIENTE: ${showAbonoModal.toUpperCase()}`,
+      montoUSD: p.montoUSD,
+      montoBS: p.montoBS,
+      metodo: p.metodo,
+      referencia: reciboId
+    }));
+
     updateState({ 
       cxc: actualizadas, 
       ventas: [...state.ventas, registroAbono],
       proximoRecibo: state.proximoRecibo + 1,
+      libroDiario: [...nuevasEntradasDiario, ...(state.libroDiario || [])],
       clientes: (state.clientes || []).map(c => c.name === showAbonoModal ? { ...c, debt: Math.max(0, (c.debt || 0) - totalAbonoUSD) } : c)
     });
 
@@ -647,21 +675,55 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   const procesarDevolucionPOS = () => {
     if (!selectedSaleForReturn || returnItems.length === 0 || !returnReason.trim()) return;
     if (prompt('PIN de autorización:') !== state.pinDevolucion) return alert('PIN incorrecto');
+    
     const totalDev = returnItems.reduce((s, i) => s + (i.cantidad * i.precioUnitUSD), 0);
     const idDev = 'DEV-' + String(state.proximaDevolucion).padStart(6, '0');
     const ahoraStr = Utils.ahora();
     const nuevosProds = [...state.productos];
     const nuevosMovs: Movimiento[] = [];
+    
     returnItems.forEach(it => {
       const pIdx = nuevosProds.findIndex(p => p.id === it.productoId);
       if (pIdx >= 0) {
         const p = nuevosProds[pIdx];
         if (it.estadoProducto === 'REINTEGRADO_STOCK') p.stock += it.cantidad;
-        nuevosMovs.push({ id: Store.uid(), productoId: it.productoId, tipo: 'devolucion', cantidad: it.cantidad, stockAntes: p.stock - it.cantidad, stockDespues: p.stock, fecha: ahoraStr, referencia: `DEV ${idDev}` });
+        nuevosMovs.push({ 
+          id: Store.uid(), 
+          productoId: it.productoId, 
+          tipo: 'devolucion', 
+          cantidad: it.cantidad, 
+          stockAntes: p.stock - it.cantidad, 
+          stockDespues: p.stock, 
+          fecha: ahoraStr, 
+          referencia: `DEV ${idDev}` 
+        });
       }
     });
-    updateState({ productos: nuevosProds, devoluciones: [{ id: idDev, ventaId: selectedSaleForReturn.id, fecha: ahoraStr, items: [...returnItems], totalUSD: totalDev, metodoReembolso: refundMethod, motivo: returnReason }, ...(state.devoluciones || [])], movimientos: [...state.movimientos, ...nuevosMovs], proximaDevolucion: state.proximaDevolucion + 1 });
-    alert('Procesada'); setReturnView('list'); setSelectedSaleForReturn(null);
+
+    // GENERAR ASIENTO DE EGRESO POR DEVOLUCIÓN
+    const entradaDevolucion: LibroDiarioEntry = {
+      id: 'ACC-' + Store.uid().toUpperCase().slice(0, 5),
+      fecha: ahoraStr,
+      tipo: 'egreso',
+      categoria: 'DEVOLUCION',
+      concepto: `DEVOLUCION #${idDev} - REF VENTA: ${selectedSaleForReturn.id}`,
+      montoUSD: totalDev,
+      montoBS: totalDev * state.tasa,
+      metodo: refundMethod === 'EFECTIVO' ? 'efectivo_usd' : (refundMethod === 'CREDITO_TIENDA' ? 'nota_credito' : 'otros'),
+      referencia: idDev
+    };
+
+    updateState({ 
+      productos: nuevosProds, 
+      devoluciones: [{ id: idDev, ventaId: selectedSaleForReturn.id, fecha: ahoraStr, items: [...returnItems], totalUSD: totalDev, metodoReembolso: refundMethod, motivo: returnReason }, ...(state.devoluciones || [])], 
+      movimientos: [...state.movimientos, ...nuevosMovs],
+      libroDiario: [entradaDevolucion, ...(state.libroDiario || [])],
+      proximaDevolucion: state.proximaDevolucion + 1 
+    });
+
+    alert('Procesada'); 
+    setReturnView('list'); 
+    setSelectedSaleForReturn(null);
   };
 
   return (
@@ -1206,4 +1268,3 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     </div>
   );
 }
-
