@@ -102,8 +102,8 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
             <div className="flex flex-wrap gap-4 flex-1 w-full">
               <div className="relative flex-1 min-w-[200px]">
                 <Search className="absolute left-3 top-2.5 w-4 h-4 text-ink/30" />
-                <Input 
-                  className="pl-9 h-11 text-sm font-bold bg-white border-line" 
+                <input 
+                  className="form-input pl-9 h-11 text-sm font-bold bg-white border-line" 
                   placeholder="Buscar producto por nombre o código..." 
                   value={search} 
                   onChange={e => setSearch(e.target.value)} 
@@ -470,7 +470,7 @@ function ModalCPP({ producto, movimientos, onClose }: { producto: Product, movim
 
           <div className="space-y-3">
             <h5 className="text-[9px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100 pb-1.5">HISTORIAL DE COSTOS (ÚLTIMAS COMPRAS)</h5>
-            <div className="max-h-[220px] overflow-y-auto space-y-3 pr-1 scrollbar-thin">
+            <div className="max-h-[220px] overflow-y-auto space-y-3 pr-1">
               {compras.length === 0 ? (
                 <div className="py-8 text-center text-gray-300 font-bold uppercase italic text-[10px]">Sin historial de compras registrado</div>
               ) : (
@@ -806,7 +806,7 @@ function ReporteKardex({ state, selectedId, onSelect }: { state: AppState, selec
       <Card className="p-5 bg-white border-line shadow-sm rounded-xl">
         <label className="text-[10px] font-black uppercase text-ink opacity-40 block mb-2">Buscar producto para ver Kardex</label>
         <div className="relative">
-          <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Escriba nombre o código..." className="h-12 text-sm font-bold bg-white" />
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Escriba nombre o código..." className="form-input h-12 text-sm font-bold bg-white" />
           {matches.length > 0 && (
             <div className="absolute top-full left-0 right-0 bg-white border border-line shadow-2xl z-50 mt-1 rounded-xl overflow-hidden">
               {matches.map(p => (
@@ -899,13 +899,13 @@ function ModalAjuste({ producto, onClose, onSave }: { producto: Product, onClose
                </select>
              </div>
              <div className="form-group"><Label className="text-[10px] font-black uppercase text-ink/60 mb-1 block">Cantidad</Label>
-               <Input className="h-10 text-center font-black bg-white" type="text" value={cantidad} onChange={e => setCantidad(e.target.value)} />
+               <input className="form-input h-10 text-center font-black bg-white" type="text" value={cantidad} onChange={e => setCantidad(e.target.value)} />
              </div>
           </div>
           <div className="form-group">
             <Label className="text-[10px] font-black uppercase text-ink/60 mb-1 block">Motivo del Ajuste</Label>
-            <Input 
-              className="h-10 text-xs font-black uppercase bg-white" 
+            <input 
+              className="form-input h-10 text-xs font-black uppercase bg-white" 
               placeholder="Ej: ERROR DE CONTEO, DAÑO, ETC..." 
               value={motivo} 
               onChange={e => setMotivo(e.target.value)} 
@@ -1045,11 +1045,11 @@ function ModalProducto({ producto, state, onClose, onSave, onUpdateLists }: { pr
               <div className="space-y-4">
                 <div className="space-y-1">
                   <Label className="text-[10px] font-black uppercase text-ink/50 block">Código (Scanner/Manual)</Label>
-                  <Input className="h-10 font-black text-ink bg-white" value={datos.codigo} onChange={e => setDatos({...datos, codigo: e.target.value})} placeholder="00000000" autoFocus />
+                  <input className="form-input h-10 font-black text-ink bg-white" value={datos.codigo} onChange={e => setDatos({...datos, codigo: e.target.value})} placeholder="00000000" autoFocus />
                 </div>
                 <div className="space-y-1">
                   <Label className="text-[10px] font-black uppercase text-ink/50 block">Nombre del Producto</Label>
-                  <Input className="h-10 font-black text-ink uppercase bg-white" value={datos.nombre} onChange={e => setDatos({...datos, nombre: e.target.value})} />
+                  <input className="form-input h-10 font-black text-ink uppercase bg-white" value={datos.nombre} onChange={e => setDatos({...datos, nombre: e.target.value})} />
                 </div>
                 <div className="space-y-1">
                   <div className="flex justify-between items-center mb-1">
@@ -1068,7 +1068,7 @@ function ModalProducto({ producto, state, onClose, onSave, onUpdateLists }: { pr
                  <div className="grid grid-cols-2 gap-4">
                    <div className={`p-3 bg-surface-soft border border-line rounded-xl text-center ${producto ? 'opacity-50' : ''}`}>
                      <Label className="text-[9px] font-black uppercase text-ink/50 block mb-1">Stock Inicial</Label>
-                     <Input 
+                     <input 
                         className="bg-transparent border-none text-center font-black text-xl w-full focus:outline-none" 
                         disabled={!!producto}
                         value={datos.stock} 
@@ -1077,7 +1077,7 @@ function ModalProducto({ producto, state, onClose, onSave, onUpdateLists }: { pr
                    </div>
                    <div className="p-3 bg-status-danger-soft border border-status-danger/20 rounded-xl text-center">
                      <Label className="text-[9px] font-black uppercase text-status-danger/70 block mb-1">Mínimo</Label>
-                     <Input className="bg-transparent border-none text-center font-black text-xl w-full text-status-danger focus:outline-none" value={datos.stockMinimo} onChange={e => setDatos({...datos, stockMinimo: e.target.value})} />
+                     <input className="bg-transparent border-none text-center font-black text-xl w-full text-status-danger focus:outline-none" value={datos.stockMinimo} onChange={e => setDatos({...datos, stockMinimo: e.target.value})} />
                    </div>
                  </div>
                  <div className="flex items-center gap-3 p-4 bg-surface-soft rounded-xl border border-line">
@@ -1091,10 +1091,10 @@ function ModalProducto({ producto, state, onClose, onSave, onUpdateLists }: { pr
           {activeTab === 'precios' && (
             <div className="space-y-6">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-surface-soft p-5 rounded-2xl border border-line shadow-inner">
-                <div className="space-y-1"><Label className="text-[9px] font-black uppercase text-ink/50">Costo ($)</Label><Input className="h-12 font-black text-lg bg-white" value={datos.costoUSD} onChange={e => setDatos({...datos, costoUSD: e.target.value})} /></div>
-                <div className="space-y-1"><Label className="text-[9px] font-black uppercase text-brand-gold-deep">Margen %</Label><Input className="h-12 font-black text-lg text-brand-gold-deep bg-white" value={datos.margen} onChange={e => recalcularTridireccional('margen', e.target.value)} /></div>
-                <div className="space-y-1"><Label className="text-[9px] font-black uppercase text-status-success">Venta ($)</Label><Input className="h-12 font-black text-lg text-status-success bg-white" value={datos.precioUSD} onChange={e => recalcularTridireccional('precioUSD', e.target.value)} /></div>
-                <div className="space-y-1"><Label className="text-[9px] font-black uppercase text-ink">Venta (BS)</Label><Input className="h-12 font-black text-lg bg-white" value={datos.precioBS} onChange={e => recalcularTridireccional('precioBS', e.target.value)} /></div>
+                <div className="space-y-1"><Label className="text-[9px] font-black uppercase text-ink/50">Costo ($)</Label><input className="form-input h-12 font-black text-lg bg-white" value={datos.costoUSD} onChange={e => setDatos({...datos, costoUSD: e.target.value})} /></div>
+                <div className="space-y-1"><Label className="text-[9px] font-black uppercase text-brand-gold-deep">Margen %</Label><input className="form-input h-12 font-black text-lg text-brand-gold-deep bg-white" value={datos.margen} onChange={e => recalcularTridireccional('margen', e.target.value)} /></div>
+                <div className="space-y-1"><Label className="text-[9px] font-black uppercase text-status-success">Venta ($)</Label><input className="form-input h-12 font-black text-lg text-status-success bg-white" value={datos.precioUSD} onChange={e => recalcularTridireccional('precioUSD', e.target.value)} /></div>
+                <div className="space-y-1"><Label className="text-[9px] font-black uppercase text-ink">Venta (BS)</Label><input className="form-input h-12 font-black text-lg bg-white" value={datos.precioBS} onChange={e => recalcularTridireccional('precioBS', e.target.value)} /></div>
               </div>
             </div>
           )}
@@ -1109,10 +1109,10 @@ function ModalProducto({ producto, state, onClose, onSave, onUpdateLists }: { pr
               </div>
               {datos.isKit && (
                 <div className="space-y-4">
-                  <div className="relative"><Search className="absolute left-3 top-3 w-4 h-4 text-ink/30" /><Input className="h-12 pl-10 text-xs font-black uppercase bg-white" placeholder="Buscar productos componentes..." value={kitSearch} onChange={e => setKitSearch(e.target.value)} />{filteredProdsForKit.length > 0 && (<div className="absolute top-full left-0 right-0 bg-white border border-line rounded-lg shadow-2xl z-50 mt-1 overflow-hidden">{filteredProdsForKit.map(pk => (<div key={pk.id} onClick={() => { setDatos({...datos, kitItems: [...datos.kitItems, { productoId: pk.id, nombre: pk.nombre, cantidad: 1 }]}); setKitSearch(''); }} className="p-3 border-b border-line hover:bg-brand-gold-soft cursor-pointer flex justify-between items-center"><span className="text-xs font-black uppercase text-ink">{pk.nombre}</span><Plus className="w-4 h-4 text-brand-gold"/></div>))}</div>)}</div>
+                  <div className="relative"><Search className="absolute left-3 top-3 w-4 h-4 text-ink/30" /><input className="form-input h-12 pl-10 text-xs font-black uppercase bg-white" placeholder="Buscar productos componentes..." value={kitSearch} onChange={e => setKitSearch(e.target.value)} />{filteredProdsForKit.length > 0 && (<div className="absolute top-full left-0 right-0 bg-white border border-line rounded-lg shadow-2xl z-50 mt-1 overflow-hidden">{filteredProdsForKit.map(pk => (<div key={pk.id} onClick={() => { setDatos({...datos, kitItems: [...datos.kitItems, { productoId: pk.id, nombre: pk.nombre, cantidad: 1 }]}); setKitSearch(''); }} className="p-3 border-b border-line hover:bg-brand-gold-soft cursor-pointer flex justify-between items-center"><span className="text-xs font-black uppercase text-ink">{pk.nombre}</span><Plus className="w-4 h-4 text-brand-gold"/></div>))}</div>)}</div>
                   <Card className="border-line shadow-sm overflow-hidden bg-white"><div className="table-wrap"><table><thead className="bg-surface-soft"><tr><th className="text-[10px] font-black uppercase text-ink">Componente</th><th className="text-[10px] font-black uppercase text-center text-ink">Cant</th><th /></tr></thead><tbody>
                     {datos.kitItems.map((ki: KitItem, index: number) => (
-                      <tr key={index} className="border-b border-line/30"><td className="text-[11px] font-black uppercase text-ink">{ki.nombre}</td><td className="text-center"><Input className="w-12 h-8 text-center font-black bg-surface-soft border-line inline-block" type="number" value={ki.cantidad} onChange={e => { const n = [...datos.kitItems]; n[index].cantidad = parseInt(e.target.value) || 1; setDatos({...datos, kitItems: n}); }} /></td><td className="text-center"><button onClick={() => setDatos({...datos, kitItems: datos.kitItems.filter((_:any, i:number) => i !== index)})} className="text-status-danger"><Trash2 className="w-4 h-4"/></button></td></tr>
+                      <tr key={index} className="border-b border-line/30"><td className="text-[11px] font-black uppercase text-ink">{ki.nombre}</td><td className="text-center"><input className="form-input w-12 h-8 text-center font-black bg-surface-soft border-line inline-block" type="number" value={ki.cantidad} onChange={e => { const n = [...datos.kitItems]; n[index].cantidad = parseInt(e.target.value) || 1; setDatos({...datos, kitItems: n}); }} /></td><td className="text-center"><button onClick={() => setDatos({...datos, kitItems: datos.kitItems.filter((_:any, i:number) => i !== index)})} className="text-status-danger"><Trash2 className="w-4 h-4"/></button></td></tr>
                     ))}
                   </tbody></table></div></Card>
                 </div>

@@ -13,15 +13,19 @@ export const firebaseConfig = {
   databaseURL: process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL,
 };
 
-// Validar configuración mínima para evitar bloqueos en el servidor
-const isConfigValid = !!firebaseConfig.apiKey;
+// Validar configuración mínima para evitar bloqueos
+const isConfigValid = typeof window !== "undefined" && !!firebaseConfig.apiKey;
 
 let app: FirebaseApp | null = null;
 if (isConfigValid) {
-  app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
+  try {
+    app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
+  } catch (e) {
+    console.error("Error initializing Firebase App:", e);
+  }
 }
 
-export const auth = app ? getAuth(app) : null as unknown as Auth;
+export const auth = app ? getAuth(app) : null;
 
 // Inicializar Firestore con persistencia solo si estamos en el cliente
 export const db = app 
@@ -32,7 +36,7 @@ export const db = app
           })
         })
       : getFirestore(app))
-  : null as unknown as Firestore;
+  : null;
 
-export const rtdb = app ? getDatabase(app) : null as unknown as Database;
+export const rtdb = app ? getDatabase(app) : null;
 export default app;

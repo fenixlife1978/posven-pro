@@ -62,7 +62,7 @@ export default function LicoreriaPOS() {
     setMounted(true);
     let unsubscribeProfile: any = null;
 
-    if (!auth) {
+    if (!auth || !db) {
       setLoading(false);
       return;
     }
@@ -74,12 +74,6 @@ export default function LicoreriaPOS() {
         try {
           const userDocId = currentUser.email!.toLowerCase().replace(/\W/g, '_');
           
-          if (!db) {
-            setUser(currentUser);
-            setLoading(false);
-            return;
-          }
-
           unsubscribeProfile = onSnapshot(doc(db, 'users', userDocId), (docSnap) => {
             if (docSnap.exists()) {
               const data = docSnap.data();
@@ -126,10 +120,12 @@ export default function LicoreriaPOS() {
               setLoading(false);
             }
           }, (err) => {
+            console.error("Profile sync error:", err);
             setLoading(false);
           });
 
         } catch (error) {
+          console.error("Auth process error:", error);
           setLoading(false);
         }
       }
@@ -144,7 +140,7 @@ export default function LicoreriaPOS() {
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
     
-    if (typeof navigator !== 'undefined') {
+    if (typeof window !== 'undefined') {
       setIsOnline(navigator.onLine);
       window.addEventListener('online', handleOnline);
       window.addEventListener('offline', handleOffline);
@@ -194,7 +190,9 @@ export default function LicoreriaPOS() {
           await updateDoc(doc(db, 'users', userDocId), { accesoBloqueado: true });
         } catch (e) {}
       }
-      sessionStorage.clear();
+      if (typeof sessionStorage !== 'undefined') {
+        sessionStorage.clear();
+      }
       if (auth) await signOut(auth);
       router.push('/login');
     }
@@ -278,7 +276,6 @@ export default function LicoreriaPOS() {
 
   const isCajero = userRole === 'cajero';
 
-  // Pantalla de apertura exclusiva para cajeros al iniciar sesión
   if (showApertura && isCajero) {
     const timeStr = mounted ? currentTime.toLocaleTimeString('es-VE', { 
       hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true, timeZone: 'America/Caracas' 

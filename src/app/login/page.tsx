@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect } from 'react';
@@ -25,45 +24,46 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
 
   useEffect(() => {
+    if (!auth || !db) return;
+
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
-         // Normalizar email a minúsculas para el ID
          const userDocId = user.email!.toLowerCase().replace(/\W/g, '_');
-         const userDoc = await getDoc(doc(db, 'users', userDocId));
-         
-         if (userDoc.exists()) {
-            const userData = userDoc.data();
-            
-            // 1. VERIFICACIÓN DE BLOQUEO DE SEGURIDAD
-            if (userData.accesoBloqueado) {
-               await signOut(auth);
-               toast({ 
-                 variant: "destructive", 
-                 title: "Acceso Bloqueado", 
-                 description: "Su acceso ha sido bloqueado automáticamente. Contacte al administrador para habilitar su terminal." 
-               });
-               return;
-            }
+         try {
+           const userDoc = await getDoc(doc(db, 'users', userDocId));
+           
+           if (userDoc.exists()) {
+              const userData = userDoc.data();
+              
+              if (userData.accesoBloqueado) {
+                 await signOut(auth);
+                 toast({ 
+                   variant: "destructive", 
+                   title: "Acceso Bloqueado", 
+                   description: "Su acceso ha sido bloqueado automáticamente. Contacte al administrador." 
+                 });
+                 return;
+              }
 
-            // 2. Verificar terminal para cajeros
-            if (userData.rol === 'cajero') {
-               const configSnap = await getDoc(doc(db, 'pos_system_data', 'state'));
-               const terminals = configSnap.data()?.terminales || [];
-               const terminalsArr = Array.isArray(terminals) ? terminals : Object.values(terminals);
-               const hasTerminal = terminalsArr.some((t: any) => t.usuarioId === userDocId);
-               
-               if (!hasTerminal) {
-                  await signOut(auth);
-                  toast({ 
-                    variant: "destructive", 
-                    title: "Sin Terminal", 
-                    description: "No tiene un terminal asignado." 
-                  });
-                  return;
-               }
-            }
-            
-            router.push('/');
+              if (userData.rol === 'cajero') {
+                 const configSnap = await getDoc(doc(db, 'pos_system_data', 'state'));
+                 const terminals = configSnap.data()?.terminales || [];
+                 const hasTerminal = terminals.some((t: any) => t.usuarioId === userDocId);
+                 
+                 if (!hasTerminal) {
+                    await signOut(auth);
+                    toast({ 
+                      variant: "destructive", 
+                      title: "Sin Terminal", 
+                      description: "No tiene un terminal asignado." 
+                    });
+                    return;
+                 }
+              }
+              router.push('/');
+           }
+         } catch (e) {
+           console.error("Error checking user profile:", e);
          }
       }
     });
@@ -72,6 +72,10 @@ export default function LoginPage() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!auth || !db) {
+      toast({ variant: "destructive", title: "Error", description: "El sistema no está conectado a Firebase." });
+      return;
+    }
     if (!role) {
       toast({ variant: "destructive", title: "Atención", description: "Por favor seleccione su rol." });
       return;
@@ -80,9 +84,8 @@ export default function LoginPage() {
 
     try {
       await setPersistence(auth, browserSessionPersistence);
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      await signInWithEmailAndPassword(auth, email, password);
       
-      // Normalizar email a minúsculas para buscar el documento
       const userDocId = email.toLowerCase().replace(/\W/g, '_');
       const userDoc = await getDoc(doc(db, 'users', userDocId));
       
@@ -103,8 +106,7 @@ export default function LoginPage() {
         if (userData.rol === 'cajero') {
            const configSnap = await getDoc(doc(db, 'pos_system_data', 'state'));
            const terminals = configSnap.data()?.terminales || [];
-           const terminalsArr = Array.isArray(terminals) ? terminals : Object.values(terminals);
-           const hasTerminal = terminalsArr.some((t: any) => t.usuarioId === userDocId);
+           const hasTerminal = terminals.some((t: any) => t.usuarioId === userDocId);
            
            if (!hasTerminal) {
              await signOut(auth);
