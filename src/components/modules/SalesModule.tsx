@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -417,9 +418,13 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   const getReportSummary = () => {
     const hoy = Utils.hoy();
     const ventasHoy = state.ventas.filter(v => v.fecha.startsWith(hoy));
+    const devolucionesHoy = (state.devoluciones || []).filter(d => d.fecha.startsWith(hoy));
+    
     const breakdown: Record<string, { usd: number, bs: number }> = {};
     let totalBS = 0; let totalUSD = 0; let totalCreditosUSD = 0;
+    let totalDevolucionesUSD = 0;
 
+    // Procesar Ventas (Ingresos)
     ventasHoy.forEach(v => {
       const payments = v.payments && v.payments.length > 0 ? v.payments : [{ metodo: v.metodoPago as PaymentMethod, montoUSD: v.totalUSD, montoBS: v.totalBS }];
       payments.forEach((p: PagoRealizado) => {
@@ -431,7 +436,32 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         else totalBS += p.montoBS;
       });
     });
-    return { breakdown, totalBS, totalUSD, totalCreditosUSD, ventasHoy };
+
+    // Procesar Devoluciones (Egresos que afectan el saldo)
+    devolucionesHoy.forEach(d => {
+      totalDevolucionesUSD += d.totalUSD;
+      let targetMetodo: string = 'otros';
+      
+      if (d.metodoReembolso === 'EFECTIVO') {
+        targetMetodo = 'efectivo_usd';
+      } else if (d.metodoReembolso === 'MISMO_METODO') {
+        const originalSale = state.ventas.find(v => v.id === d.ventaId);
+        targetMetodo = originalSale?.metodoPago && originalSale.metodoPago !== 'mixto' ? originalSale.metodoPago : 'efectivo_usd';
+      } else if (d.metodoReembolso === 'CREDITO_TIENDA') {
+        targetMetodo = 'nota_credito';
+      }
+
+      if (!breakdown[targetMetodo]) breakdown[targetMetodo] = { usd: 0, bs: 0 };
+      breakdown[targetMetodo].usd -= d.totalUSD;
+      breakdown[targetMetodo].bs -= (d.totalUSD * state.tasa);
+
+      // Ajustar acumuladores agregados (Neto)
+      if (targetMetodo === 'efectivo_usd' || targetMetodo === 'zelle') totalUSD -= d.totalUSD;
+      else if (targetMetodo === 'credito') totalCreditosUSD -= d.totalUSD;
+      else totalBS -= (d.totalUSD * state.tasa);
+    });
+
+    return { breakdown, totalBS, totalUSD, totalCreditosUSD, totalDevolucionesUSD, ventasHoy, devolucionesHoy };
   };
 
   const handlePrintRoccia = (reportType: 'Y' | 'Z') => {
@@ -440,7 +470,9 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       return;
     }
 
-    const { breakdown, totalBS, totalUSD, totalCreditosUSD } = getReportSummary();
+    const { breakdown, totalBS, totalUSD, totalCreditosUSD, totalDevolucionesUSD } = getReportSummary();
+    const totalNetoUSD = totalUSD + totalCreditosUSD + (totalBS / state.tasa);
+    const totalVentasBrutasUSD = totalNetoUSD + totalDevolucionesUSD;
     
     const printData = {
       id: reportType === 'Z' ? String(state.ultimoZ).padStart(4, '0') : 'Y-REPORT',
@@ -448,8 +480,12 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       date: Utils.ahora().replace('T', ' ').slice(0, 19),
       empresa: state.empresa,
       totals: [
-        { label: 'TOTAL EN BOLIVARES', value: Utils.fmtBS(totalBS) },
-        { label: 'TOTAL EN USD', value: Utils.fmtUSD(totalUSD) },
+        { label: 'VENTAS BRUTAS ($)', value: Utils.fmtUSD(totalVentasBrutasUSD) },
+        { label: 'DEVOLUCIONES ($)', value: `-${Utils.fmtUSD(totalDevolucionesUSD)}` },
+        { label: 'NETO DEL DIA ($)', value: Utils.fmtUSD(totalNetoUSD) },
+        { label: '----------------', value: '--------' },
+        { label: 'TOTAL CAJA BS', value: Utils.fmtBS(totalBS) },
+        { label: 'TOTAL CAJA USD', value: Utils.fmtUSD(totalUSD) },
         { label: 'TOTAL CREDITOS', value: Utils.fmtUSD(totalCreditosUSD) }
       ],
       breakdown: Object.entries(breakdown).map(([m, val]: any) => ({
@@ -463,22 +499,28 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
 
   const emitirReporteZ = () => {
     if (!confirm('¿Desea realizar el CIERRE FISCAL Z?')) return;
-    const hoy = Utils.hoy();
-    const ventasHoy = state.ventas.filter(v => v.fecha.startsWith(hoy));
-    const totalHoy = ventasHoy.reduce((s, v) => s + v.totalUSD, 0);
+    const { totalUSD: totalNetoUSD, totalCreditosUSD, totalBS: totalNetoBS, ventasHoy } = getReportSummary();
+    const totalZ = totalNetoUSD + totalCreditosUSD + (totalNetoBS / state.tasa);
+    
     const nuevoZ: ReportZ = {
       id: `Z-${String(state.ultimoZ + 1).padStart(4, '0')}`,
-      fecha: hoy, numeroZ: state.ultimoZ + 1,
+      fecha: Utils.hoy(), 
+      numeroZ: state.ultimoZ + 1,
       desdeFactura: ventasHoy[0]?.id || '000000000',
       hastaFactura: ventasHoy[ventasHoy.length - 1]?.id || '000000000',
-      baseImponibleUSD: totalHoy / 1.16, ivaUSD: totalHoy - (totalHoy / 1.16),
-      exentoUSD: 0, totalBrutoUSD: totalHoy, acumuladoHistoricoUSD: state.acumuladoHistorico
+      baseImponibleUSD: totalZ / 1.16, 
+      ivaUSD: totalZ - (totalZ / 1.16),
+      exentoUSD: 0, 
+      totalBrutoUSD: totalZ,
+      acumuladoHistoricoUSD: state.acumuladoHistorico
     };
     updateState({ reportesZ: [...state.reportesZ, nuevoZ], ultimoZ: state.ultimoZ + 1 });
     setShowReport('Z');
   };
 
-  const { breakdown, totalBS: rTotalBS, totalUSD: rTotalUSD, totalCreditosUSD, ventasHoy: rVentasHoy } = getReportSummary();
+  const { breakdown, totalBS: rTotalBS, totalUSD: rTotalUSD, totalCreditosUSD, totalDevolucionesUSD: rTotalDevolucionesUSD, ventasHoy: rVentasHoy, devolucionesHoy: rDevolucionesHoy } = getReportSummary();
+  const rTotalNetoUSD = rTotalUSD + totalCreditosUSD + (rTotalBS / state.tasa);
+  const rTotalBrutoUSD = rTotalNetoUSD + rTotalDevolucionesUSD;
   const zReportData = showReport === 'Z' ? state.reportesZ[state.reportesZ.length - 1] : null;
 
   const addPago = (isAbono: boolean = false) => {
@@ -809,6 +851,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
             <div className="bg-white text-black p-6 font-mono text-[11px] leading-tight rounded-sm shadow-2xl relative">
               <button className="absolute -top-4 -right-4 bg-brand-gold text-black rounded-full p-1.5 shadow-lg no-print hover:bg-brand-gold-deep hover:text-white transition-colors" onClick={() => setShowReport(null)}><X className="w-4 h-4" /></button>
               <div className="text-center space-y-1"><p className="font-black text-sm uppercase">{state.empresa.nombre}</p><p className="text-[10px]">RIF: {state.empresa.rif}</p><p className="text-[10px]">{state.empresa.direccion}</p><div className="border-t border-dashed border-black/30 my-2"></div><p className="font-black text-[11px] uppercase tracking-tighter">REPORTE DE VENTAS ({showReport})</p><p className="text-[10px] uppercase font-bold">{Utils.fmtFecha(Utils.hoy())}</p></div>
+              
               <div className="space-y-1 text-[10px] border-b border-dashed border-black/30 pb-3 mt-4">
                 {showReport === 'Z' && <div className="flex justify-between font-black"><span>REPORTE Z NÚMERO:</span><span>{String(state.ultimoZ).padStart(4, '0')}</span></div>}
                 <div className="flex justify-between"><span>HORA EMISIÓN:</span><span>{Utils.ahora().split('T')[1].slice(0, 8)}</span></div>
@@ -816,20 +859,36 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                 <div className="flex justify-between"><span>TASA BCV:</span><span>{state.tasa.toFixed(2)}</span></div>
                 {showReport === 'Z' && zReportData && (<><div className="flex justify-between"><span>DESDE FACTURA:</span><span>{zReportData.desdeFactura}</span></div><div className="flex justify-between"><span>HASTA FACTURA:</span><span>{zReportData.hastaFactura}</span></div></>)}
               </div>
+
+              {/* RESUMEN DE OPERACIONES (BRUTO - DEVOLUCIONES = NETO) */}
+              <div className="space-y-1.5 border-b border-dashed border-black/30 py-3 mt-1">
+                 <p className="font-black text-center mb-2 uppercase tracking-tighter border-b border-dashed border-black/10 pb-1">Cuadre de Operaciones</p>
+                 <div className="flex justify-between font-bold"><span>VENTAS BRUTAS:</span><span>{Utils.fmtUSD(rTotalBrutoUSD)}</span></div>
+                 <div className="flex justify-between font-bold text-status-danger"><span>DEVOLUCIONES:</span><span>-{Utils.fmtUSD(rTotalDevolucionesUSD)}</span></div>
+                 <div className="flex justify-between font-black text-[12px] pt-1 border-t border-dashed border-black/10"><span>VENTAS NETAS:</span><span>{Utils.fmtUSD(rTotalNetoUSD)}</span></div>
+              </div>
+
               <div className="space-y-2 mt-4">
-                <p className="font-black text-center mb-2 uppercase tracking-tighter border-b border-dashed border-black/10 pb-1">Ventas por Método de Pago</p>
+                <p className="font-black text-center mb-2 uppercase tracking-tighter border-b border-dashed border-black/10 pb-1">Resumen por Método de Pago (Neto)</p>
                 {Object.entries(breakdown).map(([m, val]: any) => {
-                  const isUSD = m === 'efectivo_usd' || m === 'zelle' || m === 'credito';
+                  const isUSD = m === 'efectivo_usd' || m === 'zelle' || m === 'credito' || m === 'nota_credito';
                   return (<div key={m} className="flex justify-between items-end gap-2 uppercase"><span className="truncate">{Utils.metodoLabel(m)}</span><span className="shrink-0 font-bold">{isUSD ? Utils.fmtUSD(val.usd) : Utils.fmtBS(val.bs)}</span></div>);
                 })}
               </div>
+
               {showReport === 'Z' && zReportData && (<div className="border-t border-dashed border-black/30 pt-3 space-y-1 text-[10px] mt-4"><div className="flex justify-between"><span>VENTA EXENTA:</span><span>{Utils.fmtUSD(0)}</span></div><div className="flex justify-between"><span>BASE IMPONIBLE:</span><span>{Utils.fmtUSD(zReportData.baseImponibleUSD)}</span></div><div className="flex justify-between"><span>IVA (16%):</span><span>{Utils.fmtUSD(zReportData.ivaUSD)}</span></div></div>)}
+              
               <div className="border-t border-dashed border-black/30 pt-3 space-y-1.5 mt-4">
-                <div className="flex justify-between font-black text-[12px]"><span>TOTAL EN BOLÍVARES:</span><span>{Utils.fmtBS(rTotalBS)}</span></div>
-                <div className="flex justify-between font-black text-[12px]"><span>TOTAL EN USD:</span><span>{Utils.fmtUSD(rTotalUSD)}</span></div>
-                <div className="flex justify-between font-black text-[12px]"><span>TOTAL CRÉDITOS (USD):</span><span>{Utils.fmtUSD(totalCreditosUSD)}</span></div>
+                <div className="flex justify-between font-black text-[12px]"><span>CAJA TOTAL BOLÍVARES:</span><span>{Utils.fmtBS(rTotalBS)}</span></div>
+                <div className="flex justify-between font-black text-[12px]"><span>CAJA TOTAL USD:</span><span>{Utils.fmtUSD(rTotalUSD)}</span></div>
+                <div className="flex justify-between font-black text-[12px]"><span>CARTERA CRÉDITOS:</span><span>{Utils.fmtUSD(totalCreditosUSD)}</span></div>
               </div>
-              {showReport === 'Z' && (<div className="pt-3 border-t border-dashed border-black/30 mt-4"><div className="flex justify-between font-black text-[10px] uppercase"><span>ACUMULADO HISTÓRICO:</span><span>{Utils.fmtUSD(state.acumuladoHistorico)}</span></div></div>)}
+
+              <div className="pt-4 border-t border-dashed border-black/30 mt-4">
+                <div className="flex justify-between text-[10px] opacity-70 italic"><span>OPS DEVOLUCIÓN:</span><span>{rDevolucionesHoy.length}</span></div>
+                {showReport === 'Z' && (<div className="flex justify-between font-black text-[10px] uppercase mt-1"><span>ACUMULADO HISTÓRICO:</span><span>{Utils.fmtUSD(state.acumuladoHistorico)}</span></div>)}
+              </div>
+
               <div className="pt-6 space-y-1 opacity-60 text-center italic border-t border-dashed border-black/30 mt-4"><p>FIN DEL DOCUMENTO</p><p className="text-[8px] uppercase tracking-widest">PosVEN Pro Cloud Sync · v2.5.0</p></div>
             </div>
           </div>

@@ -169,6 +169,7 @@ export const Utils = {
       zelle: 'Zelle',
       credito: 'Crédito', 
       mixto: 'Mixto',
+      nota_credito: 'Vale / Nota Crédito',
       otros: 'Otros'
     };
     return map[m] || m;
