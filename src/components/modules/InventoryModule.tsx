@@ -21,7 +21,10 @@ import {
   Filter, 
   PackageCheck, 
   AlertCircle,
-  Truck
+  Truck,
+  Calculator,
+  TrendingUp,
+  TrendingDown
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -48,6 +51,7 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
   const [catFilter, setCatFilter] = useState('');
   const [provFilter, setProvFilter] = useState('');
   const [selectedKardexId, setSelectedKardexId] = useState<string | null>(null);
+  const [selectedCPPId, setSelectedCPPId] = useState<string | null>(null);
   
   const [showAjuste, setShowAjuste] = useState<string | null>(null);
   const [showProducto, setShowProducto] = useState<string | null | 'nuevo'>(null);
@@ -199,7 +203,17 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
           </Card>
         </div>
       );
-      case 'reporte_general': return <ReporteGeneral state={state} />;
+      case 'reporte_general': return (
+        <ReporteGeneral 
+          state={state} 
+          onAction={(type, id) => {
+            if (type === 'edit') setShowProducto(id);
+            if (type === 'kardex') { setSelectedKardexId(id); setActiveTab('kardex'); }
+            if (type === 'adjust') setShowAjuste(id);
+            if (type === 'cpp') setSelectedCPPId(id);
+          }}
+        />
+      );
       case 'reporte_ventas': return <ReporteVentas state={state} />;
       case 'reporte_devoluciones': return <ReporteDevoluciones state={state} />;
       case 'historial_ajustes': return <HistorialAjustes state={state} />;
@@ -211,7 +225,7 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
 
   return (
     <div className="space-y-6">
-      <div className="tabs border-b border-line no-print">
+      <div className="tabs border-line border-b no-print">
         <button onClick={() => setActiveTab('productos')} className={`tab ${activeTab === 'productos' ? 'active' : 'text-ink font-black'}`}>Productos</button>
         <button onClick={() => setActiveTab('reporte_general')} className={`tab ${activeTab === 'reporte_general' ? 'active' : 'text-ink font-black'}`}>Inventario CPP</button>
         <button onClick={() => setActiveTab('reporte_ventas')} className={`tab ${activeTab === 'reporte_ventas' ? 'active' : 'text-ink font-black'}`}>Ventas</button>
@@ -224,6 +238,14 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
       <div className="animate-in fade-in duration-300">
         {renderContent()}
       </div>
+
+      {selectedCPPId && (
+        <ModalCPP 
+          producto={state.productos.find(p => p.id === selectedCPPId)!}
+          movimientos={state.movimientos.filter(m => m.productoId === selectedCPPId)}
+          onClose={() => setSelectedCPPId(null)}
+        />
+      )}
 
       {showProducto && (
         <ModalProducto 
@@ -276,13 +298,12 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
             let prodsActualizados = [...state.productos];
             let nuevosMovimientos = [...state.movimientos];
 
-            // LOGICA DE KITS VIRTUALES (Descuento en cascada a componentes)
             if (productoOriginal.isKit && productoOriginal.kitType === 'stock_componentes' && productoOriginal.kitItems) {
               productoOriginal.kitItems.forEach(ki => {
                 const cpIdx = prodsActualizados.findIndex(cp => cp.id === ki.productoId);
                 if (cpIdx !== -1) {
                   const cp = { ...prodsActualizados[cpIdx] };
-                  const cantidadImpacto = mov.cantidad * ki.cantidad; // mov.cantidad es el multiplicador del kit
+                  const cantidadImpacto = mov.cantidad * ki.cantidad;
                   const stockAntes = cp.stock;
                   cp.stock += cantidadImpacto; 
                   
@@ -299,10 +320,7 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
                   prodsActualizados[cpIdx] = cp;
                 }
               });
-              
-              // El kit virtual no genera su propio registro de movimiento para evitar duplicidad de pérdida
             } else {
-              // LOGICA NORMAL
               prodsActualizados = prodsActualizados.map(p => {
                 if (p.id === mov.productoId) {
                   let finalCosto = p.costoUSD;
@@ -334,7 +352,7 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
   );
 }
 
-function ReporteGeneral({ state }: { state: AppState }) {
+function ReporteGeneral({ state, onAction }: { state: AppState, onAction: (type: string, id: string) => void }) {
   const [provFilter, setProvFilter] = useState('');
 
   const safeProveedores = useMemo(() => {
@@ -401,11 +419,12 @@ function ReporteGeneral({ state }: { state: AppState }) {
                 <TableHead className="font-black text-ink uppercase text-[10px] text-right">Venta Unit.</TableHead>
                 <TableHead className="font-black text-ink uppercase text-[10px] text-center">Stock</TableHead>
                 <TableHead className="font-black text-ink uppercase text-[10px] text-right">Subtotal Costo</TableHead>
+                <TableHead className="font-black text-ink uppercase text-[10px] text-center">Acciones</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filteredProducts.length === 0 ? (
-                <TableRow><TableCell colSpan={6} className="text-center py-20 text-ink/20 font-black italic uppercase">No se encontraron productos para el proveedor seleccionado</TableCell></TableRow>
+                <TableRow><TableCell colSpan={7} className="text-center py-20 text-ink/20 font-black italic uppercase">No se encontraron productos para el proveedor seleccionado</TableCell></TableRow>
               ) : (
                 filteredProducts.map(p => (
                   <TableRow key={p.id} className="border-b border-line/30">
@@ -415,6 +434,14 @@ function ReporteGeneral({ state }: { state: AppState }) {
                     <TableCell className="mono text-right text-brand-gold-deep font-black">{Utils.fmtUSD(p.precioUSD)}</TableCell>
                     <TableCell className="text-center py-3 px-4"><span className="badge badge-neutral font-black">{p.stock}</span></TableCell>
                     <TableCell className="mono text-right font-black text-ink">{Utils.fmtUSD(Utils.round(p.costoUSD * p.stock))}</TableCell>
+                    <TableCell>
+                      <div className="flex justify-center gap-1">
+                        <button className="btn-icon h-8 w-8 text-ink hover:text-brand-gold" title="Editar" onClick={() => onAction('edit', p.id)}><Edit2 className="w-4 h-4" /></button>
+                        <button className="btn-icon h-8 w-8 text-ink hover:text-status-info" title="Kardex" onClick={() => onAction('kardex', p.id)}><History className="w-4 h-4" /></button>
+                        <button className="btn-icon h-8 w-8 text-ink hover:text-status-success" title="Ajustes" onClick={() => onAction('adjust', p.id)}><Boxes className="w-4 h-4" /></button>
+                        <button className="btn-icon h-8 w-8 text-blue-600 hover:bg-blue-50" title="Detalle CPP" onClick={() => onAction('cpp', p.id)}><Calculator className="w-4 h-4" /></button>
+                      </div>
+                    </TableCell>
                   </TableRow>
                 ))
               )}
@@ -422,6 +449,101 @@ function ReporteGeneral({ state }: { state: AppState }) {
           </Table>
         </div>
       </Card>
+    </div>
+  );
+}
+
+function ModalCPP({ producto, movimientos, onClose }: { producto: Product, movimientos: Movimiento[], onClose: () => void }) {
+  const compras = movimientos
+    .filter(m => m.tipo === 'compra' || m.tipo === 'ajuste_entrada')
+    .sort((a, b) => b.fecha.localeCompare(a.fecha))
+    .slice(0, 10);
+
+  const format4 = (v: number) => 'USD $' + Number(v).toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
+
+  return (
+    <div className="modal show"><div className="modal-bg" onClick={onClose}></div>
+      <div className="modal-box bg-white max-w-sm border-none rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+        <div className="modal-head py-3 px-5 border-none bg-[#1A2C4E] flex justify-between items-center rounded-t-xl">
+          <div className="flex items-center gap-2 text-white">
+            <Calculator className="w-4 h-4" />
+            <h3 className="font-bold text-xs uppercase tracking-wider">Detalle de Costo - CPP</h3>
+          </div>
+          <button onClick={onClose} className="text-white/60 hover:text-white transition-colors"><X className="w-5 h-5"/></button>
+        </div>
+
+        <div className="p-6 space-y-5">
+          <div className="text-center">
+            <h4 className="font-bold text-base text-gray-900 leading-tight mb-0.5">{producto.nombre}</h4>
+            <p className="text-[9px] font-black text-gray-400 tracking-widest">{producto.codigo}</p>
+          </div>
+
+          <div className="bg-gray-50 rounded-lg p-3 flex justify-between items-center">
+            <span className="text-[10px] font-bold text-gray-500 uppercase">COSTO ACTUAL (PONDERADO)</span>
+            <span className="text-[#2563EB] font-mono font-black text-lg">{format4(producto.costoUSD)}</span>
+          </div>
+
+          <div className="space-y-3">
+            <h5 className="text-[9px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100 pb-1.5">HISTORIAL DE COSTOS (ÚLTIMAS COMPRAS)</h5>
+            <div className="max-h-[220px] overflow-y-auto space-y-3 pr-1 scrollbar-thin">
+              {compras.length === 0 ? (
+                <div className="py-8 text-center text-gray-300 font-bold uppercase italic text-[10px]">Sin historial de compras registrado</div>
+              ) : (
+                compras.map((m, idx) => {
+                  const mAnterior = compras[idx + 1];
+                  const diff = mAnterior ? ((producto.costoUSD - producto.costoUSD) / producto.costoUSD) * 100 : 0;
+                  
+                  return (
+                    <div key={m.id} className="space-y-1.5">
+                      <div className="flex justify-between items-baseline text-[10px] font-bold text-gray-600">
+                        <span>{Utils.fmtFecha(m.fecha)}</span>
+                        <span className="font-mono">{format4(producto.costoUSD)}</span>
+                        <span className="text-gray-400">x{Math.abs(m.cantidad)} uds</span>
+                      </div>
+                      
+                      {idx === 0 && compras.length > 1 && (
+                        <div className="flex justify-between items-center py-1.5 px-2 bg-gray-50/50 rounded border border-gray-100/50">
+                           <div className="flex items-center gap-2">
+                             <span className="text-[9px] text-gray-400 font-bold">Costo anterior:</span>
+                             <span className="text-[9px] font-mono font-bold text-gray-500">{format4(producto.costoUSD)}</span>
+                           </div>
+                           <span className="text-gray-300 text-xs">→</span>
+                           <span className={`text-[9px] font-mono font-black ${diff >= 0 ? 'text-[#16A34A]' : 'text-status-danger'}`}>
+                             {format4(producto.costoUSD)}
+                           </span>
+                        </div>
+                      )}
+
+                      {idx === 0 && (
+                        <div className="flex items-center justify-between mt-1 pt-1 border-t border-dashed border-gray-100">
+                           <div className="flex items-center gap-1.5">
+                             <div className="w-3 h-3 flex items-center justify-center bg-gray-100 rounded">
+                               <TrendingUp className="w-2 h-2 text-gray-500" />
+                             </div>
+                             <span className="text-[9px] font-black text-blue-600 uppercase tracking-tighter">Variación:</span>
+                           </div>
+                           <span className={`text-[10px] font-black ${diff >= 0 ? 'text-status-danger' : 'text-[#16A34A]'}`}>
+                             {diff >= 0 ? '+' : ''}{diff.toFixed(2)}%
+                           </span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-2.5 text-center space-y-0.5">
+            <p className="text-[7px] font-bold text-amber-700 uppercase">El costo actual se calcula mediante Promedio Ponderado (CPP)</p>
+            <p className="text-[7px] font-medium text-amber-600 italic">Fórmula: ((Stock Ant × Costo Ant) + (Cantidad Nueva × Costo Nuevo)) / Stock Total</p>
+          </div>
+        </div>
+
+        <div className="p-2.5 bg-gray-50 border-t border-gray-100 flex justify-end">
+          <button onClick={onClose} className="px-5 py-2 text-[10px] font-black uppercase text-gray-500 hover:text-gray-900 transition-colors">Cerrar</button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -864,7 +986,6 @@ function ModalProducto({ producto, state, onClose, onSave, onUpdateLists }: { pr
   const handleSave = () => {
     if (!datos.nombre || !datos.codigo) return alert('Nombre y Código requeridos');
     
-    // Validación de duplicidad de código
     const existe = state.productos.find(p => p.activo && p.codigo === datos.codigo && p.id !== producto?.id);
     if (existe) {
       alert(`ERROR: El código "${datos.codigo}" ya se encuentra registrado para el producto "${existe.nombre}". No se permiten duplicados por seguridad de inventario.`);
