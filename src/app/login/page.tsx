@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect } from 'react';
@@ -8,7 +9,8 @@ import {
   Eye, 
   EyeOff,
   UserPlus,
-  LogIn
+  LogIn,
+  CheckCircle2
 } from 'lucide-react';
 import { auth, db } from '@/lib/firebase';
 import { 
@@ -19,7 +21,7 @@ import {
   browserSessionPersistence, 
   signOut 
 } from 'firebase/auth';
-import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { toast } from '@/hooks/use-toast';
 
 export default function LoginPage() {
@@ -41,21 +43,18 @@ export default function LoginPage() {
         const stateDoc = await getDoc(doc(db, 'pos_system_data', 'state'));
         if (stateDoc.exists()) {
           const data = stateDoc.data();
-          setSystemEmpty(!data.isInitialized);
+          // Solo mostramos el enlace si isInitialized es explícitamente false
+          setSystemEmpty(data.isInitialized === false);
         } else {
-          // Si el documento no existe, consideramos que el sistema está vacío
           setSystemEmpty(true);
         }
       } catch (e) {
-        // En caso de error de permisos o red, por seguridad no mostramos el enlace de registro
-        console.warn("No se pudo verificar el estado de inicialización:", e);
         setSystemEmpty(false);
       }
     };
     checkSystemStatus();
   }, []);
 
-  // Listener de autenticación para redirección automática
   useEffect(() => {
     if (!auth) return;
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -109,7 +108,6 @@ export default function LoginPage() {
       const userDoc = await getDoc(userDocRef);
       
       if (!userDoc.exists() || isRegistering) {
-        // Crear o sobreescribir perfil vinculado al UID
         const newUserData = {
           email: user.email!.toLowerCase(),
           nombre: email.split('@')[0].toUpperCase(),
@@ -120,10 +118,17 @@ export default function LoginPage() {
         };
         await setDoc(userDocRef, newUserData);
 
-        // Si es el registro inicial, marcar el sistema como inicializado
         if (isRegistering) {
+          // 1. Marcar sistema como inicializado en Firestore
           const stateRef = doc(db, 'pos_system_data', 'state');
           await setDoc(stateRef, { isInitialized: true }, { merge: true });
+          
+          // 2. Mostrar diálogo de éxito
+          toast({ 
+            title: "¡Configuración Exitosa!", 
+            description: "Administrador raíz creado. El sistema se ha inicializado.",
+            variant: "default"
+          });
         }
       } else {
         const userData = userDoc.data();
@@ -247,13 +252,14 @@ export default function LoginPage() {
         </form>
 
         {systemEmpty && (
-          <div className="mt-6 text-center">
+          <div className="mt-6 text-center border-t border-line pt-6">
             <button 
               onClick={() => setIsRegistering(!isRegistering)} 
               className="text-[11px] font-black text-[#C8952E] hover:underline flex items-center justify-center gap-2 mx-auto uppercase tracking-tighter"
             >
               {isRegistering ? <><LogIn className="w-4 h-4" /> Volver al Ingreso</> : <><UserPlus className="w-4 h-4" /> Registrar Administrador Raíz</>}
             </button>
+            <p className="text-[9px] font-bold text-ink/30 uppercase mt-2">Detección de sistema nuevo activada</p>
           </div>
         )}
       </div>

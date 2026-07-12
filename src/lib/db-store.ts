@@ -16,7 +16,7 @@ const DOC_ID = 'state';
 export const initialState: AppState = {
   tasa: 36.50,
   pinDevolucion: '000000',
-  isInitialized: false, // Flag para detectar primer uso tras reseteo
+  isInitialized: false, // Flag crucial para detectar primer uso
   productos: [],
   ventas: [],
   cxc: [],
@@ -66,7 +66,9 @@ export const Store = {
         if (db) setDoc(docRef, toPersist).catch(e => console.error("Error init firestore:", e));
       }
     }, (error) => {
-      console.warn("Firestore Sync Warning:", error);
+      if (error.code !== 'permission-denied') {
+        console.warn("Firestore Sync Warning:", error);
+      }
       callback(Store.get());
     });
   },
