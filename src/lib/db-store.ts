@@ -1,3 +1,4 @@
+
 "use client";
 
 import { AppState } from './types';
@@ -82,7 +83,7 @@ export const Store = {
     }
   },
 
-  set(state: AppState) {
+  async set(state: AppState) {
     if (typeof window === 'undefined') return;
     
     const dataToPersist = {
@@ -115,9 +116,7 @@ export const Store = {
     
     if (db) {
       const docRef = doc(db, COLLECTION, DOC_ID);
-      setDoc(docRef, dataToPersist).catch(err => {
-          console.error("Firestore Write Error:", err);
-      });
+      return await setDoc(docRef, dataToPersist);
     }
   },
 

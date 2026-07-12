@@ -40,49 +40,62 @@ export default function ConfigModule({ state, updateState }: { state: AppState, 
     toast({ title: "Seguridad Actualizada", description: "PIN de autorización establecido correctamente." });
   };
 
+  /**
+   * FORMATEO TOTAL DEL SISTEMA
+   * Borra todos los datos de negocio, todos los perfiles de Firestore y reinicia el flag de inicialización.
+   */
   const formatearSistema = async () => {
-    if(confirm('¿ESTÁ TOTALMENTE SEGURO? Esta acción borrará PRODUCTOS, VENTAS, CRÉDITOS, CONFIGURACIÓN Y TODOS LOS USUARIOS de la nube. Esta acción no se puede deshacer y el sistema volverá a pedir una configuración de Administrador Raíz.')) {
+    const mensajeConfirmacion = '¿ESTÁ TOTALMENTE SEGURO?\n\nEsta acción borrará:\n1. Todos los productos e inventario.\n2. Todo el historial de ventas y créditos.\n3. TODOS los perfiles de usuario de Firestore.\n4. Configuración fiscal.\n\nEsta acción NO se puede deshacer y desvinculará su cuenta actual.';
+    
+    if (confirm(mensajeConfirmacion)) {
       try {
-        // 1. Limpiar todos los documentos de la colección 'users' en Firestore
-        const querySnapshot = await getDocs(collection(db, 'users'));
-        const deletePromises = querySnapshot.docs.map(userDoc => deleteDoc(doc(db, 'users', userDoc.id)));
-        await Promise.all(deletePromises);
+        toast({ title: "Iniciando limpieza total...", description: "Por favor espere, no cierre la ventana." });
 
-        // 2. Sobrescribir la base de datos en la nube (Firestore) con el estado inicial
-        // El initialState tiene isInitialized: false, lo que activará el registro raíz en el login.
-        Store.set({
+        // 1. Obtener todos los usuarios de la colección 'users' para eliminarlos en lote
+        const usersSnapshot = await getDocs(collection(db, 'users'));
+        const deleteUsersPromises = usersSnapshot.docs.map(userDoc => deleteDoc(doc(db, 'users', userDoc.id)));
+        await Promise.all(deleteUsersPromises);
+
+        // 2. Reiniciar el estado global en Firestore (incluyendo isInitialized: false)
+        // Esto borrará productos, ventas, cxc, etc., y obligará al login a mostrar el registro raíz.
+        const resetState = {
           ...initialState,
           isInitialized: false
-        });
+        };
         
-        // 3. Limpiar cache de sesión local
+        // Guardamos el estado reseteado en Firestore antes de perder la sesión de seguridad
+        await Store.set(resetState);
+        
+        toast({ title: "Base de datos limpia", description: "Finalizando desvinculación de seguridad." });
+
+        // 3. Limpiar cache local de la sesión para evitar datos fantasma
         if (typeof sessionStorage !== 'undefined') {
           sessionStorage.clear();
         }
-        
-        toast({ title: "Sistema Formateado", description: "Todos los datos y usuarios han sido eliminados correctamente." });
 
-        // 4. Intentar eliminar la cuenta de Auth actual para permitir re-registro inmediato
-        // Nota: Solo se puede eliminar al usuario actual desde el cliente. 
-        // El resto de cuentas de Auth deben borrarse desde la consola de Firebase si se desea liberar los correos.
+        // 4. Intentar eliminar la cuenta de Auth actual
+        // Importante: El SDK de cliente solo permite eliminar al usuario que está logueado en este momento.
+        // Los otros usuarios (cajeros) permanecerán en la pestaña Auth de Firebase Console, 
+        // pero NO podrán entrar porque su perfil en Firestore ya no existe.
         if (auth.currentUser) {
           try {
             await auth.currentUser.delete();
           } catch (e) {
-            // Si falla por sesión antigua, simplemente cerramos sesión
+            console.warn("No se pudo borrar el registro de Auth, cerrando sesión solamente...");
             await signOut(auth);
           }
         } else {
           await signOut(auth);
         }
         
-        // 5. Redirigir a la pantalla de login para configurar el nuevo Admin Raíz
+        // 5. Redirigir al login (que ahora mostrará el enlace de Registro Raíz)
         setTimeout(() => {
           window.location.href = '/login';
         }, 1500);
-      } catch (error) {
-        console.error("Error durante el formateo total:", error);
-        alert("Ocurrió un error crítico durante la limpieza. Verifique su conexión y permisos.");
+
+      } catch (error: any) {
+        console.error("Error durante el formateo crítico:", error);
+        alert(`Fallo en el reseteo: ${error.message || 'Error de permisos o conexión'}`);
       }
     }
   };
@@ -201,3 +214,4 @@ export default function ConfigModule({ state, updateState }: { state: AppState, 
     </div>
   );
 }
+
