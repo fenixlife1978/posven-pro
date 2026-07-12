@@ -108,19 +108,19 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
                 <Filter className="w-4 h-4 text-ink/30" />
                 <select 
                   className="form-select h-11 bg-white border-line text-xs font-black uppercase"
-                  value={catFilter} 
-                  onChange={e => setCatFilter(e.target.value)}
-                >
-                  <option value="">Todas las categorías</option>
-                  {(state.categorias || []).map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
-                <select 
-                  className="form-select h-11 bg-white border-line text-xs font-black uppercase"
                   value={deptFilter} 
                   onChange={e => setDeptFilter(e.target.value)}
                 >
-                  <option value="">Todos los deptos.</option>
+                  <option value="">DEPARTAMENTO</option>
                   {(state.departamentos || []).map(d => <option key={d} value={d}>{d}</option>)}
+                </select>
+                <select 
+                  className="form-select h-11 bg-white border-line text-xs font-black uppercase"
+                  value={catFilter} 
+                  onChange={e => setCatFilter(e.target.value)}
+                >
+                  <option value="">CATEGORÍA</option>
+                  {(state.categorias || []).map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
             </div>
@@ -472,9 +472,6 @@ function ModalCPP({ producto, movimientos, onClose }: { producto: Product, movim
                 <div className="py-8 text-center text-gray-300 font-bold uppercase italic text-[10px]">Sin historial de compras registrado</div>
               ) : (
                 compras.map((m, idx) => {
-                  const mAnterior = compras[idx + 1];
-                  const diff = mAnterior ? ((producto.costoUSD - producto.costoUSD) / producto.costoUSD) * 100 : 0;
-                  
                   return (
                     <div key={m.id} className="space-y-1.5">
                       <div className="flex justify-between items-baseline text-[10px] font-bold text-gray-600">
@@ -482,19 +479,6 @@ function ModalCPP({ producto, movimientos, onClose }: { producto: Product, movim
                         <span className="font-mono">{format4(producto.costoUSD)}</span>
                         <span className="text-gray-400">x{Math.abs(m.cantidad)} uds</span>
                       </div>
-                      
-                      {idx === 0 && compras.length > 1 && (
-                        <div className="flex justify-between items-center py-1.5 px-2 bg-gray-50/50 rounded border border-gray-100/50">
-                           <div className="flex items-center gap-2">
-                             <span className="text-[9px] text-gray-400 font-bold">Costo anterior:</span>
-                             <span className="text-[9px] font-mono font-bold text-gray-500">{format4(producto.costoUSD)}</span>
-                           </div>
-                           <span className="text-gray-300 text-xs">→</span>
-                           <span className={`text-[9px] font-mono font-black ${diff >= 0 ? 'text-[#16A34A]' : 'text-status-danger'}`}>
-                             {format4(producto.costoUSD)}
-                           </span>
-                        </div>
-                      )}
                     </div>
                   );
                 })
@@ -879,7 +863,7 @@ function ModalAjuste({ producto, onClose, onSave }: { producto: Product, onClose
   };
 
   return (
-    <div className="modal show"><div className="modal-bg" onClick={onClose}></div>
+    <div className="modal show"><div className="modal-bg" onClick={() => onClose()}></div>
       <div className="modal-box bg-white max-w-md border-2 border-line rounded-xl overflow-hidden shadow-2xl">
         <div className="modal-head px-5 py-4 border-b border-line bg-surface-soft">
           <h3 className="text-ink font-black uppercase text-sm">AJUSTAR: {producto.nombre.toUpperCase()}</h3>
@@ -936,7 +920,8 @@ function ModalProducto({ producto, state, onClose, onSave, onUpdateLists }: { pr
     isKit: producto?.isKit || false,
     kitType: producto?.kitType || 'stock_propio',
     kitItems: producto?.kitItems || [],
-    proveedor: producto?.proveedor || ''
+    proveedor: producto?.proveedor || '',
+    cantidad: producto?.cantidad || 'Unidad'
   });
 
   const [kitSearch, setKitSearch] = useState('');
@@ -986,21 +971,24 @@ function ModalProducto({ producto, state, onClose, onSave, onUpdateLists }: { pr
     });
   };
 
-  const handleAddListItem = (listName: 'categorias' | 'marcas' | 'departamentos') => {
+  const handleAddListItem = (listName: 'categorias' | 'marcas' | 'departamentos' | 'presentaciones') => {
     const newVal = prompt(`Ingrese nueva opción para ${listName.toUpperCase()}:`);
     if (newVal) {
       onUpdateLists({ [listName]: [...(state[listName] || []), newVal] });
       if (listName === 'categorias') setDatos((prev: any) => ({ ...prev, categoria: newVal }));
       if (listName === 'marcas') setDatos((prev: any) => ({ ...prev, marca: newVal }));
       if (listName === 'departamentos') setDatos((prev: any) => ({ ...prev, departamento: newVal }));
+      if (listName === 'presentaciones') setDatos((prev: any) => ({ ...prev, cantidad: newVal }));
     }
   };
 
-  const handleRemoveListItem = (listName: 'categorias' | 'marcas' | 'departamentos', current: string) => {
+  const handleRemoveListItem = (listName: 'categorias' | 'marcas' | 'departamentos' | 'presentaciones', current: string) => {
     if (confirm(`¿Eliminar "${current}" de la lista?`)) {
       const newList = (state[listName] || []).filter(i => i !== current);
       onUpdateLists({ [listName]: newList });
-      const targetField = listName === 'categorias' ? 'categoria' : listName === 'marcas' ? 'marca' : 'departamento';
+      const targetField = listName === 'categorias' ? 'categoria' : 
+                         listName === 'marcas' ? 'marca' : 
+                         listName === 'departamentos' ? 'departamento' : 'cantidad';
       setDatos((prev: any) => ({ ...prev, [targetField]: newList[0] || '' }));
     }
   };
@@ -1025,7 +1013,7 @@ function ModalProducto({ producto, state, onClose, onSave, onUpdateLists }: { pr
   };
 
   return (
-    <div className="modal show"><div className="modal-bg" onClick={onClose}></div>
+    <div className="modal show"><div className="modal-bg" onClick={() => onClose()}></div>
       <div className="modal-box bg-white max-w-2xl border-2 border-line rounded-xl overflow-hidden shadow-2xl">
         <div className="modal-head py-4 px-6 border-b border-line bg-ink flex justify-between items-center text-white">
           <h3 className="font-black uppercase italic tracking-tighter text-sm flex items-center gap-2">
@@ -1077,6 +1065,19 @@ function ModalProducto({ producto, state, onClose, onSave, onUpdateLists }: { pr
                      </div>
                      <select className="form-select h-10 text-xs font-bold bg-white" value={datos.categoria} onChange={e => setDatos({...datos, categoria: e.target.value})}>
                        {(state.categorias || []).map((cat: string) => <option key={cat} value={cat}>{cat}</option>)}
+                     </select>
+                   </div>
+
+                   <div className="space-y-1 col-span-2">
+                     <div className="flex justify-between items-center mb-1">
+                       <Label className="text-[10px] font-black uppercase text-ink/50">U. de Medida</Label>
+                       <div className="flex gap-1">
+                         <button onClick={() => handleAddListItem('presentaciones')} className="text-brand-gold"><PlusCircle className="w-3.5 h-3.5"/></button>
+                         <button onClick={() => handleRemoveListItem('presentaciones', datos.cantidad)} className="text-status-danger"><MinusCircle className="w-3.5 h-3.5"/></button>
+                       </div>
+                     </div>
+                     <select className="form-select h-10 text-xs font-bold bg-white" value={datos.cantidad} onChange={e => setDatos({...datos, cantidad: e.target.value})}>
+                       {(state.presentaciones || []).map((p: string) => <option key={p} value={p}>{p}</option>)}
                      </select>
                    </div>
                 </div>
@@ -1157,7 +1158,7 @@ function ModalProducto({ producto, state, onClose, onSave, onUpdateLists }: { pr
                   <div className="relative"><Search className="absolute left-3 top-3 w-4 h-4 text-ink/30" /><Input className="h-12 pl-10 text-xs font-black uppercase bg-white" placeholder="Buscar productos componentes..." value={kitSearch} onChange={e => setKitSearch(e.target.value)} />{filteredProdsForKit.length > 0 && (<div className="absolute top-full left-0 right-0 bg-white border border-line rounded-lg shadow-2xl z-50 mt-1 overflow-hidden">{filteredProdsForKit.map(pk => (<div key={pk.id} onClick={() => { setDatos({...datos, kitItems: [...datos.kitItems, { productoId: pk.id, nombre: pk.nombre, cantidad: 1 }]}); setKitSearch(''); }} className="p-3 border-b border-line hover:bg-brand-gold-soft cursor-pointer flex justify-between items-center"><span className="text-xs font-black uppercase text-ink">{pk.nombre}</span><Plus className="w-4 h-4 text-brand-gold"/></div>))}</div>)}</div>
                   <Card className="border-line shadow-sm overflow-hidden bg-white"><div className="table-wrap"><table><thead className="bg-surface-soft"><tr><th className="text-[10px] font-black uppercase text-ink">Componente</th><th className="text-[10px] font-black uppercase text-center text-ink">Cant</th><th /></tr></thead><tbody>
                     {datos.kitItems.map((ki: KitItem, index: number) => (
-                      <tr key={index} className="border-b border-line/30"><td className="text-11px] font-black uppercase text-ink">{ki.nombre}</td><td className="text-center"><Input className="w-12 h-8 text-center font-black bg-surface-soft border-line inline-block" type="number" value={ki.cantidad} onChange={e => { const n = [...datos.kitItems]; n[index].cantidad = parseInt(e.target.value) || 1; setDatos({...datos, kitItems: n}); }} /></td><td className="text-center"><button onClick={() => setDatos({...datos, kitItems: datos.kitItems.filter((_:any, i:number) => i !== index)})} className="text-status-danger"><Trash2 className="w-4 h-4"/></button></td></tr>
+                      <tr key={index} className="border-b border-line/30"><td className="text-[11px] font-black uppercase text-ink">{ki.nombre}</td><td className="text-center"><Input className="w-12 h-8 text-center font-black bg-surface-soft border-line inline-block" type="number" value={ki.cantidad} onChange={e => { const n = [...datos.kitItems]; n[index].cantidad = parseInt(e.target.value) || 1; setDatos({...datos, kitItems: n}); }} /></td><td className="text-center"><button onClick={() => setDatos({...datos, kitItems: datos.kitItems.filter((_:any, i:number) => i !== index)})} className="text-status-danger"><Trash2 className="w-4 h-4"/></button></td></tr>
                     ))}
                   </tbody></table></div></Card>
                 </div>
