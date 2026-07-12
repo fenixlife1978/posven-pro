@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { AppState, SaleItem, Sale, PaymentMethod, ReportZ, PagoRealizado, Customer, Return, ReturnItem, Product, Debt, Movimiento } from '@/lib/types';
 import { Utils, Store } from '@/lib/db-store';
 import { 
@@ -32,7 +32,9 @@ import {
   Check,
   RotateCcw,
   HandCoins,
-  Calculator
+  Calculator,
+  TrendingUp,
+  BarChart3
 } from 'lucide-react';
 import { auth } from '@/lib/firebase';
 import { ReceiptModal } from '@/components/pos/ReceiptModal';
@@ -282,7 +284,6 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
 
     let targetClient: Customer | null = selectedClient;
 
-    // LÓGICA QUIRÚRGICA: SI EL FORMULARIO DE NUEVO CLIENTE ESTÁ ACTIVO
     if (showNewClientForm) {
       if (!newClient.name || !newClient.cedula) {
         alert("Por favor ingrese el Nombre y la Cédula del cliente para continuar.");
@@ -420,48 +421,72 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     const ventasHoy = state.ventas.filter(v => v.fecha.startsWith(hoy));
     const devolucionesHoy = (state.devoluciones || []).filter(d => d.fecha.startsWith(hoy));
     
-    const breakdown: Record<string, { usd: number, bs: number }> = {};
-    let totalBS = 0; let totalUSD = 0; let totalCreditosUSD = 0;
-    let totalDevolucionesUSD = 0;
+    // Totales Brutos y Netos
+    const totalVentasBrutasUSD = ventasHoy.reduce((s, v) => s + v.totalUSD, 0);
+    const totalDevolucionesUSD = devolucionesHoy.reduce((s, d) => s + d.totalUSD, 0);
+    const totalDescuentosUSD = ventasHoy.reduce((s, v) => s + (v.descuentoUSD || 0), 0);
+    const totalVentasNetasUSD = totalVentasBrutasUSD - totalDevolucionesUSD - totalDescuentosUSD;
 
-    // Procesar Ventas (Ingresos)
+    // Desglose por Método (Neto)
+    const breakdown: Record<string, { usd: number, bs: number }> = {};
+    
     ventasHoy.forEach(v => {
       const payments = v.payments && v.payments.length > 0 ? v.payments : [{ metodo: v.metodoPago as PaymentMethod, montoUSD: v.totalUSD, montoBS: v.totalBS }];
       payments.forEach((p: PagoRealizado) => {
         const m = p.metodo;
         if (!breakdown[m]) breakdown[m] = { usd: 0, bs: 0 };
-        breakdown[m].usd += p.montoUSD; breakdown[m].bs += p.montoBS;
-        if (m === 'efectivo_usd' || m === 'zelle') totalUSD += p.montoUSD;
-        else if (m === 'credito') totalCreditosUSD += p.montoUSD;
-        else totalBS += p.montoBS;
+        breakdown[m].usd += p.montoUSD; 
+        breakdown[m].bs += p.montoBS;
       });
     });
 
-    // Procesar Devoluciones (Egresos que afectan el saldo)
     devolucionesHoy.forEach(d => {
-      totalDevolucionesUSD += d.totalUSD;
-      let targetMetodo: string = 'otros';
-      
-      if (d.metodoReembolso === 'EFECTIVO') {
-        targetMetodo = 'efectivo_usd';
-      } else if (d.metodoReembolso === 'MISMO_METODO') {
+      let targetMetodo: string = 'efectivo_usd';
+      if (d.metodoReembolso === 'EFECTIVO') targetMetodo = 'efectivo_usd';
+      else if (d.metodoReembolso === 'CREDITO_TIENDA') targetMetodo = 'nota_credito';
+      else {
         const originalSale = state.ventas.find(v => v.id === d.ventaId);
         targetMetodo = originalSale?.metodoPago && originalSale.metodoPago !== 'mixto' ? originalSale.metodoPago : 'efectivo_usd';
-      } else if (d.metodoReembolso === 'CREDITO_TIENDA') {
-        targetMetodo = 'nota_credito';
       }
-
       if (!breakdown[targetMetodo]) breakdown[targetMetodo] = { usd: 0, bs: 0 };
       breakdown[targetMetodo].usd -= d.totalUSD;
       breakdown[targetMetodo].bs -= (d.totalUSD * state.tasa);
-
-      // Ajustar acumuladores agregados (Neto)
-      if (targetMetodo === 'efectivo_usd' || targetMetodo === 'zelle') totalUSD -= d.totalUSD;
-      else if (targetMetodo === 'credito') totalCreditosUSD -= d.totalUSD;
-      else totalBS -= (d.totalUSD * state.tasa);
     });
 
-    return { breakdown, totalBS, totalUSD, totalCreditosUSD, totalDevolucionesUSD, ventasHoy, devolucionesHoy };
+    // Ventas por Hora
+    const hourlySales: Record<string, number> = {};
+    ventasHoy.forEach(v => {
+      const h = v.fecha.split('T')[1]?.slice(0, 2) + ':00';
+      if (h) hourlySales[h] = (hourlySales[h] || 0) + v.totalUSD;
+    });
+
+    // Top 5 Productos
+    const prodPerformance: Record<string, { n: string, q: number, t: number }> = {};
+    ventasHoy.forEach(v => {
+      v.items.forEach(it => {
+        if (!prodPerformance[it.productoId]) prodPerformance[it.productoId] = { n: it.nombre, q: 0, t: 0 };
+        prodPerformance[it.productoId].q += it.cantidad;
+        prodPerformance[it.productoId].t += it.subtotalUSD;
+      });
+    });
+    const topProducts = Object.values(prodPerformance).sort((a,b) => b.q - a.q).slice(0, 5);
+
+    // Conciliación de Efectivo
+    const ingresosEfectivoUSD = (breakdown['efectivo_usd']?.usd || 0) + (breakdown['zelle']?.usd || 0);
+    const ingresosEfectivoBS_USD = (breakdown['efectivo_bs']?.bs || 0) / state.tasa;
+    const totalEsperadoCajaUSD = 100 + ingresosEfectivoUSD + ingresosEfectivoBS_USD; // Base fija 100 por ahora
+
+    // Métricas
+    const ticketPromedio = ventasHoy.length > 0 ? totalVentasNetasUSD / ventasHoy.length : 0;
+    const maxVenta = ventasHoy.length > 0 ? Math.max(...ventasHoy.map(v => v.totalUSD)) : 0;
+    const peakHour = Object.entries(hourlySales).sort((a,b) => b[1] - a[1])[0]?.[0] || 'N/A';
+
+    return { 
+      totalVentasBrutasUSD, totalDevolucionesUSD, totalDescuentosUSD, totalVentasNetasUSD,
+      breakdown, hourlySales, topProducts, totalEsperadoCajaUSD,
+      ticketPromedio, maxVenta, peakHour,
+      ventasHoy, devolucionesHoy 
+    };
   };
 
   const handlePrintRoccia = (reportType: 'Y' | 'Z') => {
@@ -469,59 +494,46 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       window.print();
       return;
     }
-
-    const { breakdown, totalBS, totalUSD, totalCreditosUSD, totalDevolucionesUSD } = getReportSummary();
-    const totalNetoUSD = totalUSD + totalCreditosUSD + (totalBS / state.tasa);
-    const totalVentasBrutasUSD = totalNetoUSD + totalDevolucionesUSD;
-    
+    const { totalVentasBrutasUSD, totalVentasNetasUSD, totalDevolucionesUSD, breakdown } = getReportSummary();
     const printData = {
       id: reportType === 'Z' ? String(state.ultimoZ).padStart(4, '0') : 'Y-REPORT',
-      reportTitle: reportType === 'Z' ? 'CIERRE FISCAL Z' : 'REPORTE X/Y AUDITORIA',
+      reportTitle: reportType === 'Z' ? 'CORTE DE CAJA Z - FINAL' : 'CORTE DE CAJA Y - PARCIAL',
       date: Utils.ahora().replace('T', ' ').slice(0, 19),
       empresa: state.empresa,
       totals: [
-        { label: 'VENTAS BRUTAS ($)', value: Utils.fmtUSD(totalVentasBrutasUSD) },
-        { label: 'DEVOLUCIONES ($)', value: `-${Utils.fmtUSD(totalDevolucionesUSD)}` },
-        { label: 'NETO DEL DIA ($)', value: Utils.fmtUSD(totalNetoUSD) },
-        { label: '----------------', value: '--------' },
-        { label: 'TOTAL CAJA BS', value: Utils.fmtBS(totalBS) },
-        { label: 'TOTAL CAJA USD', value: Utils.fmtUSD(totalUSD) },
-        { label: 'TOTAL CREDITOS', value: Utils.fmtUSD(totalCreditosUSD) }
+        { label: 'VENTAS BRUTAS', value: Utils.fmtUSD(totalVentasBrutasUSD) },
+        { label: '(-) DEVOLUCIONES', value: `-${Utils.fmtUSD(totalDevolucionesUSD)}` },
+        { label: 'VENTAS NETAS', value: Utils.fmtUSD(totalVentasNetasUSD) }
       ],
       breakdown: Object.entries(breakdown).map(([m, val]: any) => ({
         label: Utils.metodoLabel(m),
-        value: m.includes('usd') || m === 'zelle' ? Utils.fmtUSD(val.usd) : Utils.fmtBS(val.bs)
+        value: Utils.fmtUSD(val.usd)
       }))
     };
-
     window.electronAPI.printTicket(printData);
   };
 
   const emitirReporteZ = () => {
-    if (!confirm('¿Desea realizar el CIERRE FISCAL Z?')) return;
-    const { totalUSD: totalNetoUSD, totalCreditosUSD, totalBS: totalNetoBS, ventasHoy } = getReportSummary();
-    const totalZ = totalNetoUSD + totalCreditosUSD + (totalNetoBS / state.tasa);
-    
+    if (!confirm('¿Desea realizar el CIERRE FISCAL Z FINAL?')) return;
+    const { totalVentasNetasUSD, ventasHoy } = getReportSummary();
     const nuevoZ: ReportZ = {
       id: `Z-${String(state.ultimoZ + 1).padStart(4, '0')}`,
       fecha: Utils.hoy(), 
       numeroZ: state.ultimoZ + 1,
       desdeFactura: ventasHoy[0]?.id || '000000000',
       hastaFactura: ventasHoy[ventasHoy.length - 1]?.id || '000000000',
-      baseImponibleUSD: totalZ / 1.16, 
-      ivaUSD: totalZ - (totalZ / 1.16),
+      baseImponibleUSD: totalVentasNetasUSD / 1.16, 
+      ivaUSD: totalVentasNetasUSD - (totalVentasNetasUSD / 1.16),
       exentoUSD: 0, 
-      totalBrutoUSD: totalZ,
+      totalBrutoUSD: totalVentasNetasUSD,
       acumuladoHistoricoUSD: state.acumuladoHistorico
     };
     updateState({ reportesZ: [...state.reportesZ, nuevoZ], ultimoZ: state.ultimoZ + 1 });
     setShowReport('Z');
   };
 
-  const { breakdown, totalBS: rTotalBS, totalUSD: rTotalUSD, totalCreditosUSD, totalDevolucionesUSD: rTotalDevolucionesUSD, ventasHoy: rVentasHoy, devolucionesHoy: rDevolucionesHoy } = getReportSummary();
-  const rTotalNetoUSD = rTotalUSD + totalCreditosUSD + (rTotalBS / state.tasa);
-  const rTotalBrutoUSD = rTotalNetoUSD + rTotalDevolucionesUSD;
-  const zReportData = showReport === 'Z' ? state.reportesZ[state.reportesZ.length - 1] : null;
+  const summary = getReportSummary();
+  const { breakdown: rBreakdown, hourlySales: rHourly, topProducts: rTop, ventasHoy: rVentas, devolucionesHoy: rDevoluciones } = summary;
 
   const addPago = (isAbono: boolean = false) => {
     let monto = parseFloat(montoInput);
@@ -842,63 +854,131 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         </div>
       )}
 
-      {/* DIALOG DE AUDITORIA Y/Z */}
+      {/* DIALOG DE AUDITORIA Y/Z REDISEÑADO */}
       <Dialog open={!!showReport} onOpenChange={() => setShowReport(null)}>
-        <DialogContent className="sm:max-w-xs p-0 bg-transparent border-none overflow-visible shadow-none no-print">
+        <DialogContent className="sm:max-w-md p-0 bg-transparent border-none overflow-visible shadow-none no-print">
           <DialogHeader className="sr-only"><DialogTitle>Informe Auditoría {showReport}</DialogTitle></DialogHeader>
           
-          <div className="max-h-[75vh] overflow-y-auto pr-1">
-            <div className="bg-white text-black p-6 font-mono text-[11px] leading-tight rounded-sm shadow-2xl relative">
-              <button className="absolute -top-4 -right-4 bg-brand-gold text-black rounded-full p-1.5 shadow-lg no-print hover:bg-brand-gold-deep hover:text-white transition-colors" onClick={() => setShowReport(null)}><X className="w-4 h-4" /></button>
-              <div className="text-center space-y-1"><p className="font-black text-sm uppercase">{state.empresa.nombre}</p><p className="text-[10px]">RIF: {state.empresa.rif}</p><p className="text-[10px]">{state.empresa.direccion}</p><div className="border-t border-dashed border-black/30 my-2"></div><p className="font-black text-[11px] uppercase tracking-tighter">REPORTE DE VENTAS ({showReport})</p><p className="text-[10px] uppercase font-bold">{Utils.fmtFecha(Utils.hoy())}</p></div>
+          <div className="max-h-[85vh] overflow-y-auto scrollbar-hide pr-1">
+            <div className="bg-white text-black p-8 font-mono text-[10px] leading-tight rounded-sm shadow-2xl relative border border-gray-200">
+              <button className="absolute -top-4 -right-4 bg-brand-gold text-black rounded-full p-2 shadow-lg no-print hover:bg-brand-gold-deep hover:text-white transition-colors" onClick={() => setShowReport(null)}><X className="w-4 h-4" /></button>
               
-              <div className="space-y-1 text-[10px] border-b border-dashed border-black/30 pb-3 mt-4">
-                {showReport === 'Z' && <div className="flex justify-between font-black"><span>REPORTE Z NÚMERO:</span><span>{String(state.ultimoZ).padStart(4, '0')}</span></div>}
-                <div className="flex justify-between"><span>HORA EMISIÓN:</span><span>{Utils.ahora().split('T')[1].slice(0, 8)}</span></div>
-                <div className="flex justify-between"><span>TERMINAL:</span><span>{getCurrentTerminal()?.nombre || 'S/T'}</span></div>
-                <div className="flex justify-between"><span>TASA BCV:</span><span>{state.tasa.toFixed(2)}</span></div>
-                {showReport === 'Z' && zReportData && (<><div className="flex justify-between"><span>DESDE FACTURA:</span><span>{zReportData.desdeFactura}</span></div><div className="flex justify-between"><span>HASTA FACTURA:</span><span>{zReportData.hastaFactura}</span></div></>)}
+              <div className="text-center space-y-1 mb-6">
+                <p className="font-black text-[18px] tracking-[0.2em] mb-1">P O S V E N  P R O</p>
+                <p className="text-[9px] font-bold uppercase">Sistema de Punto de Venta Profesional</p>
+                <p className="text-[11px] font-black border-y border-dashed border-black/40 py-2 my-2">
+                  CORTE DE CAJA "{showReport}" - {showReport === 'Z' ? 'CIERRE FINAL' : 'PRE-CORTE'}
+                </p>
               </div>
 
-              {/* RESUMEN DE OPERACIONES (BRUTO - DEVOLUCIONES = NETO) */}
-              <div className="space-y-1.5 border-b border-dashed border-black/30 py-3 mt-1">
-                 <p className="font-black text-center mb-2 uppercase tracking-tighter border-b border-dashed border-black/10 pb-1">Cuadre de Operaciones</p>
-                 <div className="flex justify-between font-bold"><span>VENTAS BRUTAS:</span><span>{Utils.fmtUSD(rTotalBrutoUSD)}</span></div>
-                 <div className="flex justify-between font-bold text-status-danger"><span>DEVOLUCIONES:</span><span>-{Utils.fmtUSD(rTotalDevolucionesUSD)}</span></div>
-                 <div className="flex justify-between font-black text-[12px] pt-1 border-t border-dashed border-black/10"><span>VENTAS NETAS:</span><span>{Utils.fmtUSD(rTotalNetoUSD)}</span></div>
+              <div className="grid grid-cols-2 gap-y-1 border-b border-dashed border-black/30 pb-4 mb-4">
+                <div className="flex justify-between pr-4"><span>FECHA:</span><span className="font-bold">{Utils.fmtFecha(Utils.hoy())}</span></div>
+                <div className="flex justify-between pl-4"><span>HORA:</span><span className="font-bold">{Utils.ahora().split('T')[1].slice(0, 8)}</span></div>
+                <div className="flex justify-between pr-4"><span>TERMINAL:</span><span className="font-bold">{getCurrentTerminal()?.nombre || 'S/T'}</span></div>
+                <div className="flex justify-between pl-4"><span>CORTE #:</span><span className="font-bold">{showReport}-{showReport === 'Z' ? String(state.ultimoZ).padStart(4, '0') : 'TEMP'}</span></div>
               </div>
 
-              <div className="space-y-2 mt-4">
-                <p className="font-black text-center mb-2 uppercase tracking-tighter border-b border-dashed border-black/10 pb-1">Resumen por Método de Pago (Neto)</p>
-                {Object.entries(breakdown).map(([m, val]: any) => {
-                  const isUSD = m === 'efectivo_usd' || m === 'zelle' || m === 'credito' || m === 'nota_credito';
-                  return (<div key={m} className="flex justify-between items-end gap-2 uppercase"><span className="truncate">{Utils.metodoLabel(m)}</span><span className="shrink-0 font-bold">{isUSD ? Utils.fmtUSD(val.usd) : Utils.fmtBS(val.bs)}</span></div>);
-                })}
+              {/* 📊 RESUMEN DE VENTAS */}
+              <div className="space-y-1.5 mb-6">
+                 <p className="font-black flex items-center gap-2 mb-2 uppercase tracking-tighter"><TrendingUp className="w-3.5 h-3.5"/> Resumen de Ventas</p>
+                 <div className="flex justify-between font-bold"><span>Total Ventas Brutas</span><span>USD {summary.totalVentasBrutasUSD.toFixed(2)}</span></div>
+                 <div className="flex justify-between font-bold text-gray-500"><span>(-) Devoluciones</span><span>USD {summary.totalDevolucionesUSD.toFixed(2)}</span></div>
+                 <div className="flex justify-between font-bold text-gray-500"><span>(-) Descuentos</span><span>USD {summary.totalDescuentosUSD.toFixed(2)}</span></div>
+                 <div className="flex justify-between font-black text-[12px] pt-1 border-t border-dashed border-black/20 mt-1">
+                   <span>✅ VENTAS NETAS</span><span>USD {summary.totalVentasNetasUSD.toFixed(2)}</span>
+                 </div>
               </div>
 
-              {showReport === 'Z' && zReportData && (<div className="border-t border-dashed border-black/30 pt-3 space-y-1 text-[10px] mt-4"><div className="flex justify-between"><span>VENTA EXENTA:</span><span>{Utils.fmtUSD(0)}</span></div><div className="flex justify-between"><span>BASE IMPONIBLE:</span><span>{Utils.fmtUSD(zReportData.baseImponibleUSD)}</span></div><div className="flex justify-between"><span>IVA (16%):</span><span>{Utils.fmtUSD(zReportData.ivaUSD)}</span></div></div>)}
-              
-              <div className="border-t border-dashed border-black/30 pt-3 space-y-1.5 mt-4">
-                <div className="flex justify-between font-black text-[12px]"><span>CAJA TOTAL BOLÍVARES:</span><span>{Utils.fmtBS(rTotalBS)}</span></div>
-                <div className="flex justify-between font-black text-[12px]"><span>CAJA TOTAL USD:</span><span>{Utils.fmtUSD(rTotalUSD)}</span></div>
-                <div className="flex justify-between font-black text-[12px]"><span>CARTERA CRÉDITOS:</span><span>{Utils.fmtUSD(totalCreditosUSD)}</span></div>
+              {/* 💰 DESGLOSE POR MÉTODO */}
+              <div className="space-y-1.5 mb-6">
+                <p className="font-black flex items-center gap-2 mb-2 uppercase tracking-tighter"><Wallet className="w-3.5 h-3.5"/> Desglose por Método de Pago</p>
+                {Object.entries(rBreakdown).map(([m, val]: any) => (
+                  <div key={m} className="flex justify-between items-end gap-2 uppercase">
+                    <span className="truncate">{Utils.metodoLabel(m)}</span>
+                    <span className="shrink-0 font-bold">USD {val.usd.toFixed(2)}</span>
+                  </div>
+                ))}
+                <div className="border-t border-dashed border-black/20 pt-2 flex justify-between font-black">
+                  <span>TOTAL RECIBIDO</span><span>USD {summary.totalVentasNetasUSD.toFixed(2)}</span>
+                </div>
               </div>
 
-              <div className="pt-4 border-t border-dashed border-black/30 mt-4">
-                <div className="flex justify-between text-[10px] opacity-70 italic"><span>OPS DEVOLUCIÓN:</span><span>{rDevolucionesHoy.length}</span></div>
-                {showReport === 'Z' && (<div className="flex justify-between font-black text-[10px] uppercase mt-1"><span>ACUMULADO HISTÓRICO:</span><span>{Utils.fmtUSD(state.acumuladoHistorico)}</span></div>)}
+              {/* 🔄 DEVOLUCIONES DEL DÍA */}
+              {rDevoluciones.length > 0 && (
+                <div className="space-y-1.5 mb-6">
+                  <p className="font-black flex items-center gap-2 mb-2 uppercase tracking-tighter"><RotateCcw className="w-3.5 h-3.5"/> Devoluciones del Día</p>
+                  {rDevoluciones.slice(0, 8).map(d => (
+                    <div key={d.id} className="flex justify-between text-[9px]">
+                      <span className="truncate">#{d.id} - {d.ventaId}</span>
+                      <span className="font-bold">USD {d.totalUSD.toFixed(2)}</span>
+                    </div>
+                  ))}
+                  <div className="border-t border-dashed border-black/20 pt-1 flex justify-between font-black">
+                    <span>TOTAL DEVOLUCIONES</span><span>USD {summary.totalDevolucionesUSD.toFixed(2)}</span>
+                  </div>
+                </div>
+              )}
+
+              {/* 📈 VENTAS POR HORA */}
+              <div className="space-y-1.5 mb-6">
+                <p className="font-black flex items-center gap-2 mb-2 uppercase tracking-tighter"><Clock className="w-3.5 h-3.5"/> Análisis de Ventas por Hora</p>
+                {Object.entries(rHourly).sort().map(([h, val]) => (
+                  <div key={h} className="flex justify-between">
+                    <span>{h} - {parseInt(h)+1}:00</span>
+                    <span className="font-bold">USD {val.toFixed(2)}</span>
+                  </div>
+                ))}
               </div>
 
-              <div className="pt-6 space-y-1 opacity-60 text-center italic border-t border-dashed border-black/30 mt-4"><p>FIN DEL DOCUMENTO</p><p className="text-[8px] uppercase tracking-widest">PosVEN Pro Cloud Sync · v2.5.0</p></div>
+              {/* 📋 TOP PRODUCTOS */}
+              <div className="space-y-1.5 mb-6">
+                <p className="font-black flex items-center gap-2 mb-2 uppercase tracking-tighter"><Zap className="w-3.5 h-3.5"/> Top Productos Vendidos</p>
+                {rTop.map((p, i) => (
+                  <div key={i} className="flex justify-between text-[9px]">
+                    <span className="truncate">{i+1}. {p.n} ({p.q})</span>
+                    <span className="font-bold">USD {p.t.toFixed(2)}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* 💵 CONCILIACIÓN DE EFECTIVO */}
+              <div className="space-y-1.5 mb-6 bg-gray-50 p-2 rounded-sm border border-gray-100">
+                <p className="font-black flex items-center gap-2 mb-2 uppercase tracking-tighter"><HandCoins className="w-3.5 h-3.5"/> Conciliación de Efectivo</p>
+                <div className="flex justify-between italic"><span>Base de Caja Inicial</span><span>USD 100.00</span></div>
+                <div className="flex justify-between"><span>(+) Ventas Efectivo USD</span><span>USD {(rBreakdown['efectivo_usd']?.usd || 0).toFixed(2)}</span></div>
+                <div className="flex justify-between"><span>(+) Ventas Efectivo BS</span><span>USD {((rBreakdown['efectivo_bs']?.bs || 0) / state.tasa).toFixed(2)}</span></div>
+                <div className="flex justify-between border-t border-dashed border-black/20 pt-1 font-black text-[11px]">
+                  <span>✅ TOTAL ESPERADO</span><span>USD {summary.totalEsperadoCajaUSD.toFixed(2)}</span>
+                </div>
+              </div>
+
+              {/* 📊 INDICADORES CLAVE */}
+              <div className="space-y-1 mb-6">
+                <p className="font-black flex items-center gap-2 mb-2 uppercase tracking-tighter"><BarChart3 className="w-3.5 h-3.5"/> Estadísticas y Métricas</p>
+                <div className="flex justify-between"><span>Ticket Promedio</span><span className="font-bold">USD {summary.ticketPromedio.toFixed(2)}</span></div>
+                <div className="flex justify-between"><span>Transacciones Totales</span><span className="font-bold">{summary.ventasHoy.length}</span></div>
+                <div className="flex justify-between"><span>Venta Máxima</span><span className="font-bold">USD {summary.maxVenta.toFixed(2)}</span></div>
+                <div className="flex justify-between"><span>Tasa de Devolución</span><span className="font-bold">{summary.totalVentasBrutasUSD > 0 ? ((summary.totalDevolucionesUSD/summary.totalVentasBrutasUSD)*100).toFixed(2) : 0}%</span></div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-8 pt-8 mt-4">
+                <div className="text-center"><p className="border-t border-black pt-1 uppercase font-bold text-[8px]">Firma Cajero</p></div>
+                <div className="text-center"><p className="border-t border-black pt-1 uppercase font-bold text-[8px]">Firma Supervisor</p></div>
+              </div>
+
+              <div className="pt-6 space-y-1 opacity-60 text-center italic border-t border-dashed border-black/30 mt-8">
+                <p>FIN DEL DOCUMENTO</p>
+                <p className="text-[8px] uppercase tracking-widest">PosVEN Pro Cloud Sync · v2.5.0</p>
+              </div>
             </div>
           </div>
 
           <div className="flex gap-2 mt-4 no-print">
             <button 
               onClick={() => showReport && handlePrintRoccia(showReport)} 
-              className="flex-1 bg-white text-ink border border-line h-11 rounded-lg font-black uppercase text-[10px] shadow-sm flex items-center justify-center gap-2 hover:bg-surface-soft transition-all"
+              className="flex-1 bg-white text-ink border border-line h-12 rounded-xl font-black uppercase text-[10px] shadow-sm flex items-center justify-center gap-2 hover:bg-surface-soft transition-all"
             >
-              <Printer className="w-4 h-4" /> {window.electronAPI ? 'Imprimir USB (Roccia 80mm)' : 'Imprimir'}
+              <Printer className="w-4 h-4" /> {window.electronAPI ? 'Imprimir USB (Roccia 80mm)' : 'Imprimir Informe'}
             </button>
           </div>
         </DialogContent>
@@ -998,10 +1078,10 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
               <div className="bg-surface-soft p-8 rounded-[20px] text-center border border-line shadow-inner">
                 <p className="text-ink/40 text-[9px] font-black uppercase tracking-[0.2em] mb-2">DEUDA PENDIENTE</p>
                 <p className="text-5xl font-black text-status-info tracking-tighter">
-                  {Utils.fmtUSD(deudaRestanteAbonoUSD)}
+                  {Utils.fmtUSD(totalDeudaAbonoUSD - totalAbonadoEnModalUSD)}
                 </p>
                 <p className="text-xl font-bold text-ink/60 mt-2">
-                  {Utils.fmtBS(deudaRestanteAbonoBS)}
+                  {Utils.fmtBS((totalDeudaAbonoUSD - totalAbonadoEnModalUSD) * state.tasa)}
                 </p>
               </div>
 
@@ -1126,3 +1206,4 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     </div>
   );
 }
+
