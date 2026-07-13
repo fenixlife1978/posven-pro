@@ -1175,7 +1175,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
 
       {/* MODAL DETALLES DE CREDITO CON HISTORIAL DE ABONOS */}
       {showDetailsModal && (
-        <div className="modal show"><div className="modal-bg" onClick={() => setShowDetailsModal(null)}></div>
+        <div className="modal show" style={{ zIndex: 70 }}><div className="modal-bg" onClick={() => setShowDetailsModal(null)}></div>
           <div className="modal-box max-w-[600px] bg-white border-2 border-line rounded-xl overflow-hidden shadow-2xl">
             <div className="modal-head py-4 px-6 border-b border-line bg-ink flex justify-between items-center"><h3 className="text-white font-black uppercase italic tracking-tighter">HISTORIAL DETALLADO: {showDetailsModal.id}</h3><button onClick={() => setShowDetailsModal(null)} className="text-white/40 hover:text-white"><X className="w-5 h-5"/></button></div>
             <div className="modal-body p-6 space-y-6 max-h-[75vh] overflow-y-auto">
@@ -1258,7 +1258,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       {/* MODAL HISTORIAL COMPLETO DE CLIENTE */}
       {showClientHistory && (
         <div className="modal show"><div className="modal-bg" onClick={() => setShowClientHistory(null)}></div>
-          <div className="modal-box max-w-4xl bg-white border-2 border-line rounded-xl overflow-hidden shadow-2xl">
+          <div className={`modal-box max-w-4xl bg-white border-2 border-line rounded-xl overflow-hidden shadow-2xl transition-all duration-500 ease-in-out ${showDetailsModal ? 'scale-[0.85] opacity-40 -translate-y-48 blur-[1px] pointer-events-none' : ''}`}>
             <div className="modal-head py-4 px-6 border-b border-line bg-ink flex justify-between items-center">
               <h3 className="text-white font-black uppercase italic tracking-tighter text-xs flex items-center gap-2">
                 <Contact className="w-5 h-5 text-brand-gold" /> ESTADO DE CUENTA MAESTRO: {showClientHistory}
