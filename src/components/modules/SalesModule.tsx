@@ -95,7 +95,23 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   const [editandoTasa, setEditandoTasa] = useState(false);
   const [nuevaTasa, setNuevaTasa] = useState(state.tasa.toString());
 
+  // Estado para visualización de info de producto en barra de búsqueda
+  const [lastCheckedProduct, setLastCheckedProduct] = useState<Product | null>(null);
+
   const searchInputRef = useRef<HTMLInputElement>(null);
+
+  const matches = useMemo(() => {
+    if (search.trim().length < 1) return [];
+    return state.productos
+      .filter(p => p.activo && (p.nombre.toLowerCase().includes(search.toLowerCase()) || p.codigo.toLowerCase().includes(search.toLowerCase())))
+      .slice(0, 8);
+  }, [search, state.productos]);
+
+  useEffect(() => {
+    if (matches.length > 0) {
+      setLastCheckedProduct(matches[0]);
+    }
+  }, [matches]);
 
   // Agrupación de deudas por cliente
   const groupedCredits = useMemo(() => {
@@ -159,6 +175,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       nuevoCarrito.push({ productoId: pid, nombre: p.nombre, precioUnitUSD: p.precioUSD, cantidad: 1, subtotalUSD: p.precioUSD });
     }
     updateState({ carrito: nuevoCarrito });
+    setLastCheckedProduct(p);
     setSearch('');
     setPagos([]);
     searchInputRef.current?.focus();
@@ -187,12 +204,6 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   const totalPagadoUSD = pagos.reduce((s, p) => s + p.montoUSD, 0);
   const saldoRestanteUSD = Math.max(0, subtotalUSD - totalPagadoUSD);
   const saldoRestanteBS = saldoRestanteUSD * state.tasa;
-
-  const matches = search.trim().length > 0 
-    ? state.productos
-        .filter(p => p.activo && (p.nombre.toLowerCase().includes(search.toLowerCase()) || p.codigo.toLowerCase().includes(search.toLowerCase())))
-        .slice(0, 8)
-    : [];
 
   const filteredClients = clientSearch.trim().length > 0
     ? (state.clientes || []).filter(c => c.name.toLowerCase().includes(clientSearch.toLowerCase()) || c.cedula.includes(clientSearch))
@@ -787,72 +798,98 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   return (
     <div className="flex flex-col gap-2 h-[calc(100vh-100px)] max-w-7xl mx-auto w-full overflow-hidden">
       <div className="flex gap-2 no-print shrink-0 overflow-x-auto pb-1">
-        <button onClick={() => setView('pos')} className={`btn btn-sm ${view === 'pos' ? 'btn-primary shadow-md' : 'bg-white text-ink font-black border-line border'}`}><ShoppingCart className="w-3.5 h-3.5"/> Punto de Venta</button>
-        <button onClick={() => setView('history')} className={`btn btn-sm ${view === 'history' ? 'btn-primary shadow-md' : 'bg-white text-ink font-black border-line border'}`}><History className="w-3.5 h-3.5"/> Historial</button>
-        <button onClick={() => setView('credits')} className={`btn btn-sm ${view === 'credits' ? 'btn-primary shadow-md' : 'bg-white text-ink font-black border-line border'}`}><ClipboardList className="w-3.5 h-3.5"/> Consultar Créditos</button>
-        <button onClick={() => setShowReport('Y')} className="btn btn-sm bg-white text-ink font-black border-line border"><FileText className="w-3.5 h-3.5"/> Reporte Y</button>
-        <button onClick={emitirReporteZ} className="btn btn-sm bg-white text-ink font-black border-line border"><Receipt className="w-3.5 h-3.5"/> Reporte Z</button>
-        <button onClick={() => setView('returns')} className={`btn btn-sm ${view === 'returns' ? 'btn-primary shadow-md' : 'bg-white text-ink font-black border-line border'}`}><RotateCcw className="w-3.5 h-3.5"/> Devoluciones</button>
+        <button onClick={() => setView('pos')} className={`btn btn-sm ${view === 'pos' ? 'btn-primary shadow-md' : 'bg-white text-black font-black border-line border'}`}><ShoppingCart className="w-3.5 h-3.5"/> Punto de Venta</button>
+        <button onClick={() => setView('history')} className={`btn btn-sm ${view === 'history' ? 'btn-primary shadow-md' : 'bg-white text-black font-black border-line border'}`}><History className="w-3.5 h-3.5"/> Historial</button>
+        <button onClick={() => setView('credits')} className={`btn btn-sm ${view === 'credits' ? 'btn-primary shadow-md' : 'bg-white text-black font-black border-line border'}`}><ClipboardList className="w-3.5 h-3.5"/> Consultar Créditos</button>
+        <button onClick={() => setShowReport('Y')} className="btn btn-sm bg-white text-black font-black border-line border"><FileText className="w-3.5 h-3.5"/> Reporte Y</button>
+        <button onClick={emitirReporteZ} className="btn btn-sm bg-white text-black font-black border-line border"><Receipt className="w-3.5 h-3.5"/> Reporte Z</button>
+        <button onClick={() => setView('returns')} className={`btn btn-sm ${view === 'returns' ? 'btn-primary shadow-md' : 'bg-white text-black font-black border-line border'}`}><RotateCcw className="w-3.5 h-3.5"/> Devoluciones</button>
       </div>
 
       {view === 'pos' ? (
-        <div className="flex flex-col gap-2 flex-1 overflow-hidden animate-in fade-in duration-300">
-          <div className="relative group shrink-0">
-            <div className="absolute left-4 top-1/2 -translate-y-1/2 text-brand-gold z-10"><Barcode className="w-5 h-5" /></div>
-            <input 
-              ref={searchInputRef}
-              className="form-input pl-14 py-2 text-base bg-white border-brand-gold/30 text-ink placeholder-ink/40 font-black" 
-              placeholder="Escanee o busque producto..." value={search} onChange={e => setSearch(e.target.value)} 
-              onKeyDown={e => e.key === 'Enter' && matches.length >= 1 && agregar(matches[0].id)} autoFocus
-            />
-            {matches.length > 0 && (
-              <div className="absolute top-full left-0 right-0 bg-white border border-line rounded-b-lg shadow-2xl z-[100] mt-1 overflow-hidden">
-                {matches.map(p => (
-                  <div key={p.id} onClick={() => agregar(p.id)} className="flex items-center justify-between p-2 hover:bg-brand-gold/10 cursor-pointer border-b border-line">
-                    <div className="text-ink text-xs font-black uppercase">{p.nombre} <span className="text-ink text-[9px] mono ml-2">{p.codigo}</span></div>
-                    <div className="text-brand-gold font-black text-sm">{Utils.fmtUSD(p.precioUSD)}</div>
-                  </div>
-                ))}
+        <div className="flex flex-col gap-3 flex-1 overflow-hidden animate-in fade-in duration-300">
+          <div className="flex gap-3 shrink-0">
+            <div className="relative group flex-[2]">
+              <div className="absolute left-4 top-1/2 -translate-y-1/2 text-brand-gold z-10"><Barcode className="w-5 h-5" /></div>
+              <input 
+                ref={searchInputRef}
+                className="form-input pl-14 h-14 text-lg bg-white border-brand-gold/40 text-black placeholder-black/30 font-black uppercase shadow-sm" 
+                placeholder="Escanee o busque producto..." 
+                value={search} 
+                onChange={e => setSearch(e.target.value)} 
+                onKeyDown={e => e.key === 'Enter' && matches.length >= 1 && agregar(matches[0].id)} 
+                autoFocus
+              />
+              {matches.length > 0 && (
+                <div className="absolute top-full left-0 right-0 bg-white border border-line rounded-b-lg shadow-2xl z-[100] mt-1 overflow-hidden">
+                  {matches.map(p => (
+                    <div key={p.id} onClick={() => agregar(p.id)} className="flex items-center justify-between p-3 hover:bg-brand-gold/10 cursor-pointer border-b border-line">
+                      <div className="text-black text-xs font-black uppercase">{p.nombre} <span className="text-black text-[9px] mono ml-2">{p.codigo}</span></div>
+                      <div className="text-brand-gold font-black text-sm">{Utils.fmtUSD(p.precioUSD)}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="flex-[1.5] grid grid-cols-3 gap-3">
+              <div className="bg-white border-2 border-line rounded-2xl flex flex-col items-center justify-center p-2 shadow-sm text-center">
+                 <label className="text-[9px] font-black uppercase text-black tracking-widest mb-1">Stock</label>
+                 <div className={`text-2xl font-black ${lastCheckedProduct && lastCheckedProduct.stock <= lastCheckedProduct.stockMinimo ? 'text-status-danger' : 'text-black'}`}>
+                   {lastCheckedProduct ? lastCheckedProduct.stock : '--'}
+                 </div>
               </div>
-            )}
+              <div className="bg-white border-2 border-line rounded-2xl flex flex-col items-center justify-center p-2 shadow-sm text-center">
+                 <label className="text-[9px] font-black uppercase text-black tracking-widest mb-1">Precio ($)</label>
+                 <div className="text-2xl font-black text-brand-gold-deep">
+                   {lastCheckedProduct ? Utils.fmtUSD(lastCheckedProduct.precioUSD) : '--'}
+                 </div>
+              </div>
+              <div className="bg-white border-2 border-line rounded-2xl flex flex-col items-center justify-center p-2 shadow-sm text-center">
+                 <label className="text-[9px] font-black uppercase text-black tracking-widest mb-1">Precio (Bs)</label>
+                 <div className="text-xl font-black text-black">
+                   {lastCheckedProduct ? Utils.fmtBS(lastCheckedProduct.precioUSD * state.tasa) : '--'}
+                 </div>
+              </div>
+            </div>
           </div>
 
           <div className="flex flex-1 gap-3 overflow-hidden">
             <div className="w-1/3 flex flex-col gap-2">
               <div className="card p-3 space-y-3 bg-white border-line h-full flex flex-col">
                 <div className="form-group mb-0">
-                  <label className="text-ink text-[10px] font-black uppercase block mb-1">IDENTIFICACIÓN CLIENTE</label>
-                  <input className="form-input h-8 text-xs bg-surface-soft text-ink border-line font-black uppercase" value={cliente} onChange={e => setCliente(e.target.value)} />
+                  <label className="text-black text-[10px] font-black uppercase block mb-1">IDENTIFICACIÓN CLIENTE</label>
+                  <input className="form-input h-8 text-xs bg-surface-soft text-black border-line font-black uppercase" value={cliente} onChange={e => setCliente(e.target.value)} />
                 </div>
                 <div className="bg-brand-gold-soft border border-brand-gold-soft rounded-lg p-2.5">
                   <div className="flex items-center justify-between">
-                    <label className="text-ink text-[9px] font-black uppercase tracking-wider">TASA BCV</label>
+                    <label className="text-black text-[9px] font-black uppercase tracking-wider">TASA BCV</label>
                     <div className="flex items-center gap-1">
                       {!editandoTasa ? (
-                        <><span className="text-ink font-black text-sm">{state.tasa.toFixed(2)}</span><button onClick={() => { setEditandoTasa(true); setNuevaTasa(state.tasa.toString()); }} className="text-ink hover:text-brand-gold p-0.5"><RefreshCw className="w-3.5 h-3.5" /></button></>
+                        <><span className="text-black font-black text-sm">{state.tasa.toFixed(2)}</span><button onClick={() => { setEditandoTasa(true); setNuevaTasa(state.tasa.toString()); }} className="text-black hover:text-brand-gold p-0.5"><RefreshCw className="w-3.5 h-3.5" /></button></>
                       ) : (
-                        <><input type="text" value={nuevaTasa} onChange={e => setNuevaTasa(e.target.value.replace(/[^0-9.]/g, ''))} className="w-16 bg-white border border-brand-gold rounded px-1 py-0.5 text-ink font-black text-sm text-right" autoFocus /><button onClick={guardarNuevaTasa} className="text-status-success p-0.5"><Check className="w-3.5 h-3.5" /></button><button onClick={() => setEditandoTasa(false)} className="text-status-danger p-0.5"><X className="w-3.5 h-3.5" /></button></>
+                        <><input type="text" value={nuevaTasa} onChange={e => setNuevaTasa(e.target.value.replace(/[^0-9.]/g, ''))} className="w-16 bg-white border border-brand-gold rounded px-1 py-0.5 text-black font-black text-sm text-right" autoFocus /><button onClick={guardarNuevaTasa} className="text-status-success p-0.5"><Check className="w-3.5 h-3.5" /></button><button onClick={() => setEditandoTasa(false)} className="text-status-danger p-0.5"><X className="w-3.5 h-3.5" /></button></>
                       )}
                     </div>
                   </div>
                 </div>
                 <div className="flex-1 flex flex-col min-h-0">
-                  <label className="text-ink text-[10px] font-black uppercase block mb-1">MÉTODOS APLICADOS</label>
+                  <label className="text-black text-[10px] font-black uppercase block mb-1">MÉTODOS APLICADOS</label>
                   <div className="flex-1 p-2 border border-line bg-surface-soft rounded-lg overflow-y-auto">
                     {pagos.map((p, idx) => (
-                      <div key={idx} className="flex justify-between text-[10px] border-b border-line/30 py-1 text-ink font-black uppercase">
+                      <div key={idx} className="flex justify-between text-[10px] border-b border-line/30 py-1 text-black font-black uppercase">
                         <span>{Utils.metodoLabel(p.metodo)}</span><span className="text-brand-gold-deep">{Utils.fmtUSD(p.montoUSD)}</span>
                       </div>
                     ))}
                   </div>
                 </div>
                 <div className="p-3 border border-status-info bg-status-info-soft rounded-lg text-center space-y-2">
-                  <label className="text-ink text-[10px] font-black uppercase block">SALDO RESTANTE</label>
+                  <label className="text-black text-[10px] font-black uppercase block">SALDO RESTANTE</label>
                   <div className="flex items-center justify-center gap-4">
                     <div className={`text-2xl font-black ${saldoRestanteUSD <= 0.01 ? 'text-status-success' : 'text-status-info'}`}>{saldoRestanteUSD <= 0.01 ? 'SALDADO' : Utils.fmtUSD(saldoRestanteUSD)}</div>
-                    <button onClick={() => setShowMultiModal(true)} className="w-11 h-11 bg-brand-gold text-ink rounded-xl shadow-lg flex items-center justify-center hover:bg-brand-gold-deep transition-all transform hover:scale-105 active:scale-95"><Wallet className="w-6 h-6" /></button>
+                    <button onClick={() => setShowMultiModal(true)} className="w-11 h-11 bg-brand-gold text-black rounded-xl shadow-lg flex items-center justify-center hover:bg-brand-gold-deep transition-all transform hover:scale-105 active:scale-95"><Wallet className="w-6 h-6" /></button>
                   </div>
-                  <div className="bg-ink py-2 rounded-lg border-2 border-line mt-2">
+                  <div className="bg-black py-2 rounded-lg border-2 border-line mt-2">
                     <label className="text-white text-[9px] font-black uppercase block mb-1">EQUIVALENTE A PAGAR</label>
                     <div className="text-2xl font-black text-white">{Utils.fmtBS(saldoRestanteBS)}</div>
                   </div>
@@ -862,27 +899,27 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
 
             <div className="w-2/3 flex flex-col gap-2 overflow-hidden">
               <div className="card flex-1 flex flex-col overflow-hidden bg-white border-none shadow-xl">
-                <div className="grid grid-cols-[1fr_80px_60px_70px_80px_80px_40px] gap-2 px-3 py-3 bg-ink text-white text-[9px] font-black uppercase tracking-[0.15em] rounded-t-lg">
+                <div className="grid grid-cols-[1fr_80px_60px_70px_80px_80px_40px] gap-2 px-3 py-3 bg-black text-white text-[9px] font-black uppercase tracking-[0.15em] rounded-t-lg">
                   <div>Descripción</div><div className="text-center">Cant</div><div className="text-center">U.M.</div><div className="text-right">Precio ($)</div><div className="text-right">Precio (Bs)</div><div className="text-right">Total</div><div className="text-center"></div>
                 </div>
                 <div className="flex-1 overflow-y-auto p-1 space-y-1">
                   {state.carrito.map((item, i) => (
-                    <div key={i} className="grid grid-cols-[1fr_80px_60px_70px_80px_80px_40px] gap-2 items-center px-3 py-3 bg-white border-b border-black/5 text-ink">
+                    <div key={i} className="grid grid-cols-[1fr_80px_60px_70px_80px_80px_40px] gap-2 items-center px-3 py-3 bg-white border-b border-black/5 text-black">
                       <div className="truncate font-black text-[10px] uppercase leading-tight">{item.nombre}</div>
                       <div className="flex items-center justify-center gap-1 bg-surface-soft rounded p-0.5 border border-line/30">
-                        <button onClick={() => updateQty(i, -1)} className="text-ink font-black text-xs px-1">-</button>
+                        <button onClick={() => updateQty(i, -1)} className="text-black font-black text-xs px-1">-</button>
                         <span className="w-5 text-center text-[10px] font-black">{item.cantidad}</span>
-                        <button onClick={() => updateQty(i, 1)} className="text-ink font-black text-xs px-1">+</button>
+                        <button onClick={() => updateQty(i, 1)} className="text-black font-black text-xs px-1">+</button>
                       </div>
                       <div className="text-center text-[9px] font-black uppercase">{state.productos.find(p => p.id === item.productoId)?.cantidad || '-'}</div>
                       <div className="text-right text-[10px] font-black">{Utils.fmtUSD(item.precioUnitUSD)}</div>
                       <div className="text-right text-[10px] font-black">{Utils.fmtBS(item.precioUnitUSD * state.tasa)}</div>
                       <div className="text-right text-[11px] font-black">{Utils.fmtUSD(item.subtotalUSD)}</div>
-                      <div className="flex justify-center"><button onClick={() => updateQty(i, -item.cantidad)} className="text-ink hover:text-status-danger"><Trash2 className="w-3.5 h-3.5"/></button></div>
+                      <div className="flex justify-center"><button onClick={() => updateQty(i, -item.cantidad)} className="text-black hover:text-status-danger"><Trash2 className="w-3.5 h-3.5"/></button></div>
                     </div>
                   ))}
                 </div>
-                <div className="p-4 bg-ink border-t border-line/10 flex items-center justify-between rounded-b-lg">
+                <div className="p-4 bg-black border-t border-line/10 flex items-center justify-between rounded-b-lg">
                   <div className="space-y-0">
                     <label className="text-white text-[8px] font-black uppercase block tracking-widest mb-1">TOTAL FACTURA</label>
                     <div className="flex items-baseline gap-3"><div className="text-4xl font-black text-brand-gold">{Utils.fmtUSD(subtotalUSD)}</div><div className="text-base font-black text-white">{Utils.fmtBS(totalBS)}</div></div>
@@ -895,13 +932,13 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         </div>
       ) : view === 'history' ? (
         <div className="card flex-1 bg-white flex flex-col overflow-hidden animate-in slide-in-from-bottom-2 duration-300 rounded-xl">
-          <div className="card-head px-6 py-4 bg-ink border-b border-white/10 flex justify-between items-center"><h3 className="text-white font-black uppercase italic tracking-tighter flex items-center gap-2 text-xs"><History className="w-5 h-5 text-brand-gold" /> HISTORIAL TRANSACCIONES</h3><button onClick={() => setView('pos')} className="btn btn-sm bg-white text-ink hover:bg-surface-soft flex items-center gap-2 font-black uppercase text-[10px] rounded-lg border-none px-4"><ArrowLeft className="w-3.5 h-3.5"/> Volver al POS</button></div>
+          <div className="card-head px-6 py-4 bg-black border-b border-white/10 flex justify-between items-center"><h3 className="text-white font-black uppercase italic tracking-tighter flex items-center gap-2 text-xs"><History className="w-5 h-5 text-brand-gold" /> HISTORIAL TRANSACCIONES</h3><button onClick={() => setView('pos')} className="btn btn-sm bg-white text-black hover:bg-surface-soft flex items-center gap-2 font-black uppercase text-[10px] rounded-lg border-none px-4"><ArrowLeft className="w-3.5 h-3.5"/> Volver al POS</button></div>
           <div className="table-wrap flex-1 overflow-y-auto">
             <table>
-              <thead><tr className="bg-surface-soft"><th>Recibo</th><th>Hora</th><th>Terminal</th><th>Cliente</th><th>Tipo</th><th className="text-right">Monto USD</th><th>Método</th><th className="text-center">Estado</th></tr></thead>
+              <thead><tr className="bg-surface-soft"><th className="text-black font-black uppercase">Recibo</th><th className="text-black font-black uppercase">Hora</th><th className="text-black font-black uppercase">Terminal</th><th className="text-black font-black uppercase">Cliente</th><th className="text-black font-black uppercase">Tipo</th><th className="text-right text-black font-black uppercase">Monto USD</th><th className="text-black font-black uppercase">Método</th><th className="text-center text-black font-black uppercase">Estado</th></tr></thead>
               <tbody>
                 {getReportSummary().ventasHoy.sort((a,b) => b.fecha.localeCompare(a.fecha)).map(v => (
-                  <tr key={v.id} className="border-b border-line/40 hover:bg-surface-warm/20"><td className="text-ink font-black text-xs mono">{v.id}</td><td className="text-ink font-black text-xs">{v.fecha.split('T')[1]?.slice(0, 5)}</td><td className="text-ink font-black text-[10px] uppercase">{state.terminales.find(t => t.id === v.terminalId)?.nombre || '-'}</td><td className="text-ink font-black text-xs uppercase truncate max-w-[150px]">{v.cliente}</td><td className="text-ink font-black text-[9px] uppercase"><span className={`badge ${v.type === 'COBRO DEUDA' ? 'badge-info' : 'badge-neutral'}`}>{v.type || 'VENTA'}</span></td><td className="text-brand-gold-deep font-black text-xs text-right">{Utils.fmtUSD(v.totalUSD)}</td><td className="text-ink font-black text-[10px] uppercase">{Utils.metodoLabel(v.metodoPago)}</td><td className="text-center"><span className={`badge ${v.estado === 'pendiente' ? 'badge-warn' : 'badge-ok'} font-black text-[9px] uppercase`}>{v.estado}</span></td></tr>
+                  <tr key={v.id} className="border-b border-line/40 hover:bg-surface-warm/20"><td className="text-black font-black text-xs mono">{v.id}</td><td className="text-black font-black text-xs">{v.fecha.split('T')[1]?.slice(0, 5)}</td><td className="text-black font-black text-[10px] uppercase">{state.terminales.find(t => t.id === v.terminalId)?.nombre || '-'}</td><td className="text-black font-black text-xs uppercase truncate max-w-[150px]">{v.cliente}</td><td className="text-black font-black text-[9px] uppercase"><span className={`badge ${v.type === 'COBRO DEUDA' ? 'badge-info' : 'badge-neutral'}`}>{v.type || 'VENTA'}</span></td><td className="text-brand-gold-deep font-black text-xs text-right">{Utils.fmtUSD(v.totalUSD)}</td><td className="text-black font-black text-[10px] uppercase">{Utils.metodoLabel(v.metodoPago)}</td><td className="text-center"><span className={`badge ${v.estado === 'pendiente' ? 'badge-warn' : 'badge-ok'} font-black text-[9px] uppercase`}>{v.estado}</span></td></tr>
                 ))}
               </tbody>
             </table>
@@ -909,27 +946,27 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         </div>
       ) : view === 'credits' ? (
         <div className="card flex-1 bg-white flex flex-col overflow-hidden animate-in slide-in-from-bottom-2 duration-300 rounded-xl">
-          <div className="card-head px-6 py-4 bg-ink border-b border-white/10 flex justify-between items-center">
+          <div className="card-head px-6 py-4 bg-black border-b border-white/10 flex justify-between items-center">
             <h3 className="text-white font-black uppercase italic tracking-tighter flex items-center gap-2 text-xs">
               <ClipboardList className="w-5 h-5 text-brand-gold" /> CONSULTA CRÉDITOS POR CLIENTE
             </h3>
-            <button onClick={() => setView('pos')} className="btn btn-sm bg-white text-ink hover:bg-surface-soft flex items-center gap-2 font-black uppercase text-[10px] rounded-lg border-none px-4"><ArrowLeft className="w-3.5 h-3.5"/> Volver al POS</button>
+            <button onClick={() => setView('pos')} className="btn btn-sm bg-white text-black hover:bg-surface-soft flex items-center gap-2 font-black uppercase text-[10px] rounded-lg border-none px-4"><ArrowLeft className="w-3.5 h-3.5"/> Volver al POS</button>
           </div>
           <div className="table-wrap flex-1 overflow-y-auto">
             <table className="w-full">
               <thead>
                 <tr className="bg-surface-soft">
                   <th className="px-6 py-3"></th>
-                  <th className="text-ink font-black text-[10px] uppercase">Cliente / Empresa</th>
-                  <th className="text-ink font-black text-[10px] uppercase text-right">Facturas Pend.</th>
-                  <th className="text-ink font-black text-[10px] uppercase text-right">Deuda Total USD</th>
-                  <th className="text-ink font-black text-[10px] uppercase text-right">Deuda Total BS</th>
-                  <th className="text-ink font-black text-[10px] uppercase text-center">Acciones</th>
+                  <th className="text-black font-black text-[10px] uppercase">Cliente / Empresa</th>
+                  <th className="text-black font-black text-[10px] uppercase text-right">Facturas Pend.</th>
+                  <th className="text-black font-black text-[10px] uppercase text-right">Deuda Total USD</th>
+                  <th className="text-black font-black text-[10px] uppercase text-right">Deuda Total BS</th>
+                  <th className="text-black font-black text-[10px] uppercase text-center">Acciones</th>
                 </tr>
               </thead>
               <tbody>
                 {Object.entries(groupedCredits).length === 0 ? (
-                  <tr><td colSpan={6} className="text-center py-24 text-ink font-black italic uppercase">No hay cuentas por cobrar pendientes</td></tr>
+                  <tr><td colSpan={6} className="text-center py-24 text-black font-black italic uppercase">No hay cuentas por cobrar pendientes</td></tr>
                 ) : (
                   Object.entries(groupedCredits).map(([clientName, group]) => (
                     <React.Fragment key={clientName}>
@@ -940,20 +977,20 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                            </button>
                         </td>
                         <td className="py-4">
-                           <div className="text-ink font-black text-sm uppercase">{clientName}</div>
-                           <div className="text-[10px] text-ink font-black uppercase tracking-widest">Cartera de Cliente</div>
+                           <div className="text-black font-black text-sm uppercase">{clientName}</div>
+                           <div className="text-[10px] text-black font-black uppercase tracking-widest">Cartera de Cliente</div>
                         </td>
-                        <td className="text-right py-4 font-black text-ink">{group.debts.length} Docs.</td>
+                        <td className="text-right py-4 font-black text-black">{group.debts.length} Docs.</td>
                         <td className="text-right py-4 font-black text-status-info text-base">{Utils.fmtUSD(group.totalUSD)}</td>
-                        <td className="text-right py-4 font-black text-ink">{Utils.fmtBS(group.totalUSD * state.tasa)}</td>
+                        <td className="text-right py-4 font-black text-black">{Utils.fmtBS(group.totalUSD * state.tasa)}</td>
                         <td className="text-center py-4">
                            <div className="flex items-center justify-center gap-3">
                              <button 
                                 onClick={() => setShowClientHistory(clientName)} 
-                                className="w-10 h-10 rounded-full flex items-center justify-center bg-white text-status-success border-2 border-status-success/20 hover:bg-status-success hover:text-white transition-all shadow-md"
+                                className="w-12 h-12 rounded-full flex items-center justify-center bg-white text-status-success border-4 border-status-success shadow-xl hover:scale-110 transition-all"
                                 title="Consultar Historial Maestro"
                              >
-                                <Eye className="w-5 h-5" />
+                                <Eye className="w-7 h-7" />
                              </button>
                              <button 
                                 onClick={() => { setShowAbonoModal(clientName); setAbonoPagos([]); }} 
@@ -969,26 +1006,26 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                            <td colSpan={6} className="px-12 py-4">
                               <div className="card border-line bg-white shadow-inner rounded-xl overflow-hidden">
                                  <table className="w-full">
-                                    <thead className="bg-ink/5">
+                                    <thead className="bg-black/5">
                                        <tr>
-                                          <th className="text-[9px] font-black uppercase p-2 text-left text-ink">Emisión</th>
-                                          <th className="text-[9px] font-black uppercase p-2 text-left text-ink">Vencimiento</th>
-                                          <th className="text-[9px] font-black uppercase p-2 text-left text-ink">ID Factura</th>
-                                          <th className="text-[9px] font-black uppercase p-2 text-right text-ink">Saldo USD</th>
-                                          <th className="text-[9px] font-black uppercase p-2 text-center text-ink">Auditoría</th>
+                                          <th className="text-[9px] font-black uppercase p-2 text-left text-black">Emisión</th>
+                                          <th className="text-[9px] font-black uppercase p-2 text-left text-black">Vencimiento</th>
+                                          <th className="text-[9px] font-black uppercase p-2 text-left text-black">ID Factura</th>
+                                          <th className="text-[9px] font-black uppercase p-2 text-right text-black">Saldo USD</th>
+                                          <th className="text-[9px] font-black uppercase p-2 text-center text-black">Auditoría</th>
                                        </tr>
                                     </thead>
                                     <tbody>
                                        {group.debts.map(d => (
                                           <tr key={d.id} className="border-b border-line/20 hover:bg-brand-gold-soft/10">
-                                             <td className="text-[10px] font-black p-2 text-ink">{Utils.fmtFecha(d.fecha)}</td>
-                                             <td className={`text-[10px] font-black p-2 ${d.fechaVencimiento < Utils.hoy() ? 'text-status-danger' : 'text-ink'}`}>
+                                             <td className="text-[10px] font-black p-2 text-black">{Utils.fmtFecha(d.fecha)}</td>
+                                             <td className={`text-[10px] font-black p-2 ${d.fechaVencimiento < Utils.hoy() ? 'text-status-danger' : 'text-black'}`}>
                                                 {d.fechaVencimiento === '2099-12-31' ? 'ABIERTA' : Utils.fmtFecha(d.fechaVencimiento)}
                                              </td>
-                                             <td className="text-[10px] font-black p-2 mono text-ink">{d.id}</td>
+                                             <td className="text-[10px] font-black p-2 mono text-black">{d.id}</td>
                                              <td className="text-[10px] font-black p-2 text-right text-brand-gold-deep">{Utils.fmtUSD(d.saldoUSD)}</td>
                                              <td className="p-2 text-center">
-                                                <button onClick={() => setShowDetailsModal(d)} className="text-ink hover:text-brand-gold p-1 transition-colors"><Eye className="w-3.5 h-3.5"/></button>
+                                                <button onClick={() => setShowDetailsModal(d)} className="text-black hover:text-brand-gold p-1 transition-colors"><Eye className="w-3.5 h-3.5"/></button>
                                              </td>
                                           </tr>
                                        ))}
@@ -1008,18 +1045,18 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       ) : (
         <div className="flex flex-col gap-6 animate-in slide-in-from-bottom-2 duration-300 flex-1 overflow-y-auto">
           <div className="flex justify-between items-center bg-white p-4 rounded-xl border border-line shadow-sm shrink-0">
-            <div><h2 className="text-ink font-black uppercase italic tracking-tighter text-lg flex items-center gap-2"><RotateCcw className="text-status-danger w-5 h-5" /> GESTIÓN DE DEVOLUCIONES</h2></div>
+            <div><h2 className="text-black font-black uppercase italic tracking-tighter text-lg flex items-center gap-2"><RotateCcw className="text-status-danger w-5 h-5" /> GESTIÓN DE DEVOLUCIONES</h2></div>
             <div className="flex gap-2"><button onClick={() => setReturnView('list')} className={`btn ${returnView === 'list' ? 'btn-primary' : 'btn-secondary'} h-9 px-6 font-black uppercase text-[10px]`}>Historial</button><button onClick={() => { setReturnView('create'); setSelectedSaleForReturn(null); }} className={`btn ${returnView === 'create' ? 'btn-primary' : 'btn-secondary'} h-9 px-6 font-black uppercase text-[10px]`}>Nueva Devolución</button></div>
           </div>
           {returnView === 'list' ? (
             <div className="card bg-white border-line shadow-lg overflow-hidden flex flex-col rounded-xl flex-1">
-              <div className="card-head bg-ink border-b border-white/10 px-6 py-4"><h3 className="text-white font-black text-xs uppercase italic tracking-tighter">DEVOLUCIONES DE HOY</h3></div>
+              <div className="card-head bg-black border-b border-white/10 px-6 py-4"><h3 className="text-white font-black text-xs uppercase italic tracking-tighter">DEVOLUCIONES DE HOY</h3></div>
               <div className="table-wrap flex-1 overflow-y-auto">
                 <table>
-                  <thead><tr className="bg-surface-soft"><th>ID</th><th>Hora</th><th>Venta</th><th>Items</th><th className="text-right">Total</th><th>Reembolso</th></tr></thead>
+                  <thead><tr className="bg-surface-soft"><th className="text-black font-black uppercase">ID</th><th className="text-black font-black uppercase">Hora</th><th className="text-black font-black uppercase">Venta</th><th className="text-black font-black uppercase">Items</th><th className="text-right text-black font-black uppercase">Total</th><th className="text-black font-black uppercase">Reembolso</th></tr></thead>
                   <tbody>
                     {(state.devoluciones || []).filter(d => d.fecha.startsWith(Utils.hoy())).map(d => (
-                      <tr key={d.id} className="border-b border-line/40"><td className="text-status-danger font-black text-xs mono">{d.id}</td><td className="text-ink font-black text-xs">{d.fecha.split('T')[1].slice(0, 8)}</td><td className="text-ink font-black text-xs mono">{d.ventaId}</td><td className="text-ink font-black text-[10px] uppercase">{d.items.length} productos</td><td className="text-brand-gold-deep font-black text-xs text-right">{Utils.fmtUSD(d.totalUSD)}</td><td><span className="badge badge-neutral font-black text-[9px] uppercase">{d.metodoReembolso}</span></td></tr>
+                      <tr key={d.id} className="border-b border-line/40"><td className="text-status-danger font-black text-xs mono">{d.id}</td><td className="text-black font-black text-xs">{d.fecha.split('T')[1].slice(0, 8)}</td><td className="text-black font-black text-xs mono">{d.ventaId}</td><td className="text-black font-black text-[10px] uppercase">{d.items.length} productos</td><td className="text-brand-gold-deep font-black text-xs text-right">{Utils.fmtUSD(d.totalUSD)}</td><td><span className="badge badge-neutral font-black text-[9px] uppercase">{d.metodoReembolso}</span></td></tr>
                     ))}
                   </tbody>
                 </table>
@@ -1028,15 +1065,15 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
           ) : (
             <div className="flex flex-col flex-1 overflow-hidden">
               {!selectedSaleForReturn ? (
-                <div className="card p-12 flex-1 flex flex-col items-center justify-center text-center space-y-6 bg-white border-dashed border-2 border-line"><div className="p-5 bg-surface-soft rounded-full"><Search className="w-10 h-10 text-ink" /></div><h3 className="text-ink font-black uppercase text-sm">Localizar Venta Original</h3><div className="flex gap-2 w-full sm:max-w-sm"><input className="form-input flex-1 h-11 bg-white border-line text-ink font-black uppercase" placeholder="Ej: 000000024" value={returnSaleSearch} onChange={e => setReturnSaleSearch(e.target.value)} onKeyDown={e => e.key === 'Enter' && buscarVentaParaDevolucion()} /><button onClick={buscarVentaParaDevolucion} className="btn btn-primary h-11 px-6 font-black uppercase text-xs">Buscar</button></div></div>
+                <div className="card p-12 flex-1 flex flex-col items-center justify-center text-center space-y-6 bg-white border-dashed border-2 border-line"><div className="p-5 bg-surface-soft rounded-full"><Search className="w-10 h-10 text-black" /></div><h3 className="text-black font-black uppercase text-sm">Localizar Venta Original</h3><div className="flex gap-2 w-full sm:max-w-sm"><input className="form-input flex-1 h-11 bg-white border-line text-black font-black uppercase" placeholder="Ej: 000000024" value={returnSaleSearch} onChange={e => setReturnSaleSearch(e.target.value)} onKeyDown={e => e.key === 'Enter' && buscarVentaParaDevolucion()} /><button onClick={buscarVentaParaDevolucion} className="btn btn-primary h-11 px-6 font-black uppercase text-xs">Buscar</button></div></div>
               ) : (
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1 overflow-y-auto pr-1">
                   <div className="lg:col-span-2 flex flex-col gap-4">
-                    <div className="card bg-white border-status-info/30 rounded-xl overflow-hidden shadow-sm"><div className="card-head py-3 px-6 bg-ink border-b border-white/10 flex justify-between"><h3 className="text-white font-black uppercase italic text-[10px]">VENTA: {selectedSaleForReturn.id}</h3><button onClick={() => setSelectedSaleForReturn(null)}><X className="w-4 h-4 text-white"/></button></div><div className="table-wrap"><table><thead><tr className="bg-surface-soft"><th>Producto</th><th className="text-center">Cant</th><th className="text-right">Precio</th><th className="text-center">Acción</th></tr></thead><tbody>{selectedSaleForReturn.items.map((it, idx) => (<tr key={idx} className="border-b border-line/30"><td className="text-ink font-black text-[11px] uppercase">{it.nombre}</td><td className="text-center text-ink font-black">{it.cantidad}</td><td className="text-right text-ink font-black">{Utils.fmtUSD(it.precioUnitUSD)}</td><td className="text-center"><button onClick={() => handleAddReturnItem(it.productoId, it.nombre, it.precioUnitUSD, it.cantidad)} className="btn btn-sm btn-secondary h-7 px-3 text-[9px] font-black uppercase">Seleccionar</button></td></tr>))}</tbody></table></div></div>
-                    <div className="card bg-white border-line shadow-md rounded-xl overflow-hidden"><div className="card-head py-3 px-6 bg-ink border-b border-white/10"><h3 className="text-white font-black uppercase italic text-[10px]">REINTEGRO</h3></div><div className="table-wrap"><table><thead><tr className="bg-surface-soft"><th>Producto</th><th className="text-center">Cant</th><th>Estado</th><th className="text-right">Total</th><th></th></tr></thead><tbody>{returnItems.map((it, idx) => (<tr key={idx} className="border-b border-line/30"><td className="text-ink font-black text-[11px] uppercase">{it.nombre}</td><td className="text-status-danger font-black text-center">{it.cantidad}</td><td><span className="badge badge-neutral text-[8px] font-black">{it.estadoProducto}</span></td><td className="text-brand-gold-deep font-black text-right">{Utils.fmtUSD(it.cantidad * it.precioUnitUSD)}</td><td className="text-center"><button onClick={() => setReturnItems(returnItems.filter((_,i)=>i!==idx))}><Trash2 className="w-4 h-4 text-ink"/></button></td></tr>))}</tbody></table></div></div>
+                    <div className="card bg-white border-status-info/30 rounded-xl overflow-hidden shadow-sm"><div className="card-head py-3 px-6 bg-black border-b border-white/10 flex justify-between"><h3 className="text-white font-black uppercase italic text-[10px]">VENTA: {selectedSaleForReturn.id}</h3><button onClick={() => setSelectedSaleForReturn(null)}><X className="w-4 h-4 text-white"/></button></div><div className="table-wrap"><table><thead><tr className="bg-surface-soft"><th>Producto</th><th className="text-center">Cant</th><th className="text-right">Precio</th><th className="text-center">Acción</th></tr></thead><tbody>{selectedSaleForReturn.items.map((it, idx) => (<tr key={idx} className="border-b border-line/30"><td className="text-black font-black text-[11px] uppercase">{it.nombre}</td><td className="text-center text-black font-black">{it.cantidad}</td><td className="text-right text-black font-black">{Utils.fmtUSD(it.precioUnitUSD)}</td><td className="text-center"><button onClick={() => handleAddReturnItem(it.productoId, it.nombre, it.precioUnitUSD, it.cantidad)} className="btn btn-sm btn-secondary h-7 px-3 text-[9px] font-black uppercase">Seleccionar</button></td></tr>))}</tbody></table></div></div>
+                    <div className="card bg-white border-line shadow-md rounded-xl overflow-hidden"><div className="card-head py-3 px-6 bg-black border-b border-white/10"><h3 className="text-white font-black uppercase italic text-[10px]">REINTEGRO</h3></div><div className="table-wrap"><table><thead><tr className="bg-surface-soft"><th>Producto</th><th className="text-center">Cant</th><th>Estado</th><th className="text-right">Total</th><th></th></tr></thead><tbody>{returnItems.map((it, idx) => (<tr key={idx} className="border-b border-line/30"><td className="text-black font-black text-[11px] uppercase">{it.nombre}</td><td className="text-status-danger font-black text-center">{it.cantidad}</td><td><span className="badge badge-neutral text-[8px] font-black">{it.estadoProducto}</span></td><td className="text-brand-gold-deep font-black text-right">{Utils.fmtUSD(it.cantidad * it.precioUnitUSD)}</td><td className="text-center"><button onClick={() => setReturnItems(returnItems.filter((_,i)=>i!==idx))}><Trash2 className="w-4 h-4 text-black"/></button></td></tr>))}</tbody></table></div></div>
                   </div>
                   <div className="space-y-4">
-                    <div className="card bg-white border-line shadow-lg rounded-xl overflow-hidden p-5 space-y-5"><div className="bg-surface-soft p-4 rounded-lg text-center border border-line shadow-inner"><p className="text-ink text-[9px] font-black uppercase mb-1">TOTAL REEMBOLSO</p><p className="text-3xl font-black text-status-danger">{Utils.fmtUSD(returnItems.reduce((s, i) => s + (i.cantidad * i.precioUnitUSD), 0))}</p></div><div className="form-group"><label className="text-[10px] font-black uppercase block mb-1">Método</label><select className="form-select h-10 text-xs font-black uppercase text-ink" value={refundMethod} onChange={e=>setRefundMethod(e.target.value as any)}><option value="EFECTIVO">Efectivo</option><option value="MISMO_METODO">Reverso</option><option value="CREDITO_TIENDA">Nota Crédito</option></select></div><div className="form-group"><label className="text-[10px] font-black uppercase block mb-1">Motivo</label><textarea className="form-input text-xs min-h-[80px] text-ink font-black" value={returnReason} onChange={e=>setReturnReason(e.target.value)}></textarea></div><button disabled={returnItems.length === 0 || !returnReason.trim()} onClick={procesarDevolucionPOS} className="btn btn-primary w-full h-14 font-black uppercase text-xs shadow-xl"><CheckCircle2 className="w-5 h-5 mr-2" /> Finalizar</button></div>
+                    <div className="card bg-white border-line shadow-lg rounded-xl overflow-hidden p-5 space-y-5"><div className="bg-surface-soft p-4 rounded-lg text-center border border-line shadow-inner"><p className="text-black text-[9px] font-black uppercase mb-1">TOTAL REEMBOLSO</p><p className="text-3xl font-black text-status-danger">{Utils.fmtUSD(returnItems.reduce((s, i) => s + (i.cantidad * i.precioUnitUSD), 0))}</p></div><div className="form-group"><label className="text-[10px] font-black uppercase block mb-1">Método</label><select className="form-select h-10 text-xs font-black uppercase text-black" value={refundMethod} onChange={e=>setRefundMethod(e.target.value as any)}><option value="EFECTIVO">Efectivo</option><option value="MISMO_METODO">Reverso</option><option value="CREDITO_TIENDA">Nota Crédito</option></select></div><div className="form-group"><label className="text-[10px] font-black uppercase block mb-1">Motivo</label><textarea className="form-input text-xs min-h-[80px] text-black font-black" value={returnReason} onChange={e=>setReturnReason(e.target.value)}></textarea></div><button disabled={returnItems.length === 0 || !returnReason.trim()} onClick={procesarDevolucionPOS} className="btn btn-primary w-full h-14 font-black uppercase text-xs shadow-xl"><CheckCircle2 className="w-5 h-5 mr-2" /> Finalizar</button></div>
                   </div>
                 </div>
               )}
@@ -1157,7 +1194,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                 <div className="text-center"><p className="border-t border-black pt-1 uppercase font-black text-[8px]">Firma Supervisor</p></div>
               </div>
 
-              <div className="pt-6 space-y-1 text-ink text-center italic border-t border-dashed border-black/30 mt-8">
+              <div className="pt-6 space-y-1 text-black text-center italic border-t border-dashed border-black/30 mt-8">
                 <p className="font-black">FIN DEL DOCUMENTO</p>
                 <p className="text-[8px] uppercase tracking-widest font-black">PosVEN Pro Cloud Sync · v2.5.0</p>
               </div>
@@ -1167,7 +1204,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
           <div className="flex gap-2 mt-4 no-print">
             <button 
               onClick={() => showReport && handlePrintRoccia(showReport)} 
-              className="flex-1 bg-white text-ink border border-line h-12 rounded-xl font-black uppercase text-[10px] shadow-sm flex items-center justify-center gap-2 hover:bg-surface-soft transition-all"
+              className="flex-1 bg-white text-black border border-line h-12 rounded-xl font-black uppercase text-[10px] shadow-sm flex items-center justify-center gap-2 hover:bg-surface-soft transition-all"
             >
               <Printer className="w-4 h-4" /> {window.electronAPI ? 'Imprimir USB (Roccia 80mm)' : 'Imprimir Informe'}
             </button>
@@ -1179,12 +1216,12 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       {showDetailsModal && (
         <div className="modal show" style={{ zIndex: 70 }}><div className="modal-bg" onClick={() => setShowDetailsModal(null)}></div>
           <div className="modal-box max-w-[600px] bg-white border-2 border-line rounded-xl overflow-hidden shadow-2xl">
-            <div className="modal-head py-4 px-6 border-b border-line bg-ink flex justify-between items-center text-white"><h3 className="font-black uppercase italic tracking-tighter text-xs flex items-center gap-2"><Receipt className="w-5 h-5 text-brand-gold" /> HISTORIAL DETALLADO: {showDetailsModal.id}</h3><button onClick={() => setShowDetailsModal(null)} className="text-white hover:text-brand-gold transition-colors"><X className="w-5 h-5"/></button></div>
+            <div className="modal-head py-4 px-6 border-b border-line bg-black flex justify-between items-center text-white"><h3 className="font-black uppercase italic tracking-tighter text-xs flex items-center gap-2"><Receipt className="w-5 h-5 text-brand-gold" /> HISTORIAL DETALLADO: {showDetailsModal.id}</h3><button onClick={() => setShowDetailsModal(null)} className="text-white hover:text-brand-gold transition-colors"><X className="w-5 h-5"/></button></div>
             <div className="modal-body p-6 space-y-6 max-h-[75vh] overflow-y-auto bg-white">
               <div className="grid grid-cols-2 gap-4">
                  <div className="p-3 bg-surface-soft rounded-lg border border-line">
-                    <label className="text-[8px] font-black uppercase text-ink block mb-1">Monto Original</label>
-                    <p className="text-lg font-black text-ink">{Utils.fmtUSD(showDetailsModal.montoUSD)}</p>
+                    <label className="text-[8px] font-black uppercase text-black block mb-1">Monto Original</label>
+                    <p className="text-lg font-black text-black">{Utils.fmtUSD(showDetailsModal.montoUSD)}</p>
                  </div>
                  <div className="p-3 bg-brand-gold-soft border border-brand-gold/20 rounded-lg">
                     <label className="text-[8px] font-black uppercase text-brand-gold-deep block mb-1">Saldo Actual</label>
@@ -1199,25 +1236,25 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                 return (
                   <div className="space-y-3 animate-in slide-in-from-top-2 duration-300">
                     <div className="flex justify-between items-center border-b border-line pb-2">
-                       <h4 className="text-[10px] font-black uppercase text-ink tracking-[0.2em]">DETALLE DE COMPRA ORIGINAL</h4>
-                       <span className="text-[9px] font-black text-ink uppercase">{Utils.fmtFecha(sale.fecha)} - {sale.fecha.split('T')[1]?.slice(0,5)}</span>
+                       <h4 className="text-[10px] font-black uppercase text-black tracking-[0.2em]">DETALLE DE COMPRA ORIGINAL</h4>
+                       <span className="text-[9px] font-black text-black uppercase">{Utils.fmtFecha(sale.fecha)} - {sale.fecha.split('T')[1]?.slice(0,5)}</span>
                     </div>
                     <div className="bg-surface-soft/50 rounded-lg overflow-hidden border border-line/30">
                        <table className="w-full">
                           <thead>
-                            <tr className="bg-ink/5">
-                               <th className="text-[8px] font-black uppercase p-2 text-left text-ink">Cant</th>
-                               <th className="text-[8px] font-black uppercase p-2 text-left text-ink">Descripción</th>
-                               <th className="text-[8px] font-black uppercase p-2 text-right text-ink">P. Unit</th>
-                               <th className="text-[8px] font-black uppercase p-2 text-right text-ink">Total</th>
+                            <tr className="bg-black/5">
+                               <th className="text-[8px] font-black uppercase p-2 text-left text-black">Cant</th>
+                               <th className="text-[8px] font-black uppercase p-2 text-left text-black">Descripción</th>
+                               <th className="text-[8px] font-black uppercase p-2 text-right text-black">P. Unit</th>
+                               <th className="text-[8px] font-black uppercase p-2 text-right text-black">Total</th>
                             </tr>
                           </thead>
                           <tbody>
                             {sale.items.map((it: any, idx: number) => (
                               <tr key={idx} className="border-b border-line/20">
-                                 <td className="text-[9px] font-black p-2 text-ink">{it.cantidad}</td>
-                                 <td className="text-[9px] font-black uppercase p-2 text-ink truncate max-w-[180px]">{it.nombre}</td>
-                                 <td className="text-[9px] font-black p-2 text-right text-ink">{Utils.fmtUSD(it.precioUnitUSD)}</td>
+                                 <td className="text-[9px] font-black p-2 text-black">{it.cantidad}</td>
+                                 <td className="text-[9px] font-black uppercase p-2 text-black truncate max-w-[180px]">{it.nombre}</td>
+                                 <td className="text-[9px] font-black p-2 text-right text-black">{Utils.fmtUSD(it.precioUnitUSD)}</td>
                                  <td className="text-[9px] font-black p-2 text-right text-brand-gold-deep">{Utils.fmtUSD(it.subtotalUSD)}</td>
                               </tr>
                             ))}
@@ -1229,20 +1266,20 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
               })()}
 
               <div className="space-y-3">
-                 <h4 className="text-[10px] font-black uppercase text-ink tracking-[0.2em] border-b border-line pb-2">CRONOLOGÍA DE ABONOS</h4>
+                 <h4 className="text-[10px] font-black uppercase text-black tracking-[0.2em] border-b border-line pb-2">CRONOLOGÍA DE ABONOS</h4>
                  <div className="max-h-[200px] overflow-y-auto space-y-2 pr-1">
                     {(!showDetailsModal.historialPagos || showDetailsModal.historialPagos.length === 0) ? (
-                      <div className="py-10 text-center text-ink font-black uppercase italic text-[10px]">No se han registrado abonos aún</div>
+                      <div className="py-10 text-center text-black font-black uppercase italic text-[10px]">No se han registrado abonos aún</div>
                     ) : (
                       showDetailsModal.historialPagos.map((p: any, idx: number) => (
                         <div key={idx} className="flex justify-between items-center p-3 bg-surface-soft border border-line rounded-lg">
                            <div className="space-y-0.5">
-                              <p className="text-[10px] font-black text-ink uppercase">{Utils.fmtFecha(p.fecha)} - {p.fecha.split('T')[1]?.slice(0,5)}</p>
-                              <p className="text-[8px] font-black text-ink mono">REF RECIBO: {p.reciboId}</p>
+                              <p className="text-[10px] font-black text-black uppercase">{Utils.fmtFecha(p.fecha)} - {p.fecha.split('T')[1]?.slice(0,5)}</p>
+                              <p className="text-[8px] font-black text-black mono">REF RECIBO: {p.reciboId}</p>
                            </div>
                            <div className="text-right">
                               <p className="text-xs font-black text-status-success">+{Utils.fmtUSD(p.montoUSD)}</p>
-                              <p className="text-[8px] font-black text-ink uppercase">{Utils.metodoLabel(p.metodo || 'otros')}</p>
+                              <p className="text-[8px] font-black text-black uppercase">{Utils.metodoLabel(p.metodo || 'otros')}</p>
                            </div>
                         </div>
                       ))
@@ -1261,7 +1298,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       {showClientHistory && (
         <div className="modal show"><div className="modal-bg" onClick={() => setShowClientHistory(null)}></div>
           <div className={`modal-box max-w-4xl bg-white border-2 border-line rounded-xl overflow-hidden shadow-2xl transition-all duration-500 ease-in-out ${showDetailsModal ? 'scale-[0.85] opacity-40 -translate-y-48 blur-[1px] pointer-events-none' : ''}`}>
-            <div className="modal-head py-4 px-6 border-b border-line bg-ink flex justify-between items-center text-white">
+            <div className="modal-head py-4 px-6 border-b border-line bg-black flex justify-between items-center text-white">
               <h3 className="font-black uppercase italic tracking-tighter text-xs flex items-center gap-2">
                 <Contact className="w-5 h-5 text-brand-gold" /> ESTADO DE CUENTA MAESTRO: {showClientHistory}
               </h3>
@@ -1272,21 +1309,21 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                   <table className="w-full">
                     <thead className="bg-surface-soft sticky top-0 z-10">
                       <tr>
-                        <th className="text-[9px] font-black uppercase p-4 text-left text-ink">Fecha</th>
-                        <th className="text-[9px] font-black uppercase p-4 text-left text-ink">ID Documento</th>
-                        <th className="text-[9px] font-black uppercase p-4 text-right text-ink">Monto Total</th>
-                        <th className="text-[9px] font-black uppercase p-4 text-right text-ink">Abonado</th>
-                        <th className="text-[9px] font-black uppercase p-4 text-right text-ink">Saldo Pend.</th>
-                        <th className="text-[9px] font-black uppercase p-4 text-center text-ink">Estado</th>
-                        <th className="text-[9px] font-black uppercase p-4 text-center text-ink">Auditoría</th>
+                        <th className="text-[9px] font-black uppercase p-4 text-left text-black">Fecha</th>
+                        <th className="text-[9px] font-black uppercase p-4 text-left text-black">ID Documento</th>
+                        <th className="text-[9px] font-black uppercase p-4 text-right text-black">Monto Total</th>
+                        <th className="text-[9px] font-black uppercase p-4 text-right text-black">Abonado</th>
+                        <th className="text-[9px] font-black uppercase p-4 text-right text-black">Saldo Pend.</th>
+                        <th className="text-[9px] font-black uppercase p-4 text-center text-black">Estado</th>
+                        <th className="text-[9px] font-black uppercase p-4 text-center text-black">Auditoría</th>
                       </tr>
                     </thead>
                     <tbody>
                       {state.cxc.filter(d => d.cliente === showClientHistory).sort((a,b) => b.fecha.localeCompare(a.fecha)).map(d => (
                         <tr key={d.id} className="border-b border-line/30 hover:bg-surface-warm/20 transition-colors">
-                          <td className="p-4 text-xs font-black text-ink">{Utils.fmtFecha(d.fecha)}</td>
-                          <td className="p-4 text-xs font-black mono text-ink">{d.id}</td>
-                          <td className="p-4 text-right text-xs font-black text-ink">{Utils.fmtUSD(d.montoUSD)}</td>
+                          <td className="p-4 text-xs font-black text-black">{Utils.fmtFecha(d.fecha)}</td>
+                          <td className="p-4 text-xs font-black mono text-black">{d.id}</td>
+                          <td className="p-4 text-right text-xs font-black text-black">{Utils.fmtUSD(d.montoUSD)}</td>
                           <td className="p-4 text-right text-xs font-black text-status-success">{Utils.fmtUSD(d.abonadoUSD)}</td>
                           <td className="p-4 text-right text-sm font-black text-brand-gold-deep">{Utils.fmtUSD(d.saldoUSD)}</td>
                           <td className="p-4 text-center">
@@ -1305,7 +1342,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                         </tr>
                       ))}
                       {state.cxc.filter(d => d.cliente === showClientHistory).length === 0 && (
-                        <tr><td colSpan={7} className="py-20 text-center text-ink font-black uppercase italic">Sin actividad crediticia registrada</td></tr>
+                        <tr><td colSpan={7} className="py-20 text-center text-black font-black uppercase italic">Sin actividad crediticia registrada</td></tr>
                       )}
                     </tbody>
                   </table>
@@ -1323,23 +1360,23 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         <div className="modal show"><div className="modal-bg" onClick={() => setShowAbonoModal(null)}></div>
           <div className="modal-box max-w-[500px] bg-white border-none rounded-[24px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
             <div className="modal-head py-5 px-8 border-b border-line flex justify-between items-center">
-              <h3 className="text-ink text-xs font-black uppercase tracking-widest">ABONAR - {showAbonoModal}</h3>
-              <button onClick={() => setShowAbonoModal(null)} className="text-ink hover:text-brand-gold transition-colors"><X className="w-6 h-6"/></button>
+              <h3 className="text-black text-xs font-black uppercase tracking-widest">ABONAR - {showAbonoModal}</h3>
+              <button onClick={() => setShowAbonoModal(null)} className="text-black hover:text-brand-gold transition-colors"><X className="w-6 h-6"/></button>
             </div>
             <div className="modal-body p-8 space-y-6">
               <div className="bg-surface-soft p-8 rounded-[20px] text-center border border-line shadow-inner">
-                <p className="text-ink text-[9px] font-black uppercase tracking-[0.2em] mb-2">DEUDA PENDIENTE TOTAL</p>
+                <p className="text-black text-[9px] font-black uppercase tracking-[0.2em] mb-2">DEUDA PENDIENTE TOTAL</p>
                 <p className="text-5xl font-black text-status-info tracking-tighter">
                   {Utils.fmtUSD(totalDeudaAbonoUSD - totalAbonadoEnModalUSD)}
                 </p>
-                <p className="text-xl font-black text-ink mt-2">
+                <p className="text-xl font-black text-black mt-2">
                   {Utils.fmtBS((totalDeudaAbonoUSD - totalAbonadoEnModalUSD) * state.tasa)}
                 </p>
               </div>
 
               <div className="space-y-4">
                 <div className="flex justify-between items-center border-b border-line pb-2">
-                  <label className="text-ink text-[10px] font-black uppercase tracking-widest">MÉTODOS PAGO</label>
+                  <label className="text-black text-[10px] font-black uppercase tracking-widest">MÉTODOS PAGO</label>
                   <button onClick={() => setShowAbonoMultiModal(true)} className="w-8 h-8 bg-brand-gold text-white rounded-full shadow-lg flex items-center justify-center hover:scale-110 active:scale-95 transition-all">
                     <Plus className="w-5 h-5" />
                   </button>
@@ -1347,7 +1384,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                 
                 <div className="space-y-2 min-h-[100px] max-h-[180px] overflow-y-auto pr-1">
                   {abonoPagos.length === 0 ? (
-                    <div className="py-8 text-center text-ink flex flex-col items-center gap-2">
+                    <div className="py-8 text-center text-black flex flex-col items-center gap-2">
                       <Wallet className="w-8 h-8 opacity-40" />
                       <p className="text-[10px] font-black uppercase">Sin métodos añadidos</p>
                     </div>
@@ -1356,7 +1393,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                       <div key={idx} className="flex justify-between items-center bg-white p-3 rounded-xl border border-line text-[10px] font-black shadow-sm animate-in slide-in-from-right-2">
                         <div className="flex items-center gap-3">
                            <button onClick={() => setAbonoPagos(abonoPagos.filter((_,i)=>i!==idx))} className="text-status-danger hover:scale-125 transition-transform"><Trash2 className="w-4 h-4" /></button>
-                           <span className="uppercase text-ink font-black">{Utils.metodoLabel(p.metodo)}</span>
+                           <span className="uppercase text-black font-black">{Utils.metodoLabel(p.metodo)}</span>
                         </div>
                         <span className="text-brand-gold-deep font-black text-sm">{Utils.fmtUSD(p.montoUSD)}</span>
                       </div>
@@ -1381,10 +1418,10 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       {showAbonoMultiModal && (
         <div className="modal show" style={{zIndex: 110}}><div className="modal-bg" onClick={() => setShowAbonoMultiModal(false)}></div>
           <div className="modal-box max-sm bg-white border-2 border-line rounded-xl overflow-hidden">
-            <div className="modal-head py-3 px-4 border-b border-line bg-surface-soft"><h3 className="text-ink text-xs font-black uppercase">Añadir Pago</h3></div>
+            <div className="modal-head py-3 px-4 border-b border-line bg-surface-soft"><h3 className="text-black text-xs font-black uppercase">Añadir Pago</h3></div>
             <div className="modal-body p-5 space-y-4">
-               <div className="space-y-1"><label className="text-[10px] font-black uppercase">MÉTODO</label><select className="form-select h-10 text-xs font-black uppercase text-ink" value={metodoActual} onChange={e => setMetodoActual(e.target.value as PaymentMethod)}><option value="efectivo_usd">Efectivo USD</option><option value="efectivo_bs">Efectivo BS</option><option value="punto_venta">Punto de Venta</option><option value="pagomovil">Pago Movil</option><option value="biopago">Biopago</option><option value="zelle">Zelle</option></select></div>
-               <div className="space-y-1"><label className="text-[10px] font-black uppercase">MONTO ({metodoActual.includes('usd') || metodoActual === 'zelle' ? 'USD' : 'BS'})</label><input type="number" className="form-input h-12 text-lg font-black text-ink" value={montoInput} onChange={e => setMontoInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && addPago(true)} autoFocus /></div>
+               <div className="space-y-1"><label className="text-[10px] font-black uppercase text-black">MÉTODO</label><select className="form-select h-10 text-xs font-black uppercase text-black" value={metodoActual} onChange={e => setMetodoActual(e.target.value as PaymentMethod)}><option value="efectivo_usd">Efectivo USD</option><option value="efectivo_bs">Efectivo BS</option><option value="punto_venta">Punto de Venta</option><option value="pagomovil">Pago Movil</option><option value="biopago">Biopago</option><option value="zelle">Zelle</option></select></div>
+               <div className="space-y-1"><label className="text-[10px] font-black uppercase text-black">MONTO ({metodoActual.includes('usd') || metodoActual === 'zelle' ? 'USD' : 'BS'})</label><input type="number" className="form-input h-12 text-lg font-black text-black" value={montoInput} onChange={e => setMontoInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && addPago(true)} autoFocus /></div>
                <button className="btn btn-primary w-full h-12 font-black uppercase text-xs shadow-md" onClick={() => addPago(true)}>Agregar al Cobro</button>
             </div>
           </div>
@@ -1395,13 +1432,13 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       {showMultiModal && (
         <div className="modal show"><div className="modal-bg" onClick={() => { setShowMultiModal(false); setIsCreditView(false); }}></div>
           <div className="modal-box max-w-[380px] bg-white border-2 border-line rounded-xl overflow-hidden shadow-2xl">
-            <div className="modal-head py-3 px-4 border-b border-line bg-ink text-white"><h3 className="text-white text-xs font-black uppercase tracking-widest">{isCreditView ? 'CARGAR CRÉDITO' : 'REGISTRAR PAGO'}</h3><button onClick={() => { setShowMultiModal(false); setIsCreditView(false); }} className="text-white hover:text-brand-gold transition-colors"><X className="w-5 h-5"/></button></div>
+            <div className="modal-head py-3 px-4 border-b border-line bg-black text-white"><h3 className="text-white text-xs font-black uppercase tracking-widest">{isCreditView ? 'CARGAR CRÉDITO' : 'REGISTRAR PAGO'}</h3><button onClick={() => { setShowMultiModal(false); setIsCreditView(false); }} className="text-white hover:text-brand-gold transition-colors"><X className="w-5 h-5"/></button></div>
             <div className="modal-body p-4 space-y-4 bg-white">
               {!isCreditView ? (
                 <>
-                  <div className="bg-surface-soft p-3 rounded-lg text-center border border-line shadow-inner"><p className="text-ink text-[9px] font-black mb-1">Pendiente</p><p className="text-2xl font-black text-status-info">{Utils.fmtUSD(saldoRestanteUSD)}</p><p className="text-xs text-ink font-black">{Utils.fmtBS(saldoRestanteBS)}</p></div>
-                  <div className="space-y-1"><label className="text-[10px] font-black uppercase">MÉTODO</label><select className="form-select h-10 bg-white text-ink text-xs font-black uppercase border-line shadow-sm" value={metodoActual} onChange={e => setMetodoActual(e.target.value as PaymentMethod)}><option value="efectivo_usd">Efectivo USD</option><option value="efectivo_bs">Efectivo BS</option><option value="punto_venta">Punto de Venta</option><option value="pagomovil">Pago Movil</option><option value="biopago">Biopago</option><option value="zelle">Zelle</option></select></div>
-                  <div className="space-y-1"><div className="flex justify-between items-center mb-1"><label className="text-[10px] font-black uppercase">MONTO ({metodoActual.includes('usd') || metodoActual === 'zelle' ? 'USD' : 'BS'})</label><button onClick={() => setMontoInput((metodoActual.includes('usd') || metodoActual === 'zelle' ? saldoRestanteUSD : saldoRestanteBS).toFixed(2))} className="text-[9px] bg-brand-gold-soft text-brand-gold-deep px-2 rounded font-black border border-brand-gold/30 shadow-sm">EXACTO</button></div><input type="number" className="form-input h-12 text-lg font-black bg-white border-line shadow-inner text-ink" value={montoInput} onChange={e => setMontoInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && addPago(false)} autoFocus /></div>
+                  <div className="bg-surface-soft p-3 rounded-lg text-center border border-line shadow-inner"><p className="text-black text-[9px] font-black mb-1">Pendiente</p><p className="text-2xl font-black text-status-info">{Utils.fmtUSD(saldoRestanteUSD)}</p><p className="text-xs text-black font-black">{Utils.fmtBS(saldoRestanteBS)}</p></div>
+                  <div className="space-y-1"><label className="text-[10px] font-black uppercase text-black">MÉTODO</label><select className="form-select h-10 bg-white text-black text-xs font-black uppercase border-line shadow-sm" value={metodoActual} onChange={e => setMetodoActual(e.target.value as PaymentMethod)}><option value="efectivo_usd">Efectivo USD</option><option value="efectivo_bs">Efectivo BS</option><option value="punto_venta">Punto de Venta</option><option value="pagomovil">Pago Movil</option><option value="biopago">Biopago</option><option value="zelle">Zelle</option></select></div>
+                  <div className="space-y-1"><div className="flex justify-between items-center mb-1"><label className="text-[10px] font-black uppercase text-black">MONTO ({metodoActual.includes('usd') || metodoActual === 'zelle' ? 'USD' : 'BS'})</label><button onClick={() => setMontoInput((metodoActual.includes('usd') || metodoActual === 'zelle' ? saldoRestanteUSD : saldoRestanteBS).toFixed(2))} className="text-[9px] bg-brand-gold-soft text-brand-gold-deep px-2 rounded font-black border border-brand-gold/30 shadow-sm">EXACTO</button></div><input type="number" className="form-input h-12 text-lg font-black bg-white border-line shadow-inner text-black" value={montoInput} onChange={e => setMontoInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && addPago(false)} autoFocus /></div>
                   <button className="btn btn-primary w-full h-12 font-black uppercase text-xs shadow-xl" onClick={() => addPago(false)}>CONFIRMAR ABONO</button>
                   <button className="btn h-10 border-2 border-status-info text-status-info hover:bg-status-info-soft font-black uppercase text-[10px] w-full shadow-sm" onClick={() => setIsCreditView(true)}>Cargar Crédito</button>
                 </>
@@ -1409,24 +1446,24 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                 <div className="space-y-4 animate-in slide-in-from-right-2 duration-200">
                   {!showNewClientForm ? (
                     <div className="space-y-3">
-                       <div className="relative"><Search className="absolute left-3 top-2.5 w-4 h-4 text-ink" /><input className="form-input pl-10 h-10 text-xs font-black uppercase text-ink" placeholder="Buscar cliente..." value={clientSearch} onChange={e => setClientSearch(e.target.value)} /></div>
+                       <div className="relative"><Search className="absolute left-3 top-2.5 w-4 h-4 text-black" /><input className="form-input pl-10 h-10 text-xs font-black uppercase text-black" placeholder="Buscar cliente..." value={clientSearch} onChange={e => setClientSearch(e.target.value)} /></div>
                        <div className="max-h-[160px] overflow-y-auto border border-line rounded-lg bg-white shadow-inner">
-                         {filteredClients.map(c => (<div key={c.id} onClick={() => setSelectedClient(c)} className={`p-3 border-b border-line/40 cursor-pointer hover:bg-brand-gold/10 ${selectedClient?.id === c.id ? 'bg-brand-gold-soft border-l-4 border-l-brand-gold' : ''}`}><div className="text-xs font-black text-ink uppercase">{c.name}</div><div className="text-[10px] text-ink font-black mono">{c.cedula}</div></div>))}
+                         {filteredClients.map(c => (<div key={c.id} onClick={() => setSelectedClient(c)} className={`p-3 border-b border-line/40 cursor-pointer hover:bg-brand-gold/10 ${selectedClient?.id === c.id ? 'bg-brand-gold-soft border-l-4 border-l-brand-gold' : ''}`}><div className="text-xs font-black text-black uppercase">{c.name}</div><div className="text-[10px] text-black font-black mono">{c.cedula}</div></div>))}
                        </div>
                        <div className="flex flex-col gap-2">
                          <button className="btn bg-status-info-soft text-status-info border border-status-info/40 font-black uppercase text-[10px] h-10 flex items-center justify-center gap-2 shadow-sm" onClick={() => setShowNewClientForm(true)}><UserPlus className="w-4 h-4" /> Registrar</button>
                          <button className="btn btn-primary w-full h-12 font-black uppercase text-xs shadow-xl" disabled={!selectedClient} onClick={ejecutarVentaACredito}>Cargar Deuda</button>
-                         <button className="text-[9px] text-ink uppercase font-black text-center mt-2" onClick={() => setIsCreditView(false)}>Volver al Pago</button>
+                         <button className="text-[9px] text-black uppercase font-black text-center mt-2" onClick={() => setIsCreditView(false)}>Volver al Pago</button>
                        </div>
                     </div>
                   ) : (
                     <div className="space-y-3">
                        <div className="space-y-2">
-                         <div className="space-y-1"><label className="text-[9px] font-black uppercase text-ink">Nombre</label><input className="form-input h-9 text-xs font-black uppercase text-ink" value={newClient.name} onChange={e => setNewClient({...newClient, name: e.target.value})} /></div>
-                         <div className="space-y-1"><label className="text-[9px] font-black uppercase text-ink">Cédula</label><input className="form-input h-9 text-xs font-black uppercase text-ink" value={newClient.cedula} onChange={e => setNewClient({...newClient, cedula: e.target.value})} /></div>
+                         <div className="space-y-1"><label className="text-[9px] font-black uppercase text-black">Nombre</label><input className="form-input h-9 text-xs font-black uppercase text-black" value={newClient.name} onChange={e => setNewClient({...newClient, name: e.target.value})} /></div>
+                         <div className="space-y-1"><label className="text-[9px] font-black uppercase text-black">Cédula</label><input className="form-input h-9 text-xs font-black uppercase text-black" value={newClient.cedula} onChange={e => setNewClient({...newClient, cedula: e.target.value})} /></div>
                        </div>
                        <button className="btn btn-primary w-full h-12 font-black uppercase text-xs shadow-xl" onClick={ejecutarVentaACredito}>Cargar Deuda</button>
-                       <button className="text-[9px] text-ink uppercase font-black text-center w-full mt-2" onClick={() => setShowNewClientForm(false)}>Volver a buscar</button>
+                       <button className="text-[9px] text-black uppercase font-black text-center w-full mt-2" onClick={() => setShowNewClientForm(false)}>Volver a buscar</button>
                     </div>
                   )}
                 </div>
