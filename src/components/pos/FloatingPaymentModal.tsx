@@ -31,6 +31,7 @@ interface FloatingPaymentModalProps {
   totalCents: number;  // ✅ TOTAL EN CÉNTIMOS DE BS
   exchangeRate: number;
   onClose: () => void;
+  allowPartial?: boolean; // ✅ Permite abonar sin cubrir el 100%
   onConfirm: (data: { 
     payments: PaymentItem[]; 
     totalPaid: number; 
@@ -45,10 +46,10 @@ interface FloatingPaymentModalProps {
 
 const methods = [
   { id: 'efectivo_bs', label: 'EFECTIVO Bs', icon: Banknote, currency: 'Bs' },
-  { id: 'usd_efectivo', label: 'EFECTIVO USD', icon: DollarSign, currency: 'USD' },
+  { id: 'efectivo_usd', label: 'EFECTIVO USD', icon: DollarSign, currency: 'USD' },
   { id: 'tarjeta', label: 'TARJETA', icon: CreditCard, currency: 'Bs' },
   { id: 'biopago', label: 'BIOPAGO', icon: Fingerprint, currency: 'Bs' },
-  { id: 'pago_movil', label: 'PAGO MÓVIL', icon: Smartphone, currency: 'Bs' },
+  { id: 'pagomovil', label: 'PAGO MÓVIL', icon: Smartphone, currency: 'Bs' },
   { id: 'zelle', label: 'ZELLE', icon: Plane, currency: 'USD' },
 ];
 
@@ -57,6 +58,7 @@ export default function FloatingPaymentModal({
   totalCents, 
   exchangeRate, 
   onClose, 
+  allowPartial = false,
   onConfirm 
 }: FloatingPaymentModalProps) {
   const [payments, setPayments] = useState<PaymentItem[]>([]);
@@ -88,6 +90,9 @@ export default function FloatingPaymentModal({
   // o si la suma en Bs cubre el total en Bs
   const isPaidByUsd = totalPaidUsdCents >= (totalUsdCents - 1); // Tolerancia de 1 céntimo
   const isFullyPaid = isPaidByUsd || (totalPaidCents >= totalCents - 1); // Tolerancia de 1 céntimo
+
+  // Lógica de confirmación: si es abono, basta con tener algo pagado.
+  const canConfirm = isFullyPaid || (allowPartial && totalPaidCents > 0);
 
   const remainingCents = isFullyPaid ? 0 : Math.max(0, totalCents - totalPaidCents);
   const remaining = fromCentsBs(remainingCents);
@@ -165,7 +170,7 @@ export default function FloatingPaymentModal({
   };
 
   const confirmPayment = useCallback(() => {
-    if (!isFullyPaid) return;
+    if (!canConfirm) return;
     setIsProcessing(true);
     const mainPayment = payments[0] || { method: 'efectivo_bs' };
     
@@ -189,14 +194,14 @@ export default function FloatingPaymentModal({
       ajusteRedondeoBsCents,
     });
     setIsProcessing(false);
-  }, [payments, totalPaidCents, totalCents, isFullyPaid, isPaidByUsd, totalPaidUsdCents, totalUsdCents, ajusteRedondeoBs, ajusteRedondeoBsCents, onConfirm]);
+  }, [payments, totalPaidCents, totalCents, canConfirm, isPaidByUsd, totalPaidUsdCents, totalUsdCents, ajusteRedondeoBs, ajusteRedondeoBsCents, onConfirm]);
 
   // Atajos de teclado
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.code === 'Space' && document.activeElement !== inputRef.current) {
         e.preventDefault();
-        if (isFullyPaid) confirmPayment();
+        if (canConfirm) confirmPayment();
       }
       if (e.key === 'Enter' && document.activeElement === inputRef.current) {
         e.preventDefault();
@@ -208,7 +213,7 @@ export default function FloatingPaymentModal({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isFullyPaid, confirmPayment, addPayment, onClose]);
+  }, [canConfirm, confirmPayment, addPayment, onClose]);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -294,9 +299,9 @@ export default function FloatingPaymentModal({
               {methods.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
             </select>
           </div>
-          <div className="relative">
+          <div>
             <label className="text-[8px] font-black uppercase text-black/60 block mb-0.5">Monto</label>
-            <div className="flex gap-2 items-center">
+            <div className="flex gap-1">
               <input
                 ref={inputRef}
                 type="text"
@@ -306,14 +311,11 @@ export default function FloatingPaymentModal({
                 className="flex-1 border rounded-lg px-2 py-1.5 text-xs font-mono text-right"
                 placeholder="0.00"
               />
-              <button 
-                onClick={addPayment} 
-                className="w-8 h-8 flex items-center justify-center bg-[#D4A017] rounded-full text-black shadow-md hover:brightness-110 active:scale-95 transition-all"
-              >
-                <Plus size={16} strokeWidth={3} />
+              <button onClick={addPayment} className="bg-primary px-2.5 rounded-lg text-black font-bold text-[10px]">
+                <Plus size={12} />
               </button>
             </div>
-            <p className="text-[7px] text-black/40 mt-0.5 text-right pr-10">
+            <p className="text-[7px] text-black/40 mt-0.5 text-right">
               {isUsd ? 'Monto en USD' : 'Monto en Bs'}
             </p>
           </div>
@@ -342,13 +344,13 @@ export default function FloatingPaymentModal({
           {remainingCents > 0 ? (
             <>
               <p className="text-[9px] font-black text-red-700 uppercase tracking-wider">FALTANTE</p>
-              <p className="text-3xl font-black mt-0.5 text-red-700">{formatBs(remaining)}</p>
+              <p className="text-3xl font-black text-red-700 mt-0.5">{formatBs(remaining)}</p>
               <p className="text-sm font-bold text-red-600 mt-0.5">≈ {formatUsd(remaining / exchangeRate)}</p>
             </>
           ) : changeCents > 0 ? (
             <>
               <p className="text-[9px] font-black text-green-700 uppercase tracking-wider">Vuelto en Bs</p>
-              <p className="text-3xl font-black mt-0.5 text-green-700">{formatBs(change)}</p>
+              <p className="text-3xl font-black text-green-700 mt-0.5">{formatBs(change)}</p>
               <p className="text-sm font-bold text-green-600 mt-0.5">≈ {formatUsd(change / exchangeRate)}</p>
             </>
           ) : (
@@ -358,16 +360,16 @@ export default function FloatingPaymentModal({
 
         <button
           onClick={confirmPayment}
-          disabled={!isFullyPaid || isProcessing}
+          disabled={!canConfirm || isProcessing}
           className={cn(
-            "w-full py-3 rounded-xl text-white font-black text-sm transition-all shadow-lg",
-            isFullyPaid ? "bg-[#2ECC71] hover:brightness-110" : "bg-gray-400 cursor-not-allowed"
+            "w-full py-2 rounded-xl text-white font-black text-sm transition-all",
+            canConfirm ? "bg-[#2ECC71] hover:brightness-110 shadow-md" : "bg-gray-400 cursor-not-allowed"
           )}
         >
-          {isProcessing ? "Procesando..." : "COMPLETAR PAGO"}
+          {isProcessing ? "Procesando..." : (isFullyPaid ? "COMPLETAR PAGO" : "CONFIRMAR ABONO")}
         </button>
         <p className="text-center text-[8px] text-black/40">
-          _ Espacio para finalizar | ESC para cerrar | Enter agrega monto
+          ␣ Espacio para finalizar | ESC para cerrar | Enter agrega monto
         </p>
       </div>
     </div>

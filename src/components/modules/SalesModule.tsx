@@ -62,7 +62,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   const [pagos, setPagos] = useState<PagoRealizado[]>([]);
   const [showMultiModal, setShowMultiModal] = useState(false);
   
-  const [showAbonoModal, setShowAbonoModal] = useState<string | null>(null);
+  const [showAbonoModal, setShowAbonoModal] = useState<Debt | null>(null);
   const [abonoPagos, setAbonoPagos] = useState<PagoRealizado[]>([]);
   
   const [showDetailsModal, setShowDetailsModal] = useState<any | null>(null);
@@ -369,6 +369,76 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     setSelectedClient(null);
   };
 
+  const ejecutarAbono = (pagosAbono: PagoRealizado[]) => {
+    if (!showAbonoModal) return;
+    const totalAbonado = pagosAbono.reduce((s, p) => s + p.montoUSD, 0);
+    if (totalAbonado <= 0) return;
+
+    const ahoraStr = Utils.ahora();
+    const reciboId = 'PAY-' + String(state.proximoRecibo).padStart(6, '0');
+    
+    // 1. Actualizar CxC
+    const nuevasDeudas = state.cxc.map(d => {
+      if (d.id === showAbonoModal.id) {
+        const nuevoSaldo = Math.max(0, d.saldoUSD - totalAbonado);
+        return {
+          ...d,
+          abonadoUSD: d.abonadoUSD + totalAbonado,
+          saldoUSD: nuevoSaldo,
+          estado: nuevoSaldo <= 0.001 ? 'pagada' : 'parcial',
+          historialPagos: [...(d.historialPagos || []), {
+            fecha: ahoraStr,
+            montoUSD: totalAbonado,
+            montoBS: totalAbonado * state.tasa,
+            metodo: pagosAbono.length > 1 ? 'mixto' : pagosAbono[0].metodo,
+            reciboId
+          }]
+        } as Debt;
+      }
+      return d;
+    });
+
+    // 2. Libro Diario
+    const nuevosAsientos: LibroDiarioEntry[] = pagosAbono.map(p => ({
+      id: 'ACC-' + Store.uid().toUpperCase().slice(0, 5),
+      fecha: ahoraStr,
+      tipo: 'ingreso',
+      categoria: 'COBRO_DEUDA',
+      concepto: `ABONO DEUDA #${showAbonoModal.id} - CLIENTE: ${showAbonoModal.cliente?.toUpperCase()}`,
+      montoUSD: p.montoUSD,
+      montoBS: p.montoBS,
+      metodo: p.metodo,
+      referencia: reciboId
+    }));
+
+    // 3. Crear Sale virtual para el ticket
+    const saleAbono: Sale = {
+      id: reciboId,
+      fecha: ahoraStr,
+      cliente: showAbonoModal.cliente || 'CLIENTE',
+      items: [{ productoId: 'ABONO', nombre: `ABONO A FACTURA #${showAbonoModal.id}`, cantidad: 1, precioUnitUSD: totalAbonado, subtotalUSD: totalAbonado }],
+      subtotalUSD: totalAbonado,
+      descuentoUSD: 0,
+      totalUSD: totalAbonado,
+      totalBS: totalAbonado * state.tasa,
+      metodoPago: pagosAbono.length > 1 ? 'mixto' : pagosAbono[0].metodo,
+      estado: 'completada',
+      type: 'COBRO DEUDA',
+      payments: [...pagosAbono]
+    };
+
+    updateState({
+      cxc: nuevasDeudas,
+      libroDiario: [...nuevosAsientos, ...(state.libroDiario || [])],
+      proximoRecibo: state.proximoRecibo + 1,
+      ventas: [...state.ventas, saleAbono]
+    });
+
+    setLastProcessedSale(saleAbono);
+    setShowReceiptModal(true);
+    setShowAbonoModal(null);
+  };
+
   const summary = useMemo(() => {
     const hoy = Utils.hoy();
     const vHoy = state.ventas.filter(v => v.fecha.startsWith(hoy));
@@ -608,7 +678,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                                              <td className="p-2 text-center">
                                                 <div className="flex justify-center gap-2">
                                                    <button onClick={() => setShowDetailsModal(d)} className="w-8 h-8 rounded-full flex items-center justify-center text-status-success hover:bg-status-success/10"><Eye className="w-4 h-4"/></button>
-                                                   <button onClick={() => { setShowAbonoModal(clientName); }} className="btn btn-sm btn-primary h-7 px-3 text-[8px] uppercase">Abonar</button>
+                                                   <button onClick={() => { setShowAbonoModal(d); }} className="btn btn-sm btn-primary h-7 px-3 text-[8px] uppercase">Abonar</button>
                                                 </div>
                                              </td>
                                           </tr>
@@ -809,6 +879,24 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
             }));
             ejecutarVenta(mapped);
             setShowMultiModal(false);
+          }}
+        />
+      )}
+
+      {showAbonoModal && (
+        <FloatingPaymentModal
+          total={showAbonoModal.saldoUSD * state.tasa}
+          totalCents={Math.round(showAbonoModal.saldoUSD * state.tasa * 100)}
+          exchangeRate={state.tasa}
+          onClose={() => setShowAbonoModal(null)}
+          allowPartial={true}
+          onConfirm={(data) => {
+            const mapped = data.payments.map(p => ({
+              metodo: p.method as PaymentMethod,
+              montoUSD: p.usdAmount || (p.amount / state.tasa),
+              montoBS: p.amount
+            }));
+            ejecutarAbono(mapped);
           }}
         />
       )}
