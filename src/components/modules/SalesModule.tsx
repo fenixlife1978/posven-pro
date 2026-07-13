@@ -111,8 +111,23 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     const baseImponibleUSD = netUSD / 1.16;
     const ivaUSD = netUSD - baseImponibleUSD;
 
-    return { brUSD, devUSD, descUSD, netUSD, igtfUSD, ivaUSD, baseImponibleUSD, ventasHoy: vHoy, fecha: hoy };
-  }, [state.ventas, state.devoluciones, state.tasa]);
+    const currentTerminal = state.terminales.find(t => t.usuarioId === auth.currentUser?.uid);
+    const terminalName = currentTerminal ? currentTerminal.nombre : 'SISTEMA GLOBAL';
+
+    return { 
+      brUSD, 
+      devUSD, 
+      descUSD, 
+      netUSD, 
+      igtfUSD, 
+      ivaUSD, 
+      baseImponibleUSD, 
+      ventasHoy: vHoy, 
+      fecha: hoy,
+      devolucionesHoy: dHoy,
+      terminalName 
+    };
+  }, [state.ventas, state.devoluciones, state.tasa, state.terminales]);
 
   // Lógica de agrupación de deudas
   const groupedCredits = useMemo(() => {
@@ -202,6 +217,14 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   const getCurrentTerminal = () => {
     if (!auth || !auth.currentUser) return null;
     return state.terminales.find(t => t.usuarioId === auth.currentUser!.uid);
+  };
+
+  const guardarNuevaTasa = () => {
+    const n = parseFloat(nuevaTasa);
+    if (isNaN(n) || n <= 0) return alert('Tasa inválida');
+    updateState({ tasa: n });
+    setEditandoTasa(false);
+    toast({ title: "Tasa Actualizada", description: `Nueva tasa: ${n.toFixed(2)} Bs/USD` });
   };
 
   const ejecutarVenta = (pagosFinales?: PagoRealizado[]) => {
@@ -495,6 +518,47 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
 
     toast({ title: `Reporte Z #${numeroZ} generado` });
     setShowReportType(null);
+  };
+
+  const buscarVentaParaDevolucion = () => {
+    const sale = state.ventas.find(v => v.id === returnSaleSearch || v.id.endsWith(returnSaleSearch));
+    if (!sale) return alert('Venta no encontrada');
+    setSelectedSaleForReturn(sale);
+    setReturnItems([]);
+  };
+
+  const handleAddReturnItem = (productoId: string, nombre: string, precioUnitUSD: number, maxQty: number) => {
+    const qty = parseInt(prompt(`Cantidad a devolver (Máx: ${maxQty}):`, '1') || '0');
+    if (isNaN(qty) || qty <= 0 || qty > maxQty) return alert('Cantidad no válida');
+    const cond = confirm('¿Reintegrar al Stock?') ? 'REINTEGRADO_STOCK' : 'MERMA_DANADO';
+    setReturnItems([...returnItems, { productoId, nombre, cantidad: qty, precioUnitUSD, estadoProducto: cond as any }]);
+  };
+
+  const procesarDevolucionPOS = () => {
+    if (!selectedSaleForReturn || returnItems.length === 0) return;
+    const totalDev = returnItems.reduce((s, i) => s + (i.cantidad * i.precioUnitUSD), 0);
+    const idDev = 'DEV-' + String(state.proximaDevolucion).padStart(6, '0');
+    const ahora = Utils.ahora();
+    const terminal = getCurrentTerminal();
+    
+    const nuevaDevolucion: Return = { id: idDev, ventaId: selectedSaleForReturn.id, fecha: ahora, items: [...returnItems], totalUSD: totalDev, metodoReembolso: refundMethod, motivo: returnReason };
+    
+    let nuevosProds = [...state.productos];
+    let nuevosMovs: Movimiento[] = [];
+    returnItems.forEach(it => {
+      const pIdx = nuevosProds.findIndex(p => p.id === it.productoId);
+      if (pIdx >= 0) {
+        const p = { ...nuevosProds[pIdx] };
+        const stockAntes = p.stock;
+        if (it.estadoProducto === 'REINTEGRADO_STOCK') p.stock += it.cantidad;
+        nuevosMovs.push({ id: Store.uid(), productoId: it.productoId, tipo: 'devolucion', cantidad: it.cantidad, stockAntes, stockDespues: p.stock, fecha: ahora, referencia: `DEVOLUCIÓN ${idDev} - REF VENTA ${selectedSaleForReturn.id}`, terminalId: terminal?.id });
+        nuevosProds[pIdx] = p;
+      }
+    });
+
+    updateState({ productos: nuevosProds, devoluciones: [...state.devoluciones, nuevaDevolucion], movimientos: [...state.movimientos, ...nuevosMovs], proximaDevolucion: state.proximaDevolucion + 1 });
+    alert(`Devolución ${idDev} procesada.`);
+    setView('pos');
   };
 
   return (

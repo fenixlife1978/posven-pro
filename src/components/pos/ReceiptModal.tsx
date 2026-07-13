@@ -3,7 +3,7 @@
 import React, { useRef } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Sale, ReportZ } from '@/lib/types';
-import { Printer, X, Zap, Share2 } from 'lucide-react';
+import { Printer, X, Zap, Share2, Monitor } from 'lucide-react';
 import { Store, Utils } from '@/lib/db-store';
 import { formatBs, formatUsd } from '@/lib/currency-formatter';
 
@@ -34,6 +34,7 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
 
   const transactionDate = data.fecha ? new Date(data.fecha).toLocaleString('es-VE', { timeZone: 'America/Caracas' }) : new Date().toLocaleString('es-VE', { timeZone: 'America/Caracas' });
   const customerName = (data.cliente || 'CONSUMIDOR FINAL').toUpperCase();
+  const terminalIdLabel = data.terminalName || 'SISTEMA GLOBAL';
 
   // ========== LÓGICA DE IMPRESIÓN NATIVA USB (ELECTRON / ROCCIA) ==========
   const handleNativePrint = async () => {
@@ -52,6 +53,7 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
 
     if (isReport) {
       printData.push({ type: 'text', value: `REPORTE ${type === 'REPORT_X' ? 'X' : 'Z'}`, style: { textAlign: 'center', fontWeight: "700", fontSize: "14px" } });
+      printData.push({ type: 'text', value: `TERMINAL: ${terminalIdLabel.toUpperCase()}`, style: { textAlign: 'center', fontWeight: "700", fontSize: "11px" } });
       printData.push({ type: 'text', value: `FECHA: ${transactionDate}`, style: { fontSize: "10px" } });
       printData.push({ type: 'text', value: '--------------------------------', style: { textAlign: 'center' } });
       printData.push({ type: 'text', value: `VENTAS BRUTAS: ${formatBs(data.brUSD * state.tasa)}`, style: { fontSize: "11px" } });
@@ -117,9 +119,14 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
               </div>
 
               <div className="text-center mb-3">
-                <span className="bg-black text-white px-3 py-1 text-[11px] font-black uppercase">
+                <div className="bg-black text-white px-3 py-1 text-[11px] font-black uppercase inline-block mb-1">
                   {isReport ? `REPORTE ${type === 'REPORT_X' ? 'X' : 'Z'}` : (data.type || 'RECIBO')}
-                </span>
+                </div>
+                {isReport && (
+                  <div className="text-[10px] font-black uppercase flex items-center justify-center gap-1">
+                    <Monitor size={10} /> TERMINAL: {terminalIdLabel}
+                  </div>
+                )}
               </div>
 
               <div className="space-y-1 mb-3 text-[10px]">
