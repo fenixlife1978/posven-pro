@@ -1,6 +1,6 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { Product, Movimiento, Sale, Supplier, LibroDiarioEntry } from './types';
+import { Product, Movimiento, Sale, Supplier, LibroDiarioEntry, Terminal } from './types';
 
 // Helper para formatear moneda en USD
 const fmt = (v: number) => '$' + Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -26,7 +26,7 @@ const drawHeader = (doc: jsPDF, title: string, empresa: CompanyInfo): number => 
   doc.setFontSize(16);
   doc.setTextColor(20, 20, 20);
   
-  const companyName = empresa.nombre.toUpperCase();
+  const companyName = (empresa.nombre || 'NEGOCIO').toUpperCase();
   const companyLines = doc.splitTextToSize(companyName, usableWidth * 0.55);
   doc.text(companyLines, margin, 18);
   
@@ -36,7 +36,7 @@ const drawHeader = (doc: jsPDF, title: string, empresa: CompanyInfo): number => 
   doc.setFontSize(8);
   doc.setTextColor(100, 100, 100);
   
-  const address = empresa.direccion.toUpperCase();
+  const address = (empresa.direccion || 'DIRECCION').toUpperCase();
   const addressLines = doc.splitTextToSize(address, usableWidth * 0.55);
   doc.text(addressLines, margin, leftY);
   
@@ -210,7 +210,7 @@ export const exportarPDFVentasDetallado = (ventas: any[], empresa: CompanyInfo, 
 };
 
 // 4. Reporte de Kardex (Ficha Técnica)
-export const exportarPDFKardex = (producto: Product, movimientos: Movimiento[], empresa: CompanyInfo) => {
+export const exportarPDFKardex = (producto: Product, movimientos: Movimiento[], empresa: CompanyInfo, terminales: Terminal[]) => {
   const doc = new jsPDF('p', 'mm', 'letter');
   const startY = drawHeader(doc, 'Kardex Histórico de Movimientos', empresa);
 
@@ -224,19 +224,23 @@ export const exportarPDFKardex = (producto: Product, movimientos: Movimiento[], 
   doc.setTextColor(100, 100, 100);
   doc.text(`CÓDIGO: ${producto.codigo} | STOCK ACTUAL: ${producto.stock}`, 120, startY + 8);
 
+  // Asegurar orden cronológico estricto (DESC)
+  const sortedMovs = [...movimientos].sort((a, b) => b.fecha.localeCompare(a.fecha));
+
   autoTable(doc, {
     startY: startY + 16,
-    head: [['FECHA Y HORA', 'TIPO DE OPERACIÓN', 'CANT.', 'STOCK ANTERIOR', 'NUEVO STOCK', 'REFERENCIA']],
-    body: movimientos.map(m => [
-      m.fecha.replace('T', ' ').slice(0, 16),
+    head: [['FECHA Y HORA', 'TIPO', 'CANT.', 'STOCK ANT.', 'NUEVO STOCK', 'TERMINAL', 'REFERENCIA']],
+    body: sortedMovs.map(m => [
+      m.fecha.replace('T', ' ').slice(0, 19),
       m.tipo.replace('_', ' ').toUpperCase(),
       m.cantidad > 0 ? `+${m.cantidad}` : m.cantidad,
       m.stockAntes,
       m.stockDespues,
+      (terminales.find(t => t.id === m.terminalId)?.nombre || m.terminalId || 'ADMIN').toUpperCase(),
       m.referencia.toUpperCase()
     ]),
     headStyles: { fillColor: [40, 40, 40] },
-    styles: { fontSize: 7, cellPadding: 2.5 }
+    styles: { fontSize: 6.5, cellPadding: 2 }
   });
 
   doc.save(`Kardex_${producto.codigo}_${new Date().getTime()}.pdf`);

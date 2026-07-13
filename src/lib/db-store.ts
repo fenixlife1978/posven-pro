@@ -1,4 +1,3 @@
-
 "use client";
 
 import { AppState } from './types';
@@ -143,7 +142,8 @@ export const Utils = {
     const formatter = new Intl.DateTimeFormat('en-CA', options);
     const parts = formatter.formatToParts(d);
     const getPart = (type: string) => parts.find(p => p.type === type)?.value;
-    return `${getPart('year')}-${getPart('month')}-${getPart('day')}T${getPart('hour')}:${getPart('minute')}:${getPart('second')}`;
+    const ms = String(d.getMilliseconds()).padStart(3, '0');
+    return `${getPart('year')}-${getPart('month')}-${getPart('day')}T${getPart('hour')}:${getPart('minute')}:${getPart('second')}.${ms}`;
   },
   hoy: () => Utils.getVzlaDate().slice(0, 10),
   ahora: () => Utils.getVzlaDate(),

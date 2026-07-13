@@ -96,7 +96,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   // Lógica de agrupación de deudas
   const groupedCredits = useMemo(() => {
     const groups: Record<string, { totalUSD: number; debts: Debt[] }> = {};
-    state.cxc.filter(x => x.estado !== 'pagada').forEach(debt => {
+    (state.cxc || []).filter(x => x.estado !== 'pagada').forEach(debt => {
       const name = debt.cliente || 'DESCONOCIDO';
       if (!groups[name]) {
         groups[name] = { totalUSD: 0, debts: [] };
@@ -242,9 +242,10 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
 
     if (state.carrito.length === 0) return;
 
-    const reciboId = String(state.proximoRecibo).padStart(9, '0');
-    const ahoraStr = Utils.ahora();
     const terminal = getCurrentTerminal();
+    const nextNum = terminal?.proximoRecibo || state.proximoRecibo;
+    const reciboId = String(nextNum).padStart(9, '0');
+    const ahoraStr = Utils.ahora();
     
     let prodsActualizados = [...state.productos];
     let nuevosMovimientos: Movimiento[] = [];
@@ -262,14 +263,34 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
             const qty = item.cantidad * ki.cantidad;
             const stockAntes = cp.stock;
             cp.stock -= qty;
-            nuevosMovimientos.push({ id: Store.uid(), productoId: cp.id, tipo: 'venta', cantidad: -qty, stockAntes, stockDespues: cp.stock, fecha: ahoraStr, referencia: `KIT: ${p.nombre} - VENTA ${reciboId}` });
+            nuevosMovimientos.push({ 
+              id: Store.uid(), 
+              productoId: cp.id, 
+              tipo: 'venta', 
+              cantidad: -qty, 
+              stockAntes, 
+              stockDespues: cp.stock, 
+              fecha: ahoraStr, 
+              referencia: `KIT: ${p.nombre} - VENTA ${reciboId}`,
+              terminalId: terminal?.id || 'GLOBAL'
+            });
             prodsActualizados[cpIdx] = cp;
           }
         });
       } else {
         const stockAntes = p.stock;
         p.stock -= item.cantidad;
-        nuevosMovimientos.push({ id: Store.uid(), productoId: p.id, tipo: 'venta', cantidad: -item.cantidad, stockAntes, stockDespues: p.stock, fecha: ahoraStr, referencia: `VENTA ${reciboId}` });
+        nuevosMovimientos.push({ 
+          id: Store.uid(), 
+          productoId: p.id, 
+          tipo: 'venta', 
+          cantidad: -item.cantidad, 
+          stockAntes, 
+          stockDespues: p.stock, 
+          fecha: ahoraStr, 
+          referencia: `VENTA ${reciboId}`,
+          terminalId: terminal?.id || 'GLOBAL'
+        });
         prodsActualizados[pIdx] = p;
       }
     });
@@ -305,6 +326,11 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       referencia: reciboId 
     }));
 
+    // Actualizar contador del terminal si existe
+    const nuevosTerminales = state.terminales.map(t => 
+      t.id === terminal?.id ? { ...t, proximoRecibo: t.proximoRecibo + 1 } : t
+    );
+
     updateState({ 
       productos: prodsActualizados, 
       ventas: [...state.ventas, nuevaVenta], 
@@ -312,7 +338,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       libroDiario: [...nuevasEntradasDiario, ...(state.libroDiario || [])], 
       carrito: [], 
       proximoRecibo: state.proximoRecibo + 1, 
-      acumuladoHistorico: state.acumuladoHistorico + subtotalUSD 
+      acumuladoHistorico: state.acumuladoHistorico + subtotalUSD,
+      terminales: nuevosTerminales
     });
 
     setLastProcessedSale(nuevaVenta);
@@ -330,9 +357,12 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       targetClient = { id: Store.uid(), name: newClient.name.toUpperCase(), cedula: newClient.cedula.toUpperCase(), phone: newClient.phone, address: newClient.address, debt: 0 };
     }
     if (!targetClient) return alert("Seleccione un cliente.");
-    const reciboId = String(state.proximoRecibo).padStart(9, '0');
-    const ahoraStr = Utils.ahora();
+    
     const terminal = getCurrentTerminal();
+    const nextNum = terminal?.proximoRecibo || state.proximoRecibo;
+    const reciboId = String(nextNum).padStart(9, '0');
+    const ahoraStr = Utils.ahora();
+    
     let prodsActualizados = [...state.productos];
     let nuevosMovimientos: Movimiento[] = [];
     state.carrito.forEach(item => {
@@ -347,14 +377,34 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
             const qty = item.cantidad * ki.cantidad;
             const stockAntes = cp.stock;
             cp.stock -= qty;
-            nuevosMovimientos.push({ id: Store.uid(), productoId: cp.id, tipo: 'venta', cantidad: -qty, stockAntes, stockDespues: cp.stock, fecha: ahoraStr, referencia: `KIT: ${p.nombre} - CRÉDITO ${reciboId}` });
+            nuevosMovimientos.push({ 
+              id: Store.uid(), 
+              productoId: cp.id, 
+              tipo: 'venta', 
+              cantidad: -qty, 
+              stockAntes, 
+              stockDespues: cp.stock, 
+              fecha: ahoraStr, 
+              referencia: `KIT: ${p.nombre} - CRÉDITO ${reciboId}`,
+              terminalId: terminal?.id || 'GLOBAL'
+            });
             prodsActualizados[cpIdx] = cp;
           }
         });
       } else {
         const stockAntes = p.stock;
         p.stock -= item.cantidad;
-        nuevosMovimientos.push({ id: Store.uid(), productoId: item.productoId, tipo: 'venta', cantidad: -item.cantidad, stockAntes, stockDespues: p.stock, fecha: ahoraStr, referencia: `CRÉDITO ${reciboId}` });
+        nuevosMovimientos.push({ 
+          id: Store.uid(), 
+          productoId: item.productoId, 
+          tipo: 'venta', 
+          cantidad: -item.cantidad, 
+          stockAntes, 
+          stockDespues: p.stock, 
+          fecha: ahoraStr, 
+          referencia: `CRÉDITO ${reciboId}`,
+          terminalId: terminal?.id || 'GLOBAL'
+        });
         prodsActualizados[pIdx] = p;
       }
     });
@@ -362,7 +412,12 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     const nuevaDeuda: Debt = { id: 'CRD-' + reciboId.slice(-6), fecha: ahoraStr.slice(0, 10), fechaVencimiento: '2099-12-31', cliente: targetClient.name, montoUSD: subtotalUSD, abonadoUSD: 0, saldoUSD: subtotalUSD, estado: 'pendiente', historialPagos: [], ventaId: reciboId };
     const asientoCredito: LibroDiarioEntry = { id: 'ACC-' + Store.uid().toUpperCase().slice(0, 5), fecha: ahoraStr, tipo: 'ingreso', categoria: 'VENTA_CREDITO', concepto: `CRÉDITO #${reciboId} - CLIENTE: ${targetClient.name}`, montoUSD: subtotalUSD, montoBS: totalBS, metodo: 'credito', referencia: reciboId };
     let nuevosClientes = showNewClientForm ? [...(state.clientes || []), { ...targetClient, debt: subtotalUSD }] : (state.clientes || []).map(c => c.id === targetClient!.id ? { ...c, debt: (c.debt || 0) + subtotalUSD } : c);
-    updateState({ productos: prodsActualizados, ventas: [...state.ventas, nuevaVenta], movimientos: [...state.movimientos, ...nuevosMovimientos], cxc: [...state.cxc, nuevaDeuda], clientes: nuevosClientes, libroDiario: [asientoCredito, ...(state.libroDiario || [])], carrito: [], proximoRecibo: state.proximoRecibo + 1 });
+    
+    const nuevosTerminales = state.terminales.map(t => 
+      t.id === terminal?.id ? { ...t, proximoRecibo: t.proximoRecibo + 1 } : t
+    );
+
+    updateState({ productos: prodsActualizados, ventas: [...state.ventas, nuevaVenta], movimientos: [...state.movimientos, ...nuevosMovimientos], cxc: [...state.cxc, nuevaDeuda], clientes: nuevosClientes, libroDiario: [asientoCredito, ...(state.libroDiario || [])], carrito: [], proximoRecibo: state.proximoRecibo + 1, terminales: nuevosTerminales });
     setLastProcessedSale(nuevaVenta);
     setShowReceiptModal(true);
     setIsCreditView(false);
@@ -375,7 +430,9 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     if (totalAbonado <= 0) return;
 
     const ahoraStr = Utils.ahora();
-    const reciboId = 'PAY-' + String(state.proximoRecibo).padStart(6, '0');
+    const terminal = getCurrentTerminal();
+    const nextNum = terminal?.proximoRecibo || state.proximoRecibo;
+    const reciboId = 'PAY-' + String(nextNum).padStart(6, '0');
     
     // 1. Actualizar CxC
     const nuevasDeudas = state.cxc.map(d => {
@@ -424,14 +481,20 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       metodoPago: pagosAbono.length > 1 ? 'mixto' : pagosAbono[0].metodo,
       estado: 'completada',
       type: 'COBRO DEUDA',
-      payments: [...pagosAbono]
+      payments: [...pagosAbono],
+      terminalId: terminal?.id
     };
+
+    const nuevosTerminales = state.terminales.map(t => 
+      t.id === terminal?.id ? { ...t, proximoRecibo: t.proximoRecibo + 1 } : t
+    );
 
     updateState({
       cxc: nuevasDeudas,
       libroDiario: [...nuevosAsientos, ...(state.libroDiario || [])],
       proximoRecibo: state.proximoRecibo + 1,
-      ventas: [...state.ventas, saleAbono]
+      ventas: [...state.ventas, saleAbono],
+      terminales: nuevosTerminales
     });
 
     setLastProcessedSale(saleAbono);
@@ -441,7 +504,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
 
   const summary = useMemo(() => {
     const hoy = Utils.hoy();
-    const vHoy = state.ventas.filter(v => v.fecha.startsWith(hoy));
+    const vHoy = (state.ventas || []).filter(v => v.fecha.startsWith(hoy));
     const dHoy = (state.devoluciones || []).filter(d => d.fecha.startsWith(hoy));
     const brUSD = vHoy.reduce((s, v) => s + v.totalUSD, 0);
     const devUSD = dHoy.reduce((s, d) => s + d.totalUSD, 0);
@@ -469,7 +532,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         <button onClick={() => setView('pos')} className={`btn btn-sm ${view === 'pos' ? 'btn-primary shadow-md' : 'bg-white text-ink font-bold border-line border'}`}><ShoppingCart className="w-3.5 h-3.5"/> Punto de Venta</button>
         <button onClick={() => setView('history')} className={`btn btn-sm ${view === 'history' ? 'btn-primary shadow-md' : 'bg-white text-ink font-bold border-line border'}`}><History className="w-3.5 h-3.5"/> Historial</button>
         <button onClick={() => setView('credits')} className={`btn btn-sm ${view === 'credits' ? 'btn-primary shadow-md' : 'bg-white text-ink font-bold border-line border'}`}><ClipboardList className="w-3.5 h-3.5"/> Consultar Créditos</button>
-        <button onClick={() => setShowReport('Y')} className="btn btn-sm bg-white text-ink font-bold border-line border"><FileText className="w-3.5 h-3.5"/> Reporte Y</button>
+        <button onClick={() => setShowReport('Y')} className="btn btn-sm bg-white text-ink font-bold border-line border"><FileText className="w-3.5 h-3.5"/> Reporte X</button>
         <button onClick={() => setShowReport('Z')} className="btn btn-sm bg-white text-ink font-bold border-line border"><Receipt className="w-3.5 h-3.5"/> Reporte Z</button>
         <button onClick={() => setView('returns')} className={`btn btn-sm ${view === 'returns' ? 'btn-primary shadow-md' : 'bg-white text-ink font-bold border-line border'}`}><RotateCcw className="w-3.5 h-3.5"/> Devoluciones</button>
       </div>
@@ -777,7 +840,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                             </tr>
                           </thead>
                           <tbody>
-                            {sale.items.map((it: any, idx: number) => (
+                            {(sale.items || []).map((it: any, idx: number) => (
                               <tr key={idx} className="border-b border-line/20">
                                  <td className="text-[9px] font-black p-2">{it.cantidad}</td>
                                  <td className="text-[9px] font-black uppercase p-2 truncate max-w-[180px]">{it.nombre}</td>
@@ -919,7 +982,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                    </div>
                    <div className="relative"><Search className="absolute left-3 top-2.5 w-4 h-4 text-ink opacity-30" /><input className="form-input pl-10 h-10 text-xs font-bold" placeholder="Buscar cliente..." value={clientSearch} onChange={e => setClientSearch(e.target.value)} /></div>
                    <div className="max-h-[160px] overflow-y-auto border border-line rounded-xl bg-gray-50 shadow-inner">
-                     {filteredClients.map(c => (<div key={c.id} onClick={() => setSelectedClient(c)} className={`p-3 border-b border-line/40 cursor-pointer hover:bg-brand-gold/10 transition-all ${selectedClient?.id === c.id ? 'bg-brand-gold-soft border-l-4 border-l-brand-gold' : ''}`}><div className="text-xs font-black text-ink uppercase">{c.name}</div><div className="text-[10px] text-ink/40 mono">{c.cedula}</div></div>))}
+                     {(filteredClients || []).map(c => (<div key={c.id} onClick={() => setSelectedClient(c)} className={`p-3 border-b border-line/40 cursor-pointer hover:bg-brand-gold/10 transition-all ${selectedClient?.id === c.id ? 'bg-brand-gold-soft border-l-4 border-l-brand-gold' : ''}`}><div className="text-xs font-black text-ink uppercase">{c.name}</div><div className="text-[10px] text-ink/40 mono">{c.cedula}</div></div>))}
                      {filteredClients.length === 0 && <div className="p-10 text-center text-[10px] font-black text-ink/20 uppercase">No hay resultados</div>}
                    </div>
                    <div className="flex flex-col gap-2">

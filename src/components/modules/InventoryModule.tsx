@@ -25,7 +25,8 @@ import {
   TrendingUp,
   LayoutGrid,
   Monitor,
-  Eye
+  Eye,
+  ShieldAlert
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -220,7 +221,7 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
         <button onClick={() => setActiveTab('reporte_general')} className={`tab ${activeTab === 'reporte_general' ? 'active' : 'text-ink font-black'}`}>Inventario CPP</button>
         <button onClick={() => setActiveTab('reporte_ventas')} className={`tab ${activeTab === 'reporte_ventas' ? 'active' : 'text-ink font-black'}`}>Ventas</button>
         <button onClick={() => setActiveTab('reporte_devoluciones')} className={`tab ${activeTab === 'reporte_devoluciones' ? 'active' : 'text-ink font-black'}`}>Devoluciones</button>
-        <button onClick={() => setActiveTab('kardex')} className={`tab ${activeTab === 'kardex' ? 'active' : 'text-ink font-black'}`}>Kardex</button>
+        <button onClick={() => setActiveTab('kardex')} className={`tab ${activeTab === 'kardex' ? 'active' : 'text-ink font-black'}`}>Kardex Fiscal</button>
         <button onClick={() => setActiveTab('historial_ajustes')} className={`tab ${activeTab === 'historial_ajustes' ? 'active' : 'text-ink font-black'}`}>Ajustes</button>
         <button onClick={() => setActiveTab('consumo_colab')} className={`tab ${activeTab === 'consumo_colab' ? 'active' : 'text-ink font-black'}`}>Consumo / Colaboraciones</button>
       </div>
@@ -262,7 +263,8 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
                   stockAntes: 0,
                   stockDespues: nuevo.stock,
                   fecha: Utils.ahora(),
-                  referencia: 'INICIAL'
+                  referencia: 'INICIAL',
+                  terminalId: 'SISTEMA'
                 };
                 updateState({ productos: nuevosProds, movimientos: [...state.movimientos, mov] });
               } else {
@@ -305,7 +307,8 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
                     stockAntes,
                     stockDespues: cp.stock,
                     fecha: mov.fecha,
-                    referencia: `${mov.tipo.replace('_', ' ').toUpperCase()} KIT: ${productoOriginal.nombre} - REF: ${mov.referencia}`
+                    referencia: `${mov.tipo.replace('_', ' ').toUpperCase()} KIT: ${productoOriginal.nombre} - REF: ${mov.referencia}`,
+                    terminalId: 'ADMIN'
                   });
                   prodsActualizados[cpIdx] = cp;
                 }
@@ -345,7 +348,7 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
 function ReporteGeneral({ state, onAction }: { state: AppState, onAction: (type: string, id: string) => void }) {
   const [deptFilter, setDeptFilter] = useState('');
 
-  const filteredProducts = state.productos.filter(p => 
+  const filteredProducts = (state.productos || []).filter(p => 
     p.activo && (deptFilter ? p.departamento === deptFilter : true)
   );
 
@@ -509,7 +512,7 @@ function ReporteVentas({ state }: { state: AppState }) {
   const [terminalId, setTerminalId] = useState('all');
 
   const filteredVentas = useMemo(() => {
-    return state.ventas.filter(v => {
+    return (state.ventas || []).filter(v => {
       const d = v.fecha.slice(0, 10);
       const dateMatch = !useDates ? d === Utils.hoy() : (d >= desde && d <= hasta);
       const terminalMatch = terminalId === 'all' || v.terminalId === terminalId;
@@ -702,7 +705,7 @@ function ReporteDevoluciones({ state }: { state: AppState }) {
 }
 
 function HistorialAjustes({ state }: { state: AppState }) {
-  const ajustes = state.movimientos.filter(m => 
+  const ajustes = (state.movimientos || []).filter(m => 
     ['ajuste_entrada', 'ajuste_salida', 'consumo', 'colaboracion'].includes(m.tipo)
   ).sort((a,b) => b.fecha.localeCompare(a.fecha));
 
@@ -790,7 +793,7 @@ function HistorialAjustes({ state }: { state: AppState }) {
 }
 
 function ReporteConsumo({ state }: { state: AppState }) {
-  const consumos = state.movimientos
+  const consumos = (state.movimientos || [])
     .filter(m => ['consumo', 'colaboracion'].includes(m.tipo))
     .sort((a,b) => b.fecha.localeCompare(a.fecha));
 
@@ -860,7 +863,14 @@ function ReporteConsumo({ state }: { state: AppState }) {
 function ReporteKardex({ state, selectedId, onSelect }: { state: AppState, selectedId: string | null, onSelect: (id: string) => void }) {
   const [search, setSearch] = useState('');
   const selectedProd = selectedId ? state.productos.find(p => p.id === selectedId) : null;
-  const movs = selectedId ? state.movimientos.filter(m => m.productoId === selectedId).sort((a, b) => b.fecha.localeCompare(a.fecha)) : [];
+  
+  // CORRECCIÓN: Orden cronológico absoluto (NUEVO ARRIBA) usando resolución completa
+  const movs = useMemo(() => {
+    if (!selectedId || !state.movimientos) return [];
+    return state.movimientos
+      .filter(m => m.productoId === selectedId)
+      .sort((a, b) => b.fecha.localeCompare(a.fecha));
+  }, [selectedId, state.movimientos]);
 
   const matches = useMemo(() => {
     if (search.trim().length < 2) return [];
@@ -873,7 +883,7 @@ function ReporteKardex({ state, selectedId, onSelect }: { state: AppState, selec
   return (
     <div className="space-y-4">
       <Card className="p-5 bg-white border-line shadow-sm rounded-xl">
-        <label className="text-[10px] font-black uppercase text-ink opacity-40 block mb-2">Buscar producto para ver Kardex</label>
+        <label className="text-[10px] font-black uppercase text-ink opacity-40 block mb-2">Buscar producto para ver Kardex Fiscal</label>
         <div className="relative">
           <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Escriba nombre o código..." className="h-12 text-sm font-bold bg-white" />
           {matches.length > 0 && (
@@ -892,30 +902,46 @@ function ReporteKardex({ state, selectedId, onSelect }: { state: AppState, selec
       {selectedProd && (
         <Card className="overflow-hidden shadow-lg border-line rounded-xl bg-white">
           <div className="card-head bg-ink text-white px-6 py-3 flex justify-between items-center">
-            <h3 className="font-black text-xs uppercase tracking-widest text-brand-gold">{selectedProd.nombre}</h3>
-            <button className="btn btn-secondary h-8 px-4 font-black uppercase text-[9px]" onClick={() => exportarPDFKardex(selectedProd, movs, state.empresa)}>Exportar Kardex</button>
+            <div className="flex items-center gap-3">
+               <ShieldAlert className="w-5 h-5 text-brand-gold" />
+               <h3 className="font-black text-xs uppercase tracking-widest text-brand-gold">{selectedProd.nombre}</h3>
+            </div>
+            <button className="btn btn-secondary h-8 px-4 font-black uppercase text-[9px]" onClick={() => exportarPDFKardex(selectedProd, movs, state.empresa, state.terminales)}>Exportar Kardex</button>
           </div>
           <div className="table-wrap">
              <Table>
                 <TableHeader className="bg-surface-soft">
                    <TableRow>
-                      <TableHead className="font-black text-ink uppercase text-[10px]">Fecha</TableHead>
+                      <TableHead className="font-black text-ink uppercase text-[10px]">Fecha y Hora</TableHead>
                       <TableHead className="font-black text-ink uppercase text-[10px]">Tipo</TableHead>
                       <TableHead className="font-black text-ink uppercase text-[10px] text-center">Cant</TableHead>
-                      <TableHead className="font-black text-ink uppercase text-[10px] text-center">Stock Final</TableHead>
+                      <TableHead className="font-black text-ink uppercase text-[10px] text-center">Stock Antes</TableHead>
+                      <TableHead className="font-black text-ink uppercase text-[10px] text-center">Nuevo Stock</TableHead>
+                      <TableHead className="font-black text-ink uppercase text-[10px]">Terminal</TableHead>
                       <TableHead className="font-black text-ink uppercase text-[10px]">Referencia</TableHead>
                    </TableRow>
                 </TableHeader>
                 <TableBody>
                    {movs.map(m => (
                       <TableRow key={m.id} className="border-b border-line/30">
-                         <TableCell className="text-xs font-bold text-ink">{m.fecha.replace('T', ' ')}</TableCell>
+                         <TableCell className="text-xs font-bold text-ink">
+                            {m.fecha.replace('T', ' ').slice(0, 19)}
+                         </TableCell>
                          <TableCell><span className="badge badge-neutral text-[9px] uppercase font-black">{m.tipo.replace('_', ' ')}</span></TableCell>
                          <TableCell className={`text-center font-black ${m.cantidad > 0 ? 'text-status-success' : 'text-status-danger'}`}>{m.cantidad > 0 ? '+' : ''}{m.cantidad}</TableCell>
-                         <TableCell className="text-center font-bold text-ink">{m.stockDespues}</TableCell>
-                         <TableCell className="text-[10px] italic opacity-40 uppercase text-ink">{m.referencia}</TableCell>
+                         <TableCell className="text-center font-bold text-ink/40">{m.stockAntes}</TableCell>
+                         <TableCell className="text-center font-black text-ink">{m.stockDespues}</TableCell>
+                         <TableCell className="text-[10px] font-black uppercase text-ink/60">
+                            {state.terminales.find(t => t.id === m.terminalId)?.nombre || m.terminalId || 'ADMIN'}
+                         </TableCell>
+                         <TableCell className="text-[9px] italic opacity-40 uppercase text-ink truncate max-w-[200px]" title={m.referencia}>
+                            {m.referencia}
+                         </TableCell>
                       </TableRow>
                    ))}
+                   {movs.length === 0 && (
+                     <TableRow><TableCell colSpan={7} className="py-20 text-center text-ink/20 font-black uppercase italic">Sin movimientos registrados para este ítem</TableCell></TableRow>
+                   )}
                 </TableBody>
              </Table>
           </div>
@@ -945,7 +971,8 @@ function ModalAjuste({ producto, onClose, onSave }: { producto: Product, onClose
       stockAntes: producto.stock,
       stockDespues: (tipo === 'ajuste_entrada') ? producto.stock + pCant : producto.stock - Math.abs(pCant),
       fecha: Utils.ahora(),
-      referencia: motivo.toUpperCase()
+      referencia: motivo.toUpperCase(),
+      terminalId: 'ADMIN'
     };
     onSave(mov, tipo === 'ajuste_entrada' ? pCosto : undefined);
   };
@@ -1249,10 +1276,10 @@ function ModalProducto({ producto, state, onClose, onSave, onUpdateLists }: { pr
               </div>
               {datos.isKit && (
                 <div className="space-y-4">
-                  <div className="relative"><Search className="absolute left-3 top-3 w-4 h-4 text-ink/30" /><Input className="h-12 pl-10 text-xs font-black uppercase bg-white" placeholder="Buscar productos componentes..." value={kitSearch} onChange={e => setKitSearch(e.target.value)} />{filteredProdsForKit.length > 0 && (<div className="absolute top-full left-0 right-0 bg-white border border-line rounded-lg shadow-2xl z-50 mt-1 overflow-hidden">{filteredProdsForKit.map(pk => (<div key={pk.id} onClick={() => { setDatos({...datos, kitItems: [...datos.kitItems, { productoId: pk.id, nombre: pk.nombre, cantidad: 1 }]}); setKitSearch(''); }} className="p-3 border-b border-line hover:bg-brand-gold-soft cursor-pointer flex justify-between items-center"><span className="text-xs font-black uppercase text-ink">{pk.nombre}</span><Plus className="w-4 h-4 text-brand-gold"/></div>))}</div>)}</div>
+                  <div className="relative"><Search className="absolute left-3 top-3 w-4 h-4 text-ink/30" /><Input className="h-12 pl-10 text-xs font-black uppercase bg-white" placeholder="Buscar productos componentes..." value={kitSearch} onChange={e => setKitSearch(e.target.value)} />{(filteredProdsForKit || []).length > 0 && (<div className="absolute top-full left-0 right-0 bg-white border border-line rounded-lg shadow-2xl z-50 mt-1 overflow-hidden">{filteredProdsForKit.map(pk => (<div key={pk.id} onClick={() => { setDatos({...datos, kitItems: [...datos.kitItems, { productoId: pk.id, nombre: pk.nombre, cantidad: 1 }]}); setKitSearch(''); }} className="p-3 border-b border-line hover:bg-brand-gold-soft cursor-pointer flex justify-between items-center"><span className="text-xs font-black uppercase text-ink">{pk.nombre}</span><Plus className="w-4 h-4 text-brand-gold"/></div>))}</div>)}</div>
                   <Card className="border-line shadow-sm overflow-hidden bg-white"><div className="table-wrap"><table><thead className="bg-surface-soft"><tr><th className="text-[10px] font-black uppercase text-ink">Componente</th><th className="text-[10px] font-black uppercase text-center text-ink">Cant</th><th /></tr></thead><tbody>
                     {datos.kitItems.map((ki: KitItem, index: number) => (
-                      <tr key={index} className="border-b border-line/30"><td className="text-[11px] font-black uppercase text-ink">{ki.nombre}</td><td className="text-center"><Input className="w-12 h-8 text-center font-black bg-surface-soft border-line inline-block" type="number" value={ki.cantidad} onChange={e => { const n = [...datos.kitItems]; n[index].cantidad = parseInt(e.target.value) || 1; setDatos({...datos, kitItems: n}); }} /></td><td className="text-center"><button onClick={() => setDatos({...datos, kitItems: datos.kitItems.filter((_:any, i:number) => i !== index)})} className="text-status-danger"><Trash2 className="w-4 h-4"/></button></td></tr>
+                      <tr key={index} className="border-b border-line/30"><td className="text-[11px] font-black uppercase text-ink">{ki.nombre}</td><td className="text-center"><Input className="w-12 h-8 text-center font-black bg-surface-soft border-line inline-block" type="number" value={ki.cantidad} onChange={e => { const n = [...datos.kitItems]; n[index].cantidad = parseInt(e.target.value) || 1; setDatos({...datos, kitItems: n}); }} /></td><td className="text-center"><button onClick={() => setDatos({...datos, kitItems: (datos.kitItems || []).filter((_:any, i:number) => i !== index)})} className="text-status-danger"><Trash2 className="w-4 h-4"/></button></td></tr>
                     ))}
                   </tbody></table></div></Card>
                 </div>

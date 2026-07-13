@@ -40,6 +40,7 @@ export interface Movimiento {
   stockDespues: number;
   fecha: string;
   referencia: string;
+  terminalId?: string;
 }
 
 export interface SaleItem {
