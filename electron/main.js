@@ -11,7 +11,8 @@ function createWindow() {
     height: 800,
     minWidth: 1024,
     minHeight: 768,
-    icon: path.join(__dirname, '../public/icon.ico'),
+    icon: path.join(__dirname, '../public/posven-logo.png'),
+    title: "PosVEN Pro - Punto de Venta",
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
@@ -19,17 +20,23 @@ function createWindow() {
     },
   });
 
-  // Lógica de carga: En desarrollo usamos el servidor de Next.js, en producción los archivos estáticos
   const isDev = process.env.NODE_ENV === 'development';
   
   if (isDev) {
     mainWindow.loadURL('http://localhost:9002');
   } else {
-    // Si usas exportación estática de Next.js (output: 'export')
-    mainWindow.loadFile(path.join(__dirname, '../out/index.html')).catch(() => {
-      // Si falla la carga del archivo, intentamos con la URL de respaldo (ajustar según estrategia)
+    // Al usar output: 'export', Next.js genera archivos en la carpeta 'out'
+    const indexPath = path.join(__dirname, '../out/index.html');
+    mainWindow.loadFile(indexPath).catch((err) => {
+      console.error("Error cargando la app estática:", err);
+      // Fallback a URL por si acaso
       mainWindow.loadURL('http://localhost:9002'); 
     });
+  }
+
+  // Quitar menú por defecto en producción
+  if (!isDev) {
+    mainWindow.setMenu(null);
   }
 
   mainWindow.on('closed', () => {
@@ -61,7 +68,7 @@ ipcMain.on('print-ticket', (event, data) => {
     preview: false,
     width: '80mm',
     margins: { top: 0, bottom: 0, left: 0, right: 0 },
-    printerName: 'Roccia RC-8002', // El nombre exacto del driver en Windows
+    printerName: 'Roccia RC-8002', 
     timeOutPerLine: 400,
     silent: true,
   };
