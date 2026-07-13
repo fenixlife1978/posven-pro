@@ -280,6 +280,7 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
                <div className="bg-surface-soft p-8 rounded-[20px] text-center border border-line shadow-inner">
                   <p className="text-ink/40 text-[9px] font-black uppercase tracking-[0.2em] mb-2">SALDO PENDIENTE</p>
                   <p className="text-3xl font-black text-status-danger">{fmt4(showPaymentModal.saldoUSD)}</p>
+                  <p className="text-sm font-bold text-ink/60 mt-1 uppercase tracking-tight italic">Equiv. {Utils.fmtBS(showPaymentModal.saldoUSD * state.tasa)}</p>
                </div>
                
                <div className="form-group">
