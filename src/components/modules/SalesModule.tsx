@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
@@ -766,7 +765,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
             <div className="absolute left-4 top-1/2 -translate-y-1/2 text-[#c8952e] z-10"><Barcode className="w-5 h-5" /></div>
             <input 
               ref={searchInputRef}
-              className="form-input pl-14 py-2 text-base bg-white border-brand-gold/30 text-ink placeholder-ink/40" 
+              className="form-input pl-14 py-2 text-base bg-white border-brand-gold/30 text-ink font-black placeholder-ink/40" 
               placeholder="Escanee o busque producto..." value={search} onChange={e => setSearch(e.target.value)} 
               onKeyDown={e => e.key === 'Enter' && matches.length >= 1 && agregar(matches[0].id)} autoFocus
             />
@@ -774,7 +773,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
               <div className="absolute top-full left-0 right-0 bg-white border border-line rounded-b-lg shadow-2xl z-[100] mt-1 overflow-hidden">
                 {matches.map(p => (
                   <div key={p.id} onClick={() => agregar(p.id)} className="flex items-center justify-between p-2 hover:bg-brand-gold/10 cursor-pointer border-b border-line">
-                    <div className="text-ink text-xs font-bold uppercase">{p.nombre} <span className="text-ink/40 text-[9px] mono ml-2">{p.codigo}</span></div>
+                    <div className="text-ink text-xs font-black uppercase">{p.nombre} <span className="text-ink/40 text-[9px] mono ml-2">{p.codigo}</span></div>
                     <div className="text-brand-gold font-black text-sm">{Utils.fmtUSD(p.precioUSD)}</div>
                   </div>
                 ))}
@@ -794,52 +793,32 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                     <label className="text-ink text-[9px] font-black uppercase tracking-wider">TASA BCV</label>
                     <div className="flex items-center gap-1">
                       {!editandoTasa ? (
-                        <><span className="text-ink font-black text-sm">{state.tasa.toFixed(2)}</span><button onClick={() => { setEditandoTasa(true); setNuevaTasa(state.tasa.toString()); }} className="text-ink/40 hover:text-brand-gold p-0.5"><RefreshCw className="w-3.5 h-3.5" /></button></>
+                        <><span className="text-ink font-black text-sm">{state.tasa.toFixed(2)}</span><button onClick={() => { setEditandoTasa(true); setNuevaTasa(state.tasa.toString()); }} className="text-ink hover:text-brand-gold p-0.5"><RefreshCw className="w-3.5 h-3.5" /></button></>
                       ) : (
                         <><input type="text" value={nuevaTasa} onChange={e => setNuevaTasa(e.target.value.replace(/[^0-9.]/g, ''))} className="w-16 bg-white border border-brand-gold rounded px-1 py-0.5 text-ink font-black text-sm text-right" autoFocus /><button onClick={guardarNuevaTasa} className="text-green-600 p-0.5"><Check className="w-3.5 h-3.5" /></button><button onClick={() => setEditandoTasa(false)} className="text-red-500 p-0.5"><X className="w-3.5 h-3.5" /></button></>
                       )}
                     </div>
                   </div>
                 </div>
-                <div className="flex-1 flex flex-col min-h-0">
-                  <label className="text-ink text-[10px] font-black uppercase block mb-1">MÉTODOS APLICADOS</label>
-                  <div className="flex-1 p-2 border border-line bg-surface-soft rounded-lg overflow-y-auto">
-                    {pagos.map((p, idx) => (
-                      <div key={idx} className="flex justify-between text-[10px] border-b border-line/30 py-1 text-ink font-black uppercase">
-                        <span>{Utils.metodoLabel(p.metodo)}</span><span className="text-brand-gold-deep">{Utils.fmtUSD(p.montoUSD)}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                <div className="p-3 border border-[#3a9bdc]/30 bg-[#3a9bdc]/5 rounded-lg text-center space-y-2">
-                  <label className="text-ink text-[10px] font-black uppercase block">SALDO RESTANTE</label>
-                  <div className="flex items-center justify-center gap-4">
-                    <div className={`text-2xl font-black ${saldoRestanteUSD <= 0.01 ? 'text-[#27ae60]' : 'text-[#3a9bdc]'}`}>{saldoRestanteUSD <= 0.01 ? 'SALDADO' : Utils.fmtUSD(saldoRestanteUSD)}</div>
-                    <button onClick={() => setShowMultiModal(true)} className="w-11 h-11 bg-[#c8952e] text-black rounded-xl shadow-lg flex items-center justify-center hover:bg-[#d9a540] transition-all transform hover:scale-105 active:scale-95"><Wallet className="w-6 h-6" /></button>
-                  </div>
-                  <div className="bg-ink py-2 rounded-lg border-2 border-line mt-2">
-                    <label className="text-white text-[9px] font-black uppercase block mb-1">EQUIVALENTE A PAGAR</label>
-                    <div className="text-2xl font-black text-white">{Utils.fmtBS(saldoRestanteBS)}</div>
-                  </div>
-                </div>
 
-                {/* NUEVA SECCIÓN: PRODUCTO SELECCIONADO (IDÉNTICA A LA IMAGEN) */}
-                <div className="space-y-2 pt-2 border-t border-line/20">
-                  <label className="text-ink text-[9px] font-black uppercase block truncate">
-                    PRODUCTO SELECCIONADO: {selectedProductDisplay?.nombre || 'NINGUNO'}
-                  </label>
-                  <div className="grid grid-cols-3 gap-1.5">
-                    <div className="bg-surface-soft border border-line rounded-lg p-2 text-center shadow-sm">
-                      <p className="text-ink/60 text-[8px] font-black uppercase mb-0.5">Stock:</p>
-                      <p className="text-[10px] font-black text-ink">{selectedProductDisplay ? `${selectedProductDisplay.stock} UNID.` : '-'}</p>
-                    </div>
-                    <div className="bg-surface-soft border border-line rounded-lg p-2 text-center shadow-sm">
-                      <p className="text-ink/60 text-[8px] font-black uppercase mb-0.5">Precio USD:</p>
-                      <p className="text-[10px] font-black text-ink">{selectedProductDisplay ? Utils.fmtUSD(selectedProductDisplay.precioUSD) : '-'}</p>
-                    </div>
-                    <div className="bg-surface-soft border border-line rounded-lg p-2 text-center shadow-sm">
-                      <p className="text-ink/60 text-[8px] font-black uppercase mb-0.5">Equiv. Bs.:</p>
-                      <p className="text-[10px] font-black text-ink">{selectedProductDisplay ? Utils.fmtBS(selectedProductDisplay.precioUSD * state.tasa).replace('Bs. ', '') : '-'}</p>
+                <div className="flex-1 overflow-y-auto">
+                   <div className="space-y-2">
+                    <label className="text-ink text-[9px] font-black uppercase block truncate">
+                      PRODUCTO SELECCIONADO: {selectedProductDisplay?.nombre || 'NINGUNO'}
+                    </label>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      <div className="bg-surface-soft border border-line rounded-lg p-2 text-center shadow-sm">
+                        <p className="text-ink text-[8px] font-black uppercase mb-0.5">Stock:</p>
+                        <p className="text-[10px] font-black text-ink">{selectedProductDisplay ? `${selectedProductDisplay.stock} UNID.` : '-'}</p>
+                      </div>
+                      <div className="bg-surface-soft border border-line rounded-lg p-2 text-center shadow-sm">
+                        <p className="text-ink text-[8px] font-black uppercase mb-0.5">Precio USD:</p>
+                        <p className="text-[10px] font-black text-ink">{selectedProductDisplay ? Utils.fmtUSD(selectedProductDisplay.precioUSD) : '-'}</p>
+                      </div>
+                      <div className="bg-surface-soft border border-line rounded-lg p-2 text-center shadow-sm">
+                        <p className="text-ink text-[8px] font-black uppercase mb-0.5">Equiv. Bs.:</p>
+                        <p className="text-[10px] font-black text-ink">{selectedProductDisplay ? Utils.fmtBS(selectedProductDisplay.precioUSD * state.tasa).replace('Bs. ', '') : '-'}</p>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -873,7 +852,14 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                     <label className="text-white/60 text-[8px] font-black uppercase block tracking-widest mb-1">TOTAL FACTURA</label>
                     <div className="flex items-baseline gap-3"><div className="text-4xl font-black text-brand-gold">{Utils.fmtUSD(subtotalUSD)}</div><div className="text-base font-black text-white">{Utils.fmtBS(totalBS)}</div></div>
                   </div>
-                  <button onClick={ejecutarVenta} disabled={state.carrito.length === 0 || saldoRestanteUSD > 0.01} className="btn bg-[#2a261c] border border-brand-gold/30 h-12 px-8 font-black uppercase text-[10px] text-brand-gold disabled:opacity-20 flex items-center gap-2 tracking-widest"><CheckCircle2 className="w-4 h-4"/> PROCESAR VENTA</button>
+                  <button 
+                    onClick={() => saldoRestanteUSD <= 0.01 && state.carrito.length > 0 ? ejecutarVenta() : setShowMultiModal(true)} 
+                    disabled={state.carrito.length === 0}
+                    className="w-14 h-14 bg-[#c8952e] text-black rounded-full shadow-lg flex items-center justify-center hover:bg-[#d9a540] transition-all transform hover:scale-105 active:scale-95 disabled:opacity-20"
+                    title={saldoRestanteUSD <= 0.01 ? "Finalizar Venta" : "Abonar / Pagar"}
+                  >
+                    {saldoRestanteUSD <= 0.01 && state.carrito.length > 0 ? <Check className="w-8 h-8" /> : <Wallet className="w-8 h-8" />}
+                  </button>
                 </div>
               </div>
             </div>
@@ -910,7 +896,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                     <td className="text-ink font-bold text-xs text-right">{Utils.fmtBS(c.saldoUSD * state.tasa)}</td>
                     <td className="text-center">
                       <div className="flex justify-center gap-2">
-                        <button onClick={() => setShowDetailsModal(c)} className="btn-icon h-8 w-8 text-ink hover:text-brand-gold" title="Ver Historial Detallado"><Eye className="w-4 h-4"/></button>
+                        <button onClick={() => setShowDetailsModal(c)} className="w-10 h-10 rounded-full flex items-center justify-center bg-white text-status-success border-2 border-status-success/20 hover:bg-status-success hover:text-white transition-all shadow-md" title="Ver Historial Detallado"><Eye className="w-5 h-5"/></button>
                         <button onClick={() => { setShowAbonoModal(c.cliente || null); setAbonoPagos([]); }} className="btn btn-sm btn-primary font-black text-[9px] uppercase px-4">Abonar</button>
                       </div>
                     </td>
@@ -951,7 +937,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                     <div className="card bg-white border-line shadow-md rounded-xl overflow-hidden"><div className="card-head py-3 px-6 bg-ink border-b border-white/10"><h3 className="text-white font-black uppercase italic text-[10px]">REINTEGRO</h3></div><div className="table-wrap"><table><thead><tr className="bg-surface-soft"><th>Producto</th><th className="text-center">Cant</th><th>Estado</th><th className="text-right">Total</th><th></th></tr></thead><tbody>{returnItems.map((it, idx) => (<tr key={idx} className="border-b border-line/30"><td className="text-ink font-bold text-[11px] uppercase">{it.nombre}</td><td className="text-status-danger font-black text-center">{it.cantidad}</td><td><span className="badge badge-neutral text-[8px] font-black">{it.estadoProducto}</span></td><td className="text-brand-gold-deep font-black text-right">{Utils.fmtUSD(it.cantidad * it.precioUnitUSD)}</td><td className="text-center"><button onClick={() => setReturnItems(returnItems.filter((_,i)=>i!==idx))}><Trash2 className="w-4 h-4 text-ink/20"/></button></td></tr>))}</tbody></table></div></div>
                   </div>
                   <div className="space-y-4">
-                    <div className="card bg-white border-line shadow-lg rounded-xl overflow-hidden p-5 space-y-5"><div className="bg-surface-soft p-4 rounded-lg text-center border border-line shadow-inner"><p className="text-ink/60 text-[9px] font-black uppercase mb-1">TOTAL REEMBOLSO</p><p className="text-3xl font-black text-status-danger">{Utils.fmtUSD(returnItems.reduce((s, i) => s + (i.cantidad * i.precioUnitUSD), 0))}</p></div><div className="form-group"><label className="text-[10px] font-black uppercase block mb-1">Método</label><select className="form-select h-10 text-xs font-black uppercase" value={refundMethod} onChange={e=>setRefundMethod(e.target.value as any)}><option value="EFECTIVO">Efectivo</option><option value="MISMO_METODO">Reverso</option><option value="CREDITO_TIENDA">Nota Crédito</option></select></div><div className="form-group"><label className="text-[10px] font-black uppercase block mb-1">Motivo</label><textarea className="form-input text-xs min-h-[80px]" value={returnReason} onChange={e=>setReturnReason(e.target.value)}></textarea></div><button disabled={returnItems.length === 0 || !returnReason.trim()} onClick={procesarDevolucionPOS} className="btn btn-primary w-full h-14 font-black uppercase text-xs shadow-xl"><CheckCircle2 className="w-5 h-5 mr-2" /> Finalizar</button></div>
+                    <div className="card bg-white border-line shadow-lg rounded-xl overflow-hidden p-5 space-y-5"><div className="bg-surface-soft p-4 rounded-lg text-center border border-line shadow-inner"><p className="text-ink text-[9px] font-black uppercase mb-1">TOTAL REEMBOLSO</p><p className="text-3xl font-black text-status-danger">{Utils.fmtUSD(returnItems.reduce((s, i) => s + (i.cantidad * i.precioUnitUSD), 0))}</p></div><div className="form-group"><label className="text-[10px] font-black uppercase block mb-1">Método</label><select className="form-select h-10 text-xs font-black uppercase" value={refundMethod} onChange={e=>setRefundMethod(e.target.value as any)}><option value="EFECTIVO">Efectivo</option><option value="MISMO_METODO">Reverso</option><option value="CREDITO_TIENDA">Nota Crédito</option></select></div><div className="form-group"><label className="text-[10px] font-black uppercase block mb-1">Motivo</label><textarea className="form-input text-xs min-h-[80px]" value={returnReason} onChange={e=>setReturnReason(e.target.value)}></textarea></div><button disabled={returnItems.length === 0 || !returnReason.trim()} onClick={procesarDevolucionPOS} className="btn btn-primary w-full h-14 font-black uppercase text-xs shadow-xl"><CheckCircle2 className="w-5 h-5 mr-2" /> Finalizar</button></div>
                   </div>
                 </div>
               )}
@@ -1098,11 +1084,11 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
             <div className="modal-body p-6 space-y-6 max-h-[75vh] overflow-y-auto">
               <div className="grid grid-cols-2 gap-4">
                  <div className="p-3 bg-surface-soft rounded-lg border border-line">
-                    <label className="text-[8px] font-black uppercase text-ink/50 block mb-1">Monto Original</label>
+                    <label className="text-ink text-[8px] font-black uppercase block mb-1">Monto Original</label>
                     <p className="text-lg font-black text-ink">{Utils.fmtUSD(showDetailsModal.montoUSD)}</p>
                  </div>
                  <div className="p-3 bg-brand-gold-soft border border-brand-gold/20 rounded-lg">
-                    <label className="text-[8px] font-black uppercase text-brand-gold-deep block mb-1">Saldo Actual</label>
+                    <label className="text-brand-gold-deep text-[8px] font-black uppercase block mb-1">Saldo Actual</label>
                     <p className="text-lg font-black text-brand-gold-deep">{Utils.fmtUSD(showDetailsModal.saldoUSD)}</p>
                  </div>
               </div>
@@ -1114,8 +1100,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                 return (
                   <div className="space-y-3 animate-in slide-in-from-top-2 duration-300">
                     <div className="flex justify-between items-center border-b border-line pb-2">
-                       <h4 className="text-[10px] font-black uppercase text-ink/40 tracking-[0.2em]">DETALLE DE COMPRA ORIGINAL</h4>
-                       <span className="text-[9px] font-black text-ink/60 uppercase">{Utils.fmtFecha(sale.fecha)} - {sale.fecha.split('T')[1]?.slice(0,5)}</span>
+                       <h4 className="text-ink text-[10px] font-black uppercase tracking-[0.2em]">DETALLE DE COMPRA ORIGINAL</h4>
+                       <span className="text-ink text-[9px] font-black uppercase">{Utils.fmtFecha(sale.fecha)} - {sale.fecha.split('T')[1]?.slice(0,5)}</span>
                     </div>
                     <div className="bg-surface-soft/50 rounded-lg overflow-hidden border border-line/30">
                        <table className="w-full">
@@ -1144,20 +1130,20 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
               })()}
 
               <div className="space-y-3">
-                 <h4 className="text-[10px] font-black uppercase text-ink/40 tracking-[0.2em] border-b border-line pb-2">CRONOLOGÍA DE ABONOS</h4>
+                 <h4 className="text-ink text-[10px] font-black uppercase tracking-[0.2em] border-b border-line pb-2">CRONOLOGÍA DE ABONOS</h4>
                  <div className="max-h-[200px] overflow-y-auto space-y-2 pr-1">
                     {(!showDetailsModal.historialPagos || showDetailsModal.historialPagos.length === 0) ? (
-                      <div className="py-10 text-center text-ink/20 font-black uppercase italic text-[10px]">No se han registrado abonos aún</div>
+                      <div className="py-10 text-center text-ink font-black uppercase italic text-[10px]">No se han registrado abonos aún</div>
                     ) : (
                       showDetailsModal.historialPagos.map((p: any, idx: number) => (
                         <div key={idx} className="flex justify-between items-center p-3 bg-surface-soft border border-line rounded-lg">
                            <div className="space-y-0.5">
                               <p className="text-[10px] font-black text-ink uppercase">{Utils.fmtFecha(p.fecha)} - {p.fecha.split('T')[1]?.slice(0,5)}</p>
-                              <p className="text-[8px] font-bold text-ink/40 mono">REF RECIBO: {p.reciboId}</p>
+                              <p className="text-ink text-[8px] font-bold mono">REF RECIBO: {p.reciboId}</p>
                            </div>
                            <div className="text-right">
                               <p className="text-xs font-black text-status-success">+{Utils.fmtUSD(p.montoUSD)}</p>
-                              <p className="text-[8px] font-black text-ink/40 uppercase">{Utils.metodoLabel(p.metodo || 'otros')}</p>
+                              <p className="text-ink text-[8px] font-black uppercase">{Utils.metodoLabel(p.metodo || 'otros')}</p>
                            </div>
                         </div>
                       ))
@@ -1182,11 +1168,11 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
             </div>
             <div className="modal-body p-8 space-y-6">
               <div className="bg-surface-soft p-8 rounded-[20px] text-center border border-line shadow-inner">
-                <p className="text-ink/40 text-[9px] font-black uppercase tracking-[0.2em] mb-2">DEUDA PENDIENTE</p>
+                <p className="text-ink text-[9px] font-black uppercase tracking-[0.2em] mb-2">DEUDA PENDIENTE</p>
                 <p className="text-5xl font-black text-status-info tracking-tighter">
                   {Utils.fmtUSD(totalDeudaAbonoUSD - totalAbonadoEnModalUSD)}
                 </p>
-                <p className="text-xl font-bold text-ink/60 mt-2">
+                <p className="text-xl font-bold text-ink mt-2">
                   {Utils.fmtBS((totalDeudaAbonoUSD - totalAbonadoEnModalUSD) * state.tasa)}
                 </p>
               </div>
@@ -1201,7 +1187,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                 
                 <div className="space-y-2 min-h-[100px] max-h-[180px] overflow-y-auto pr-1">
                   {abonoPagos.length === 0 ? (
-                    <div className="py-8 text-center text-ink/10 flex flex-col items-center gap-2">
+                    <div className="py-8 text-center text-ink flex flex-col items-center gap-2">
                       <Wallet className="w-8 h-8 opacity-20" />
                       <p className="text-[10px] font-black uppercase">Sin métodos añadidos</p>
                     </div>
@@ -1253,7 +1239,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
             <div className="modal-body p-4 space-y-4">
               {!isCreditView ? (
                 <>
-                  <div className="bg-surface-soft p-3 rounded-lg text-center border border-line"><p className="text-ink/60 text-[9px] font-bold mb-1">Pendiente</p><p className="text-2xl font-black text-status-info">{Utils.fmtUSD(saldoRestanteUSD)}</p><p className="text-xs text-ink/60 font-bold">{Utils.fmtBS(saldoRestanteBS)}</p></div>
+                  <div className="bg-surface-soft p-3 rounded-lg text-center border border-line"><p className="text-ink text-[9px] font-bold mb-1">Pendiente</p><p className="text-2xl font-black text-status-info">{Utils.fmtUSD(saldoRestanteUSD)}</p><p className="text-xs text-ink font-bold">{Utils.fmtBS(saldoRestanteBS)}</p></div>
                   <div className="space-y-1"><label className="text-[10px] font-bold uppercase">MÉTODO</label><select className="form-select h-10 bg-white text-ink text-xs font-black uppercase border-line shadow-sm" value={metodoActual} onChange={e => setMetodoActual(e.target.value as PaymentMethod)}><option value="efectivo_usd">Efectivo USD</option><option value="efectivo_bs">Efectivo BS</option><option value="punto_venta">Punto de Venta</option><option value="pagomovil">Pago Movil</option><option value="biopago">Biopago</option><option value="zelle">Zelle</option></select></div>
                   <div className="space-y-1"><div className="flex justify-between items-center mb-1"><label className="text-[10px] font-bold uppercase">MONTO ({metodoActual.includes('usd') || metodoActual === 'zelle' ? 'USD' : 'BS'})</label><button onClick={() => setMontoInput((metodoActual.includes('usd') || metodoActual === 'zelle' ? saldoRestanteUSD : saldoRestanteBS).toFixed(2))} className="text-[9px] bg-brand-gold-soft text-brand-gold-deep px-2 rounded font-black border border-brand-gold/30">EXACTO</button></div><input type="number" className="form-input h-12 text-lg font-black bg-white border-line shadow-inner" value={montoInput} onChange={e => setMontoInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && addPago(false)} autoFocus /></div>
                   <button className="btn btn-primary w-full h-12 font-black uppercase text-xs" onClick={() => addPago(false)}>CONFIRMAR ABONO</button>
@@ -1263,24 +1249,24 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                 <div className="space-y-4 animate-in slide-in-from-right-2 duration-200">
                   {!showNewClientForm ? (
                     <div className="space-y-3">
-                       <div className="relative"><Search className="absolute left-3 top-2.5 w-4 h-4 text-ink/40" /><input className="form-input pl-10 h-10 text-xs" placeholder="Buscar cliente..." value={clientSearch} onChange={e => setClientSearch(e.target.value)} /></div>
+                       <div className="relative"><Search className="absolute left-3 top-2.5 w-4 h-4 text-ink" /><input className="form-input pl-10 h-10 text-xs" placeholder="Buscar cliente..." value={clientSearch} onChange={e => setClientSearch(e.target.value)} /></div>
                        <div className="max-h-[160px] overflow-y-auto border border-line rounded-lg bg-white shadow-inner">
-                         {filteredClients.map(c => (<div key={c.id} onClick={() => setSelectedClient(c)} className={`p-3 border-b border-line/40 cursor-pointer hover:bg-brand-gold/10 ${selectedClient?.id === c.id ? 'bg-brand-gold-soft border-l-4 border-l-brand-gold' : ''}`}><div className="text-xs font-black text-ink uppercase">{c.name}</div><div className="text-[10px] text-ink/40 mono">{c.cedula}</div></div>))}
+                         {filteredClients.map(c => (<div key={c.id} onClick={() => setSelectedClient(c)} className={`p-3 border-b border-line/40 cursor-pointer hover:bg-brand-gold/10 ${selectedClient?.id === c.id ? 'bg-brand-gold-soft border-l-4 border-l-brand-gold' : ''}`}><div className="text-xs font-black text-ink uppercase">{c.name}</div><div className="text-[10px] text-ink mono">{c.cedula}</div></div>))}
                        </div>
                        <div className="flex flex-col gap-2">
                          <button className="btn bg-status-info-soft text-status-info border border-status-info/40 font-black uppercase text-[10px] h-10 flex items-center justify-center gap-2" onClick={() => setShowNewClientForm(true)}><UserPlus className="w-4 h-4" /> Registrar</button>
                          <button className="btn btn-primary w-full h-12 font-black uppercase text-xs shadow-md" disabled={!selectedClient} onClick={ejecutarVentaACredito}>Cargar Deuda</button>
-                         <button className="text-[9px] text-ink/40 uppercase font-black text-center" onClick={() => setIsCreditView(false)}>Volver al Pago</button>
+                         <button className="text-[9px] text-ink uppercase font-black text-center" onClick={() => setIsCreditView(false)}>Volver al Pago</button>
                        </div>
                     </div>
                   ) : (
                     <div className="space-y-3">
                        <div className="space-y-2">
-                         <div className="space-y-1"><label className="text-[9px] font-black uppercase text-ink/60">Nombre</label><input className="form-input h-9 text-xs uppercase" value={newClient.name} onChange={e => setNewClient({...newClient, name: e.target.value})} /></div>
-                         <div className="space-y-1"><label className="text-[9px] font-black uppercase text-ink/60">Cédula</label><input className="form-input h-9 text-xs uppercase" value={newClient.cedula} onChange={e => setNewClient({...newClient, cedula: e.target.value})} /></div>
+                         <div className="space-y-1"><label className="text-[9px] font-black uppercase text-ink">Nombre</label><input className="form-input h-9 text-xs uppercase" value={newClient.name} onChange={e => setNewClient({...newClient, name: e.target.value})} /></div>
+                         <div className="space-y-1"><label className="text-[9px] font-black uppercase text-ink">Cédula</label><input className="form-input h-9 text-xs uppercase" value={newClient.cedula} onChange={e => setNewClient({...newClient, cedula: e.target.value})} /></div>
                        </div>
                        <button className="btn btn-primary w-full h-12 font-black uppercase text-xs shadow-md" onClick={ejecutarVentaACredito}>Cargar Deuda</button>
-                       <button className="text-[9px] text-ink/40 uppercase font-black text-center w-full" onClick={() => setShowNewClientForm(false)}>Volver a buscar</button>
+                       <button className="text-[9px] text-ink uppercase font-black text-center w-full" onClick={() => setShowNewClientForm(false)}>Volver a buscar</button>
                     </div>
                   )}
                 </div>
