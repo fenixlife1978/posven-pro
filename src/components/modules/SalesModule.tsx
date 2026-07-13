@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
@@ -215,17 +216,26 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     setReturnItems([]);
   };
 
-  const ejecutarVenta = () => {
-    if (state.carrito.length === 0 || saldoRestanteUSD > 0.01) return;
+  const ejecutarVenta = (pagosFinales?: PagoRealizado[]) => {
+    const listadoPagos = pagosFinales || pagos;
+    const totalPagadoRecibido = listadoPagos.reduce((s, p) => s + p.montoUSD, 0);
+
+    if (state.carrito.length === 0) return;
+    // Si no se pasan pagos finales (ejecución directa desde el POS con pagos ya cargados)
+    if (!pagosFinales && saldoRestanteUSD > 0.01) return;
+
     const reciboId = String(state.proximoRecibo).padStart(9, '0');
     const ahoraStr = Utils.ahora();
     const terminal = getCurrentTerminal();
+    
     let prodsActualizados = [...state.productos];
     let nuevosMovimientos: Movimiento[] = [];
+
     state.carrito.forEach(item => {
       const pIdx = prodsActualizados.findIndex(x => x.id === item.productoId);
       if (pIdx === -1) return;
       const p = { ...prodsActualizados[pIdx] };
+      
       if (p.isKit && p.kitType === 'stock_componentes' && p.kitItems) {
         p.kitItems.forEach(ki => {
           const cpIdx = prodsActualizados.findIndex(cp => cp.id === ki.productoId);
@@ -245,9 +255,48 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         prodsActualizados[pIdx] = p;
       }
     });
-    const nuevaVenta: Sale = { id: reciboId, fecha: ahoraStr, cliente, items: [...state.carrito], subtotalUSD, descuentoUSD: 0, totalUSD: subtotalUSD, totalBS, metodoPago: pagos.length > 1 ? 'mixto' : (pagos[0]?.metodo || 'efectivo_usd'), estado: 'completada', type: 'VENTA', received: totalPagadoUSD, change: Math.max(0, totalPagadoUSD - subtotalUSD), payments: [...pagos], terminalId: terminal?.id, cajeroId: auth?.currentUser?.uid };
-    const nuevasEntradasDiario: LibroDiarioEntry[] = pagos.map(p => ({ id: 'ACC-' + Store.uid().toUpperCase().slice(0, 5), fecha: ahoraStr, tipo: 'ingreso', categoria: 'VENTA', concepto: `VENTA #${reciboId} - CLIENTE: ${cliente.toUpperCase()}`, montoUSD: p.montoUSD, montoBS: p.montoBS, metodo: p.metodo, referencia: reciboId }));
-    updateState({ productos: prodsActualizados, ventas: [...state.ventas, nuevaVenta], movimientos: [...state.movimientos, ...nuevosMovimientos], libroDiario: [...nuevasEntradasDiario, ...(state.libroDiario || [])], carrito: [], proximoRecibo: state.proximoRecibo + 1, acumuladoHistorico: state.acumuladoHistorico + subtotalUSD });
+
+    const nuevaVenta: Sale = { 
+      id: reciboId, 
+      fecha: ahoraStr, 
+      cliente, 
+      items: [...state.carrito], 
+      subtotalUSD, 
+      descuentoUSD: 0, 
+      totalUSD: subtotalUSD, 
+      totalBS, 
+      metodoPago: listadoPagos.length > 1 ? 'mixto' : (listadoPagos[0]?.metodo || 'efectivo_usd'), 
+      estado: 'completada', 
+      type: 'VENTA', 
+      received: totalPagadoRecibido, 
+      change: Math.max(0, totalPagadoRecibido - subtotalUSD), 
+      payments: [...listadoPagos], 
+      terminalId: terminal?.id, 
+      cajeroId: auth?.currentUser?.uid 
+    };
+
+    const nuevasEntradasDiario: LibroDiarioEntry[] = listadoPagos.map(p => ({ 
+      id: 'ACC-' + Store.uid().toUpperCase().slice(0, 5), 
+      fecha: ahoraStr, 
+      tipo: 'ingreso', 
+      categoria: 'VENTA', 
+      concepto: `VENTA #${reciboId} - CLIENTE: ${cliente.toUpperCase()}`, 
+      montoUSD: p.montoUSD, 
+      montoBS: p.montoBS, 
+      metodo: p.metodo, 
+      referencia: reciboId 
+    }));
+
+    updateState({ 
+      productos: prodsActualizados, 
+      ventas: [...state.ventas, nuevaVenta], 
+      movimientos: [...state.movimientos, ...nuevosMovimientos], 
+      libroDiario: [...nuevasEntradasDiario, ...(state.libroDiario || [])], 
+      carrito: [], 
+      proximoRecibo: state.proximoRecibo + 1, 
+      acumuladoHistorico: state.acumuladoHistorico + subtotalUSD 
+    });
+
     setLastProcessedSale(nuevaVenta);
     setShowReceiptModal(true);
     setPagos([]);
@@ -397,9 +446,31 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                   </div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto space-y-2">
+                <div className="flex-1 overflow-y-auto space-y-2 pt-2 border-t border-line/10">
+                  {selectedProductDisplay && (
+                    <div className="space-y-3 animate-in slide-in-from-bottom-2 duration-300">
+                       <div className="p-3 bg-surface-soft border border-line rounded-xl text-center">
+                          <span className="text-[9px] font-black uppercase text-ink opacity-40 block mb-1">STOCK DISPONIBLE</span>
+                          <span className={`text-2xl font-black ${
+                             selectedProductDisplay.stock <= (selectedProductDisplay.stockMinimo || 3) ? 'text-status-danger' : 
+                             selectedProductDisplay.stock <= (selectedProductDisplay.stockMinimo || 3) * 2 ? 'text-status-warn' : 
+                             'text-status-success'
+                          }`}>
+                            {selectedProductDisplay.stock} <span className="text-xs">UND</span>
+                          </span>
+                       </div>
+                       <div className="p-3 bg-surface-soft border border-line rounded-xl text-center">
+                          <span className="text-[9px] font-black uppercase text-ink opacity-40 block mb-1">PRECIO UNITARIO USD</span>
+                          <span className="text-2xl font-black text-ink">{Utils.fmtUSD(selectedProductDisplay.precioUSD)}</span>
+                       </div>
+                       <div className="p-3 bg-brand-gold-soft/30 border border-brand-gold/30 rounded-xl text-center">
+                          <span className="text-[9px] font-black uppercase text-brand-gold-deep block mb-1">EQUIVALENTE EN BOLÍVARES</span>
+                          <span className="text-2xl font-black text-brand-gold-deep">{Utils.fmtBS(selectedProductDisplay.precioUSD * state.tasa)}</span>
+                       </div>
+                    </div>
+                  )}
                   {state.carrito.length > 0 && (
-                    <button onClick={() => setIsCreditView(true)} className="w-full h-10 border-2 border-status-info text-status-info hover:bg-status-info-soft font-black uppercase text-[10px] rounded-xl transition-all">Cargar a Crédito</button>
+                    <button onClick={() => setIsCreditView(true)} className="w-full h-10 border-2 border-status-info text-status-info hover:bg-status-info-soft font-black uppercase text-[10px] rounded-xl transition-all mt-4">Cargar a Crédito</button>
                   )}
                 </div>
               </div>
@@ -538,7 +609,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
               montoUSD: p.usdAmount || (p.amount / state.tasa),
               montoBS: p.amount
             }));
-            setPagos(mapped);
+            // Procesar y finalizar la venta inmediatamente
+            ejecutarVenta(mapped);
             setShowMultiModal(false);
           }}
         />
