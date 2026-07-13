@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { Store, Utils } from '@/lib/db-store';
 import { AppState, Product, Movimiento, PaymentMethod, KitItem, Supplier, LibroDiarioEntry, Debt } from '@/lib/types';
+import { ProductFormModal } from '@/components/inventory/ProductFormModal';
 
 interface PurchaseItemTemp {
   productoId: string;
@@ -54,6 +55,9 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
   const [cantidad, setCantidad] = useState<string | number>(1);
   const [costoInput, setCostoInput] = useState<string | number>(0);
   const [loteTemporal, setLoteTemporal] = useState<PurchaseItemTemp[]>([]);
+
+  // Modal para nuevo producto
+  const [showNewProductModal, setShowNewProductModal] = useState(false);
 
   // Normalización de proveedores para evitar errores de tipo si hay datos antiguos (strings)
   const safeProveedores = useMemo(() => {
@@ -335,9 +339,13 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
         {/* COLUMNA DERECHA */}
         <div className="lg:col-span-2 space-y-6">
           <div className="card shadow-lg border-line rounded-xl overflow-hidden bg-white">
-            <div className="card-head bg-ink border-b border-white/10 px-6 py-4 flex items-center gap-2">
-                <Plus className="w-5 h-5 text-brand-gold" /> 
-                <h3 className="text-white font-black text-xs uppercase italic tracking-tighter">ADICIÓN DE ÍTEMS AL LOTE</h3>
+            <div className="card-head bg-ink border-b border-white/10 px-6 py-4 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                   <button onClick={() => setShowNewProductModal(true)} className="p-1 hover:bg-white/10 rounded transition-colors">
+                     <Plus className="w-5 h-5 text-brand-gold" />
+                   </button>
+                   <h3 className="text-white font-black text-xs uppercase italic tracking-tighter">ADICIÓN DE ÍTEMS AL LOTE</h3>
+                </div>
             </div>
             <div className="card-body p-6">
               <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
@@ -428,6 +436,41 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
           </div>
         </div>
       </div>
+
+      {showNewProductModal && (
+        <ProductFormModal 
+          state={state}
+          onClose={() => setShowNewProductModal(false)}
+          onUpdateLists={(lists) => updateState(lists)}
+          onSave={(datos) => {
+            const nuevo: Product = {
+              ...datos,
+              id: Store.uid(),
+              fechaCreacion: Utils.hoy(),
+              activo: true
+            };
+            const nuevosProds = [...state.productos, nuevo];
+            
+            if (nuevo.stock > 0) {
+              const mov: Movimiento = {
+                id: Store.uid(),
+                productoId: nuevo.id,
+                tipo: 'inicial',
+                cantidad: nuevo.stock,
+                stockAntes: 0,
+                stockDespues: nuevo.stock,
+                fecha: Utils.ahora(),
+                referencia: 'INICIAL DESDE COMPRAS',
+                terminalId: 'ADMIN'
+              };
+              updateState({ productos: nuevosProds, movimientos: [...state.movimientos, mov] });
+            } else {
+              updateState({ productos: nuevosProds });
+            }
+            setShowNewProductModal(false);
+          }}
+        />
+      )}
     </div>
   );
 }
