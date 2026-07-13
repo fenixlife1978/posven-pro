@@ -58,6 +58,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   const [search, setSearch] = useState('');
   const [view, setView] = useState<'pos' | 'history' | 'credits' | 'returns'>('pos');
   const [showReportType, setShowReportType] = useState<'REPORT_X' | 'REPORT_Z' | null>(null);
+  const [reportSnapshot, setReportSnapshot] = useState<any>(null);
   const [cliente, setCliente] = useState('Consumidor final');
   
   const [pagos, setPagos] = useState<PagoRealizado[]>([]);
@@ -76,28 +77,17 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   const [showNewClientForm, setShowNewClientForm] = useState(false);
   const [newClient, setNewClient] = useState({ name: '', cedula: 'V-', phone: '', address: '' });
 
-  // Estados de Devolución
-  const [returnSaleSearch, setReturnSaleSearch] = useState('');
-  const [selectedSaleForReturn, setSelectedSaleForReturn] = useState<Sale | null>(null);
-  const [returnItems, setReturnItems] = useState<ReturnItem[]>([]);
-  const [refundMethod, setRefundMethod] = useState<'EFECTIVO' | 'MISMO_METODO' | 'CREDITO_TIENDA'>('EFECTIVO');
-  const [returnReason, setReturnReason] = useState('');
-
-  // Estados de Créditos Avanzados
-  const [expandedClient, setExpandedClient] = useState<string | null>(null);
-  const [showClientHistory, setShowClientHistory] = useState<string | null>(null);
-
   const [editandoTasa, setEditandoTasa] = useState(false);
   const [nuevaTasa, setNuevaTasa] = useState(state.tasa.toString());
 
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  const summary = useMemo(() => {
+  // Función para obtener un resumen fresco al momento de solicitar un reporte
+  const getFreshReportData = () => {
     const hoy = Utils.hoy();
     const vHoy = (state.ventas || []).filter(v => v.fecha.startsWith(hoy));
     const dHoy = (state.devoluciones || []).filter(d => d.fecha.startsWith(hoy));
     
-    // Sumatorias precisas basadas en los datos fiscales persistidos en cada venta
     const brUSD = vHoy.reduce((s, v) => s + v.totalUSD, 0);
     const devUSD = dHoy.reduce((s, d) => s + d.totalUSD, 0);
     const descUSD = vHoy.reduce((s, v) => s + (v.descuentoUSD || 0), 0);
@@ -122,12 +112,17 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       baseImponibleUSD,
       exentoUSD,
       ventasHoy: vHoy, 
-      fecha: hoy,
-      devolucionesHoy: dHoy,
+      fecha: Utils.ahora(), // Timestamp exacto de generación
       terminalName,
       numeroZ: state.ultimoZ + 1
     };
-  }, [state.ventas, state.devoluciones, state.tasa, state.terminales, state.ultimoZ]);
+  };
+
+  const handleOpenReport = (type: 'REPORT_X' | 'REPORT_Z') => {
+    const data = getFreshReportData();
+    setReportSnapshot(data);
+    setShowReportType(type);
+  };
 
   const groupedCredits = useMemo(() => {
     const groups: Record<string, { totalUSD: number; debts: Debt[] }> = {};
@@ -237,7 +232,6 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     const reciboId = String(nextNum).padStart(9, '0');
     const ahoraStr = Utils.ahora();
     
-    // Cálculo Fiscal Quirúrgico por Producto
     let vExento = 0;
     let vBase = 0;
     let vIVA = 0;
@@ -250,7 +244,6 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       if (pIdx === -1) return;
       const p = { ...prodsActualizados[pIdx] };
       
-      // Cálculo Fiscal
       if (p.aplicaIVA) {
         const base = item.subtotalUSD / 1.16;
         vBase += base;
@@ -319,7 +312,6 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       payments: [...listadoPagos], 
       terminalId: terminal?.id, 
       cajeroId: auth?.currentUser?.uid,
-      // Persistencia Fiscal Granular
       baseImponibleUSD: Utils.round(vBase),
       ivaUSD: Utils.round(vIVA),
       exentoUSD: Utils.round(vExento),
@@ -360,6 +352,113 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     setSelectedProductDisplay(null);
   };
 
+  const ejecutarCierreZ = () => {
+    const data = reportSnapshot;
+    if (!data || data.ventasHoy.length === 0) return alert("Sin ventas para cerrar hoy.");
+    if (!confirm("¿Desea PROCESAR EL CIERRE Z FINAL? Esta acción es irreversible.")) return;
+
+    const ahora = Utils.ahora();
+    const numeroZ = state.ultimoZ + 1;
+    const desdeFac = data.ventasHoy[0]?.id || '0';
+    const hastaFac = data.ventasHoy[data.ventasHoy.length-1]?.id || '0';
+
+    const nuevoZ: ReportZ = {
+      id: Store.uid(),
+      fecha: ahora,
+      numeroZ,
+      desdeFactura: desdeFac,
+      hastaFactura: hastaFac,
+      baseImponibleUSD: data.baseImponibleUSD,
+      ivaUSD: data.ivaUSD,
+      exentoUSD: data.exentoUSD,
+      totalBrutoUSD: data.brUSD,
+      acumuladoHistoricoUSD: state.acumuladoHistorico
+    };
+
+    updateState({
+      reportesZ: [...(state.reportesZ || []), nuevoZ],
+      ultimoZ: numeroZ
+    });
+
+    toast({ title: `Reporte Z #${numeroZ} generado.` });
+    setShowReportType(null);
+  };
+
+  const ejecutarAbono = (pagosAbono: PagoRealizado[]) => {
+    if (!showAbonoModal) return;
+    const totalAbonado = pagosAbono.reduce((s, p) => s + p.montoUSD, 0);
+    if (totalAbonado <= 0) return;
+
+    const ahoraStr = Utils.ahora();
+    const terminal = getCurrentTerminal();
+    const nextNum = terminal?.proximoRecibo || state.proximoRecibo;
+    const reciboId = 'PAY-' + String(nextNum).padStart(6, '0');
+    
+    const nuevasDeudas = state.cxc.map(d => {
+      if (d.id === showAbonoModal.id) {
+        const nuevoSaldo = Math.max(0, d.saldoUSD - totalAbonado);
+        return {
+          ...d,
+          abonadoUSD: d.abonadoUSD + totalAbonado,
+          saldoUSD: nuevoSaldo,
+          estado: nuevoSaldo <= 0.001 ? 'pagada' : 'parcial',
+          historialPagos: [...(d.historialPagos || []), {
+            fecha: ahoraStr,
+            montoUSD: totalAbonado,
+            montoBS: totalAbonado * state.tasa,
+            metodo: pagosAbono.length > 1 ? 'mixto' : pagosAbono[0].metodo,
+            reciboId
+          }]
+        } as Debt;
+      }
+      return d;
+    });
+
+    const nuevosAsientos: LibroDiarioEntry[] = pagosAbono.map(p => ({
+      id: 'ACC-' + Store.uid().toUpperCase().slice(0, 5),
+      fecha: ahoraStr,
+      tipo: 'ingreso',
+      categoria: 'COBRO_DEUDA',
+      concepto: `ABONO DEUDA #${showAbonoModal.id} - CLIENTE: ${showAbonoModal.cliente?.toUpperCase()}`,
+      montoUSD: p.montoUSD,
+      montoBS: p.montoBS,
+      metodo: p.metodo,
+      referencia: reciboId
+    }));
+
+    const saleAbono: Sale = {
+      id: reciboId,
+      fecha: ahoraStr,
+      cliente: showAbonoModal.cliente || 'CLIENTE',
+      items: [{ productoId: 'ABONO', nombre: `ABONO A FACTURA #${showAbonoModal.id}`, cantidad: 1, precioUnitUSD: totalAbonado, subtotalUSD: totalAbonado }],
+      subtotalUSD: totalAbonado,
+      descuentoUSD: 0,
+      totalUSD: totalAbonado,
+      totalBS: totalAbonado * state.tasa,
+      metodoPago: pagosAbono.length > 1 ? 'mixto' : pagosAbono[0].metodo,
+      estado: 'completada',
+      type: 'COBRO DEUDA',
+      payments: [...pagosAbono],
+      terminalId: terminal?.id
+    };
+
+    const nuevosTerminales = state.terminales.map(t => 
+      t.id === terminal?.id ? { ...t, proximoRecibo: t.proximoRecibo + 1 } : t
+    );
+
+    updateState({
+      cxc: nuevasDeudas,
+      libroDiario: [...nuevosAsientos, ...(state.libroDiario || [])],
+      proximoRecibo: state.proximoRecibo + 1,
+      ventas: [...state.ventas, saleAbono],
+      terminales: nuevosTerminales
+    });
+
+    setLastProcessedSale(saleAbono);
+    setShowReceiptModal(true);
+    setShowAbonoModal(null);
+  };
+
   const ejecutarVentaACredito = () => {
     if (state.carrito.length === 0) return;
     let targetClient: Customer | null = selectedClient;
@@ -374,7 +473,6 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     const reciboId = String(nextNum).padStart(9, '0');
     const ahoraStr = Utils.ahora();
     
-    // Cálculo Fiscal para Crédito
     let vExento = 0;
     let vBase = 0;
     let vIVA = 0;
@@ -470,161 +568,14 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     setSelectedClient(null);
   };
 
-  const ejecutarAbono = (pagosAbono: PagoRealizado[]) => {
-    if (!showAbonoModal) return;
-    const totalAbonado = pagosAbono.reduce((s, p) => s + p.montoUSD, 0);
-    if (totalAbonado <= 0) return;
-
-    const ahoraStr = Utils.ahora();
-    const terminal = getCurrentTerminal();
-    const nextNum = terminal?.proximoRecibo || state.proximoRecibo;
-    const reciboId = 'PAY-' + String(nextNum).padStart(6, '0');
-    
-    const nuevasDeudas = state.cxc.map(d => {
-      if (d.id === showAbonoModal.id) {
-        const nuevoSaldo = Math.max(0, d.saldoUSD - totalAbonado);
-        return {
-          ...d,
-          abonadoUSD: d.abonadoUSD + totalAbonado,
-          saldoUSD: nuevoSaldo,
-          estado: nuevoSaldo <= 0.001 ? 'pagada' : 'parcial',
-          historialPagos: [...(d.historialPagos || []), {
-            fecha: ahoraStr,
-            montoUSD: totalAbonado,
-            montoBS: totalAbonado * state.tasa,
-            metodo: pagosAbono.length > 1 ? 'mixto' : pagosAbono[0].metodo,
-            reciboId
-          }]
-        } as Debt;
-      }
-      return d;
-    });
-
-    const nuevosAsientos: LibroDiarioEntry[] = pagosAbono.map(p => ({
-      id: 'ACC-' + Store.uid().toUpperCase().slice(0, 5),
-      fecha: ahoraStr,
-      tipo: 'ingreso',
-      categoria: 'COBRO_DEUDA',
-      concepto: `ABONO DEUDA #${showAbonoModal.id} - CLIENTE: ${showAbonoModal.cliente?.toUpperCase()}`,
-      montoUSD: p.montoUSD,
-      montoBS: p.montoBS,
-      metodo: p.metodo,
-      referencia: reciboId
-    }));
-
-    const saleAbono: Sale = {
-      id: reciboId,
-      fecha: ahoraStr,
-      cliente: showAbonoModal.cliente || 'CLIENTE',
-      items: [{ productoId: 'ABONO', nombre: `ABONO A FACTURA #${showAbonoModal.id}`, cantidad: 1, precioUnitUSD: totalAbonado, subtotalUSD: totalAbonado }],
-      subtotalUSD: totalAbonado,
-      descuentoUSD: 0,
-      totalUSD: totalAbonado,
-      totalBS: totalAbonado * state.tasa,
-      metodoPago: pagosAbono.length > 1 ? 'mixto' : pagosAbono[0].metodo,
-      estado: 'completada',
-      type: 'COBRO DEUDA',
-      payments: [...pagosAbono],
-      terminalId: terminal?.id
-    };
-
-    const nuevosTerminales = state.terminales.map(t => 
-      t.id === terminal?.id ? { ...t, proximoRecibo: t.proximoRecibo + 1 } : t
-    );
-
-    updateState({
-      cxc: nuevasDeudas,
-      libroDiario: [...nuevosAsientos, ...(state.libroDiario || [])],
-      proximoRecibo: state.proximoRecibo + 1,
-      ventas: [...state.ventas, saleAbono],
-      terminales: nuevosTerminales
-    });
-
-    setLastProcessedSale(saleAbono);
-    setShowReceiptModal(true);
-    setShowAbonoModal(null);
-  };
-
-  const ejecutarCierreZ = () => {
-    if (summary.ventasHoy.length === 0) return alert("Sin ventas para cerrar hoy.");
-    if (!confirm("¿Desea PROCESAR EL CIERRE Z FINAL? Esta acción es irreversible y persistirá los datos fiscales.")) return;
-
-    const ahora = Utils.ahora();
-    const numeroZ = state.ultimoZ + 1;
-    const desdeFac = summary.ventasHoy[0]?.id || '0';
-    const hastaFac = summary.ventasHoy[summary.ventasHoy.length-1]?.id || '0';
-
-    const nuevoZ: ReportZ = {
-      id: Store.uid(),
-      fecha: ahora,
-      numeroZ,
-      desdeFactura: desdeFac,
-      hastaFactura: hastaFac,
-      baseImponibleUSD: summary.baseImponibleUSD,
-      ivaUSD: summary.ivaUSD,
-      exentoUSD: summary.exentoUSD,
-      totalBrutoUSD: summary.brUSD,
-      acumuladoHistoricoUSD: state.acumuladoHistorico
-    };
-
-    updateState({
-      reportesZ: [...(state.reportesZ || []), nuevoZ],
-      ultimoZ: numeroZ
-    });
-
-    toast({ title: `Reporte Z #${numeroZ} generado y archivado.` });
-    setShowReportType(null);
-  };
-
-  const buscarVentaParaDevolucion = () => {
-    const sale = state.ventas.find(v => v.id === returnSaleSearch || v.id.endsWith(returnSaleSearch));
-    if (!sale) return alert('Venta no encontrada');
-    setSelectedSaleForReturn(sale);
-    setReturnItems([]);
-  };
-
-  const handleAddReturnItem = (productoId: string, nombre: string, precioUnitUSD: number, maxQty: number) => {
-    const qty = parseInt(prompt(`Cantidad a devolver (Máx: ${maxQty}):`, '1') || '0');
-    if (isNaN(qty) || qty <= 0 || qty > maxQty) return alert('Cantidad no válida');
-    const cond = confirm('¿Reintegrar al Stock?') ? 'REINTEGRADO_STOCK' : 'MERMA_DANADO';
-    setReturnItems([...returnItems, { productoId, nombre, cantidad: qty, precioUnitUSD, estadoProducto: cond as any }]);
-  };
-
-  const procesarDevolucionPOS = () => {
-    if (!selectedSaleForReturn || returnItems.length === 0) return;
-    const totalDev = returnItems.reduce((s, i) => s + (i.cantidad * i.precioUnitUSD), 0);
-    const idDev = 'DEV-' + String(state.proximaDevolucion).padStart(6, '0');
-    const ahora = Utils.ahora();
-    const terminal = getCurrentTerminal();
-    
-    const nuevaDevolucion: Return = { id: idDev, ventaId: selectedSaleForReturn.id, fecha: ahora, items: [...returnItems], totalUSD: totalDev, metodoReembolso: refundMethod, motivo: returnReason };
-    
-    let nuevosProds = [...state.productos];
-    let nuevosMovs: Movimiento[] = [];
-    returnItems.forEach(it => {
-      const pIdx = nuevosProds.findIndex(p => p.id === it.productoId);
-      if (pIdx >= 0) {
-        const p = { ...nuevosProds[pIdx] };
-        const stockAntes = p.stock;
-        if (it.estadoProducto === 'REINTEGRADO_STOCK') p.stock += it.cantidad;
-        nuevosMovs.push({ id: Store.uid(), productoId: it.productoId, tipo: 'devolucion', cantidad: it.cantidad, stockAntes, stockDespues: p.stock, fecha: ahora, referencia: `DEVOLUCIÓN ${idDev} - REF VENTA ${selectedSaleForReturn.id}`, terminalId: terminal?.id });
-        nuevosProds[pIdx] = p;
-      }
-    });
-
-    updateState({ productos: nuevosProds, devoluciones: [...state.devoluciones, nuevaDevolucion], movimientos: [...state.movimientos, ...nuevosMovs], proximaDevolucion: state.proximaDevolucion + 1 });
-    alert(`Devolución ${idDev} procesada.`);
-    setView('pos');
-  };
-
   return (
     <div className="flex flex-col gap-2 h-[calc(100vh-100px)] max-w-7xl mx-auto w-full overflow-hidden">
       <div className="flex gap-2 no-print shrink-0 overflow-x-auto pb-1">
         <button onClick={() => setView('pos')} className={`btn btn-sm ${view === 'pos' ? 'btn-primary shadow-md' : 'bg-white text-ink font-bold border-line border'}`}><ShoppingCart className="w-3.5 h-3.5"/> Punto de Venta</button>
         <button onClick={() => setView('history')} className={`btn btn-sm ${view === 'history' ? 'btn-primary shadow-md' : 'bg-white text-ink font-bold border-line border'}`}><History className="w-3.5 h-3.5"/> Historial</button>
         <button onClick={() => setView('credits')} className={`btn btn-sm ${view === 'credits' ? 'btn-primary shadow-md' : 'bg-white text-ink font-bold border-line border'}`}><ClipboardList className="w-3.5 h-3.5"/> Consultar Créditos</button>
-        <button onClick={() => setShowReportType('REPORT_X')} className="btn btn-sm bg-white text-ink font-bold border-line border"><FileText className="w-3.5 h-3.5"/> Reporte X</button>
-        <button onClick={() => setShowReportType('REPORT_Z')} className="btn btn-sm bg-white text-ink font-bold border-line border"><Receipt className="w-3.5 h-3.5"/> Reporte Z</button>
+        <button onClick={() => handleOpenReport('REPORT_X')} className="btn btn-sm bg-white text-ink font-bold border-line border"><FileText className="w-3.5 h-3.5"/> Reporte X</button>
+        <button onClick={() => handleOpenReport('REPORT_Z')} className="btn btn-sm bg-white text-ink font-bold border-line border"><Receipt className="w-3.5 h-3.5"/> Reporte Z</button>
         <button onClick={() => setView('returns')} className={`btn btn-sm ${view === 'returns' ? 'btn-primary shadow-md' : 'bg-white text-ink font-bold border-line border'}`}><RotateCcw className="w-3.5 h-3.5"/> Devoluciones</button>
       </div>
 
@@ -766,7 +717,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
             <table>
               <thead><tr><th>Recibo</th><th>Hora</th><th>Terminal</th><th>Cliente</th><th>Tipo</th><th className="text-right">Monto USD</th><th>Método</th><th className="text-center">Estado</th></tr></thead>
               <tbody>
-                {summary.ventasHoy.sort((a,b) => b.fecha.localeCompare(a.fecha)).map(v => (
+                {(state.ventas || []).filter(v => v.fecha.startsWith(Utils.hoy())).sort((a,b) => b.fecha.localeCompare(a.fecha)).map(v => (
                   <tr key={v.id} className="border-b border-line/40 hover:bg-surface-warm/20"><td className="text-ink font-black text-xs mono">{v.id}</td><td className="text-ink font-bold text-xs">{v.fecha.split('T')[1]?.slice(0, 5)}</td><td className="text-ink font-black text-[10px] uppercase">{state.terminales.find(t => t.id === v.terminalId)?.nombre || '-'}</td><td className="text-ink font-black text-xs uppercase truncate max-w-[150px]">{v.cliente}</td><td className="text-ink font-black text-[9px] uppercase"><span className={`badge ${v.type === 'COBRO DEUDA' ? 'badge-info' : 'badge-neutral'}`}>{v.type || 'VENTA'}</span></td><td className="text-brand-gold-deep font-black text-xs text-right">{Utils.fmtUSD(v.totalUSD)}</td><td className="text-ink font-bold text-[10px] uppercase">{Utils.metodoLabel(v.metodoPago)}</td><td className="text-center"><span className={`badge ${v.estado === 'pendiente' ? 'badge-warn' : 'badge-ok'} font-black text-[9px] uppercase`}>{v.estado}</span></td></tr>
                 ))}
               </tbody>
@@ -884,11 +835,11 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         />
       )}
 
-      {showReportType && (
+      {showReportType && reportSnapshot && (
         <ReceiptModal 
           isOpen={!!showReportType} 
           onClose={() => { if (showReportType === 'REPORT_Z') ejecutarCierreZ(); setShowReportType(null); }} 
-          reportData={summary} 
+          reportData={reportSnapshot} 
           type={showReportType}
         />
       )}

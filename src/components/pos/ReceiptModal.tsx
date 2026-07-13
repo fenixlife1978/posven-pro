@@ -31,17 +31,38 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
   
   if (!data) return null;
 
-  // Formateador de fecha local para Venezuela (Exacto al solicitado)
-  const transactionDate = new Date(data.fecha || Date.now()).toLocaleString('es-VE', {
-    timeZone: 'America/Caracas',
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: true
-  });
+  // Formateador de fecha local para Venezuela (Blindado contra desfases UTC)
+  const transactionDate = React.useMemo(() => {
+    try {
+      let dateObj: Date;
+      const rawDate = data.fecha || data.date;
+
+      if (rawDate) {
+        if (typeof rawDate === 'string' && rawDate.length === 10) {
+          // Si es solo YYYY-MM-DD, forzamos interpretación local
+          const parts = rawDate.split('-');
+          dateObj = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+        } else {
+          dateObj = new Date(rawDate);
+        }
+      } else {
+        dateObj = new Date();
+      }
+
+      return dateObj.toLocaleString('es-VE', {
+        timeZone: 'America/Caracas',
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true
+      });
+    } catch (e) {
+      return new Date().toLocaleString('es-VE', { timeZone: 'America/Caracas' });
+    }
+  }, [data.fecha, data.date]);
 
   const customerName = (data.cliente || 'CONSUMIDOR FINAL').toUpperCase();
   const terminalIdLabel = data.terminalName || 'SISTEMA GLOBAL';
