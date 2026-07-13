@@ -25,16 +25,13 @@ function createWindow() {
   if (isDev) {
     mainWindow.loadURL('http://localhost:9002');
   } else {
-    // Al usar output: 'export', Next.js genera archivos en la carpeta 'out'
     const indexPath = path.join(__dirname, '../out/index.html');
     mainWindow.loadFile(indexPath).catch((err) => {
       console.error("Error cargando la app estática:", err);
-      // Fallback a URL por si acaso
       mainWindow.loadURL('http://localhost:9002'); 
     });
   }
 
-  // Quitar menú por defecto en producción
   if (!isDev) {
     mainWindow.setMenu(null);
   }
@@ -62,7 +59,7 @@ app.on('activate', () => {
   }
 });
 
-// Lógica de Impresión Térmica Roccia RC-8002
+// Lógica de Impresión Térmica Roccia RC-8002 Pro
 ipcMain.on('print-ticket', (event, data) => {
   const options = {
     preview: false,
@@ -73,7 +70,8 @@ ipcMain.on('print-ticket', (event, data) => {
     silent: true,
   };
 
-  const printData = [
+  // Si recibimos un array directo lo usamos, si no construimos el reporte
+  const printData = Array.isArray(data) ? data : [
     {
       type: 'text',
       value: data.empresa.nombre.toUpperCase(),
@@ -82,52 +80,57 @@ ipcMain.on('print-ticket', (event, data) => {
     {
       type: 'text',
       value: `RIF: ${data.empresa.rif}\n${data.empresa.direccion}\n${data.empresa.telefono}`,
-      style: { textAlign: 'center', fontSize: '12px' }
+      style: { textAlign: 'center', fontSize: '11px', fontWeight: '400' }
     },
     { type: 'text', value: '--------------------------------', style: { textAlign: 'center' } },
     {
       type: 'text',
-      value: `${data.reportTitle || 'RECIBO DE VENTA'}\n#${data.id}`,
-      style: { textAlign: 'center', fontWeight: '700' }
+      value: `${data.type || 'RECIBO DE VENTA'}\n#${data.id}`,
+      style: { textAlign: 'center', fontWeight: '700', fontSize: '14px' }
     },
     {
       type: 'text',
-      value: `FECHA: ${data.date}\nCLIENTE: ${data.customerName || 'GENERAL'}`,
-      style: { fontSize: '11px' }
+      value: `FECHA: ${data.date}\nCLIENTE: ${data.customerName || 'CONSUMIDOR FINAL'}`,
+      style: { fontSize: '10px', textAlign: 'left' }
     },
     { type: 'text', value: '--------------------------------', style: { textAlign: 'center' } }
   ];
 
-  if (data.items) {
+  if (!Array.isArray(data) && data.items) {
     data.items.forEach(item => {
       printData.push({
         type: 'text',
-        value: `${item.name.substring(0, 20)} x${item.qty}\n      Subtotal: $${item.subtotal.toFixed(2)}`,
-        style: { fontSize: '11px' }
+        value: `${item.qty}x ${item.name.toUpperCase().substring(0, 20)}`,
+        style: { fontWeight: '700', fontSize: '11px' }
       });
-    });
-  }
-
-  printData.push({ type: 'text', value: '--------------------------------', style: { textAlign: 'center' } });
-  
-  if (data.totals) {
-    data.totals.forEach(t => {
       printData.push({
         type: 'text',
-        value: `${t.label}: ${t.value}`,
-        style: { fontWeight: '700', fontSize: '14px', textAlign: 'right' }
+        value: `      Subtotal: Bs. ${item.subtotal.toFixed(2)}`,
+        style: { fontSize: '10px', textAlign: 'left' }
       });
     });
-  }
+    
+    printData.push({ type: 'text', value: '--------------------------------', style: { textAlign: 'center' } });
+    
+    if (data.totals) {
+      data.totals.forEach(t => {
+        printData.push({
+          type: 'text',
+          value: `${t.label}: ${t.value}`,
+          style: { fontWeight: '700', fontSize: '13px', textAlign: 'right' }
+        });
+      });
+    }
 
-  printData.push({
-    type: 'text',
-    value: '\n¡Gracias por su compra!\nPosVEN Pro Cloud Sync\n',
-    style: { textAlign: 'center', fontSize: '10px', fontStyle: 'italic' }
-  });
+    printData.push({
+      type: 'text',
+      value: '\n¡Gracias por su compra!\nPosVEN Pro Cloud Sync\n',
+      style: { textAlign: 'center', fontSize: '9px', fontStyle: 'italic' }
+    });
+  }
 
   PosPrinter.print(printData, options)
     .catch((error) => {
-      console.error('Error de impresión:', error);
+      console.error('Error de impresión hardware:', error);
     });
 });
