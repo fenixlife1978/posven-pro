@@ -107,7 +107,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     });
     // Ordenar deudas dentro de cada grupo por fecha ascendente (más antigua primero)
     Object.keys(groups).forEach(name => {
-      groups[clientName].debts.sort((a, b) => a.fecha.localeCompare(b.fecha));
+      groups[name].debts.sort((a, b) => a.fecha.localeCompare(b.fecha));
     });
     return groups;
   }, [state.cxc]);
@@ -753,7 +753,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     });
 
     // GENERAR ASIENTOS DE EGRESO POR DEVOLUCIÓN EN EL LIBRO DIARIO
-    const entradaDevolucion: LibroDiarioEntry = {
+    const entradaDevolucion: LibroDiarioEntry[] = {
       id: 'ACC-' + Store.uid().toUpperCase().slice(0, 5),
       fecha: ahoraStr,
       tipo: 'egreso',
