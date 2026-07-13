@@ -1,6 +1,12 @@
 import { initializeApp, getApps, getApp, FirebaseApp } from "firebase/app";
 import { getAuth, Auth } from "firebase/auth";
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, getFirestore, Firestore } from "firebase/firestore";
+import { 
+  initializeFirestore, 
+  persistentLocalCache, 
+  persistentSingleTabManager, 
+  getFirestore, 
+  Firestore 
+} from "firebase/firestore";
 import { getDatabase, Database } from "firebase/database";
 
 // ============================================================
@@ -16,7 +22,6 @@ export const firebaseConfig = {
   storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || "dummy",
   messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || "dummy",
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || "dummy",
-  // Solo incluimos databaseURL si existe y tiene contenido para evitar errores de parseo en el build
   ...(databaseURL && databaseURL.startsWith('https') ? { databaseURL } : {}),
 };
 
@@ -41,23 +46,34 @@ try {
   }
 } catch (e) {
   console.error("Firebase init error:", e);
-  // Fallback para evitar que el build falle por falta de app
   app = initializeApp({ apiKey: "dummy", projectId: "dummy" });
 }
 
 // ============================================================
-// EXPORTAR SERVICIOS
+// EXPORTAR SERVICIOS (SINGLE TAB PERSISTENCE)
 // ============================================================
 
 export const auth: Auth = getAuth(app);
 
-export const db: Firestore = typeof window !== "undefined" && isConfigValid
-  ? initializeFirestore(app, {
+let dbInstance: Firestore;
+
+if (typeof window !== "undefined" && isConfigValid) {
+  try {
+    // Usamos persistentSingleTabManager para evitar errores de lease en Electron/Dev
+    dbInstance = initializeFirestore(app, {
       localCache: persistentLocalCache({
-        tabManager: persistentMultipleTabManager()
+        tabManager: persistentSingleTabManager()
       })
-    })
-  : getFirestore(app);
+    });
+  } catch (e) {
+    // Si ya está inicializado (por ejemplo en un Hot Reload), obtenemos la instancia actual
+    dbInstance = getFirestore(app);
+  }
+} else {
+  dbInstance = getFirestore(app);
+}
+
+export const db: Firestore = dbInstance;
 
 // Inicialización segura de RTDB
 export const rtdb: Database = getDatabase(app);
