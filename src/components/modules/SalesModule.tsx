@@ -1,8 +1,7 @@
-
 "use client";
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { AppState, SaleItem, Sale, PaymentMethod, ReportZ, PagoRealizado, Customer, Return, ReturnItem, Product, Debt, Movimiento, LibroDiarioEntry } from '@/lib/types';
+import { AppState, SaleItem, Sale, PaymentMethod, ReportZ, PagoRealizado, Customer, Return, ReturnItem, Product, Debt, Movimiento, LibroDiarioEntry, Terminal } from '@/lib/types';
 import { Utils, Store } from '@/lib/db-store';
 import { 
   Search, 
@@ -192,9 +191,11 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   const ejecutarVenta = () => {
     if (state.carrito.length === 0 || saldoRestanteUSD > 0.01) return;
     
-    const reciboId = String(state.proximoRecibo).padStart(9, '0');
-    const ahoraStr = Utils.ahora();
     const terminal = getCurrentTerminal();
+    const terminalCounter = terminal?.proximoRecibo || 1;
+    const correlativoStr = String(terminalCounter).padStart(9, '0');
+    const reciboId = terminal ? `${terminal.id}-${correlativoStr}` : correlativoStr;
+    const ahoraStr = Utils.ahora();
     
     let prodsActualizados = [...state.productos];
     let nuevosMovimientos: Movimiento[] = [];
@@ -277,11 +278,16 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       referencia: reciboId
     }));
 
+    const nuevasTerminales = state.terminales.map(t => 
+      t.id === terminal?.id ? { ...t, proximoRecibo: terminalCounter + 1 } : t
+    );
+
     updateState({
       productos: prodsActualizados,
       ventas: [...state.ventas, nuevaVenta],
       movimientos: [...state.movimientos, ...nuevosMovimientos],
       libroDiario: [...nuevasEntradasDiario, ...(state.libroDiario || [])],
+      terminales: nuevasTerminales,
       carrito: [],
       proximoRecibo: state.proximoRecibo + 1,
       acumuladoHistorico: state.acumuladoHistorico + subtotalUSD
@@ -318,9 +324,11 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       return;
     }
     
-    const reciboId = String(state.proximoRecibo).padStart(9, '0');
-    const ahoraStr = Utils.ahora();
     const terminal = getCurrentTerminal();
+    const terminalCounter = terminal?.proximoRecibo || 1;
+    const correlativoStr = String(terminalCounter).padStart(9, '0');
+    const reciboId = terminal ? `${terminal.id}-${correlativoStr}` : correlativoStr;
+    const ahoraStr = Utils.ahora();
     
     let prodsActualizados = [...state.productos];
     let nuevosMovimientos: Movimiento[] = [];
@@ -401,8 +409,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       ventaId: reciboId
     };
 
-    // ASIENTO CONTABLE PARA REGISTRO DE CUENTA POR COBRAR (Sin afectar flujo de caja real aún)
-    const asientoCredito: LibroDiarioEntry = {
+    const nuevasEntradasDiario: LibroDiarioEntry[] = [{
       id: 'ACC-' + Store.uid().toUpperCase().slice(0, 5),
       fecha: ahoraStr,
       tipo: 'ingreso',
@@ -412,7 +419,11 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       montoBS: totalBS,
       metodo: 'credito',
       referencia: reciboId
-    };
+    }];
+
+    const nuevasTerminales = state.terminales.map(t => 
+      t.id === terminal?.id ? { ...t, proximoRecibo: terminalCounter + 1 } : t
+    );
 
     let nuevosClientes;
     if (showNewClientForm) {
@@ -430,7 +441,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       movimientos: [...state.movimientos, ...nuevosMovimientos],
       cxc: [...state.cxc, nuevaDeuda],
       clientes: nuevosClientes,
-      libroDiario: [asientoCredito, ...(state.libroDiario || [])],
+      libroDiario: [...nuevasEntradasDiario, ...(state.libroDiario || [])],
+      terminales: nuevasTerminales,
       carrito: [],
       proximoRecibo: state.proximoRecibo + 1
     });
@@ -587,10 +599,12 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   const procesarAbonoCascada = () => {
     if (abonoPagos.length === 0 || !showAbonoModal) return;
     
-    const totalAbonoUSD = abonoPagos.reduce((s, p) => s + p.montoUSD, 0);
-    const reciboId = String(state.proximoRecibo).padStart(9, '0');
-    const ahoraStr = Utils.ahora();
     const terminal = getCurrentTerminal();
+    const terminalCounter = terminal?.proximoRecibo || 1;
+    const correlativoStr = String(terminalCounter).padStart(9, '0');
+    const reciboId = terminal ? `${terminal.id}-${correlativoStr}` : correlativoStr;
+    const ahoraStr = Utils.ahora();
+    const totalAbonoUSD = abonoPagos.reduce((s, p) => s + p.montoUSD, 0);
     let restante = totalAbonoUSD;
     
     const nuevasDeudas = [...state.cxc].sort((a, b) => a.fecha.localeCompare(b.fecha));
@@ -642,7 +656,6 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       cajeroId: auth?.currentUser?.uid
     };
 
-    // GENERAR ASIENTOS CONTABLES POR COBRO DE CRÉDITO (Abono realizado)
     const nuevasEntradasDiario: LibroDiarioEntry[] = abonoPagos.map(p => ({
       id: 'ACC-' + Store.uid().toUpperCase().slice(0, 5),
       fecha: ahoraStr,
@@ -655,11 +668,16 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       referencia: reciboId
     }));
 
+    const nuevasTerminales = state.terminales.map(t => 
+      t.id === terminal?.id ? { ...t, proximoRecibo: terminalCounter + 1 } : t
+    );
+
     updateState({ 
       cxc: actualizadas, 
       ventas: [...state.ventas, registroAbono],
       proximoRecibo: state.proximoRecibo + 1,
       libroDiario: [...nuevasEntradasDiario, ...(state.libroDiario || [])],
+      terminales: nuevasTerminales,
       clientes: (state.clientes || []).map(c => c.name === showAbonoModal ? { ...c, debt: Math.max(0, (c.debt || 0) - totalAbonoUSD) } : c)
     });
 

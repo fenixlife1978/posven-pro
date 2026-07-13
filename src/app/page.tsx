@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -73,7 +72,6 @@ export default function LicoreriaPOS() {
         router.push('/login');
       } else {
         try {
-          // ✅ USAR UID DE AUTH DIRECTAMENTE PARA EL PERFIL
           unsubscribeProfile = onSnapshot(doc(db, 'users', currentUser.uid), (docSnap) => {
             if (!auth.currentUser) return;
 
@@ -95,7 +93,6 @@ export default function LicoreriaPOS() {
                 if (data.rol === 'cajero') {
                    getDoc(doc(db, 'pos_system_data', 'state')).then(configSnap => {
                       const terminals = (configSnap.data()?.terminales || []) as Terminal[];
-                      // Verificamos por el ID del documento (UID)
                       const hasTerminal = terminals.some((t: Terminal) => t.usuarioId === currentUser.uid);
                       
                       if (!hasTerminal) {
@@ -124,7 +121,6 @@ export default function LicoreriaPOS() {
               setUserProfile(data);
               setUser(currentUser);
             } else {
-              // Si no tiene perfil, forzar salida
               signOut(auth).then(() => router.push('/login'));
             }
           }, (err) => {
@@ -299,6 +295,9 @@ export default function LicoreriaPOS() {
       weekday: 'short', day: '2-digit', month: 'short', year: 'numeric', timeZone: 'America/Caracas'
     }) : '...';
 
+    const terminalActual = state.terminales.find(t => t.usuarioId === user?.uid);
+    const nextRecibo = terminalActual?.proximoRecibo || state.proximoRecibo;
+
     return (
       <div className="min-h-screen bg-surface-warm flex items-center justify-center p-6 font-sans no-print">
          <div className="w-full max-w-[440px] bg-white rounded-[32px] shadow-[0_20px_50px_rgba(0,0,0,0.1)] p-10 space-y-6 animate-in fade-in zoom-in duration-500 border border-line">
@@ -319,7 +318,7 @@ export default function LicoreriaPOS() {
                 </div>
                 <div className="p-3 bg-surface-soft rounded-xl border border-line">
                   <label className="text-[8px] font-black uppercase text-ink/50 block mb-1">Recibo Inicio</label>
-                  <p className="text-[10px] font-black text-brand-gold-deep"># {String(state.proximoRecibo).padStart(9, '0')}</p>
+                  <p className="text-[10px] font-black text-brand-gold-deep"># {String(nextRecibo).padStart(9, '0')}</p>
                 </div>
               </div>
 

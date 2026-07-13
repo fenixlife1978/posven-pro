@@ -124,6 +124,7 @@ export interface Terminal {
   nombre: string;
   usuarioId: string | null;
   activo: boolean;
+  proximoRecibo: number;
 }
 
 export interface Supplier {
@@ -198,7 +199,7 @@ export interface AppState {
   proveedores: Supplier[];
 }
 
-export type PaymentMethod = 'efectivo_usd' | 'efectivo_bs' | 'punto_venta' | 'biopago' | 'pagomovil' | 'zelle' | 'transferencia' | 'credito' | 'mixto' | 'otros';
+export type PaymentMethod = 'efectivo_usd' | 'efectivo_bs' | 'punto_venta' | 'biopago' | 'pagomovil' | 'zelle' | 'transferencia' | 'credito' | 'mixto' | 'otros' | 'nota_credito';
 
 export function getProductBarcode(product: Product | any): string {
   return product?.codigo || product?.barcode || product?.sku || '';

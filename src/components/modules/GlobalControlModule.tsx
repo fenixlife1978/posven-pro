@@ -111,7 +111,8 @@ export default function GlobalControlModule({ state, updateState }: { state: App
       id: 'TRM-' + Store.uid().toUpperCase().slice(0, 4),
       nombre: newTerminalName.toUpperCase(),
       usuarioId: null,
-      activo: true
+      activo: true,
+      proximoRecibo: 1
     };
     updateState({ terminales: [...(state.terminales || []), newTerm] });
     setNewTerminalName('');
