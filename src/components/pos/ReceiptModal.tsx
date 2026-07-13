@@ -2,9 +2,8 @@
 
 import React, { useRef } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Sale, ReportZ } from '@/lib/types';
 import { Printer, X, Zap, Share2, Monitor } from 'lucide-react';
-import { Store, Utils } from '@/lib/db-store';
+import { Store } from '@/lib/db-store';
 import { formatBs, formatUsd } from '@/lib/currency-formatter';
 
 declare global {
@@ -32,18 +31,27 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
   
   if (!data) return null;
 
-  const transactionDate = data.fecha ? new Date(data.fecha).toLocaleString('es-VE', { timeZone: 'America/Caracas' }) : new Date().toLocaleString('es-VE', { timeZone: 'America/Caracas' });
+  // Formateador de fecha local para Venezuela (Exacto al solicitado)
+  const transactionDate = new Date(data.fecha || Date.now()).toLocaleString('es-VE', {
+    timeZone: 'America/Caracas',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true
+  });
+
   const customerName = (data.cliente || 'CONSUMIDOR FINAL').toUpperCase();
   const terminalIdLabel = data.terminalName || 'SISTEMA GLOBAL';
 
-  // ========== LÓGICA DE IMPRESIÓN NATIVA USB (ROCCIA 80mm) ==========
   const handleNativePrint = async () => {
     if (!window.electronAPI) {
       window.print();
       return;
     }
 
-    // Configuración para 80mm (~48 caracteres)
     const SEPARATOR = '------------------------------------------------';
     
     let printData: any[] = [
@@ -114,7 +122,7 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
         <div className="bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col border border-gray-200">
           <div className="bg-black p-4 flex justify-between items-center">
             <h3 className="text-white font-black text-xs flex items-center gap-2 tracking-widest uppercase">
-              <Printer size={16} className="text-brand-gold" /> Roccia RC-8002 (80mm)
+              <Printer size={16} className="text-brand-gold" /> ROCCIA RC-8002 (80MM)
             </h3>
             <button onClick={onClose} className="text-white/40 hover:text-white transition-colors">
               <X size={20} />
@@ -125,42 +133,61 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
             <div 
               ref={printRef}
               className="bg-white p-6 shadow-sm text-black font-mono select-none"
-              style={{ width: '72mm', boxSizing: 'border-box', color: '#000', fontSize: '11px', lineHeight: '1.2' }}
+              style={{ width: '72mm', boxSizing: 'border-box', color: '#000', fontSize: '11px', lineHeight: '1.4' }}
             >
-              <div className="text-center border-b border-dashed border-black pb-3 mb-3">
-                <h1 className="text-lg font-black uppercase mb-1">{state.empresa.nombre}</h1>
+              <div className="text-center pb-3 mb-3">
+                <h1 className="text-lg font-black uppercase mb-1 leading-tight">{state.empresa.nombre}</h1>
                 <p className="text-[10px] font-bold leading-tight">{state.empresa.direccion}</p>
                 <p className="text-[10px]">RIF: {state.empresa.rif}</p>
                 <p className="text-[10px]">TEL: {state.empresa.telefono}</p>
               </div>
 
-              <div className="text-center mb-3">
-                <div className="bg-black text-white px-3 py-1 text-[11px] font-black uppercase inline-block mb-1">
+              <div className="text-center mb-4 border-t border-dashed border-black pt-3">
+                <div className="bg-black text-white px-4 py-1 text-[11px] font-black uppercase inline-block mb-1">
                   {isReport ? `REPORTE ${type === 'REPORT_X' ? 'X' : 'Z'}` : (data.type || 'RECIBO')}
                 </div>
                 {isReport && (
-                  <div className="text-[10px] font-black uppercase flex items-center justify-center gap-1">
+                  <div className="text-[10px] font-black uppercase flex items-center justify-center gap-1 mt-1">
                     <Monitor size={10} /> TERMINAL: {terminalIdLabel}
                   </div>
                 )}
               </div>
 
-              <div className="space-y-1 mb-3 text-[10px]">
-                {!isReport && <div className="flex justify-between"><span>RECIBO N°:</span><span className="font-black">{data.id}</span></div>}
-                <div className="flex justify-between"><span>FECHA:</span><span>{transactionDate}</span></div>
-                {!isReport && <div className="flex justify-between uppercase"><span>CLIENTE:</span><span>{customerName}</span></div>}
+              <div className="space-y-1 mb-4 text-[10px]">
+                <div className="flex justify-between items-center">
+                  <span className="font-bold">FECHA:</span>
+                  <span className="font-bold">{transactionDate}</span>
+                </div>
+                {!isReport && (
+                  <>
+                    <div className="flex justify-between"><span>RECIBO N°:</span><span className="font-black">{data.id}</span></div>
+                    <div className="flex justify-between uppercase"><span>CLIENTE:</span><span>{customerName}</span></div>
+                  </>
+                )}
               </div>
 
               {isReport ? (
-                <div className="border-t border-b border-dashed border-black py-3 my-3 space-y-2">
-                  <div className="flex justify-between font-black text-sm"><span>VENTAS BRUTAS:</span><span>{formatBs(data.brUSD * state.tasa)}</span></div>
-                  <div className="flex justify-between text-status-danger"><span>DEVOLUCIONES:</span><span>-{formatBs(data.devUSD * state.tasa)}</span></div>
-                  <div className="flex justify-between"><span>DESCUENTOS:</span><span>-{formatBs(data.descUSD * state.tasa)}</span></div>
-                  <div className="flex justify-between font-black text-base border-t border-black pt-2"><span>TOTAL NETO:</span><span>{formatBs(data.netUSD * state.tasa)}</span></div>
-                  <div className="pt-2 text-[9px] uppercase space-y-1">
-                    <p className="font-black border-b border-dotted pb-1">Desglose Fiscal (Periodo)</p>
+                <div className="border-t border-b border-dashed border-black py-3 my-3 space-y-3">
+                  <div className="flex justify-between font-black text-sm">
+                    <span className="text-sm">VENTAS<br/>BRUTAS:</span>
+                    <span className="text-right">Bs.<br/>{formatBs(data.brUSD * state.tasa).replace('Bs. ', '')}</span>
+                  </div>
+                  <div className="flex justify-between text-status-danger text-[10px] font-bold">
+                    <span>DEVOLUCIONES:</span>
+                    <span>-Bs. {formatBs(data.devUSD * state.tasa).replace('Bs. ', '')}</span>
+                  </div>
+                  <div className="flex justify-between text-[10px] font-bold">
+                    <span>DESCUENTOS:</span>
+                    <span>-Bs. {formatBs(data.descUSD * state.tasa).replace('Bs. ', '')}</span>
+                  </div>
+                  <div className="flex justify-between font-black text-lg border-t border-black pt-2">
+                    <span>TOTAL<br/>NETO:</span>
+                    <span className="text-right">Bs.<br/>{formatBs(data.netUSD * state.tasa).replace('Bs. ', '')}</span>
+                  </div>
+                  <div className="pt-3 text-[9px] uppercase space-y-1 border-t border-dotted border-black/20">
+                    <p className="font-black border-b border-dotted pb-1 text-center">DESGLOSE FISCAL DEL PERIODO</p>
                     <div className="flex justify-between"><span>Monto Exento:</span><span>{formatBs((data.exentoUSD || 0) * state.tasa)}</span></div>
-                    <div className="flex justify-between"><span>Base Imponible (16%):</span><span>{formatBs((data.baseImponibleUSD || 0) * state.tasa)}</span></div>
+                    <div className="flex justify-between"><span>Base Imponible:</span><span>{formatBs((data.baseImponibleUSD || 0) * state.tasa)}</span></div>
                     <div className="flex justify-between"><span>IVA Recaudado:</span><span>{formatBs((data.ivaUSD || 0) * state.tasa)}</span></div>
                     <div className="flex justify-between font-bold"><span>Total IGTF (3%):</span><span>{formatBs((data.igtfUSD || 0) * state.tasa)}</span></div>
                   </div>
@@ -184,7 +211,7 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
                             <div className="font-bold">{(item.nombre || item.name).slice(0, 22)}</div>
                             <div className="text-[9px] opacity-70 italic">Ref: {formatBs((item.precioUnitUSD || item.price) * state.tasa)}</div>
                           </td>
-                          <td className="py-2 text-right align-top font-black">{formatBs(subtotal)}</td>
+                          <td className="py-2 text-right align-top font-black">{formatBs(subtotal).replace('Bs. ', '')}</td>
                         </tr>
                       );
                     })}
@@ -207,20 +234,24 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
               )}
 
               <div className="text-center mt-5 pt-3 text-[9px] italic border-t border-dotted border-black/30">
-                <p className="font-black uppercase mb-1">¡Gracias por su preferencia!</p>
+                <p className="font-black uppercase mb-1 leading-tight">¡Gracias por su preferencia!</p>
                 <p>Conserve este ticket como comprobante</p>
-                <p className="mt-3 opacity-50 uppercase font-bold text-[7px]">PosVEN Pro RC-8002 Optimized</p>
+                <p className="mt-3 opacity-40 uppercase font-bold text-[7px]">PosVEN Pro RC-8002 optimized</p>
               </div>
             </div>
           </div>
 
-          <div className="p-4 bg-white border-t border-gray-100 grid grid-cols-2 gap-3">
-            <button onClick={onClose} className="py-3 bg-[#E5E7EB] text-[#374151] font-black text-xs rounded-xl hover:bg-gray-300 transition-all uppercase tracking-widest">Cerrar</button>
-            <button className="py-3 bg-[#2ECC71] text-white font-black text-xs rounded-xl hover:bg-green-600 flex items-center justify-center gap-2 uppercase tracking-widest shadow-sm"><Share2 size={14} /> Compartir</button>
-            <button onClick={() => window.print()} className="py-3 bg-black text-white font-black text-xs rounded-xl hover:opacity-90 flex items-center justify-center gap-2 uppercase tracking-widest shadow-md"><Printer size={14} /> Estándar</button>
-            <button onClick={handleNativePrint} className="py-3 bg-[#C8952E] text-black font-black text-xs rounded-xl hover:bg-[#D9A540] transition-all flex items-center justify-center gap-2 uppercase tracking-widest shadow-lg">
-              <Zap size={16} className="fill-current" /> Impresión Roccia
-            </button>
+          <div className="p-4 bg-white border-t border-gray-100 flex flex-col gap-3">
+            <div className="grid grid-cols-2 gap-3">
+              <button onClick={onClose} className="py-3 bg-[#E5E7EB] text-[#374151] font-black text-xs rounded-xl hover:bg-gray-300 transition-all uppercase tracking-widest">Cerrar</button>
+              <button className="py-3 bg-[#2ECC71] text-white font-black text-xs rounded-xl hover:bg-green-600 flex items-center justify-center gap-2 uppercase tracking-widest shadow-sm"><Share2 size={14} /> Compartir</button>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <button onClick={() => window.print()} className="py-3 bg-black text-white font-black text-xs rounded-xl hover:opacity-90 flex items-center justify-center gap-2 uppercase tracking-widest shadow-md"><Printer size={14} /> Estándar</button>
+              <button onClick={handleNativePrint} className="py-3 bg-[#C8952E] text-black font-black text-xs rounded-xl hover:bg-[#D9A540] transition-all flex items-center justify-center gap-2 uppercase tracking-widest shadow-lg">
+                <Zap size={16} className="fill-current" /> Impresión Roccia
+              </button>
+            </div>
           </div>
         </div>
       </DialogContent>
