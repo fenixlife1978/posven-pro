@@ -169,7 +169,6 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     setEditandoTasa(false);
   };
 
-  // Funciones de Devolución
   const buscarVentaParaDevolucion = () => {
     const sale = state.ventas.find(v => v.id === returnSaleSearch || v.id.endsWith(returnSaleSearch));
     if (!sale) return alert('Venta no encontrada');
@@ -346,9 +345,32 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
             {matches.length > 0 && (
               <div className="absolute top-full left-0 right-0 bg-white border border-line rounded-b-lg shadow-2xl z-[100] mt-1 overflow-hidden">
                 {matches.map(p => (
-                  <div key={p.id} onClick={() => agregar(p.id)} className="flex items-center justify-between p-2 hover:bg-brand-gold/10 cursor-pointer border-b border-line">
-                    <div className="text-ink text-xs font-black uppercase">{p.nombre} <span className="text-ink/40 text-[9px] mono ml-2">{p.codigo}</span></div>
-                    <div className="text-brand-gold font-black text-sm">{Utils.fmtUSD(p.precioUSD)}</div>
+                  <div key={p.id} onClick={() => agregar(p.id)} className="flex items-center justify-between p-3 hover:bg-brand-gold/10 cursor-pointer border-b border-line group">
+                    <div className="flex flex-col flex-1 min-w-0">
+                      <span className="text-ink text-sm font-black uppercase truncate group-hover:text-brand-gold-deep transition-colors">{p.nombre}</span>
+                      <span className="text-ink/60 text-[10px] mono font-bold">{p.codigo}</span>
+                    </div>
+
+                    <div className="flex items-center gap-10 shrink-0 ml-4">
+                       <div className="flex flex-col items-end min-w-[70px]">
+                          <span className="text-[9px] font-black uppercase text-ink/40 mb-0.5">Stock</span>
+                          <span className={`text-lg font-black leading-none ${
+                            p.stock <= (p.stockMinimo || 3) ? 'text-red-600' : 
+                            p.stock <= (p.stockMinimo || 3) * 2 ? 'text-amber-500' : 
+                            'text-green-600'
+                          }`}>
+                            {p.stock} <span className="text-[10px] opacity-60">Und.</span>
+                          </span>
+                       </div>
+                       <div className="flex flex-col items-end min-w-[90px]">
+                          <span className="text-[9px] font-black uppercase text-ink/40 mb-0.5">Precio USD</span>
+                          <span className="text-lg font-black leading-none text-ink">{Utils.fmtUSD(p.precioUSD)}</span>
+                       </div>
+                       <div className="flex flex-col items-end min-w-[110px]">
+                          <span className="text-[9px] font-black uppercase text-ink/40 mb-0.5">Equiv. BS</span>
+                          <span className="text-lg font-black leading-none text-brand-gold-deep">{Utils.fmtBS(p.precioUSD * state.tasa)}</span>
+                       </div>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -376,25 +398,6 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                 </div>
 
                 <div className="flex-1 overflow-y-auto space-y-2">
-                  <div className="p-3 bg-[#0b0b0b] rounded-xl border border-white/5 space-y-3">
-                    <p className="text-[9px] font-black uppercase text-[#C8952E] tracking-[0.2em] mb-1">Ficha de Producto</p>
-                    <h4 className="text-sm font-black text-white uppercase truncate">{selectedProductDisplay?.nombre || 'Ninguno seleccionado'}</h4>
-                    <div className="grid grid-cols-1 gap-2">
-                      <div className="p-2.5 bg-white/5 rounded-lg border border-white/5 flex justify-between items-center">
-                        <span className="text-[9px] font-black uppercase text-white/40">Existencia</span>
-                        <span className={`text-sm font-black ${(selectedProductDisplay?.stock || 0) <= (selectedProductDisplay?.stockMinimo || 0) ? 'text-status-danger' : 'text-status-success'}`}>{selectedProductDisplay?.stock || 0} Und.</span>
-                      </div>
-                      <div className="p-2.5 bg-white/5 rounded-lg border border-white/5 flex justify-between items-center">
-                        <span className="text-[9px] font-black uppercase text-white/40">Precio USD</span>
-                        <span className="text-sm font-black text-white">{Utils.fmtUSD(selectedProductDisplay?.precioUSD || 0)}</span>
-                      </div>
-                      <div className="p-2.5 bg-[#C8952E] rounded-lg flex justify-between items-center shadow-lg">
-                        <span className="text-[9px] font-black uppercase text-black">Precio Bs.</span>
-                        <span className="text-sm font-black text-black">{Utils.fmtBS((selectedProductDisplay?.precioUSD || 0) * state.tasa)}</span>
-                      </div>
-                    </div>
-                  </div>
-                  
                   {state.carrito.length > 0 && (
                     <button onClick={() => setIsCreditView(true)} className="w-full h-10 border-2 border-status-info text-status-info hover:bg-status-info-soft font-black uppercase text-[10px] rounded-xl transition-all">Cargar a Crédito</button>
                   )}
