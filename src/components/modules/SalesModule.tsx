@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
@@ -43,6 +44,7 @@ import { ReceiptModal } from '@/components/pos/ReceiptModal';
 import FloatingPaymentModal from '@/components/pos/FloatingPaymentModal';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { toast } from '@/hooks/use-toast';
 
 declare global {
   interface Window {
@@ -56,7 +58,7 @@ declare global {
 export default function SalesModule({ state, updateState }: { state: AppState, updateState: (s: Partial<AppState>) => void }) {
   const [search, setSearch] = useState('');
   const [view, setView] = useState<'pos' | 'history' | 'credits' | 'returns'>('pos');
-  const [showReport, setShowReport] = useState<'Y' | 'Z' | null>(null);
+  const [showReport, setShowReport] = useState<'X' | 'Z' | null>(null);
   const [cliente, setCliente] = useState('Consumidor final');
   
   const [pagos, setPagos] = useState<PagoRealizado[]>([]);
@@ -510,6 +512,15 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     const devUSD = dHoy.reduce((s, d) => s + d.totalUSD, 0);
     const descUSD = vHoy.reduce((s, v) => s + (v.descuentoUSD || 0), 0);
     const netUSD = brUSD - devUSD - descUSD;
+
+    const igtfUSD = vHoy.reduce((s, v) => {
+      const divisaPayments = (v.payments || []).filter(p => p.metodo === 'efectivo_usd' || p.metodo === 'zelle');
+      return s + divisaPayments.reduce((acc, p) => acc + (p.montoUSD * 0.03), 0);
+    }, 0);
+
+    const baseImponibleUSD = netUSD / 1.16;
+    const ivaUSD = netUSD - baseImponibleUSD;
+
     const b: Record<string, { usd: number, bs: number }> = {};
     vHoy.forEach(v => {
       const ps = v.payments && v.payments.length > 0 ? v.payments : [{ metodo: v.metodoPago as PaymentMethod, montoUSD: v.totalUSD, montoBS: v.totalBS }];
@@ -523,8 +534,39 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       const h = v.fecha.split('T')[1]?.slice(0, 2) + ':00';
       if (h) hS[h] = (hS[h] || 0) + v.totalUSD;
     });
-    return { brUSD, devUSD, descUSD, netUSD, breakdown: b, hourly: hS, ventasHoy: vHoy, devolucionesHoy: dHoy };
+    return { brUSD, devUSD, descUSD, netUSD, igtfUSD, ivaUSD, baseImponibleUSD, breakdown: b, hourly: hS, ventasHoy: vHoy, devolucionesHoy: dHoy };
   }, [state.ventas, state.devoluciones, state.tasa]);
+
+  const ejecutarCierreZ = () => {
+    if (summary.ventasHoy.length === 0) return alert("Sin ventas para cerrar hoy.");
+    if (!confirm("¿Desea PROCESAR EL CIERRE Z FINAL? Esta acción es irreversible.")) return;
+
+    const ahora = Utils.ahora();
+    const numeroZ = state.ultimoZ + 1;
+    const desdeFac = summary.ventasHoy[0]?.id || '0';
+    const hastaFac = summary.ventasHoy[summary.ventasHoy.length-1]?.id || '0';
+
+    const nuevoZ: ReportZ = {
+      id: Store.uid(),
+      fecha: ahora,
+      numeroZ,
+      desdeFactura: desdeFac,
+      hastaFactura: hastaFac,
+      baseImponibleUSD: summary.baseImponibleUSD,
+      ivaUSD: summary.ivaUSD,
+      exentoUSD: 0,
+      totalBrutoUSD: summary.netUSD,
+      acumuladoHistoricoUSD: state.acumuladoHistorico
+    };
+
+    updateState({
+      reportesZ: [...(state.reportesZ || []), nuevoZ],
+      ultimoZ: numeroZ
+    });
+
+    toast({ title: `Reporte Z #${numeroZ} generado`, description: "Cierre de jornada completado con éxito." });
+    setShowReport(null);
+  };
 
   return (
     <div className="flex flex-col gap-2 h-[calc(100vh-100px)] max-w-7xl mx-auto w-full overflow-hidden">
@@ -532,7 +574,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         <button onClick={() => setView('pos')} className={`btn btn-sm ${view === 'pos' ? 'btn-primary shadow-md' : 'bg-white text-ink font-bold border-line border'}`}><ShoppingCart className="w-3.5 h-3.5"/> Punto de Venta</button>
         <button onClick={() => setView('history')} className={`btn btn-sm ${view === 'history' ? 'btn-primary shadow-md' : 'bg-white text-ink font-bold border-line border'}`}><History className="w-3.5 h-3.5"/> Historial</button>
         <button onClick={() => setView('credits')} className={`btn btn-sm ${view === 'credits' ? 'btn-primary shadow-md' : 'bg-white text-ink font-bold border-line border'}`}><ClipboardList className="w-3.5 h-3.5"/> Consultar Créditos</button>
-        <button onClick={() => setShowReport('Y')} className="btn btn-sm bg-white text-ink font-bold border-line border"><FileText className="w-3.5 h-3.5"/> Reporte X</button>
+        <button onClick={() => setShowReport('X')} className="btn btn-sm bg-white text-ink font-bold border-line border"><FileText className="w-3.5 h-3.5"/> Reporte X</button>
         <button onClick={() => setShowReport('Z')} className="btn btn-sm bg-white text-ink font-bold border-line border"><Receipt className="w-3.5 h-3.5"/> Reporte Z</button>
         <button onClick={() => setView('returns')} className={`btn btn-sm ${view === 'returns' ? 'btn-primary shadow-md' : 'bg-white text-ink font-bold border-line border'}`}><RotateCcw className="w-3.5 h-3.5"/> Devoluciones</button>
       </div>
@@ -922,6 +964,104 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                     </tbody>
                   </table>
                </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL REPORTES X / Z */}
+      {showReport && (
+        <div className="modal show" style={{ zIndex: 500 }}>
+          <div className="modal-bg" onClick={() => setShowReport(null)}></div>
+          <div className="modal-box max-w-sm bg-white border-2 border-line rounded-xl overflow-hidden shadow-2xl font-mono text-[10px] leading-tight">
+            <div className="bg-ink p-3 text-white flex justify-between items-center no-print">
+               <h3 className="font-black uppercase text-[11px] tracking-widest">REPORTE {showReport} - CONTROL FISCAL</h3>
+               <button onClick={() => setShowReport(null)}><X className="w-4 h-4 text-white/40 hover:text-white" /></button>
+            </div>
+            <div className="p-8 text-black bg-white space-y-4">
+              <div className="text-center space-y-1">
+                <h4 className="font-black text-xs uppercase">{state.empresa.nombre}</h4>
+                <p>RIF: {state.empresa.rif}</p>
+                <p>{state.empresa.direccion}</p>
+              </div>
+              
+              <div className="border-t border-dashed border-black/30 pt-3 flex justify-between uppercase font-black text-[11px]">
+                <span>REPORTE {showReport}</span>
+                <span>#{showReport === 'Z' ? state.ultimoZ + 1 : '00000'}</span>
+              </div>
+              <div className="flex justify-between uppercase">
+                <span>FECHA:</span>
+                <span>{Utils.hoy()}</span>
+              </div>
+              <div className="flex justify-between uppercase">
+                <span>HORA EMISIÓN:</span>
+                <span>{new Date().toLocaleTimeString()}</span>
+              </div>
+
+              <div className="border-t border-dashed border-black/30 pt-3 space-y-1.5">
+                <div className="flex justify-between font-black uppercase text-xs">
+                  <span>VENTAS BRUTAS</span>
+                  <span>{Utils.fmtUSD(summary.brUSD)}</span>
+                </div>
+                <div className="flex justify-between uppercase">
+                  <span>DEVOLUCIONES</span>
+                  <span className="text-status-danger">-{Utils.fmtUSD(summary.devUSD)}</span>
+                </div>
+                <div className="flex justify-between uppercase">
+                  <span>DESCUENTOS</span>
+                  <span>-{Utils.fmtUSD(summary.descUSD)}</span>
+                </div>
+                <div className="flex justify-between font-black uppercase text-xs border-t border-black/10 pt-1">
+                  <span>TOTAL NETO</span>
+                  <span>{Utils.fmtUSD(summary.netUSD)}</span>
+                </div>
+              </div>
+
+              <div className="border-t border-dashed border-black/30 pt-3 space-y-1.5">
+                 <p className="font-black text-center text-[9px] mb-2 uppercase tracking-widest">RESUMEN IMPUESTOS</p>
+                 <div className="flex justify-between uppercase"><span>BASE IMPONIBLE G (16%)</span><span>{Utils.fmtUSD(summary.baseImponibleUSD)}</span></div>
+                 <div className="flex justify-between uppercase"><span>IVA GENERAL (16%)</span><span>{Utils.fmtUSD(summary.ivaUSD)}</span></div>
+                 <div className="flex justify-between uppercase font-black"><span>TOTAL IGTF (3%)</span><span>{Utils.fmtUSD(summary.igtfUSD)}</span></div>
+              </div>
+
+              <div className="border-t border-dashed border-black/30 pt-3 space-y-1.5">
+                 <p className="font-black text-center text-[9px] mb-2 uppercase tracking-widest">DESGLOSE PAGOS</p>
+                 {Object.entries(summary.breakdown).map(([m, vals]) => (
+                   <div key={m} className="flex justify-between uppercase">
+                      <span>{Utils.metodoLabel(m)}</span>
+                      <span>{Utils.fmtUSD(vals.usd)}</span>
+                   </div>
+                 ))}
+              </div>
+
+              <div className="border-t border-dashed border-black/30 pt-3 text-[9px] space-y-1">
+                <div className="flex justify-between"><span>FACTURAS HOY:</span><span>{summary.ventasHoy.length}</span></div>
+                <div className="flex justify-between"><span>DESDE FACTURA:</span><span>#{summary.ventasHoy[0]?.id || '-'}</span></div>
+                <div className="flex justify-between"><span>HASTA FACTURA:</span><span>#{summary.ventasHoy[summary.ventasHoy.length-1]?.id || '-'}</span></div>
+              </div>
+
+              {showReport === 'Z' && (
+                <div className="pt-6 no-print">
+                   <button 
+                    onClick={ejecutarCierreZ}
+                    className="w-full h-12 bg-black text-white rounded-xl font-black uppercase text-[10px] tracking-widest shadow-xl hover:bg-black/90 transition-all flex items-center justify-center gap-2"
+                   >
+                     <Receipt className="w-4 h-4 text-brand-gold" /> PROCESAR CIERRE Z FINAL
+                   </button>
+                   <p className="text-[8px] text-ink/40 text-center mt-3 italic">Esta acción grabará los totales y sumará al acumulado histórico.</p>
+                </div>
+              )}
+
+              {showReport === 'X' && (
+                <div className="pt-4 no-print">
+                   <button 
+                    onClick={() => window.print()}
+                    className="w-full h-10 border-2 border-black text-black rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-black hover:text-white transition-all flex items-center justify-center gap-2"
+                   >
+                     <Printer className="w-4 h-4" /> IMPRIMIR LECTURA X
+                   </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
