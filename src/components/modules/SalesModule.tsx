@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
@@ -682,11 +681,13 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
               <div className="grid grid-cols-2 gap-4">
                  <div className="p-3 bg-surface-soft rounded-lg border border-line">
                     <label className="text-[8px] font-black uppercase text-ink block mb-1">Monto Original</label>
-                    <p className="text-lg font-black text-ink">{Utils.fmtUSD(showDetailsModal.montoUSD)}</p>
+                    <p className="text-lg font-black text-ink leading-none">{Utils.fmtUSD(showDetailsModal.montoUSD)}</p>
+                    <p className="text-[10px] font-bold text-ink/40 mt-1 uppercase italic">{Utils.fmtBS(showDetailsModal.montoUSD * state.tasa)}</p>
                  </div>
                  <div className="p-3 bg-brand-gold-soft border border-brand-gold/20 rounded-lg">
                     <label className="text-[8px] font-black uppercase text-brand-gold-deep block mb-1">Saldo Actual</label>
-                    <p className="text-lg font-black text-brand-gold-deep">{Utils.fmtUSD(showDetailsModal.saldoUSD)}</p>
+                    <p className="text-lg font-black text-brand-gold-deep leading-none">{Utils.fmtUSD(showDetailsModal.saldoUSD)}</p>
+                    <p className="text-[10px] font-bold text-brand-gold-deep/60 mt-1 uppercase italic">{Utils.fmtBS(showDetailsModal.saldoUSD * state.tasa)}</p>
                  </div>
               </div>
 
