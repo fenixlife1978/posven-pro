@@ -213,7 +213,7 @@ export default function FloatingPaymentModal({
           </button>
         </div>
 
-        <div className="p-3.5 space-y-3">
+        <div className="p-4 space-y-3">
           <div className="grid grid-cols-2 gap-3">
             <div className="bg-gradient-to-br from-gray-50 to-gray-100 p-3 rounded-xl text-center border border-gray-200/50">
               <span className="text-[9px] font-black text-black/60 uppercase tracking-wider">Total a pagar</span>
@@ -253,7 +253,7 @@ export default function FloatingPaymentModal({
             )}
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="text-[8px] font-black text-black/60 uppercase block mb-1 ml-1">Método</label>
               <select
@@ -266,7 +266,7 @@ export default function FloatingPaymentModal({
             </div>
             <div>
               <label className="text-[8px] font-black text-black/60 uppercase block mb-1 ml-1">Monto a abonar</label>
-              <div className="flex gap-1.5">
+              <div className="flex gap-2 items-center">
                 <input
                   ref={inputRef}
                   type="text"
@@ -277,7 +277,11 @@ export default function FloatingPaymentModal({
                   placeholder="0.00"
                   onKeyDown={e => e.key === 'Enter' && addPayment()}
                 />
-                <button onClick={addPayment} className="h-10 w-10 bg-black rounded-xl text-white flex items-center justify-center shadow-md active:scale-95 transition-all">
+                <button 
+                  onClick={addPayment} 
+                  className="h-10 w-10 shrink-0 bg-black rounded-xl text-white flex items-center justify-center shadow-md active:scale-95 transition-all"
+                  title="Agregar Pago"
+                >
                   <Plus size={16} />
                 </button>
               </div>
