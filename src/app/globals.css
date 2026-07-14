@@ -483,15 +483,16 @@
        width: 100% !important;
      }
 
-     /* Formato para impresora térmica 80mm */
+     /* Formato para impresora térmica 80mm - Imagen 2 Optimización */
      .thermal-80mm {
        width: 80mm !important;
        max-width: 80mm !important;
        margin: 0 auto !important;
-       padding: 2mm !important;
-       font-family: 'JetBrains Mono', monospace !important;
+       padding: 4mm !important;
+       font-family: 'Courier New', Courier, monospace !important;
        font-size: 11px !important;
        color: black !important;
+       line-height: 1.2 !important;
      }
 
      /* Ocultar todo lo demás durante la impresión de un ticket */
@@ -556,7 +557,7 @@
    }
    
    .shadow-sm-card {
-     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+     box-shadow: 0 1px 2px rgba(20,20,20,.04);
    }
    
    .shadow-pop {
