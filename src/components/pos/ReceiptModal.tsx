@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useRef } from 'react';
@@ -63,7 +64,7 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
   const DataRow = ({ label, value, bold = false }: { label: string, value: string, bold?: boolean }) => (
     <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '2px' }}>
       <tbody>
-        <tr style={{ fontSize: '11px', fontWeight: bold ? '900' : 'normal' }}>
+        <tr style={{ fontSize: '11px', fontWeight: bold ? '900' : '700' }}>
           <td style={{ textAlign: 'left', textTransform: 'uppercase', padding: '0' }}>{label}</td>
           <td style={{ textAlign: 'right', whiteSpace: 'nowrap', padding: '0' }}>{value}</td>
         </tr>
@@ -85,16 +86,17 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
           <style>
             @page { size: 80mm auto; margin: 0; }
             body {
-              font-family: 'Courier New', Courier, monospace;
+              font-family: 'Arial', 'Helvetica', sans-serif;
               width: 72mm;
               margin: 0;
               padding: 4mm;
               font-size: 11px;
               color: #000;
               background: #fff;
-              line-height: 1.2;
+              line-height: 1.1;
               -webkit-print-color-adjust: exact;
               print-color-adjust: exact;
+              font-weight: 700; /* Refuerzo de contraste para letras claras */
             }
             .thermal-80mm { width: 100%; }
             .black-box { 
@@ -102,7 +104,7 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
               color: #fff !important; 
               padding: 6px; 
               text-align: center; 
-              font-weight: bold; 
+              font-weight: 900; 
               margin: 10px 0; 
               text-transform: uppercase; 
               font-size: 13px;
@@ -114,7 +116,9 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
             .separator { border-top: 1px dashed #000; margin: 8px 0; width: 100%; display: block; }
             table { width: 100%; border-collapse: collapse; margin: 0; padding: 0; }
             td { padding: 0; margin: 0; }
-            .bold { font-weight: bold; }
+            .bold { font-weight: 900; }
+            .header-title { font-size: 20px; font-weight: 900; }
+            .header-info { font-size: 10px; font-weight: 700; }
           </style>
         </head>
         <body>
@@ -148,26 +152,26 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
           <div className="p-6 bg-gray-100 flex justify-center max-h-[70vh] overflow-y-auto custom-scrollbar">
             <div 
               ref={printRef}
-              className="thermal-80mm bg-white p-6 shadow-sm text-black font-mono select-none"
-              style={{ width: '72mm', boxSizing: 'border-box', color: '#000', fontSize: '11px' }}
+              className="thermal-80mm bg-white p-6 shadow-sm text-black font-sans select-none"
+              style={{ width: '72mm', boxSizing: 'border-box', color: '#000', fontSize: '11px', fontWeight: 700 }}
             >
               <div className="text-center mb-4">
-                <h1 className="text-[20px] font-black uppercase mb-1" style={{ margin: '0 0 4px 0' }}>{state.empresa.nombre}</h1>
-                <p className="text-[10px] leading-snug uppercase mb-1" style={{ margin: '0 0 2px 0' }}>{state.empresa.direccion}</p>
-                <p className="text-[10px] font-bold" style={{ margin: '0' }}>RIF: {state.empresa.rif} | TEL: {state.empresa.telefono}</p>
+                <h1 className="header-title uppercase mb-1" style={{ margin: '0 0 4px 0', fontSize: '20px', fontWeight: 900 }}>{state.empresa.nombre}</h1>
+                <p className="header-info leading-snug uppercase mb-1" style={{ margin: '0 0 2px 0', fontSize: '10px', fontWeight: 700 }}>{state.empresa.direccion}</p>
+                <p className="header-info" style={{ margin: '0', fontSize: '10px', fontWeight: 700 }}>RIF: {state.empresa.rif} | TEL: {state.empresa.telefono}</p>
               </div>
 
               <div className="separator" />
 
-              <div className="black-box" style={{ background: '#000', color: '#fff', padding: '6px', textAlign: 'center', fontWeight: 'bold' }}>
+              <div className="black-box" style={{ background: '#000', color: '#fff', padding: '6px', textAlign: 'center', fontWeight: 900 }}>
                 {getReportTitle()}
               </div>
 
               <div className="text-center my-3" style={{ marginBottom: '10px' }}>
-                <div style={{ fontSize: '10px', fontWeight: 'bold', textTransform: 'uppercase' }}>
+                <div style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase' }}>
                   TERMINAL: {terminalIdLabel}
                 </div>
-                <div style={{ fontSize: '11px', fontWeight: '900', textTransform: 'uppercase' }}>
+                <div style={{ fontSize: '11px', fontWeight: 900, textTransform: 'uppercase' }}>
                   FECHA/HORA: {transactionDate}
                 </div>
               </div>
@@ -178,7 +182,7 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
                 <div style={{ width: '100%' }}>
                   {type === 'REPORT_Z' && (
                     <div style={{ marginBottom: '10px' }}>
-                      <p style={{ fontWeight: '900', textAlign: 'center', marginBottom: '4px', fontSize: '10px' }}>DATOS DE CONTROL Y AUDITORÍA</p>
+                      <p style={{ fontWeight: 900, textAlign: 'center', marginBottom: '4px', fontSize: '10px' }}>DATOS DE CONTROL Y AUDITORÍA</p>
                       <DataRow label="Reporte Z N°:" value={String(data.numeroZ || 0).padStart(6, '0')} bold />
                       <DataRow label="Rango Facturas:" value={`${data.desdeFactura} - ${data.hastaFactura}`} />
                       <DataRow label="Rango Notas Cred:" value={`${data.desdeNC} - ${data.hastaNC}`} />
@@ -187,21 +191,23 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
                   )}
 
                   <div style={{ marginBottom: '10px' }}>
-                    <p style={{ fontWeight: '900', textAlign: 'center', marginBottom: '4px', fontSize: '10px' }}>RESUMEN DE FACTURACIÓN</p>
+                    <p style={{ fontWeight: 900, textAlign: 'center', marginBottom: '4px', fontSize: '10px' }}>RESUMEN DE FACTURACIÓN</p>
                     <DataRow label="Venta Bruta:" value={formatBs(data.brUSD * state.tasa)} />
                     <DataRow label="Descuentos:" value={'-' + formatBs(data.descUSD * state.tasa)} />
                     <DataRow label="Devoluciones:" value={'-' + formatBs(data.devUSD * state.tasa)} />
                     <div className="separator" />
                     <table style={{ width: '100%', borderTop: '1px solid black', paddingTop: '2px' }}>
-                      <tr>
-                        <td style={{ textAlign: 'left', fontWeight: '900', fontSize: '14px' }}>VENTA NETA:</td>
-                        <td style={{ textAlign: 'right', fontWeight: '900', fontSize: '14px' }}>{formatBs(data.netUSD * state.tasa)}</td>
-                      </tr>
+                      <tbody>
+                        <tr>
+                          <td style={{ textAlign: 'left', fontWeight: 900, fontSize: '14px' }}>VENTA NETA:</td>
+                          <td style={{ textAlign: 'right', fontWeight: 900, fontSize: '14px' }}>{formatBs(data.netUSD * state.tasa)}</td>
+                        </tr>
+                      </tbody>
                     </table>
                   </div>
 
                   <div style={{ marginBottom: '10px' }}>
-                    <p style={{ fontWeight: '900', textAlign: 'center', marginBottom: '4px', fontSize: '10px' }}>DESGLOSE FISCAL</p>
+                    <p style={{ fontWeight: 900, textAlign: 'center', marginBottom: '4px', fontSize: '10px' }}>DESGLOSE FISCAL</p>
                     <DataRow label="Monto Exento:" value={formatBs((data.exentoUSD || 0) * state.tasa)} />
                     <DataRow label="Base Imponible:" value={formatBs((data.baseImponibleUSD || 0) * state.tasa)} />
                     <DataRow label="IVA Recaudado (16%):" value={formatBs((data.ivaUSD || 0) * state.tasa)} />
@@ -209,7 +215,7 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
                   </div>
 
                   <div style={{ marginBottom: '10px' }}>
-                    <p style={{ fontWeight: '900', textAlign: 'center', marginBottom: '4px', fontSize: '10px' }}>MOVIMIENTOS DE CAJA</p>
+                    <p style={{ fontWeight: 900, textAlign: 'center', marginBottom: '4px', fontSize: '10px' }}>MOVIMIENTOS DE CAJA</p>
                     <DataRow label="Fondo de apertura Bs.:" value={formatBs(data.fondoAperturaBS || 0)} />
                     <DataRow label="Fondo de Apertura USD:" value={formatUsd(data.fondoAperturaUSD || 0)} />
                     <DataRow label="Entradas Caja:" value={formatBs((data.manualEntradas || 0) * state.tasa)} />
@@ -217,14 +223,14 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
                   </div>
 
                   <div style={{ marginBottom: '10px' }}>
-                    <p style={{ fontWeight: '900', textAlign: 'center', marginBottom: '4px', fontSize: '10px' }}>CONCILIACIÓN DE PAGOS</p>
+                    <p style={{ fontWeight: 900, textAlign: 'center', marginBottom: '4px', fontSize: '10px' }}>CONCILIACIÓN DE PAGOS</p>
                     {Object.entries(data.paymentMethods || {}).map(([method, val]) => (
                       <DataRow key={method} label={Utils.metodoLabel(method)} value={formatBs((val as number) * state.tasa)} />
                     ))}
                   </div>
 
                   <div style={{ marginBottom: '10px' }}>
-                    <p style={{ fontWeight: '900', textAlign: 'center', marginBottom: '4px', fontSize: '10px' }}>ESTADÍSTICAS DE JORNADA</p>
+                    <p style={{ fontWeight: 900, textAlign: 'center', marginBottom: '4px', fontSize: '10px' }}>ESTADÍSTICAS DE JORNADA</p>
                     <DataRow label="Facturas Emitidas:" value={String(data.stats.facturas)} />
                     <DataRow label="Notas Crédito:" value={String(data.stats.devoluciones)} />
                     <DataRow label="Docs. Anulados:" value={String(data.stats.anulaciones)} bold />
@@ -261,10 +267,12 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
                   <div className="separator" />
                   <div style={{ marginTop: '4px' }}>
                     <table style={{ width: '100%' }}>
-                      <tr>
-                        <td style={{ textAlign: 'left', fontWeight: '900', fontSize: '16px' }}>TOTAL A PAGAR:</td>
-                        <td style={{ textAlign: 'right', fontWeight: '900', fontSize: '16px' }}>{formatBs(data.totalBS)}</td>
-                      </tr>
+                      <tbody>
+                        <tr>
+                          <td style={{ textAlign: 'left', fontWeight: 900, fontSize: '16px' }}>TOTAL A PAGAR:</td>
+                          <td style={{ textAlign: 'right', fontWeight: 900, fontSize: '16px' }}>{formatBs(data.totalBS)}</td>
+                        </tr>
+                      </tbody>
                     </table>
                     <DataRow label="EQUIVALENTE REF. USD:" value={formatUsd(data.totalUSD)} bold />
                   </div>
