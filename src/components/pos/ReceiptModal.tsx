@@ -2,7 +2,7 @@
 
 import React, { useRef } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Printer, X, Zap, Share2, Monitor, User } from 'lucide-react';
+import { Printer, X, Zap, Share2, Monitor, User, ShieldCheck } from 'lucide-react';
 import { Store, Utils } from '@/lib/db-store';
 import { formatBs, formatUsd } from '@/lib/currency-formatter';
 import { auth } from '@/lib/firebase';
@@ -88,6 +88,14 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
       printData.push({ type: 'text', value: `FECHA: ${transactionDate}`, style: { fontSize: "11px", textAlign: 'center' } });
       printData.push({ type: 'text', value: SEPARATOR, style: { textAlign: 'center' } });
       
+      if (type === 'REPORT_Z') {
+        printData.push({ type: 'text', value: 'DATOS DE CONTROL Y AUDITORÍA', style: { textAlign: 'center', fontWeight: "800" } });
+        printData.push({ type: 'text', value: padRight('RANGO FACTURAS', `${data.desdeFactura} - ${data.hastaFactura}`), style: { fontSize: "10px" } });
+        printData.push({ type: 'text', value: padRight('RANGO NOTAS CRED', `${data.desdeNC} - ${data.hastaNC}`), style: { fontSize: "10px" } });
+        printData.push({ type: 'text', value: padRight('FACTURAS ANULADAS', '0000'), style: { fontSize: "10px" } });
+        printData.push({ type: 'text', value: DOTS, style: { fontSize: "11px" } });
+      }
+
       printData.push({ type: 'text', value: 'RESUMEN DE FACTURACIÓN', style: { textAlign: 'center', fontWeight: "800" } });
       printData.push({ type: 'text', value: padRight('VENTA BRUTA', formatBs(data.brUSD * state.tasa)), style: { fontSize: "11px" } });
       printData.push({ type: 'text', value: padRight('DESCUENTOS', formatBs(data.descUSD * state.tasa)), style: { fontSize: "11px" } });
@@ -107,12 +115,12 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
         printData.push({ type: 'text', value: padRight(Utils.metodoLabel(method).toUpperCase(), formatBs((val as number) * state.tasa)), style: { fontSize: "11px" } });
       });
       printData.push({ type: 'text', value: padRight('SALIDAS / GASTOS CAJA', '-' + formatBs((data.manualSalidas || 0) * state.tasa)), style: { fontSize: "11px", color: "#C0392B" } });
-      printData.push({ type: 'text', value: DOTS, style: { fontSize: "11px" } });
-
-      printData.push({ type: 'text', value: 'ESTADÍSTICAS', style: { textAlign: 'center', fontWeight: "800" } });
-      printData.push({ type: 'text', value: padRight('FACTURAS EMITIDAS', String(data.stats.facturas)), style: { fontSize: "11px" } });
-      printData.push({ type: 'text', value: padRight('DEVOLUCIONES PROCESADAS', String(data.stats.devoluciones)), style: { fontSize: "11px" } });
-      printData.push({ type: 'text', value: padRight('TICKET PROMEDIO', formatBs(data.stats.ticketPromedio * state.tasa)), style: { fontSize: "11px" } });
+      
+      if (type === 'REPORT_Z') {
+        printData.push({ type: 'text', value: SEPARATOR, style: { textAlign: 'center' } });
+        printData.push({ type: 'text', value: 'ACUMULADOS HISTÓRICOS', style: { textAlign: 'center', fontWeight: "800" } });
+        printData.push({ type: 'text', value: padRight('GRAN TOTAL (BS)', formatBs(data.acumuladoHistoricoUSD * state.tasa)), style: { fontSize: "12px", fontWeight: "800" } });
+      }
 
     } else {
       printData.push({ type: 'text', value: getReportTitle(), style: { textAlign: 'center', fontWeight: "800", fontSize: "16px" } });
@@ -136,7 +144,6 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
 
       printData.push({ type: 'text', value: SEPARATOR, style: { textAlign: 'center' } });
       printData.push({ type: 'text', value: padRight('TOTAL A PAGAR', formatBs(data.totalBS)), style: { textAlign: 'right', fontWeight: "800", fontSize: "18px" } });
-      printData.push({ type: 'text', value: padRight('REF. DIVISAS', formatUsd(data.totalUSD)), style: { textAlign: 'right', fontSize: "12px" } });
     }
 
     printData.push({ type: 'text', value: SEPARATOR, style: { textAlign: 'center' } });
@@ -201,6 +208,15 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
                 )}
               </div>
 
+              {isReport && type === 'REPORT_Z' && (
+                <div className="bg-gray-50 border border-black/10 rounded p-2 mb-4 space-y-1 text-[9px]">
+                  <p className="font-black text-center border-b border-black/5 pb-1 mb-1">CONTROL Y AUDITORÍA</p>
+                  <div className="flex justify-between"><span>RANGO FACTURACIÓN:</span><span className="font-black">{data.desdeFactura} - {data.hastaFactura}</span></div>
+                  <div className="flex justify-between"><span>RANGO NOTAS CRED:</span><span className="font-black">{data.desdeNC} - {data.hastaNC}</span></div>
+                  <div className="flex justify-between"><span>FACTURAS ANULADAS:</span><span className="font-black">0</span></div>
+                </div>
+              )}
+
               {isReport ? (
                 <div className="border-t border-b border-dashed border-black py-3 my-3 space-y-4">
                   <div className="space-y-1">
@@ -215,7 +231,7 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
                     <p className="font-black text-center border-b border-dotted pb-1 mb-1">DESGLOSE FISCAL</p>
                     <div className="flex justify-between"><span>Monto Exento:</span><span>{formatBs((data.exentoUSD || 0) * state.tasa)}</span></div>
                     <div className="flex justify-between"><span>Base Imponible:</span><span>{formatBs((data.baseImponibleUSD || 0) * state.tasa)}</span></div>
-                    <div className="flex justify-between"><span>IVA Recaudado:</span><span>{formatBs((data.ivaUSD || 0) * state.tasa)}</span></div>
+                    <div className="flex justify-between"><span>IVA Recaudado (16%):</span><span>{formatBs((data.ivaUSD || 0) * state.tasa)}</span></div>
                     <div className="flex justify-between font-bold"><span>Total IGTF (3%):</span><span>{formatBs((data.igtfUSD || 0) * state.tasa)}</span></div>
                   </div>
 
@@ -230,12 +246,13 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
                     <div className="flex justify-between text-status-danger"><span>SALIDAS / GASTOS:</span><span>-{formatBs((data.manualSalidas || 0) * state.tasa)}</span></div>
                   </div>
 
-                  <div className="space-y-1">
-                    <p className="font-black text-center border-b border-dotted pb-1 mb-1">ESTADÍSTICAS</p>
-                    <div className="flex justify-between"><span>Facturas Emitidas:</span><span>{data.stats.facturas}</span></div>
-                    <div className="flex justify-between"><span>Devoluciones:</span><span>{data.stats.devoluciones}</span></div>
-                    <div className="flex justify-between font-bold"><span>Ticket Promedio:</span><span>{formatBs(data.stats.ticketPromedio * state.tasa)}</span></div>
-                  </div>
+                  {type === 'REPORT_Z' && (
+                    <div className="space-y-1 bg-black text-white p-2 text-center rounded">
+                      <p className="font-black border-b border-white/20 pb-1 mb-1 uppercase text-[8px]">Memoria Fiscal Inalterable</p>
+                      <p className="text-[11px] font-black">{formatBs(data.acumuladoHistoricoUSD * state.tasa)}</p>
+                      <p className="text-[7px] opacity-70">GRAN TOTAL ACUMULADO</p>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <table className="w-full border-t border-b border-dashed border-black my-3">

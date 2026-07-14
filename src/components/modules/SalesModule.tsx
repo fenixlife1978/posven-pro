@@ -82,28 +82,27 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
 
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // Función para obtener un resumen fresco y detallado al momento de solicitar un reporte
+  // Función para obtener un resumen fresco y detallado (Snapshot Inmutable)
   const getFreshReportData = () => {
-    const hoy = Utils.hoy();
     const corteTimestamp = state.fechaUltimoZ || '';
     
     // 1. Filtrar ventas y devoluciones desde el último cierre Z
-    const vHoy = (state.ventas || []).filter(v => v.fecha > corteTimestamp);
-    const dHoy = (state.devoluciones || []).filter(d => d.fecha > corteTimestamp);
+    const vHoy = (state.ventas || []).filter(v => v.fecha > corteTimestamp).sort((a,b) => a.fecha.localeCompare(b.fecha));
+    const dHoy = (state.devoluciones || []).filter(d => d.fecha > corteTimestamp).sort((a,b) => a.fecha.localeCompare(b.fecha));
     
-    // 2. Resumen de Ventas
+    // 2. Totales de Facturación
     const brUSD = vHoy.reduce((s, v) => s + v.totalUSD, 0);
     const devUSD = dHoy.reduce((s, d) => s + d.totalUSD, 0);
     const descUSD = vHoy.reduce((s, v) => s + (v.descuentoUSD || 0), 0);
     const netUSD = brUSD - devUSD - descUSD;
 
-    // 3. Desglose Fiscal
+    // 3. Desglose Fiscal Acumulado
     const baseImponibleUSD = vHoy.reduce((s, v) => s + (v.baseImponibleUSD || 0), 0);
     const ivaUSD = vHoy.reduce((s, v) => s + (v.ivaUSD || 0), 0);
     const exentoUSD = vHoy.reduce((s, v) => s + (v.exentoUSD || 0), 0);
     const igtfUSD = vHoy.reduce((s, v) => s + (v.igtfUSD || 0), 0);
 
-    // 4. Desglose de Formas de Pago (Consolidado)
+    // 4. Desglose de Formas de Pago
     const paymentMethodsMap: Record<string, number> = {};
     vHoy.forEach(v => {
       if (v.payments && v.payments.length > 0) {
@@ -115,12 +114,15 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       }
     });
 
-    // 5. Movimientos de Caja (Libro Diario)
+    // 5. Rangos de Documentos
+    const desdeFactura = vHoy.length > 0 ? vHoy[0].id : 'N/A';
+    const hastaFactura = vHoy.length > 0 ? vHoy[vHoy.length - 1].id : 'N/A';
+    const desdeNC = dHoy.length > 0 ? dHoy[0].id : 'N/A';
+    const hastaNC = dHoy.length > 0 ? dHoy[dHoy.length - 1].id : 'N/A';
+
+    // 6. Movimientos de Caja
     const manualExpenses = (state.libroDiario || []).filter(e => e.fecha > corteTimestamp && e.tipo === 'egreso');
     const totalSalidasCaja = manualExpenses.reduce((s, e) => s + e.montoUSD, 0);
-
-    // 6. Estadísticas
-    const avgTicket = vHoy.length > 0 ? (netUSD / vHoy.length) : 0;
 
     const currentTerminal = state.terminales.find(t => t.usuarioId === auth.currentUser?.uid);
     const terminalName = currentTerminal ? currentTerminal.nombre : 'SISTEMA GLOBAL';
@@ -136,15 +138,19 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       exentoUSD,
       paymentMethods: paymentMethodsMap,
       manualSalidas: totalSalidasCaja,
+      desdeFactura,
+      hastaFactura,
+      desdeNC,
+      hastaNC,
       stats: {
         facturas: vHoy.length,
         devoluciones: dHoy.length,
-        ticketPromedio: avgTicket
+        ticketPromedio: vHoy.length > 0 ? (netUSD / vHoy.length) : 0
       },
-      ventasHoy: vHoy, 
       fecha: Utils.ahora(),
       terminalName,
-      numeroZ: state.ultimoZ + 1
+      numeroZ: state.ultimoZ + 1,
+      acumuladoHistoricoUSD: state.acumuladoHistorico + netUSD
     };
   };
 
@@ -152,6 +158,48 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     const data = getFreshReportData();
     setReportSnapshot(data);
     setShowReportType(type);
+  };
+
+  const ejecutarCierreZ = () => {
+    const data = reportSnapshot;
+    if (!data) return;
+    
+    const ahora = Utils.ahora();
+    const numeroZ = state.ultimoZ + 1;
+
+    const nuevoZ: ReportZ = {
+      id: 'Z-' + String(numeroZ).padStart(6, '0'),
+      fecha: ahora,
+      numeroZ,
+      terminalName: data.terminalName,
+      desdeFactura: data.desdeFactura,
+      hastaFactura: data.hastaFactura,
+      desdeNotaCredito: data.desdeNC,
+      hastaNotaCredito: data.hastaNC,
+      cantidadAnuladas: 0, // Placeholder
+      ventaBrutaUSD: data.brUSD,
+      descuentoUSD: data.descUSD,
+      devolucionesUSD: data.devUSD,
+      ventaNetaUSD: data.netUSD,
+      baseImponibleUSD: data.baseImponibleUSD,
+      ivaUSD: data.ivaUSD,
+      exentoUSD: data.exentoUSD,
+      igtfUSD: data.igtfUSD,
+      metodosPago: { ...data.paymentMethods },
+      salidasCajaUSD: data.manualSalidas,
+      acumuladoHistoricoUSD: data.acumuladoHistoricoUSD,
+      stats: { ...data.stats }
+    };
+
+    updateState({
+      reportesZ: [...(state.reportesZ || []), nuevoZ],
+      ultimoZ: numeroZ,
+      fechaUltimoZ: ahora,
+      acumuladoHistorico: data.acumuladoHistoricoUSD
+    });
+
+    toast({ title: `Cierre Fiscal Z #${numeroZ} Exitoso`, description: "La jornada se ha archivado permanentemente." });
+    setShowReportType(null);
   };
 
   const groupedCredits = useMemo(() => {
@@ -374,7 +422,6 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       libroDiario: [...nuevasEntradasDiario, ...(state.libroDiario || [])], 
       carrito: [], 
       proximoRecibo: state.proximoRecibo + 1, 
-      acumuladoHistorico: state.acumuladoHistorico + subtotalUSD,
       terminales: nuevosTerminales
     });
 
@@ -383,38 +430,6 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     setPagos([]);
     setCliente('Consumidor final');
     setSelectedProductDisplay(null);
-  };
-
-  const ejecutarCierreZ = () => {
-    const data = reportSnapshot;
-    if (!data) return;
-    
-    const ahora = Utils.ahora();
-    const numeroZ = state.ultimoZ + 1;
-    const desdeFac = data.ventasHoy[0]?.id || '0';
-    const hastaFac = data.ventasHoy[data.ventasHoy.length-1]?.id || '0';
-
-    const nuevoZ: ReportZ = {
-      id: Store.uid(),
-      fecha: ahora,
-      numeroZ,
-      desdeFactura: desdeFac,
-      hastaFactura: hastaFac,
-      baseImponibleUSD: data.baseImponibleUSD,
-      ivaUSD: data.ivaUSD,
-      exentoUSD: data.exentoUSD,
-      totalBrutoUSD: data.brUSD,
-      acumuladoHistoricoUSD: state.acumuladoHistorico
-    };
-
-    updateState({
-      reportesZ: [...(state.reportesZ || []), nuevoZ],
-      ultimoZ: numeroZ,
-      fechaUltimoZ: ahora
-    });
-
-    toast({ title: `Reporte Z #${numeroZ} generado.`, description: "Acumulados diarios reiniciados." });
-    setShowReportType(null);
   };
 
   const ejecutarAbono = (pagosAbono: PagoRealizado[]) => {
@@ -945,10 +960,10 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
               ) : (
                 <div className="space-y-4 animate-in slide-in-from-right-2 duration-200">
                    <div className="space-y-2">
-                     <div className="space-y-1"><label className="text-[9px] font-black uppercase text-ink">Nombre Completo</label><input className="form-input h-9 text-xs font-black uppercase" value={newClient.name} onChange={e => setNewClient({...newClient, name: e.target.value})} /></div>
-                     <div className="space-y-1"><label className="text-[9px] font-black uppercase text-ink">Cédula / RIF</label><input className="form-input h-9 text-xs font-black uppercase" value={newClient.cedula} onChange={e => setNewClient({...newClient, cedula: e.target.value})} /></div>
-                     <div className="space-y-1"><label className="text-[9px] font-black uppercase text-ink">Teléfono (XXXX-XXXXXXX)</label><input className="form-input h-9 text-xs font-black uppercase" value={newClient.phone} onChange={e => setNewClient({...newClient, phone: e.target.value})} placeholder="04XX-XXXXXXX" /></div>
-                     <div className="space-y-1"><label className="text-[9px] font-black uppercase text-ink">Dirección</label><input className="form-input h-9 text-xs font-black uppercase" value={newClient.address} onChange={e => setNewClient({...newClient, address: e.target.value})} /></div>
+                     <div className="space-y-1"><label className="text-9px font-black uppercase text-ink">Nombre Completo</label><input className="form-input h-9 text-xs font-black uppercase" value={newClient.name} onChange={e => setNewClient({...newClient, name: e.target.value})} /></div>
+                     <div className="space-y-1"><label className="text-9px font-black uppercase text-ink">Cédula / RIF</label><input className="form-input h-9 text-xs font-black uppercase" value={newClient.cedula} onChange={e => setNewClient({...newClient, cedula: e.target.value})} /></div>
+                     <div className="space-y-1"><label className="text-9px font-black uppercase text-ink">Teléfono (XXXX-XXXXXXX)</label><input className="form-input h-9 text-xs font-black uppercase" value={newClient.phone} onChange={e => setNewClient({...newClient, phone: e.target.value})} placeholder="04XX-XXXXXXX" /></div>
+                     <div className="space-y-1"><label className="text-9px font-black uppercase text-ink">Dirección</label><input className="form-input h-9 text-xs font-black uppercase" value={newClient.address} onChange={e => setNewClient({...newClient, address: e.target.value})} /></div>
                    </div>
                    <button className="btn btn-primary w-full h-12 font-black uppercase text-xs shadow-md" onClick={ejecutarVentaACredito}>Guardar y Cargar</button>
                    <button className="text-[10px] text-ink font-black uppercase text-center w-full" onClick={() => setShowNewClientForm(false)}>Volver a la lista</button>

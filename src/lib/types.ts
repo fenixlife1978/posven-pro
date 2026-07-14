@@ -164,13 +164,28 @@ export interface ReportZ {
   id: string;
   fecha: string;
   numeroZ: number;
+  terminalName: string;
   desdeFactura: string;
   hastaFactura: string;
+  desdeNotaCredito: string;
+  hastaNotaCredito: string;
+  cantidadAnuladas: number;
+  ventaBrutaUSD: number;
+  descuentoUSD: number;
+  devolucionesUSD: number;
+  ventaNetaUSD: number;
   baseImponibleUSD: number;
   ivaUSD: number;
   exentoUSD: number;
-  totalBrutoUSD: number;
+  igtfUSD: number;
+  metodosPago: Record<string, number>;
+  salidasCajaUSD: number;
   acumuladoHistoricoUSD: number;
+  stats: {
+    facturas: number;
+    devoluciones: number;
+    ticketPromedio: number;
+  };
 }
 
 export interface AppState {
