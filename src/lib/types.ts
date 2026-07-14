@@ -34,7 +34,7 @@ export interface KitItem {
 export interface Movimiento {
   id: string;
   productoId: string;
-  tipo: 'ajuste_entrada' | 'ajuste_salida' | 'consumo' | 'colaboracion' | 'compra' | 'venta' | 'devolucion' | 'cobro_deuda' | 'inicial';
+  tipo: 'ajuste_entrada' | 'ajuste_salida' | 'consumo' | 'colaboracion' | 'compra' | 'venta' | 'devolucion' | 'anulacion' | 'cobro_deuda' | 'inicial';
   cantidad: number;
   stockAntes: number;
   stockDespues: number;
@@ -180,10 +180,13 @@ export interface ReportZ {
   igtfUSD: number;
   metodosPago: Record<string, number>;
   salidasCajaUSD: number;
+  entradasCajaUSD: number;
+  fondoAperturaUSD: number;
   acumuladoHistoricoUSD: number;
   stats: {
     facturas: number;
     devoluciones: number;
+    anulaciones: number;
     ticketPromedio: number;
   };
 }

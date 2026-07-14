@@ -11,10 +11,14 @@ import {
   AlertTriangle, 
   Undo2,
   ClipboardList,
-  History
+  History,
+  AlertCircle,
+  ShieldX,
+  ArrowLeft
 } from 'lucide-react';
+import { toast } from '@/hooks/use-toast';
 
-export default function ReturnsModule({ state, updateState }: { state: AppState, updateState: (s: Partial<AppState>) => void }) {
+export default function ReturnsModule({ state, updateState, onBackToPOS }: { state: AppState, updateState: (s: Partial<AppState>) => void, onBackToPOS: () => void }) {
   const [view, setView] = useState<'list' | 'create'>('list');
   const [saleSearch, setSaleSearch] = useState('');
   const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
@@ -25,6 +29,7 @@ export default function ReturnsModule({ state, updateState }: { state: AppState,
   const buscarVenta = () => {
     const sale = state.ventas.find(v => v.id === saleSearch || v.id.endsWith(saleSearch));
     if (!sale) return alert('Venta no encontrada');
+    if (sale.estado === 'anulada') return alert('Esta factura ya ha sido anulada previamente.');
     
     setSelectedSale(sale);
     setReturnItems([]);
@@ -43,7 +48,9 @@ export default function ReturnsModule({ state, updateState }: { state: AppState,
       return alert('Este producto ya ha sido devuelto en su totalidad.');
     }
 
-    const qty = parseInt(prompt(`Cantidad a devolver (Máx: ${availableToReturn}):`, '1') || '0');
+    const qtyStr = prompt(`Cantidad a devolver (Máx: ${availableToReturn}):`, '1');
+    if (!qtyStr) return;
+    const qty = parseInt(qtyStr || '0');
     if (isNaN(qty) || qty <= 0 || qty > availableToReturn) return alert('Cantidad no válida');
 
     const condition = confirm('¿El producto se encuentra APTO para la venta? (OK: Vuelve a stock, CANCEL: Va a merma/daño)') 
@@ -125,40 +132,94 @@ export default function ReturnsModule({ state, updateState }: { state: AppState,
     setMotivo('');
   };
 
+  const anularFacturaCompleta = () => {
+    if (!selectedSale) return;
+    const pin = prompt('AUTORIZACIÓN REQUERIDA: Ingrese PIN de Seguridad:');
+    if (pin !== state.pinDevolucion) return alert('PIN Incorrecto');
+
+    if (!confirm(`¿ESTÁ SEGURO DE ANULAR LA FACTURA ${selectedSale.id}?\nEsta acción devolverá todo el stock y anulará el ingreso de caja.`)) return;
+
+    const ahoraStr = Utils.ahora();
+    const nuevosProductos = [...state.productos];
+    const nuevosMovimientos: Movimiento[] = [];
+
+    selectedSale.items.forEach(item => {
+      const pIdx = nuevosProductos.findIndex(p => p.id === item.productoId);
+      if (pIdx >= 0) {
+        const p = nuevosProductos[pIdx];
+        const stockAntes = p.stock;
+        nuevosProductos[pIdx] = { ...p, stock: p.stock + item.cantidad };
+        
+        nuevosMovimientos.push({
+          id: Store.uid(),
+          productoId: item.productoId,
+          tipo: 'anulacion',
+          cantidad: item.cantidad,
+          stockAntes,
+          stockDespues: nuevosProductos[pIdx].stock,
+          fecha: ahoraStr,
+          referencia: `ANULACIÓN TOTAL FACTURA #${selectedSale.id}`
+        });
+      }
+    });
+
+    const nuevasVentas = state.ventas.map(v => 
+      v.id === selectedSale.id ? { ...v, estado: 'anulada' } : v
+    );
+
+    // Revertir en Libro Diario si existe
+    const nuevoDiario = state.libroDiario.filter(e => !(e.referencia === selectedSale.id && e.categoria === 'VENTA'));
+
+    updateState({
+      productos: nuevosProductos,
+      ventas: nuevasVentas,
+      movimientos: [...state.movimientos, ...nuevosMovimientos],
+      libroDiario: nuevoDiario
+    });
+
+    toast({ title: "Factura Anulada", description: `El documento ${selectedSale.id} ha sido invalidado.` });
+    setView('list');
+    setSelectedSale(null);
+  };
+
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex justify-between items-center bg-white p-4 rounded-xl border border-line shadow-sm">
         <div>
           <h2 className="text-ink font-black uppercase italic tracking-tighter text-xl flex items-center gap-2">
-            <RotateCcw className="text-status-danger" /> GESTIÓN DE DEVOLUCIONES
+            <RotateCcw className="text-status-danger" /> DEVOLUCIONES Y ANULACIONES
           </h2>
-          <p className="text-[10px] text-ink font-bold uppercase tracking-widest opacity-60">Auditoría y Reintegro de Mercancía</p>
         </div>
-        <button 
-          onClick={() => { setView(view === 'list' ? 'create' : 'list'); setSelectedSale(null); }} 
-          className={`btn ${view === 'list' ? 'btn-primary' : 'btn-secondary'} h-10 px-6 font-black uppercase text-xs flex items-center gap-2 shadow-sm`}
-        >
-          {view === 'list' ? <><RotateCcw className="w-4 h-4" /> Nueva Devolución</> : <><History className="w-4 h-4" /> Ver Historial</>}
-        </button>
+        <div className="flex gap-2">
+          <button onClick={onBackToPOS} className="btn btn-secondary h-9 px-4 font-black uppercase text-[10px] flex items-center gap-2">
+            <ArrowLeft className="w-3.5 h-3.5" /> Volver al POS
+          </button>
+          <button 
+            onClick={() => { setView(view === 'list' ? 'create' : 'list'); setSelectedSale(null); }} 
+            className={`btn ${view === 'list' ? 'btn-primary' : 'btn-secondary'} h-10 px-6 font-black uppercase text-xs flex items-center gap-2 shadow-sm`}
+          >
+            {view === 'list' ? <><RotateCcw className="w-4 h-4" /> Nueva Operación</> : <><History className="w-4 h-4" /> Ver Historial</>}
+          </button>
+        </div>
       </div>
 
       {view === 'list' ? (
-        <div className="card shadow-lg animate-in fade-in duration-300 border-line">
+        <div className="card shadow-lg animate-in fade-in duration-300 border-line bg-white">
           <div className="card-head bg-surface-soft border-b border-line px-5 py-4">
             <h3 className="text-ink font-black text-xs uppercase tracking-widest flex items-center gap-2">
-              <ClipboardList className="w-4 h-4 text-status-info" /> Historial Cronológico de Devoluciones
+              <ClipboardList className="w-4 h-4 text-status-info" /> Historial de N.C y Devoluciones
             </h3>
           </div>
           <div className="table-wrap">
             <table>
               <thead>
                 <tr className="bg-surface-soft">
-                  <th className="text-ink font-black text-[10px] uppercase">ID Devolución</th>
+                  <th className="text-ink font-black text-[10px] uppercase">ID Operación</th>
                   <th className="text-ink font-black text-[10px] uppercase">Fecha</th>
                   <th className="text-ink font-black text-[10px] uppercase">Venta Ref.</th>
                   <th className="text-ink font-black text-[10px] uppercase">Items</th>
                   <th className="text-ink font-black text-[10px] uppercase text-right">Total Devuelto</th>
-                  <th className="text-ink font-black text-[10px] uppercase">Reembolso</th>
+                  <th className="text-ink font-black text-[10px] uppercase">Motivo</th>
                 </tr>
               </thead>
               <tbody className="bg-white">
@@ -174,7 +235,7 @@ export default function ReturnsModule({ state, updateState }: { state: AppState,
                         {d.items.length} productos
                       </td>
                       <td className="text-brand-gold-deep font-black text-xs text-right">{Utils.fmtUSD(d.totalUSD)}</td>
-                      <td><span className="badge badge-neutral font-black text-[9px] uppercase">{d.metodoReembolso}</span></td>
+                      <td className="text-ink text-[10px] uppercase font-bold italic truncate max-w-[200px]">{d.motivo}</td>
                     </tr>
                   ))
                 )}
@@ -189,8 +250,8 @@ export default function ReturnsModule({ state, updateState }: { state: AppState,
               <div className="card p-12 flex flex-col items-center justify-center text-center space-y-6 bg-white border-dashed border-2 border-line">
                 <div className="p-5 bg-surface-soft rounded-full"><Search className="w-10 h-10 text-ink/20" /></div>
                 <div className="max-w-xs space-y-2">
-                  <h3 className="text-ink font-black uppercase text-sm">Localizar Venta Original</h3>
-                  <p className="text-[10px] text-ink font-bold uppercase opacity-60">Ingrese el número de recibo impreso en el ticket del cliente para iniciar el proceso.</p>
+                  <h3 className="text-ink font-black uppercase text-sm">Localizar Factura</h3>
+                  <p className="text-[10px] text-ink font-bold uppercase opacity-60">Ingrese el número de recibo para iniciar una devolución parcial o anulación total.</p>
                 </div>
                 <div className="flex gap-2 w-full max-w-sm">
                   <input 
@@ -206,9 +267,14 @@ export default function ReturnsModule({ state, updateState }: { state: AppState,
             ) : (
               <div className="space-y-4">
                 <div className="card bg-white border-status-info/30">
-                  <div className="card-head py-3 px-5 border-b border-line flex justify-between">
-                    <h3 className="text-status-info font-black uppercase text-xs">Venta: {selectedSale.id}</h3>
-                    <button onClick={() => setSelectedSale(null)} className="text-ink/40 hover:text-ink"><X className="w-4 h-4"/></button>
+                  <div className="card-head py-3 px-5 border-b border-line flex justify-between items-center">
+                    <h3 className="text-status-info font-black uppercase text-xs">Venta Original: {selectedSale.id}</h3>
+                    <div className="flex gap-2">
+                       <button onClick={anularFacturaCompleta} className="btn btn-danger h-8 px-4 font-black uppercase text-[9px] flex items-center gap-2">
+                         <ShieldX className="w-3.5 h-3.5" /> ANULACIÓN TOTAL
+                       </button>
+                       <button onClick={() => setSelectedSale(null)} className="text-ink/40 hover:text-ink"><X className="w-4 h-4"/></button>
+                    </div>
                   </div>
                   <div className="table-wrap">
                     <table>
@@ -231,7 +297,7 @@ export default function ReturnsModule({ state, updateState }: { state: AppState,
                                 onClick={() => handleAddItem(item.productoId, item.nombre, item.precioUnitUSD, item.cantidad)}
                                 className="btn btn-sm btn-secondary text-ink font-black text-[9px] uppercase h-7"
                               >
-                                Seleccionar
+                                Devolver Item
                               </button>
                             </td>
                           </tr>
@@ -275,7 +341,7 @@ export default function ReturnsModule({ state, updateState }: { state: AppState,
                           </tr>
                         ))}
                         {returnItems.length === 0 && (
-                          <tr><td colSpan={5} className="text-center py-10 text-ink/20 font-black uppercase italic text-[10px]">Añade productos de la venta original</td></tr>
+                          <tr><td colSpan={5} className="text-center py-10 text-ink/20 font-black uppercase italic text-[10px]">Añade productos para una devolución parcial</td></tr>
                         )}
                       </tbody>
                     </table>
@@ -288,7 +354,7 @@ export default function ReturnsModule({ state, updateState }: { state: AppState,
           <div className="space-y-6">
             <div className="card bg-white border-line h-fit shadow-lg">
               <div className="card-head py-4 px-6 border-b border-line bg-surface-soft">
-                <h3 className="text-ink font-black uppercase text-xs">Finalizar Transacción</h3>
+                <h3 className="text-ink font-black uppercase text-xs">Confirmar Devolución Parcial</h3>
               </div>
               <div className="card-body p-6 space-y-6">
                 <div className="bg-surface-soft p-4 rounded-lg border border-line text-center shadow-inner">
@@ -312,10 +378,10 @@ export default function ReturnsModule({ state, updateState }: { state: AppState,
                 </div>
 
                 <div className="form-group">
-                  <label className="text-ink text-[10px] font-black uppercase block mb-1">Motivo de la Devolución</label>
+                  <label className="text-ink text-[10px] font-black uppercase block mb-1">Motivo / Observaciones</label>
                   <textarea 
                     className="form-input bg-white text-ink text-xs min-h-[100px] border-line py-3"
-                    placeholder="Describa el porqué de la devolución..."
+                    placeholder="Describa el porqué de esta operación..."
                     value={reason}
                     onChange={e => setMotivo(e.target.value)}
                   ></textarea>
@@ -323,7 +389,7 @@ export default function ReturnsModule({ state, updateState }: { state: AppState,
 
                 <div className="p-3 bg-status-danger-soft rounded border border-status-danger/20 flex gap-3">
                    <AlertTriangle className="w-5 h-5 text-status-danger shrink-0" />
-                   <p className="text-[9px] text-ink font-bold leading-tight opacity-70">Esta acción generará una nota de crédito y ajustará el inventario según el estado del producto seleccionado.</p>
+                   <p className="text-[9px] text-ink font-bold leading-tight opacity-70">Esta acción generará una nota de crédito y ajustará el inventario. La factura original se mantendrá como parcialmente devuelta.</p>
                 </div>
 
                 <button 

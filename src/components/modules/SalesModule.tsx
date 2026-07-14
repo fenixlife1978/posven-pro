@@ -39,11 +39,10 @@ import {
 import { auth } from '@/lib/firebase';
 import { ReceiptModal } from '@/components/pos/ReceiptModal';
 import FloatingPaymentModal from '@/components/pos/FloatingPaymentModal';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
 import { toast } from '@/hooks/use-toast';
 import { AppState, SaleItem, Sale, PaymentMethod, ReportZ, PagoRealizado, Customer, Return, ReturnItem, Product, Debt, Movimiento, LibroDiarioEntry } from '@/lib/types';
 import { Utils, Store } from '@/lib/db-store';
+import ReturnsModule from '@/components/modules/ReturnsModule';
 
 declare global {
   interface Window {
@@ -87,24 +86,25 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     const corteTimestamp = state.fechaUltimoZ || '';
     
     // 1. Filtrar ventas y devoluciones desde el último cierre Z
-    const vHoy = (state.ventas || []).filter(v => v.fecha > corteTimestamp).sort((a,b) => a.fecha.localeCompare(b.fecha));
-    const dHoy = (state.devoluciones || []).filter(d => d.fecha > corteTimestamp).sort((a,b) => a.fecha.localeCompare(b.fecha));
+    const vActivas = (state.ventas || []).filter(v => v.fecha > corteTimestamp && v.estado !== 'anulada');
+    const vAnuladas = (state.ventas || []).filter(v => v.fecha > corteTimestamp && v.estado === 'anulada');
+    const dHoy = (state.devoluciones || []).filter(d => d.fecha > corteTimestamp);
     
     // 2. Totales de Facturación
-    const brUSD = vHoy.reduce((s, v) => s + v.totalUSD, 0);
+    const brUSD = vActivas.reduce((s, v) => s + v.totalUSD, 0);
     const devUSD = dHoy.reduce((s, d) => s + d.totalUSD, 0);
-    const descUSD = vHoy.reduce((s, v) => s + (v.descuentoUSD || 0), 0);
+    const descUSD = vActivas.reduce((s, v) => s + (v.descuentoUSD || 0), 0);
     const netUSD = brUSD - devUSD - descUSD;
 
     // 3. Desglose Fiscal Acumulado
-    const baseImponibleUSD = vHoy.reduce((s, v) => s + (v.baseImponibleUSD || 0), 0);
-    const ivaUSD = vHoy.reduce((s, v) => s + (v.ivaUSD || 0), 0);
-    const exentoUSD = vHoy.reduce((s, v) => s + (v.exentoUSD || 0), 0);
-    const igtfUSD = vHoy.reduce((s, v) => s + (v.igtfUSD || 0), 0);
+    const baseImponibleUSD = vActivas.reduce((s, v) => s + (v.baseImponibleUSD || 0), 0);
+    const ivaUSD = vActivas.reduce((s, v) => s + (v.ivaUSD || 0), 0);
+    const exentoUSD = vActivas.reduce((s, v) => s + (v.exentoUSD || 0), 0);
+    const igtfUSD = vActivas.reduce((s, v) => s + (v.igtfUSD || 0), 0);
 
     // 4. Desglose de Formas de Pago
     const paymentMethodsMap: Record<string, number> = {};
-    vHoy.forEach(v => {
+    vActivas.forEach(v => {
       if (v.payments && v.payments.length > 0) {
         v.payments.forEach(p => {
           paymentMethodsMap[p.metodo] = (paymentMethodsMap[p.metodo] || 0) + p.montoUSD;
@@ -115,14 +115,18 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     });
 
     // 5. Rangos de Documentos
-    const desdeFactura = vHoy.length > 0 ? vHoy[0].id : 'N/A';
-    const hastaFactura = vHoy.length > 0 ? vHoy[vHoy.length - 1].id : 'N/A';
-    const desdeNC = dHoy.length > 0 ? dHoy[0].id : 'N/A';
-    const hastaNC = dHoy.length > 0 ? dHoy[dHoy.length - 1].id : 'N/A';
+    const sortedVentas = vActivas.sort((a,b) => a.fecha.localeCompare(b.fecha));
+    const desdeFactura = sortedVentas.length > 0 ? sortedVentas[0].id : 'N/A';
+    const hastaFactura = sortedVentas.length > 0 ? sortedVentas[sortedVentas.length - 1].id : 'N/A';
+    
+    const sortedDevs = dHoy.sort((a,b) => a.fecha.localeCompare(b.fecha));
+    const desdeNC = sortedDevs.length > 0 ? sortedDevs[0].id : 'N/A';
+    const hastaNC = sortedDevs.length > 0 ? sortedDevs[sortedDevs.length - 1].id : 'N/A';
 
     // 6. Movimientos de Caja
-    const manualExpenses = (state.libroDiario || []).filter(e => e.fecha > corteTimestamp && e.tipo === 'egreso');
-    const totalSalidasCaja = manualExpenses.reduce((s, e) => s + e.montoUSD, 0);
+    const relevantDiario = (state.libroDiario || []).filter(e => e.fecha > corteTimestamp);
+    const totalSalidasCaja = relevantDiario.filter(e => e.tipo === 'egreso').reduce((s, e) => s + e.montoUSD, 0);
+    const totalEntradasCaja = relevantDiario.filter(e => e.tipo === 'ingreso' && e.categoria !== 'VENTA' && e.categoria !== 'COBRO_DEUDA').reduce((s, e) => s + e.montoUSD, 0);
 
     const currentTerminal = state.terminales.find(t => t.usuarioId === auth.currentUser?.uid);
     const terminalName = currentTerminal ? currentTerminal.nombre : 'SISTEMA GLOBAL';
@@ -138,14 +142,17 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       exentoUSD,
       paymentMethods: paymentMethodsMap,
       manualSalidas: totalSalidasCaja,
+      manualEntradas: totalEntradasCaja,
+      fondoAperturaUSD: 0, // Implementar si se requiere valor persistente de apertura
       desdeFactura,
       hastaFactura,
       desdeNC,
       hastaNC,
       stats: {
-        facturas: vHoy.length,
+        facturas: vActivas.length,
         devoluciones: dHoy.length,
-        ticketPromedio: vHoy.length > 0 ? (netUSD / vHoy.length) : 0
+        anulaciones: vAnuladas.length,
+        ticketPromedio: vActivas.length > 0 ? (netUSD / vActivas.length) : 0
       },
       fecha: Utils.ahora(),
       terminalName,
@@ -176,7 +183,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       hastaFactura: data.hastaFactura,
       desdeNotaCredito: data.desdeNC,
       hastaNotaCredito: data.hastaNC,
-      cantidadAnuladas: 0, // Placeholder
+      cantidadAnuladas: data.stats.anulaciones,
       ventaBrutaUSD: data.brUSD,
       descuentoUSD: data.descUSD,
       devolucionesUSD: data.devUSD,
@@ -187,6 +194,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       igtfUSD: data.igtfUSD,
       metodosPago: { ...data.paymentMethods },
       salidasCajaUSD: data.manualSalidas,
+      entradasCajaUSD: data.manualEntradas,
+      fondoAperturaUSD: data.fondoAperturaUSD,
       acumuladoHistoricoUSD: data.acumuladoHistoricoUSD,
       stats: { ...data.stats }
     };
@@ -198,7 +207,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       acumuladoHistorico: data.acumuladoHistoricoUSD
     });
 
-    toast({ title: `Cierre Fiscal Z #${numeroZ} Exitoso`, description: "La jornada se ha archivado permanentemente y el historial se ha reiniciado." });
+    toast({ title: `Cierre Fiscal Z #${numeroZ} Exitoso`, description: "La jornada se ha archivado y el historial visual se ha reiniciado." });
     setShowReportType(null);
   };
 
@@ -624,7 +633,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         <button onClick={() => setView('credits')} className={`btn btn-sm ${view === 'credits' ? 'btn-primary shadow-md' : 'bg-white text-ink font-bold border-line border'}`}><ClipboardList className="w-3.5 h-3.5"/> Consultar Créditos</button>
         <button onClick={() => handleOpenReport('REPORT_X')} className="btn btn-sm bg-white text-ink font-bold border-line border"><FileText className="w-3.5 h-3.5"/> Reporte X</button>
         <button onClick={() => handleOpenReport('REPORT_Z')} className="btn btn-sm bg-white text-ink font-bold border-line border"><Receipt className="w-3.5 h-3.5"/> Reporte Z</button>
-        <button onClick={() => setView('returns')} className={`btn btn-sm ${view === 'returns' ? 'btn-primary shadow-md' : 'bg-white text-ink font-bold border-line border'}`}><RotateCcw className="w-3.5 h-3.5"/> Devoluciones</button>
+        <button onClick={() => setView('returns')} className={`btn btn-sm ${view === 'returns' ? 'btn-primary shadow-md' : 'bg-white text-ink font-bold border-line border'}`}><RotateCcw className="w-3.5 h-3.5"/> Devoluciones y Anulaciones</button>
       </div>
 
       {view === 'pos' ? (
@@ -766,7 +775,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
               <thead><tr><th>Recibo</th><th>Hora</th><th>Terminal</th><th>Cliente</th><th>Tipo</th><th className="text-right">Monto USD</th><th>Método</th><th className="text-center">Estado</th></tr></thead>
               <tbody>
                 {(state.ventas || []).filter(v => v.fecha > (state.fechaUltimoZ || '')).sort((a,b) => b.fecha.localeCompare(a.fecha)).map(v => (
-                  <tr key={v.id} className="border-b border-line/40 hover:bg-surface-warm/20"><td className="text-ink font-black text-xs mono">{v.id}</td><td className="text-ink font-bold text-xs">{v.fecha.split('T')[1]?.slice(0, 5)}</td><td className="text-ink font-black text-[10px] uppercase">{state.terminales.find(t => t.id === v.terminalId)?.nombre || '-'}</td><td className="text-ink font-black text-xs uppercase truncate max-w-[150px]">{v.cliente}</td><td className="text-ink font-black text-[9px] uppercase"><span className={`badge ${v.type === 'COBRO DEUDA' ? 'badge-info' : 'badge-neutral'}`}>{v.type || 'VENTA'}</span></td><td className="text-brand-gold-deep font-black text-xs text-right">{Utils.fmtUSD(v.totalUSD)}</td><td className="text-ink font-bold text-[10px] uppercase">{Utils.metodoLabel(v.metodoPago)}</td><td className="text-center"><span className={`badge ${v.estado === 'pendiente' ? 'badge-warn' : 'badge-ok'} font-black text-[9px] uppercase`}>{v.estado}</span></td></tr>
+                  <tr key={v.id} className="border-b border-line/40 hover:bg-surface-warm/20"><td className="text-ink font-black text-xs mono">{v.id}</td><td className="text-ink font-bold text-xs">{v.fecha.split('T')[1]?.slice(0, 5)}</td><td className="text-ink font-black text-[10px] uppercase">{state.terminales.find(t => t.id === v.terminalId)?.nombre || '-'}</td><td className="text-ink font-black text-xs uppercase truncate max-w-[150px]">{v.cliente}</td><td className="text-ink font-black text-[9px] uppercase"><span className={`badge ${v.type === 'COBRO DEUDA' ? 'badge-info' : 'badge-neutral'}`}>{v.type || 'VENTA'}</span></td><td className="text-brand-gold-deep font-black text-xs text-right">{Utils.fmtUSD(v.totalUSD)}</td><td className="text-ink font-bold text-[10px] uppercase">{Utils.metodoLabel(v.metodoPago)}</td><td className="text-center"><span className={`badge ${v.estado === 'pendiente' ? 'badge-warn' : (v.estado === 'anulada' ? 'badge-err' : 'badge-ok')} font-black text-[9px] uppercase`}>{v.estado}</span></td></tr>
                 ))}
               </tbody>
             </table>
@@ -852,28 +861,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
           </div>
         </div>
       ) : (
-        <div className="flex flex-col gap-6 animate-in slide-in-from-bottom-2 duration-300 flex-1 overflow-y-auto">
-          <div className="flex justify-between items-center bg-white p-4 rounded-xl border border-line shadow-sm shrink-0">
-            <div><h2 className="text-ink font-black uppercase italic tracking-tighter text-lg flex items-center gap-2"><RotateCcw className="text-status-danger w-5 h-5" /> GESTIÓN DE DEVOLUCIONES</h2></div>
-            <div className="flex gap-2"><button onClick={() => setView('pos')} className="btn btn-secondary h-9 px-6 font-black uppercase text-[10px]">Nueva Devolución</button></div>
-          </div>
-          <div className="card bg-white border-line shadow-lg overflow-hidden flex flex-col rounded-xl flex-1">
-            <div className="card-head bg-ink border-b border-white/10 px-6 py-4"><h3 className="text-white font-black text-xs uppercase italic tracking-tighter">HISTORIAL DE DEVOLUCIONES</h3></div>
-            <div className="table-wrap flex-1 overflow-y-auto">
-              <table>
-                <thead><tr><th>ID</th><th>Fecha</th><th>Venta Ref.</th><th>Items</th><th className="text-right">Total</th><th>Reembolso</th></tr></thead>
-                <tbody>
-                  {state.devoluciones.filter(d => d.fecha > (state.fechaUltimoZ || '')).map(d => (
-                    <tr key={d.id} className="border-b border-line/40"><td className="text-status-danger font-black text-xs mono">{d.id}</td><td className="text-ink font-bold text-xs">{Utils.fmtFecha(d.fecha)}</td><td className="text-ink font-black text-xs mono opacity-60">{d.ventaId}</td><td className="text-ink font-bold text-[10px] uppercase">{d.items.length} productos</td><td className="text-brand-gold-deep font-black text-xs text-right">{Utils.fmtUSD(d.totalUSD)}</td><td><span className="badge badge-neutral font-black text-[9px] uppercase">{d.metodoReembolso}</span></td></tr>
-                  ))}
-                  {state.devoluciones.filter(d => d.fecha > (state.fechaUltimoZ || '')).length === 0 && (
-                    <tr><td colSpan={6} className="text-center py-20 text-ink/20 font-black uppercase italic opacity-40">No hay devoluciones registradas desde el último cierre</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
+        <ReturnsModule state={state} updateState={updateState} onBackToPOS={() => setView('pos')} />
       )}
 
       {/* MODALES REUTILIZABLES */}
@@ -979,3 +967,4 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     </div>
   );
 }
+
