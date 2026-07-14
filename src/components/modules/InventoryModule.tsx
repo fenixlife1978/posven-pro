@@ -525,11 +525,13 @@ function ReporteVentas({ state }: { state: AppState }) {
     const groups: Record<string, { nombre: string, cantidad: number, totalUSD: number }> = {};
     filteredVentas.forEach(v => {
       v.items.forEach(item => {
-        if (!groups[item.productoId]) {
-          groups[item.productoId] = { nombre: item.nombre, cantidad: 0, totalUSD: 0 };
+        // CORRECCIÓN: Agrupar por nombre (normalizado) para evitar duplicados si el ID cambió o es el mismo producto
+        const nameKey = item.nombre.toUpperCase().trim();
+        if (!groups[nameKey]) {
+          groups[nameKey] = { nombre: item.nombre, cantidad: 0, totalUSD: 0 };
         }
-        groups[item.productoId].cantidad += item.cantidad;
-        groups[item.productoId].totalUSD += item.subtotalUSD;
+        groups[nameKey].cantidad += item.cantidad;
+        groups[nameKey].totalUSD += item.subtotalUSD;
       });
     });
     return Object.values(groups).sort((a, b) => b.cantidad - a.cantidad);
@@ -559,7 +561,7 @@ function ReporteVentas({ state }: { state: AppState }) {
             >
               <option value="all">TODOS LOS TERMINALES (GLOBAL)</option>
               {state.terminales.map(t => (
-                <option key={t.id} value={t.id}>{t.nombre}</option>
+                <option value={t.id} key={t.id}>{t.nombre}</option>
               ))}
             </select>
           </div>

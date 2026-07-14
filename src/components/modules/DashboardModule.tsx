@@ -81,15 +81,18 @@ export default function DashboardModule({ state }: { state: AppState }) {
     return { name: label, ventas: total * state.tasa, usd: total };
   });
 
-  // Top 5 Productos Reales
+  // Top 5 Productos Reales (Agrupados por nombre para evitar duplicidad visual)
   const productPerformance: Record<string, { n: string, c: string, u: number, t: number }> = {};
   state.ventas.forEach(v => {
     v.items.forEach(it => {
-      if (!productPerformance[it.productoId]) {
-        productPerformance[it.productoId] = { n: it.nombre, c: 'General', u: 0, t: 0 };
+      const key = it.nombre.toUpperCase().trim();
+      if (!productPerformance[key]) {
+        // Buscar categoría del producto en el catálogo actual si existe
+        const catalogProd = state.productos.find(p => p.id === it.productoId);
+        productPerformance[key] = { n: it.nombre, c: catalogProd?.categoria || 'General', u: 0, t: 0 };
       }
-      productPerformance[it.productoId].u += it.cantidad;
-      productPerformance[it.productoId].t += it.subtotalUSD;
+      productPerformance[key].u += it.cantidad;
+      productPerformance[key].t += it.subtotalUSD;
     });
   });
 
