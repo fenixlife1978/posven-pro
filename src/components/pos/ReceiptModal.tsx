@@ -2,9 +2,10 @@
 
 import React, { useRef } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Printer, X, Zap, Share2, Monitor } from 'lucide-react';
-import { Store } from '@/lib/db-store';
+import { Printer, X, Zap, Share2, Monitor, User } from 'lucide-react';
+import { Store, Utils } from '@/lib/db-store';
 import { formatBs, formatUsd } from '@/lib/currency-formatter';
+import { auth } from '@/lib/firebase';
 
 declare global {
   interface Window {
@@ -31,24 +32,10 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
   
   if (!data) return null;
 
-  // Formateador de fecha local para Venezuela (Blindado contra desfases UTC)
   const transactionDate = React.useMemo(() => {
     try {
-      let dateObj: Date;
-      const rawDate = data.fecha || data.date;
-
-      if (rawDate) {
-        if (typeof rawDate === 'string' && rawDate.length === 10) {
-          // Si es solo YYYY-MM-DD, forzamos interpretación local
-          const parts = rawDate.split('-');
-          dateObj = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
-        } else {
-          dateObj = new Date(rawDate);
-        }
-      } else {
-        dateObj = new Date();
-      }
-
+      const rawDate = data.fecha || data.date || Utils.ahora();
+      const dateObj = new Date(rawDate);
       return dateObj.toLocaleString('es-VE', {
         timeZone: 'America/Caracas',
         day: '2-digit',
@@ -69,24 +56,29 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
   
   const getReportTitle = () => {
     if (type === 'REPORT_Z') return `REPORTE FISCAL Z ${String(data.numeroZ || 0).padStart(4, '0')}`;
-    if (type === 'REPORT_X') return `REPORTE X (LECTURA)`;
+    if (type === 'REPORT_X') return `REPORTE X - LECTURA PARCIAL`;
     return (data.type || 'RECIBO').toUpperCase();
+  };
+
+  const padRight = (label: string, value: string, width = 48) => {
+    const dots = width - label.length - value.length;
+    return label + (dots > 0 ? '.'.repeat(dots) : ' ') + value;
   };
 
   const handleNativePrint = async () => {
     if (!window.electronAPI) {
       window.print();
-      if (isReport) setTimeout(onClose, 500);
+      if (isReport) setTimeout(onClose, 1000);
       return;
     }
 
     const SEPARATOR = '------------------------------------------------';
+    const DOTS = '................................................';
     
     let printData: any[] = [
       { type: 'text', value: state.empresa.nombre.toUpperCase(), style: { fontWeight: "800", textAlign: 'center', fontSize: "20px" } },
       { type: 'text', value: state.empresa.direccion.toUpperCase(), style: { textAlign: 'center', fontSize: "11px" } },
-      { type: 'text', value: `RIF: ${state.empresa.rif}`, style: { textAlign: 'center', fontSize: "11px" } },
-      { type: 'text', value: `TEL: ${state.empresa.telefono}`, style: { textAlign: 'center', fontSize: "11px" } },
+      { type: 'text', value: `RIF: ${state.empresa.rif} | TEL: ${state.empresa.telefono}`, style: { textAlign: 'center', fontSize: "11px" } },
       { type: 'text', value: SEPARATOR, style: { textAlign: 'center' } }
     ];
 
@@ -96,14 +88,32 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
       printData.push({ type: 'text', value: `FECHA: ${transactionDate}`, style: { fontSize: "11px", textAlign: 'center' } });
       printData.push({ type: 'text', value: SEPARATOR, style: { textAlign: 'center' } });
       
-      printData.push({ type: 'text', value: `VENTAS BRUTAS: ${formatBs(data.brUSD * state.tasa)}`, style: { fontSize: "12px", fontWeight: "700" } });
-      printData.push({ type: 'text', value: `DEVOLUCIONES:  -${formatBs(data.devUSD * state.tasa)}`, style: { fontSize: "11px" } });
-      printData.push({ type: 'text', value: `MONTO EXENTO:   ${formatBs((data.exentoUSD || 0) * state.tasa)}`, style: { fontSize: "11px" } });
-      printData.push({ type: 'text', value: `BASE IMPONIBLE: ${formatBs((data.baseImponibleUSD || 0) * state.tasa)}`, style: { fontSize: "11px" } });
-      printData.push({ type: 'text', value: `IVA RECAUDADO:  ${formatBs((data.ivaUSD || 0) * state.tasa)}`, style: { fontSize: "11px" } });
-      printData.push({ type: 'text', value: `TOTAL IGTF 3%:  ${formatBs((data.igtfUSD || 0) * state.tasa)}`, style: { fontSize: "11px", fontWeight: "700" } });
-      printData.push({ type: 'text', value: SEPARATOR, style: { textAlign: 'center' } });
-      printData.push({ type: 'text', value: `TOTAL NETO:    ${formatBs(data.netUSD * state.tasa)}`, style: { fontSize: "14px", fontWeight: "800", textAlign: 'right' } });
+      printData.push({ type: 'text', value: 'RESUMEN DE FACTURACIÓN', style: { textAlign: 'center', fontWeight: "800" } });
+      printData.push({ type: 'text', value: padRight('VENTA BRUTA', formatBs(data.brUSD * state.tasa)), style: { fontSize: "11px" } });
+      printData.push({ type: 'text', value: padRight('DESCUENTOS', formatBs(data.descUSD * state.tasa)), style: { fontSize: "11px" } });
+      printData.push({ type: 'text', value: padRight('DEVOLUCIONES', '-' + formatBs(data.devUSD * state.tasa)), style: { fontSize: "11px" } });
+      printData.push({ type: 'text', value: padRight('VENTA NETA', formatBs(data.netUSD * state.tasa)), style: { fontSize: "12px", fontWeight: "700" } });
+      printData.push({ type: 'text', value: DOTS, style: { fontSize: "11px" } });
+
+      printData.push({ type: 'text', value: 'DESGLOSE FISCAL', style: { textAlign: 'center', fontWeight: "800" } });
+      printData.push({ type: 'text', value: padRight('VENTAS EXENTAS (0%)', formatBs((data.exentoUSD || 0) * state.tasa)), style: { fontSize: "11px" } });
+      printData.push({ type: 'text', value: padRight('BASE IMPONIBLE (16%)', formatBs((data.baseImponibleUSD || 0) * state.tasa)), style: { fontSize: "11px" } });
+      printData.push({ type: 'text', value: padRight('IVA RECAUDADO (16%)', formatBs((data.ivaUSD || 0) * state.tasa)), style: { fontSize: "11px" } });
+      printData.push({ type: 'text', value: padRight('IGTF RECAUDADO (3%)', formatBs((data.igtfUSD || 0) * state.tasa)), style: { fontSize: "11px" } });
+      printData.push({ type: 'text', value: DOTS, style: { fontSize: "11px" } });
+
+      printData.push({ type: 'text', value: 'CONCILIACIÓN DE PAGOS', style: { textAlign: 'center', fontWeight: "800" } });
+      Object.entries(data.paymentMethods || {}).forEach(([method, val]) => {
+        printData.push({ type: 'text', value: padRight(Utils.metodoLabel(method).toUpperCase(), formatBs((val as number) * state.tasa)), style: { fontSize: "11px" } });
+      });
+      printData.push({ type: 'text', value: padRight('SALIDAS / GASTOS CAJA', '-' + formatBs((data.manualSalidas || 0) * state.tasa)), style: { fontSize: "11px", color: "#C0392B" } });
+      printData.push({ type: 'text', value: DOTS, style: { fontSize: "11px" } });
+
+      printData.push({ type: 'text', value: 'ESTADÍSTICAS', style: { textAlign: 'center', fontWeight: "800" } });
+      printData.push({ type: 'text', value: padRight('FACTURAS EMITIDAS', String(data.stats.facturas)), style: { fontSize: "11px" } });
+      printData.push({ type: 'text', value: padRight('DEVOLUCIONES PROCESADAS', String(data.stats.devoluciones)), style: { fontSize: "11px" } });
+      printData.push({ type: 'text', value: padRight('TICKET PROMEDIO', formatBs(data.stats.ticketPromedio * state.tasa)), style: { fontSize: "11px" } });
+
     } else {
       printData.push({ type: 'text', value: getReportTitle(), style: { textAlign: 'center', fontWeight: "800", fontSize: "16px" } });
       printData.push({ type: 'text', value: `N° CONTROL: ${data.id}`, style: { fontSize: "11px", fontWeight: "700" } });
@@ -125,17 +135,16 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
       });
 
       printData.push({ type: 'text', value: SEPARATOR, style: { textAlign: 'center' } });
-      printData.push({ type: 'text', value: `TOTAL A PAGAR: ${formatBs(data.totalBS)}`, style: { textAlign: 'right', fontWeight: "800", fontSize: "18px" } });
-      printData.push({ type: 'text', value: `REF. DIVISAS: ${formatUsd(data.totalUSD)}`, style: { textAlign: 'right', fontSize: "12px" } });
+      printData.push({ type: 'text', value: padRight('TOTAL A PAGAR', formatBs(data.totalBS)), style: { textAlign: 'right', fontWeight: "800", fontSize: "18px" } });
+      printData.push({ type: 'text', value: padRight('REF. DIVISAS', formatUsd(data.totalUSD)), style: { textAlign: 'right', fontSize: "12px" } });
     }
 
     printData.push({ type: 'text', value: SEPARATOR, style: { textAlign: 'center' } });
-    printData.push({ type: 'text', value: '¡GRACIAS POR SU PREFERENCIA!', style: { textAlign: 'center', fontWeight: "700", fontSize: "12px" } });
-    printData.push({ type: 'text', value: 'PosVEN Pro Cloud Sync v2.5\n\n\n', style: { textAlign: 'center', fontSize: "9px" } });
+    printData.push({ type: 'text', value: 'PosVEN Pro Cloud v2.5 - RC-8002 optimized\n\n\n', style: { textAlign: 'center', fontSize: "8px" } });
 
     try {
       await window.electronAPI.printTicket(printData);
-      if (isReport) setTimeout(onClose, 500); // Auto-cierre quirúrgico
+      if (isReport) setTimeout(onClose, 1000);
     } catch (e) {
       window.print();
     }
@@ -143,24 +152,20 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
 
   const handlePrint = () => {
     window.print();
-    if (isReport) setTimeout(onClose, 500); // Auto-cierre quirúrgico
+    if (isReport) setTimeout(onClose, 1000);
   };
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[420px] p-0 bg-transparent border-none overflow-hidden shadow-none">
-        <DialogHeader className="sr-only">
-          <DialogTitle>Vista Previa de Impresión 80mm</DialogTitle>
-        </DialogHeader>
+      <DialogContent className="sm:max-w-[440px] p-0 bg-transparent border-none overflow-hidden shadow-none">
+        <DialogHeader className="sr-only"><DialogTitle>Impresión Térmica 80mm</DialogTitle></DialogHeader>
 
         <div className="bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col border border-gray-200">
           <div className="bg-black p-4 flex justify-between items-center">
             <h3 className="text-white font-black text-xs flex items-center gap-2 tracking-widest uppercase">
-              <Printer size={16} className="text-brand-gold" /> ROCCIA RC-8002 (80MM)
+              <Printer size={16} className="text-brand-gold" /> VISTA PREVIA FISCAL
             </h3>
-            <button onClick={onClose} className="text-white/40 hover:text-white transition-colors">
-              <X size={20} />
-            </button>
+            <button onClick={onClose} className="text-white/40 hover:text-white transition-colors"><X size={20} /></button>
           </div>
 
           <div className="p-6 bg-gray-100 flex justify-center max-h-[70vh] overflow-y-auto custom-scrollbar">
@@ -169,29 +174,25 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
               className="bg-white p-6 shadow-sm text-black font-mono select-none"
               style={{ width: '72mm', boxSizing: 'border-box', color: '#000', fontSize: '11px', lineHeight: '1.4' }}
             >
-              <div className="text-center pb-3 mb-3">
+              <div className="text-center pb-3 mb-3 border-b border-dashed border-black">
                 <h1 className="text-lg font-black uppercase mb-1 leading-tight">{state.empresa.nombre}</h1>
                 <p className="text-[10px] font-bold leading-tight">{state.empresa.direccion}</p>
-                <p className="text-[10px]">RIF: {state.empresa.rif}</p>
-                <p className="text-[10px]">TEL: {state.empresa.telefono}</p>
+                <p className="text-[10px]">RIF: {state.empresa.rif} | TEL: {state.empresa.telefono}</p>
               </div>
 
-              <div className="text-center mb-4 border-t border-dashed border-black pt-3">
+              <div className="text-center mb-4">
                 <div className="bg-black text-white px-4 py-1 text-[11px] font-black uppercase inline-block mb-1">
                   {getReportTitle()}
                 </div>
                 {isReport && (
-                  <div className="text-[10px] font-black uppercase flex items-center justify-center gap-1 mt-1">
+                  <div className="text-[9px] font-black uppercase flex items-center justify-center gap-1 mt-1 opacity-70">
                     <Monitor size={10} /> TERMINAL: {terminalIdLabel}
                   </div>
                 )}
               </div>
 
               <div className="space-y-1 mb-4 text-[10px]">
-                <div className="flex justify-between items-center">
-                  <span className="font-bold">FECHA:</span>
-                  <span className="font-bold">{transactionDate}</span>
-                </div>
+                <div className="flex justify-between items-center"><span className="font-bold">FECHA/HORA:</span><span className="font-bold">{transactionDate}</span></div>
                 {!isReport && (
                   <>
                     <div className="flex justify-between"><span>RECIBO N°:</span><span className="font-black">{data.id}</span></div>
@@ -201,29 +202,39 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
               </div>
 
               {isReport ? (
-                <div className="border-t border-b border-dashed border-black py-3 my-3 space-y-3">
-                  <div className="flex justify-between font-black text-sm">
-                    <span className="text-sm">VENTAS<br/>BRUTAS:</span>
-                    <span className="text-right">Bs.<br/>{formatBs(data.brUSD * state.tasa).replace('Bs. ', '')}</span>
+                <div className="border-t border-b border-dashed border-black py-3 my-3 space-y-4">
+                  <div className="space-y-1">
+                    <p className="font-black text-center border-b border-dotted pb-1 mb-1">RESUMEN DE FACTURACIÓN</p>
+                    <div className="flex justify-between"><span>VENTA BRUTA:</span><span>{formatBs(data.brUSD * state.tasa)}</span></div>
+                    <div className="flex justify-between"><span>DESCUENTOS:</span><span>-{formatBs(data.descUSD * state.tasa)}</span></div>
+                    <div className="flex justify-between text-status-danger"><span>DEVOLUCIONES:</span><span>-{formatBs(data.devUSD * state.tasa)}</span></div>
+                    <div className="flex justify-between font-black text-sm border-t border-black pt-1"><span>VENTA NETA:</span><span>{formatBs(data.netUSD * state.tasa)}</span></div>
                   </div>
-                  <div className="flex justify-between text-status-danger text-[10px] font-bold">
-                    <span>DEVOLUCIONES:</span>
-                    <span>-Bs. {formatBs(data.devUSD * state.tasa).replace('Bs. ', '')}</span>
-                  </div>
-                  <div className="flex justify-between text-[10px] font-bold">
-                    <span>DESCUENTOS:</span>
-                    <span>-Bs. {formatBs(data.descUSD * state.tasa).replace('Bs. ', '')}</span>
-                  </div>
-                  <div className="flex justify-between font-black text-lg border-t border-black pt-2">
-                    <span>TOTAL<br/>NETO:</span>
-                    <span className="text-right">Bs.<br/>{formatBs(data.netUSD * state.tasa).replace('Bs. ', '')}</span>
-                  </div>
-                  <div className="pt-3 text-[9px] uppercase space-y-1 border-t border-dotted border-black/20">
-                    <p className="font-black border-b border-dotted pb-1 text-center">DESGLOSE FISCAL DEL PERIODO</p>
+
+                  <div className="space-y-1">
+                    <p className="font-black text-center border-b border-dotted pb-1 mb-1">DESGLOSE FISCAL</p>
                     <div className="flex justify-between"><span>Monto Exento:</span><span>{formatBs((data.exentoUSD || 0) * state.tasa)}</span></div>
                     <div className="flex justify-between"><span>Base Imponible:</span><span>{formatBs((data.baseImponibleUSD || 0) * state.tasa)}</span></div>
                     <div className="flex justify-between"><span>IVA Recaudado:</span><span>{formatBs((data.ivaUSD || 0) * state.tasa)}</span></div>
                     <div className="flex justify-between font-bold"><span>Total IGTF (3%):</span><span>{formatBs((data.igtfUSD || 0) * state.tasa)}</span></div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <p className="font-black text-center border-b border-dotted pb-1 mb-1">CONCILIACIÓN DE PAGOS</p>
+                    {Object.entries(data.paymentMethods || {}).map(([method, val]) => (
+                      <div key={method} className="flex justify-between">
+                        <span>{Utils.metodoLabel(method).toUpperCase()}:</span>
+                        <span>{formatBs((val as number) * state.tasa)}</span>
+                      </div>
+                    ))}
+                    <div className="flex justify-between text-status-danger"><span>SALIDAS / GASTOS:</span><span>-{formatBs((data.manualSalidas || 0) * state.tasa)}</span></div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <p className="font-black text-center border-b border-dotted pb-1 mb-1">ESTADÍSTICAS</p>
+                    <div className="flex justify-between"><span>Facturas Emitidas:</span><span>{data.stats.facturas}</span></div>
+                    <div className="flex justify-between"><span>Devoluciones:</span><span>{data.stats.devoluciones}</span></div>
+                    <div className="flex justify-between font-bold"><span>Ticket Promedio:</span><span>{formatBs(data.stats.ticketPromedio * state.tasa)}</span></div>
                   </div>
                 </div>
               ) : (
@@ -243,7 +254,7 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
                           <td className="py-2 align-top font-black">{item.cantidad || item.qty} x</td>
                           <td className="py-2 pl-2 align-top uppercase">
                             <div className="font-bold">{(item.nombre || item.name).slice(0, 22)}</div>
-                            <div className="text-[9px] opacity-70 italic">Ref: {formatBs((item.precioUnitUSD || item.price) * state.tasa)}</div>
+                            <div className="text-[8px] opacity-70 italic">Ref: {formatBs((item.precioUnitUSD || item.price) * state.tasa)}</div>
                           </td>
                           <td className="py-2 text-right align-top font-black">{formatBs(subtotal).replace('Bs. ', '')}</td>
                         </tr>
@@ -255,22 +266,14 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
 
               {!isReport && (
                 <div className="space-y-1 mb-3">
-                  <div className="flex justify-between text-[10px]"><span>SUBTOTAL:</span><span>{formatBs(data.totalBS)}</span></div>
-                  <div className="flex justify-between font-black text-sm py-2 border-t border-black">
-                    <span>TOTAL A PAGAR:</span>
-                    <span>{formatBs(data.totalBS)}</span>
-                  </div>
-                  <div className="flex justify-between text-[11px] font-bold">
-                    <span>REF. DIVISAS:</span>
-                    <span>{formatUsd(data.totalUSD)}</span>
-                  </div>
+                  <div className="flex justify-between font-black text-sm py-2 border-t border-black"><span>TOTAL A PAGAR:</span><span>{formatBs(data.totalBS)}</span></div>
+                  <div className="flex justify-between text-[11px] font-bold"><span>REF. DIVISAS:</span><span>{formatUsd(data.totalUSD)}</span></div>
                 </div>
               )}
 
-              <div className="text-center mt-5 pt-3 text-[9px] italic border-t border-dotted border-black/30">
-                <p className="font-black uppercase mb-1 leading-tight">¡Gracias por su preferencia!</p>
-                <p>Conserve este ticket como comprobante</p>
-                <p className="mt-3 opacity-40 uppercase font-bold text-[7px]">PosVEN Pro RC-8002 optimized</p>
+              <div className="text-center mt-5 pt-3 text-[8px] border-t border-dotted border-black/30">
+                <p className="font-black uppercase mb-1">¡Gracias por su preferencia!</p>
+                <p className="opacity-50 uppercase font-bold text-[7px]">PosVEN Pro v2.5 - RC-8002 optimized</p>
               </div>
             </div>
           </div>

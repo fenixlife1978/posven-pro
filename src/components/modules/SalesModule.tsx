@@ -1,8 +1,6 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { AppState, SaleItem, Sale, PaymentMethod, ReportZ, PagoRealizado, Customer, Return, ReturnItem, Product, Debt, Movimiento, LibroDiarioEntry } from '@/lib/types';
-import { Utils, Store } from '@/lib/db-store';
 import { 
   Search, 
   ShoppingCart, 
@@ -44,6 +42,8 @@ import FloatingPaymentModal from '@/components/pos/FloatingPaymentModal';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/hooks/use-toast';
+import { AppState, SaleItem, Sale, PaymentMethod, ReportZ, PagoRealizado, Customer, Return, ReturnItem, Product, Debt, Movimiento, LibroDiarioEntry } from '@/lib/types';
+import { Utils, Store } from '@/lib/db-store';
 
 declare global {
   interface Window {
@@ -82,27 +82,45 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
 
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // Función para obtener un resumen fresco al momento de solicitar un reporte
+  // Función para obtener un resumen fresco y detallado al momento de solicitar un reporte
   const getFreshReportData = () => {
     const hoy = Utils.hoy();
-    // Filtramos quirúrgicamente las ventas desde el último cierre Z del día de hoy
-    const vHoy = (state.ventas || []).filter(v => 
-      v.fecha.startsWith(hoy) && v.fecha > (state.fechaUltimoZ || '')
-    );
-    const dHoy = (state.devoluciones || []).filter(d => 
-      d.fecha.startsWith(hoy) && d.fecha > (state.fechaUltimoZ || '')
-    );
+    const corteTimestamp = state.fechaUltimoZ || '';
     
+    // 1. Filtrar ventas y devoluciones desde el último cierre Z
+    const vHoy = (state.ventas || []).filter(v => v.fecha > corteTimestamp);
+    const dHoy = (state.devoluciones || []).filter(d => d.fecha > corteTimestamp);
+    
+    // 2. Resumen de Ventas
     const brUSD = vHoy.reduce((s, v) => s + v.totalUSD, 0);
     const devUSD = dHoy.reduce((s, d) => s + d.totalUSD, 0);
     const descUSD = vHoy.reduce((s, v) => s + (v.descuentoUSD || 0), 0);
-    
+    const netUSD = brUSD - devUSD - descUSD;
+
+    // 3. Desglose Fiscal
     const baseImponibleUSD = vHoy.reduce((s, v) => s + (v.baseImponibleUSD || 0), 0);
     const ivaUSD = vHoy.reduce((s, v) => s + (v.ivaUSD || 0), 0);
     const exentoUSD = vHoy.reduce((s, v) => s + (v.exentoUSD || 0), 0);
     const igtfUSD = vHoy.reduce((s, v) => s + (v.igtfUSD || 0), 0);
 
-    const netUSD = brUSD - devUSD - descUSD;
+    // 4. Desglose de Formas de Pago (Consolidado)
+    const paymentMethodsMap: Record<string, number> = {};
+    vHoy.forEach(v => {
+      if (v.payments && v.payments.length > 0) {
+        v.payments.forEach(p => {
+          paymentMethodsMap[p.metodo] = (paymentMethodsMap[p.metodo] || 0) + p.montoUSD;
+        });
+      } else if (v.metodoPago) {
+        paymentMethodsMap[v.metodoPago] = (paymentMethodsMap[v.metodoPago] || 0) + v.totalUSD;
+      }
+    });
+
+    // 5. Movimientos de Caja (Libro Diario)
+    const manualExpenses = (state.libroDiario || []).filter(e => e.fecha > corteTimestamp && e.tipo === 'egreso');
+    const totalSalidasCaja = manualExpenses.reduce((s, e) => s + e.montoUSD, 0);
+
+    // 6. Estadísticas
+    const avgTicket = vHoy.length > 0 ? (netUSD / vHoy.length) : 0;
 
     const currentTerminal = state.terminales.find(t => t.usuarioId === auth.currentUser?.uid);
     const terminalName = currentTerminal ? currentTerminal.nombre : 'SISTEMA GLOBAL';
@@ -116,8 +134,15 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       ivaUSD, 
       baseImponibleUSD,
       exentoUSD,
+      paymentMethods: paymentMethodsMap,
+      manualSalidas: totalSalidasCaja,
+      stats: {
+        facturas: vHoy.length,
+        devoluciones: dHoy.length,
+        ticketPromedio: avgTicket
+      },
       ventasHoy: vHoy, 
-      fecha: Utils.ahora(), // Timestamp exacto de generación
+      fecha: Utils.ahora(),
       terminalName,
       numeroZ: state.ultimoZ + 1
     };
@@ -164,7 +189,10 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     const p = state.productos.find(x => x.id === pid);
     if (!p) return;
     const stockAvail = getStockDisponible(p);
-    if (stockAvail <= 0) return;
+    if (stockAvail <= 0) {
+      toast({ variant: "destructive", title: "Sin Stock", description: "Producto agotado." });
+      return;
+    }
     setSelectedProductDisplay(p);
     const nuevoCarrito = [...state.carrito];
     const idx = nuevoCarrito.findIndex(i => i.productoId === pid);
@@ -359,9 +387,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
 
   const ejecutarCierreZ = () => {
     const data = reportSnapshot;
-    if (!data || data.ventasHoy.length === 0) return;
+    if (!data) return;
     
-    // Al procesar el Z, establecemos la fecha de corte para el próximo reporte
     const ahora = Utils.ahora();
     const numeroZ = state.ultimoZ + 1;
     const desdeFac = data.ventasHoy[0]?.id || '0';
@@ -383,7 +410,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     updateState({
       reportesZ: [...(state.reportesZ || []), nuevoZ],
       ultimoZ: numeroZ,
-      fechaUltimoZ: ahora // Corte quirúrgico para limpiar el próximo reporte
+      fechaUltimoZ: ahora
     });
 
     toast({ title: `Reporte Z #${numeroZ} generado.`, description: "Acumulados diarios reiniciados." });
