@@ -89,7 +89,8 @@ export default function LicoreriaPOS() {
 
               if (!moduleInitialized.current) {
                 const savedModule = sessionStorage.getItem('posven_active_module');
-                const aperturaConfirmada = sessionStorage.getItem('posven_apertura_done') === 'true';
+                // CAMBIO QUIRÚRGICO: Usar localStorage para persistencia ante fallos eléctricos o errores de salida
+                const aperturaConfirmada = localStorage.getItem('posven_apertura_done') === 'true';
 
                 if (data.rol === 'cajero') {
                    getDoc(doc(db, 'pos_system_data', 'state')).then(configSnap => {
@@ -352,7 +353,8 @@ export default function LicoreriaPOS() {
               <button 
                 disabled={aperturaData.bs === '' || aperturaData.usd === ''} 
                 onClick={() => { 
-                  sessionStorage.setItem('posven_apertura_done', 'true'); 
+                  // CAMBIO QUIRÚRGICO: Usar localStorage para que la apertura sobreviva a fallos de luz o reinicios
+                  localStorage.setItem('posven_apertura_done', 'true'); 
                   updateState({
                     fondoCajaHoyBS: parseFloat(aperturaData.bs) || 0,
                     fondoCajaHoyUSD: parseFloat(aperturaData.usd) || 0

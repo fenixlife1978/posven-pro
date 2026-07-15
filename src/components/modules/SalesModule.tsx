@@ -169,7 +169,10 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       igtfUSD: data.igtfUSD, metodosPago: { ...data.paymentMethods }, salidasCajaUSD: data.manualSalidas, entradasCajaUSD: data.manualEntradas,
       fondoAperturaUSD: data.fondoAperturaUSD, fondoAperturaBS: data.fondoAperturaBS, acumuladoHistoricoUSD: data.acumuladoHistoricoUSD, stats: { ...data.stats }
     };
-    if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem('posven_apertura_done');
+    
+    // CAMBIO QUIRÚRGICO: Limpiar el flag persistente de apertura solo después de generar satisfactoriamente el reporte Z
+    if (typeof localStorage !== 'undefined') localStorage.removeItem('posven_apertura_done');
+    
     updateState({ reportesZ: [...(state.reportesZ || []), nuevoZ], ultimoZ: numeroZ, fechaUltimoZ: ahora, acumuladoHistorico: data.acumuladoHistoricoUSD, fondoCajaHoyBS: 0, fondoCajaHoyUSD: 0 });
     toast({ title: `Cierre Fiscal Z #${numeroZ} Exitoso` });
     setShowReportType(null);
