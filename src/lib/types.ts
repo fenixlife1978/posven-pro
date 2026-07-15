@@ -161,6 +161,15 @@ export interface Return {
   motivo: string;
 }
 
+export interface Anulacion {
+  id: string;
+  ventaId: string;
+  fecha: string;
+  totalUSD: number;
+  motivo: string;
+  items: any[];
+}
+
 export interface ReportZ {
   id: string;
   fecha: string;
@@ -203,6 +212,7 @@ export interface AppState {
   cxp: Debt[];
   clientes: Customer[];
   devoluciones: Return[];
+  anulaciones: Anulacion[];
   movimientos: Movimiento[];
   libroDiario: LibroDiarioEntry[];
   carrito: SaleItem[];
@@ -211,6 +221,7 @@ export interface AppState {
   ultimoZ: number;
   proximoRecibo: number;
   proximaDevolucion: number;
+  proximaAnulacion: number;
   acumuladoHistorico: number;
   fechaUltimoZ?: string;
   fondoCajaHoyUSD: number;

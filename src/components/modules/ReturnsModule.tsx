@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState } from 'react';
-import { AppState, Return, Sale, ReturnItem, Movimiento } from '@/lib/types';
+import React, { useState, useMemo } from 'react';
+import { AppState, Return, Sale, ReturnItem, Movimiento, Anulacion } from '@/lib/types';
 import { Utils, Store } from '@/lib/db-store';
 import { 
   RotateCcw, 
@@ -14,7 +14,9 @@ import {
   History,
   AlertCircle,
   ShieldX,
-  ArrowLeft
+  ArrowLeft,
+  Eye,
+  ShieldAlert
 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 
@@ -36,7 +38,7 @@ export default function ReturnsModule({ state, updateState, onBackToPOS }: { sta
   };
 
   const handleAddItem = (productoId: string, nombre: string, precioUnitUSD: number, maxQty: number) => {
-    const alreadyReturned = state.devoluciones
+    const alreadyReturned = (state.devoluciones || [])
       .filter(d => d.ventaId === selectedSale?.id)
       .flatMap(d => d.items)
       .filter(i => i.productoId === productoId)
@@ -71,7 +73,7 @@ export default function ReturnsModule({ state, updateState, onBackToPOS }: { sta
     if (!reason.trim()) return alert('Por favor indique el motivo de la devolución');
 
     const totalDevuelto = returnItems.reduce((s, i) => s + (i.cantidad * i.precioUnitUSD), 0);
-    const idDev = 'DEV-' + String(state.proximaDevolucion).padStart(6, '0');
+    const idDev = 'DEV-' + String(state.proximaDevolucion || 1).padStart(6, '0');
     const ahoraStr = Utils.ahora();
 
     const nuevaDevolucion: Return = {
@@ -119,10 +121,10 @@ export default function ReturnsModule({ state, updateState, onBackToPOS }: { sta
 
     updateState({
       productos: nuevosProductos,
-      devoluciones: [nuevaDevolucion, ...state.devoluciones],
+      devoluciones: [nuevaDevolucion, ...(state.devoluciones || [])],
       movimientos: [...state.movimientos, ...nuevosMovimientos],
       ventas: nuevasVentas,
-      proximaDevolucion: state.proximaDevolucion + 1
+      proximaDevolucion: (state.proximaDevolucion || 1) + 1
     });
 
     alert(`Devolución ${idDev} procesada con éxito`);
@@ -167,6 +169,17 @@ export default function ReturnsModule({ state, updateState, onBackToPOS }: { sta
       v.id === selectedSale.id ? { ...v, estado: 'anulada' } : v
     );
 
+    // Generar registro histórico de anulación
+    const idAnu = 'ANU-' + String(state.proximaAnulacion || 1).padStart(5, '0');
+    const nuevaAnulacion: Anulacion = {
+      id: idAnu,
+      ventaId: selectedSale.id,
+      fecha: ahoraStr,
+      totalUSD: selectedSale.totalUSD,
+      motivo: 'ANULACIÓN TOTAL DE FACTURA POR OPERADOR',
+      items: [...selectedSale.items]
+    };
+
     // Revertir en Libro Diario si existe
     const nuevoDiario = state.libroDiario.filter(e => !(e.referencia === selectedSale.id && e.categoria === 'VENTA'));
 
@@ -174,13 +187,21 @@ export default function ReturnsModule({ state, updateState, onBackToPOS }: { sta
       productos: nuevosProductos,
       ventas: nuevasVentas,
       movimientos: [...state.movimientos, ...nuevosMovimientos],
-      libroDiario: nuevoDiario
+      libroDiario: nuevoDiario,
+      anulaciones: [nuevaAnulacion, ...(state.anulaciones || [])],
+      proximaAnulacion: (state.proximaAnulacion || 1) + 1
     });
 
-    toast({ title: "Factura Anulada", description: `El documento ${selectedSale.id} ha sido invalidado.` });
+    toast({ title: "Factura Anulada", description: `El documento ${selectedSale.id} ha sido invalidado bajo el registro ${idAnu}.` });
     setView('list');
     setSelectedSale(null);
   };
+
+  const historialUnificado = useMemo(() => {
+    const devs = (state.devoluciones || []).map(d => ({ ...d, tipoOperacion: 'DEVOLUCIÓN' }));
+    const anus = (state.anulaciones || []).map(a => ({ ...a, tipoOperacion: 'ANULACIÓN', items: a.items || [] }));
+    return [...devs, ...anus].sort((a, b) => b.fecha.localeCompare(a.fecha));
+  }, [state.devoluciones, state.anulaciones]);
 
   return (
     <div className="space-y-6">
@@ -207,7 +228,7 @@ export default function ReturnsModule({ state, updateState, onBackToPOS }: { sta
         <div className="card shadow-lg animate-in fade-in duration-300 border-line bg-white">
           <div className="card-head bg-surface-soft border-b border-line px-5 py-4">
             <h3 className="text-ink font-black text-xs uppercase tracking-widest flex items-center gap-2">
-              <ClipboardList className="w-4 h-4 text-status-info" /> Historial de N.C y Devoluciones
+              <ClipboardList className="w-4 h-4 text-status-info" /> Historial de N.C, Devoluciones y Anulaciones
             </h3>
           </div>
           <div className="table-wrap">
@@ -215,25 +236,25 @@ export default function ReturnsModule({ state, updateState, onBackToPOS }: { sta
               <thead>
                 <tr className="bg-surface-soft">
                   <th className="text-ink font-black text-[10px] uppercase">ID Operación</th>
+                  <th className="text-ink font-black text-[10px] uppercase">Tipo</th>
                   <th className="text-ink font-black text-[10px] uppercase">Fecha</th>
                   <th className="text-ink font-black text-[10px] uppercase">Venta Ref.</th>
-                  <th className="text-ink font-black text-[10px] uppercase">Items</th>
-                  <th className="text-ink font-black text-[10px] uppercase text-right">Total Devuelto</th>
+                  <th className="text-ink font-black text-[10px] uppercase text-right">Monto Total</th>
                   <th className="text-ink font-black text-[10px] uppercase">Motivo</th>
                 </tr>
               </thead>
               <tbody className="bg-white">
-                {state.devoluciones.length === 0 ? (
-                  <tr><td colSpan={6} className="text-center py-20 text-ink/20 font-black uppercase italic opacity-40">No hay devoluciones registradas</td></tr>
+                {historialUnificado.length === 0 ? (
+                  <tr><td colSpan={6} className="text-center py-20 text-ink/20 font-black uppercase italic opacity-40">No hay operaciones registradas</td></tr>
                 ) : (
-                  state.devoluciones.map(d => (
+                  historialUnificado.map(d => (
                     <tr key={d.id} className="border-b border-line/30 hover:bg-surface-warm/20">
-                      <td className="text-status-danger font-black text-xs mono">{d.id}</td>
+                      <td className={`font-black text-xs mono ${d.id.startsWith('ANU') ? 'text-ink' : 'text-status-danger'}`}>{d.id}</td>
+                      <td className="text-[9px] font-black uppercase">
+                        <span className={`badge ${d.tipoOperacion === 'ANULACIÓN' ? 'badge-neutral' : 'badge-err'}`}>{d.tipoOperacion}</span>
+                      </td>
                       <td className="text-ink font-bold text-xs">{Utils.fmtFecha(d.fecha)}</td>
                       <td className="text-ink font-black text-xs mono opacity-60">{d.ventaId}</td>
-                      <td className="text-ink font-bold text-[10px] uppercase">
-                        {d.items.length} productos
-                      </td>
                       <td className="text-brand-gold-deep font-black text-xs text-right">{Utils.fmtUSD(d.totalUSD)}</td>
                       <td className="text-ink text-[10px] uppercase font-bold italic truncate max-w-[200px]">{d.motivo}</td>
                     </tr>
