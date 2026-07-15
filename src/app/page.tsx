@@ -20,7 +20,8 @@ import {
   ShieldCheck,
   Truck,
   BookOpen,
-  ShoppingBag
+  ShoppingBag,
+  Monitor
 } from 'lucide-react';
 import { Store, initialState, Utils } from '@/lib/db-store';
 import { AppState, Terminal } from '@/lib/types';
@@ -300,7 +301,7 @@ export default function LicoreriaPOS() {
 
     return (
       <div className="min-h-screen bg-surface-warm flex items-center justify-center p-6 font-sans no-print">
-         <div className="w-full max-w-[440px] bg-white rounded-[32px] shadow-[0_20px_50px_rgba(0,0,0,0.1)] p-10 space-y-6 animate-in fade-in zoom-in duration-500 border border-line">
+         <div className="w-full max-w-[480px] bg-white rounded-[32px] shadow-[0_20px_50px_rgba(0,0,0,0.1)] p-10 space-y-6 animate-in fade-in zoom-in duration-500 border border-line">
             <div className="text-center">
               <div className="flex items-center justify-center gap-3 mb-2">
                 <div className="w-10 h-10 bg-brand-gold rounded-xl flex items-center justify-center text-black font-black text-xl shadow-lg">P</div>
@@ -311,14 +312,18 @@ export default function LicoreriaPOS() {
             </div>
 
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-3 gap-3">
+                <div className="p-3 bg-surface-soft rounded-xl border border-line">
+                  <label className="text-[8px] font-black uppercase text-ink/50 block mb-1">Terminal</label>
+                  <p className="text-[10px] font-black text-brand-gold-deep uppercase truncate">{terminalActual?.nombre || 'S/T'}</p>
+                </div>
                 <div className="p-3 bg-surface-soft rounded-xl border border-line">
                   <label className="text-[8px] font-black uppercase text-ink/50 block mb-1">Responsable</label>
                   <p className="text-[10px] font-black text-ink uppercase truncate">{userProfile?.nombre || 'Operador'}</p>
                 </div>
                 <div className="p-3 bg-surface-soft rounded-xl border border-line">
                   <label className="text-[8px] font-black uppercase text-ink/50 block mb-1">Recibo Inicio</label>
-                  <p className="text-[10px] font-black text-brand-gold-deep"># {String(nextRecibo).padStart(9, '0')}</p>
+                  <p className="text-[10px] font-black text-ink"># {String(nextRecibo).padStart(9, '0')}</p>
                 </div>
               </div>
 

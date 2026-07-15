@@ -72,6 +72,7 @@ export interface Sale {
   received?: number;
   change?: number;
   terminalId?: string;
+  terminalName?: string;
   cajeroId?: string;
   payments?: PagoRealizado[];
   // Fiscal fields
