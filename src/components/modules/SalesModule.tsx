@@ -69,7 +69,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   
   const [showAbonoModal, setShowAbonoModal] = useState<Debt | null>(null);
   
-  const [showDetailsModal, setShowDetailsModal] = useState<any | null>(null);
+  const [showDetails, setShowDetails] = useState<any | null>(null);
   const [lastProcessedSale, setLastProcessedSale] = useState<any | null>(null);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [selectedProductDisplay, setSelectedProductDisplay] = useState<Product | null>(null);
@@ -546,7 +546,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                               <div className="card border-line bg-white shadow-inner rounded-xl overflow-hidden">
                                  <table className="w-full">
                                     <thead className="bg-ink/5"><tr><th className="text-[9px] font-black uppercase p-2 text-left">Emisión</th><th className="text-[9px] font-black uppercase p-2 text-left">Vencimiento</th><th className="text-[9px] font-black uppercase p-2 text-right">Saldo USD</th><th className="text-[9px] font-black uppercase p-2 text-center">Acciones</th></tr></thead>
-                                    <tbody>{group.debts.map(d => (<tr key={d.id} className="border-b border-line/20"><td className="text-[10px] font-black p-2">{Utils.fmtFecha(d.fecha)}</td><td className={`text-[10px] font-black p-2 ${d.fechaVencimiento < Utils.hoy() ? 'text-status-danger' : 'text-ink'}`}>{d.fechaVencimiento === '2099-12-31' ? 'ABIERTA' : Utils.fmtFecha(d.fechaVencimiento)}</td><td className="text-[10px] font-black p-2 text-right text-brand-gold-deep">{Utils.fmtUSD(d.saldoUSD)}</td><td className="p-2 text-center"><div className="flex justify-center gap-2"><button onClick={() => setShowDetailsModal(d)} className="w-8 h-8 rounded-full flex items-center justify-center text-status-success hover:bg-status-success/10"><Eye className="w-4 h-4"/></button><button onClick={() => { setShowAbonoModal(d); }} className="btn btn-sm btn-primary h-7 px-3 text-[8px] uppercase">Abonar</button></div></td></tr>))}</tbody>
+                                    <tbody>{group.debts.map(d => (<tr key={d.id} className="border-b border-line/20"><td className="text-[10px] font-black p-2">{Utils.fmtFecha(d.fecha)}</td><td className={`text-[10px] font-black p-2 ${d.fechaVencimiento < Utils.hoy() ? 'text-status-danger' : 'text-ink'}`}>{d.fechaVencimiento === '2099-12-31' ? 'ABIERTA' : Utils.fmtFecha(d.fechaVencimiento)}</td><td className="text-[10px] font-black p-2 text-right text-brand-gold-deep">{Utils.fmtUSD(d.saldoUSD)}</td><td className="p-2 text-center"><div className="flex justify-center gap-2"><button onClick={() => setShowDetails(d)} className="w-8 h-8 rounded-full flex items-center justify-center text-status-success hover:bg-status-success/10"><Eye className="w-4 h-4"/></button><button onClick={() => { setShowAbonoModal(d); }} className="btn btn-sm btn-primary h-7 px-3 text-[8px] uppercase">Abonar</button></div></td></tr>))}</tbody>
                                  </table>
                               </div>
                            </td>
@@ -567,6 +567,145 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       {showReportType && reportSnapshot && (<ReceiptModal isOpen={!!showReportType} onClose={() => { if (showReportType === 'REPORT_Z') ejecutarCierreZ(); setShowReportType(null); }} reportData={reportSnapshot} type={showReportType} />)}
       {showMultiModal && (<FloatingPaymentModal total={totalBS} totalCents={Math.round(totalBS * 100)} exchangeRate={state.tasa} onClose={() => setShowMultiModal(false)} onConfirm={(data) => { ejecutarVenta(data.payments.map(p => ({ metodo: p.method as PaymentMethod, montoUSD: p.usdAmount || (p.amount / state.tasa), montoBS: p.amount }))); setShowMultiModal(false); }} />)}
       {showAbonoModal && (<FloatingPaymentModal total={showAbonoModal.saldoUSD * state.tasa} totalCents={Math.round(showAbonoModal.saldoUSD * state.tasa * 100)} exchangeRate={state.tasa} onClose={() => setShowAbonoModal(null)} allowPartial={true} onConfirm={(data) => { ejecutarAbono(data.payments.map(p => ({ metodo: p.method as PaymentMethod, montoUSD: p.usdAmount || (p.amount / state.tasa), montoBS: p.amount }))); }} />)}
+
+      {/* MODAL DETALLES AVANZADOS (PARA CRÉDITOS) */}
+      {showDetails && (
+        <div className="modal show" style={{ zIndex: 110 }}><div className="modal-bg" onClick={() => setShowDetails(null)}></div>
+          <div className="modal-box max-w-[600px] bg-white border-2 border-line rounded-xl overflow-hidden shadow-2xl">
+            <div className="modal-head py-4 px-6 border-b border-line bg-ink flex justify-between items-center text-white">
+              <h3 className="font-black text-xs uppercase italic tracking-tighter flex items-center gap-2">
+                <Receipt className="w-5 h-5 text-brand-gold" /> HISTORIAL DETALLADO: {showDetails.id}
+              </h3>
+              <button onClick={() => setShowDetails(null)} className="text-white hover:text-brand-gold"><X className="w-5 h-5"/></button>
+            </div>
+            <div className="modal-body p-6 space-y-6 max-h-[75vh] overflow-y-auto bg-white">
+              <div className="grid grid-cols-2 gap-4">
+                 <div className="p-3 bg-surface-soft rounded-lg border border-line">
+                    <label className="text-[8px] font-black uppercase text-ink block mb-1">Monto Original</label>
+                    <p className="text-lg font-black text-ink">{Utils.fmtUSD(showDetails.montoUSD)}</p>
+                 </div>
+                 <div className="p-3 bg-brand-gold-soft border border-brand-gold/20 rounded-lg">
+                    <label className="text-[8px] font-black uppercase text-brand-gold-deep block mb-1">Saldo Actual</label>
+                    <p className="text-lg font-black text-brand-gold-deep">{Utils.fmtUSD(showDetails.saldoUSD)}</p>
+                 </div>
+              </div>
+
+              {(() => {
+                const sale = state.ventas.find(v => v.id === showDetails.ventaId || v.id === showDetails.id);
+                if (!sale) return null;
+                return (
+                  <div className="space-y-3 animate-in slide-in-from-top-2 duration-300">
+                    <div className="flex justify-between items-center border-b border-line pb-2">
+                       <h4 className="text-[10px] font-black uppercase text-ink tracking-[0.2em]">DETALLE DE COMPRA ORIGINAL</h4>
+                       <span className="text-[9px] font-black text-ink uppercase">{Utils.fmtFecha(sale.fecha)}</span>
+                    </div>
+                    <div className="bg-surface-soft/50 rounded-lg overflow-hidden border border-line/30">
+                       <table className="w-full">
+                          <thead>
+                            <tr className="bg-ink/5">
+                               <th className="text-[8px] font-black uppercase p-2 text-left">Cant</th>
+                               <th className="text-[8px] font-black uppercase p-2 text-left">Descripción</th>
+                               <th className="text-[8px] font-black uppercase p-2 text-right">P. Unit</th>
+                               <th className="text-[8px] font-black uppercase p-2 text-right">Total</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {sale.items.map((it: any, idx: number) => (
+                              <tr key={idx} className="border-b border-line/20">
+                                 <td className="text-[9px] font-black p-2">{it.cantidad}</td>
+                                 <td className="text-[9px] font-black uppercase p-2 truncate max-w-[180px]">{it.nombre}</td>
+                                 <td className="text-[9px] font-black p-2 text-right">{Utils.fmtUSD(it.precioUnitUSD)}</td>
+                                 <td className="text-[9px] font-black p-2 text-right text-brand-gold-deep">{Utils.fmtUSD(it.subtotalUSD)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                       </table>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              <div className="space-y-3">
+                 <h4 className="text-[10px] font-black uppercase text-ink tracking-[0.2em] border-b border-line pb-2">CRONOLOGÍA DE ABONOS</h4>
+                 <div className="max-h-[200px] overflow-y-auto space-y-2 pr-1">
+                    {(!showDetails.historialPagos || showDetails.historialPagos.length === 0) ? (
+                      <div className="py-10 text-center text-ink font-black uppercase italic text-[10px]">No se han registrado abonos aún</div>
+                    ) : (
+                      showDetails.historialPagos.map((p: any, idx: number) => (
+                        <div key={idx} className="flex justify-between items-center p-3 bg-surface-soft border border-line rounded-lg">
+                           <div className="space-y-0.5">
+                              <p className="text-[10px] font-black text-ink uppercase">{Utils.fmtFecha(p.fecha)}</p>
+                              <p className="text-[8px] font-black text-ink mono">REF: {p.reciboId}</p>
+                           </div>
+                           <div className="text-right">
+                              <p className="text-xs font-black text-status-success">+{Utils.fmtUSD(p.montoUSD)}</p>
+                              <p className="text-[8px] font-black text-ink uppercase">{Utils.metodoLabel(p.metodo || 'otros')}</p>
+                           </div>
+                        </div>
+                      ))
+                    )}
+                 </div>
+              </div>
+            </div>
+            <div className="modal-foot p-4 bg-surface-soft border-t border-line text-right">
+               <button onClick={() => setShowDetails(null)} className="btn btn-primary px-8 font-black uppercase text-[10px] rounded-lg shadow-md">Cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL HISTORIAL COMPLETO DE CLIENTE (ESTADO DE CUENTA MAESTRO) */}
+      {showClientHistory && (
+        <div className="modal show" style={{ zIndex: 105 }}><div className="modal-bg" onClick={() => setShowClientHistory(null)}></div>
+          <div className={`modal-box max-w-4xl bg-white border-2 border-line rounded-xl overflow-hidden shadow-2xl transition-all ${showDetails ? 'blur-sm scale-95 opacity-40 pointer-events-none' : ''}`}>
+            <div className="modal-head py-4 px-6 border-b border-line bg-ink flex justify-between items-center text-white">
+              <h3 className="font-black uppercase italic tracking-tighter text-xs flex items-center gap-2">
+                <Contact className="w-5 h-5 text-brand-gold" /> ESTADO DE CUENTA MAESTRO: {showClientHistory}
+              </h3>
+              <button onClick={() => setShowClientHistory(null)} className="text-white hover:text-brand-gold"><X className="w-5 h-5"/></button>
+            </div>
+            <div className="modal-body p-0 max-h-[70vh] overflow-y-auto bg-white">
+               <div className="table-wrap">
+                  <table className="w-full">
+                    <thead className="bg-surface-soft sticky top-0 z-10">
+                      <tr>
+                        <th className="text-[9px] font-black uppercase p-4 text-left">Fecha</th>
+                        <th className="text-[9px] font-black uppercase p-4 text-left">ID Documento</th>
+                        <th className="text-[9px] font-black uppercase p-4 text-right">Monto Total</th>
+                        <th className="text-[9px] font-black uppercase p-4 text-right">Abonado</th>
+                        <th className="text-[9px] font-black uppercase p-4 text-right">Saldo Pend.</th>
+                        <th className="text-[9px] font-black uppercase p-4 text-center">Estado</th>
+                        <th className="text-[9px] font-black uppercase p-4 text-center">Auditoría</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {state.cxc.filter(d => d.cliente === showClientHistory).sort((a,b) => b.fecha.localeCompare(a.fecha)).map(d => (
+                        <tr key={d.id} className="border-b border-line/30 hover:bg-surface-warm/20 transition-colors">
+                          <td className="p-4 text-xs font-black">{Utils.fmtFecha(d.fecha)}</td>
+                          <td className="p-4 text-xs font-black mono">{d.id}</td>
+                          <td className="p-4 text-right text-xs font-black">{Utils.fmtUSD(d.montoUSD)}</td>
+                          <td className="p-4 text-right text-xs font-black text-status-success">{Utils.fmtUSD(d.abonadoUSD)}</td>
+                          <td className="p-4 text-right text-sm font-black text-brand-gold-deep">{Utils.fmtUSD(d.saldoUSD)}</td>
+                          <td className="p-4 text-center">
+                            <span className={`badge ${d.estado === 'pagada' ? 'badge-ok' : (d.estado === 'parcial' ? 'badge-info' : 'badge-warn')} font-black text-[8px] uppercase px-3`}>
+                              {d.estado}
+                            </span>
+                          </td>
+                          <td className="p-4 text-center">
+                             <button onClick={() => setShowDetails(d)} className="w-10 h-10 rounded-full flex items-center justify-center bg-white text-status-success border-2 border-status-success/20 hover:bg-status-success hover:text-white transition-all shadow-md"><Eye className="w-5 h-5"/></button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+               </div>
+            </div>
+            <div className="modal-foot p-4 bg-surface-soft border-t border-line text-right">
+               <button onClick={() => setShowClientHistory(null)} className="btn btn-primary px-8 font-black uppercase text-[10px] rounded-lg shadow-md">Cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {isCreditView && (
         <div className="modal show"><div className="modal-bg" onClick={() => setIsCreditView(false)}></div>

@@ -21,7 +21,9 @@ import {
   Truck,
   BookOpen,
   ShoppingBag,
-  Monitor
+  Monitor,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { Store, initialState, Utils } from '@/lib/db-store';
 import { AppState, Terminal } from '@/lib/types';
@@ -46,6 +48,7 @@ export default function LicoreriaPOS() {
   const [state, setState] = useState<AppState>(initialState);
   const [activeModule, setActiveTab] = useState('');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isDesktopSidebarOpen, setIsDesktopSidebarOpen] = useState(true);
   const [mounted, setMounted] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [isOnline, setIsOnline] = useState(true);
@@ -89,7 +92,6 @@ export default function LicoreriaPOS() {
 
               if (!moduleInitialized.current) {
                 const savedModule = sessionStorage.getItem('posven_active_module');
-                // CAMBIO QUIRÚRGICO: Usar localStorage para persistencia ante fallos eléctricos o errores de salida
                 const aperturaConfirmada = localStorage.getItem('posven_apertura_done') === 'true';
 
                 if (data.rol === 'cajero') {
@@ -353,7 +355,6 @@ export default function LicoreriaPOS() {
               <button 
                 disabled={aperturaData.bs === '' || aperturaData.usd === ''} 
                 onClick={() => { 
-                  // CAMBIO QUIRÚRGICO: Usar localStorage para que la apertura sobreviva a fallos de luz o reinicios
                   localStorage.setItem('posven_apertura_done', 'true'); 
                   updateState({
                     fondoCajaHoyBS: parseFloat(aperturaData.bs) || 0,
@@ -380,10 +381,10 @@ export default function LicoreriaPOS() {
   }) : '...';
 
   return (
-    <div className="flex min-h-screen bg-surface-warm text-ink">
+    <div className="flex min-h-screen bg-surface-warm text-ink overflow-hidden">
       {!isCajero && (
-        <aside className={`fixed lg:sticky top-0 left-0 w-[260px] h-screen bg-white border-line flex flex-col z-50 transition-transform duration-300 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'} border-r`}>
-          <div className="p-6 border-b border-line flex flex-col gap-1">
+        <aside className={`fixed lg:sticky top-0 left-0 w-[260px] h-screen bg-white border-line flex flex-col z-50 transition-all duration-300 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} ${isDesktopSidebarOpen ? 'lg:translate-x-0' : 'lg:-translate-x-full lg:w-0'} border-r`}>
+          <div className="p-6 border-b border-line flex flex-col gap-1 relative">
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 bg-ink border border-brand-gold rounded-[10px] flex items-center justify-center font-black text-brand-gold text-lg shadow-sm">P</div>
               <div>
@@ -391,6 +392,12 @@ export default function LicoreriaPOS() {
                 <div className="text-[0.68rem] font-bold text-ink uppercase tracking-widest mt-1">Soluciones Venezuela</div>
               </div>
             </div>
+            <button 
+              onClick={() => setIsDesktopSidebarOpen(false)}
+              className="absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-6 bg-white border border-line rounded-full flex items-center justify-center text-ink hover:text-brand-gold shadow-sm hidden lg:flex"
+            >
+              <ChevronLeft size={14} />
+            </button>
           </div>
           
           <nav className="flex-1 overflow-y-auto p-4 space-y-6">
@@ -436,11 +443,12 @@ export default function LicoreriaPOS() {
 
       <main className="flex-1 flex flex-col min-h-screen max-w-full overflow-hidden">
         <header className="sticky top-0 z-30 bg-surface-warm/85 backdrop-blur-md border-b border-line px-7 py-3.5 flex items-center gap-6 no-print">
-          {!isCajero && (
-            <button className="lg:hidden p-2 -ml-2 text-ink" onClick={() => setIsSidebarOpen(true)}>
-              <Menu className="w-[18px] h-[18px]" />
-            </button>
-          )}
+          <button className={`${isCajero ? 'hidden' : 'p-2 -ml-2 text-ink'}`} onClick={() => {
+            if (window.innerWidth < 1024) setIsSidebarOpen(true);
+            else setIsDesktopSidebarOpen(!isDesktopSidebarOpen);
+          }}>
+            <Menu className="w-[18px] h-[18px]" />
+          </button>
           
           <div className="shrink-0">
             <h2 className="font-display text-lg font-[800] text-ink leading-tight">Pos<span className="text-brand-gold">VEN</span> pro</h2>
