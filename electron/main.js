@@ -13,6 +13,7 @@ function createWindow() {
     minHeight: 768,
     icon: path.join(__dirname, '../public/posven-logo.png'),
     title: "PosVEN Pro - Punto de Venta",
+    show: false, // No mostrar hasta que esté listo
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
@@ -25,12 +26,16 @@ function createWindow() {
   if (isDev) {
     mainWindow.loadURL('http://localhost:9002');
   } else {
+    // Usar path absoluto robusto para la versión empaquetada
     const indexPath = path.join(__dirname, '../out/index.html');
     mainWindow.loadFile(indexPath).catch((err) => {
       console.error("Error cargando la app estática:", err);
-      mainWindow.loadURL('http://localhost:9002'); 
     });
   }
+
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.show();
+  });
 
   if (!isDev) {
     mainWindow.setMenu(null);
@@ -70,8 +75,6 @@ ipcMain.on('print-ticket', (event, printData) => {
     silent: true,
   };
 
-  // El comando de corte (0x1D 0x56 0x41 0x00) es manejado automáticamente 
-  // por la librería PosPrinter al finalizar el array de datos si el driver está correcto.
   PosPrinter.print(printData, options)
     .then(() => {
       console.log('Impresión completada en Roccia RC-8002');

@@ -48,7 +48,7 @@ export default function LicoreriaPOS() {
   const [state, setState] = useState<AppState>(initialState);
   const [activeModule, setActiveTab] = useState('');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [isDesktopSidebarOpen, setIsDesktopSidebarOpen] = useState(true);
+  const [isDesktopSidebarOpen, setIsDesktopSidebarOpen] = useState(false); // Iniciar cerrado por defecto
   const [mounted, setMounted] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [isOnline, setIsOnline] = useState(true);
@@ -224,7 +224,8 @@ export default function LicoreriaPOS() {
   const handleModuleChange = (moduleId: string) => {
     if (userRole === 'cajero' && moduleId !== 'ventas') return;
     setActiveTab(moduleId);
-    setIsSidebarOpen(false);
+    setIsSidebarOpen(false); // Cerrar en móvil
+    setIsDesktopSidebarOpen(false); // Ocultar automáticamente en desktop al seleccionar (Requerimiento)
   };
 
   const menuGroups = [
@@ -444,7 +445,7 @@ export default function LicoreriaPOS() {
       <main className="flex-1 flex flex-col min-h-screen max-w-full overflow-hidden">
         <header className="sticky top-0 z-30 bg-surface-warm/85 backdrop-blur-md border-b border-line px-7 py-3.5 flex items-center gap-6 no-print">
           <button className={`${isCajero ? 'hidden' : 'p-2 -ml-2 text-ink'}`} onClick={() => {
-            if (window.innerWidth < 1024) setIsSidebarOpen(true);
+            if (window.innerWidth < 1024) setIsSidebarOpen(!isSidebarOpen);
             else setIsDesktopSidebarOpen(!isDesktopSidebarOpen);
           }}>
             <Menu className="w-[18px] h-[18px]" />
@@ -506,7 +507,7 @@ export default function LicoreriaPOS() {
             <span className="flex items-center gap-1.5">
               <span className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-status-success animate-pulse' : 'bg-status-warn'}`} /> {isOnline ? 'Nube Sincronizada' : 'Sincronización Pendiente'}
             </span>
-            <span className="px-2 py-0.5 bg-white border border-line rounded text-[0.65rem] font-black">v2.5.0-resilient</span>
+            <span className="px-2 py-0.5 bg-white border border-line rounded text-[0.65rem] font-black">v2.5.6-resilient</span>
           </div>
         </footer>
       </main>

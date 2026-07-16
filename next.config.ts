@@ -2,6 +2,7 @@ import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
   output: 'export',
+  trailingSlash: true, // Crucial para que Electron resuelva las rutas de archivos correctamente
   typescript: {
     ignoreBuildErrors: true,
   },
