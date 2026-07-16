@@ -64,6 +64,14 @@ export default function LicoreriaPOS() {
     setMounted(true);
     let unsubscribeProfile: any = null;
 
+    // Safety timeout para evitar carga infinita si Firebase Auth no responde
+    const timerSafety = setTimeout(() => {
+      if (loading) {
+        console.warn("Safety trigger: Loading state forced to false.");
+        setLoading(false);
+      }
+    }, 8000);
+
     if (!auth || !db) {
       setLoading(false);
       return;
@@ -143,7 +151,7 @@ export default function LicoreriaPOS() {
       setState(prev => ({ ...prev, ...dbUpdate }) as AppState);
     });
 
-    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    const timerClock = setInterval(() => setCurrentTime(new Date()), 1000);
 
     if (typeof window !== 'undefined') {
       setIsOnline(navigator.onLine);
@@ -155,7 +163,8 @@ export default function LicoreriaPOS() {
         unsubscribeAuth();
         if (unsubscribeProfile) unsubscribeProfile();
         unsubscribeStore();
-        clearInterval(timer);
+        clearInterval(timerClock);
+        clearTimeout(timerSafety);
         window.removeEventListener('online', hOnline);
         window.removeEventListener('offline', hOffline);
       };
@@ -165,7 +174,8 @@ export default function LicoreriaPOS() {
       unsubscribeAuth();
       if (unsubscribeProfile) unsubscribeProfile();
       unsubscribeStore();
-      clearInterval(timer);
+      clearInterval(timerClock);
+      clearTimeout(timerSafety);
     };
   }, [router]);
 
@@ -431,7 +441,7 @@ export default function LicoreriaPOS() {
           <div className="p-4 border-t border-line bg-surface-warm/50 flex flex-col gap-2">
             <div className="bg-brand-gold-soft border border-[#EFD9A4] rounded-lg p-3 flex items-center gap-3 shadow-sm">
               <div className="flex-1">
-                <div className="text-[0.62rem] font-bold text-brand-gold-deep uppercase tracking-widest leading-none mb-1">Tasa BCV</div>
+                <div className="text-[0.62rem] font-bold text-brand-gold-deep uppercase tracking-widest mb-1 leading-none">Tasa BCV</div>
                 <div className="font-display font-[800] text-sm text-ink">{state.tasa.toFixed(2)} <span className="text-[0.7rem] font-black opacity-60">Bs/USD</span></div>
               </div>
             </div>

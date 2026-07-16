@@ -27,6 +27,11 @@ export default function LoginPage() {
   const [authChecked, setAuthChecked] = useState(false);
 
   useEffect(() => {
+    // Safety timeout para evitar pantalla blanca infinita si Firebase no responde
+    const timer = setTimeout(() => {
+      if (!authChecked) setAuthChecked(true);
+    }, 8000);
+
     const checkSystemStatus = async () => {
       if (!db) return;
       try {
@@ -35,7 +40,6 @@ export default function LoginPage() {
           const data = stateDoc.data();
           setSystemEmpty(data.isInitialized === false);
         } else {
-          // Si el documento no existe, asumimos que el sistema está nuevo
           setSystemEmpty(true);
         }
       } catch (e) {
@@ -44,9 +48,7 @@ export default function LoginPage() {
       }
     };
     checkSystemStatus();
-  }, []);
 
-  useEffect(() => {
     if (!auth) return;
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
@@ -71,7 +73,11 @@ export default function LoginPage() {
         setAuthChecked(true);
       }
     });
-    return () => unsubscribe();
+
+    return () => {
+      unsubscribe();
+      clearTimeout(timer);
+    };
   }, [router]);
 
   const handleAuth = async (e: React.FormEvent) => {
@@ -110,7 +116,6 @@ export default function LoginPage() {
         await setDoc(userDocRef, newUserData);
 
         if (isRegistering) {
-          // Marcar sistema como inicializado inmediatamente
           const stateRef = doc(db, 'pos_system_data', 'state');
           await setDoc(stateRef, { isInitialized: true }, { merge: true });
           
@@ -148,7 +153,7 @@ export default function LoginPage() {
       <div className="min-h-screen bg-surface-warm flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
           <div className="w-10 h-10 border-4 border-brand-gold border-t-transparent rounded-full animate-spin"></div>
-          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-ink/40">Verificando Seguridad...</p>
+          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-ink/40">Iniciando Seguridad...</p>
         </div>
       </div>
     );
@@ -157,15 +162,17 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#D4C5A6] via-[#C8B99A] to-[#B8A98A] flex items-center justify-center p-6">
       <div className="w-full max-w-[440px] bg-white rounded-[32px] shadow-[0_20px_50px_rgba(0,0,0,0.25)] p-10 animate-in fade-in zoom-in duration-500">
-        <div className="mb-8 text-center sm:text-left">
-          <div className="flex items-center gap-3 mb-2 justify-center sm:justify-start">
+        
+        {/* ENCABEZADO CENTRADO SOLICITADO */}
+        <div className="mb-10 flex flex-col items-center">
+          <div className="flex items-center gap-3 mb-3">
             <div className="w-11 h-11 bg-[#C8952E] rounded-xl flex items-center justify-center text-black font-black text-2xl shadow-lg">P</div>
             <div className="font-display font-black text-2xl text-black tracking-tighter">Pos<span className="text-[#C8952E]">VEN</span> Pro</div>
           </div>
-          <div className="h-1 w-12 bg-[#C8952E] rounded-full hidden sm:block"></div>
+          <div className="h-1 w-12 bg-[#C8952E] rounded-full"></div>
         </div>
 
-        <div className="mb-8 text-center sm:text-left">
+        <div className="mb-8 text-center">
           <h1 className="text-[28px] font-extrabold text-black leading-tight mb-2 tracking-tight">
             {isRegistering ? 'Configurar Administrador' : '¡Bienvenido!'}
           </h1>
