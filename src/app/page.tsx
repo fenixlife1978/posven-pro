@@ -79,7 +79,7 @@ export default function LicoreriaPOS() {
 
     const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
       if (!currentUser) {
-        setLoading(false);
+        // QUIRÚRGICO: No desactivamos 'loading' para que no se renderice el Dashboard antes de redirigir
         router.push('/login');
       } else {
         try {
