@@ -48,7 +48,6 @@ export default function LicoreriaPOS() {
   const [state, setState] = useState<AppState>(initialState);
   const [activeModule, setActiveTab] = useState('');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [isDesktopSidebarOpen, setIsDesktopSidebarOpen] = useState(false); // Iniciar cerrado por defecto
   const [mounted, setMounted] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [isOnline, setIsOnline] = useState(true);
@@ -224,8 +223,7 @@ export default function LicoreriaPOS() {
   const handleModuleChange = (moduleId: string) => {
     if (userRole === 'cajero' && moduleId !== 'ventas') return;
     setActiveTab(moduleId);
-    setIsSidebarOpen(false); // Cerrar en móvil
-    setIsDesktopSidebarOpen(false); // Ocultar automáticamente en desktop al seleccionar (Requerimiento)
+    setIsSidebarOpen(false);
   };
 
   const menuGroups = [
@@ -384,7 +382,10 @@ export default function LicoreriaPOS() {
   return (
     <div className="flex min-h-screen bg-surface-warm text-ink overflow-hidden">
       {!isCajero && (
-        <aside className={`fixed lg:sticky top-0 left-0 w-[260px] h-screen bg-white border-line flex flex-col z-50 transition-all duration-300 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} ${isDesktopSidebarOpen ? 'lg:translate-x-0' : 'lg:-translate-x-full lg:w-0'} border-r`}>
+        <aside 
+          onMouseLeave={() => setIsSidebarOpen(false)}
+          className={`fixed top-0 left-0 w-[260px] h-screen bg-white border-line flex flex-col z-50 transition-all duration-300 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} border-r shadow-2xl`}
+        >
           <div className="p-6 border-b border-line flex flex-col gap-1 relative">
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 bg-ink border border-brand-gold rounded-[10px] flex items-center justify-center font-black text-brand-gold text-lg shadow-sm">P</div>
@@ -394,8 +395,8 @@ export default function LicoreriaPOS() {
               </div>
             </div>
             <button 
-              onClick={() => setIsDesktopSidebarOpen(false)}
-              className="absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-6 bg-white border border-line rounded-full flex items-center justify-center text-ink hover:text-brand-gold shadow-sm hidden lg:flex"
+              onClick={() => setIsSidebarOpen(false)}
+              className="absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-6 bg-white border border-line rounded-full flex items-center justify-center text-ink hover:text-brand-gold shadow-sm"
             >
               <ChevronLeft size={14} />
             </button>
@@ -444,11 +445,8 @@ export default function LicoreriaPOS() {
 
       <main className="flex-1 flex flex-col min-h-screen max-w-full overflow-hidden">
         <header className="sticky top-0 z-30 bg-surface-warm/85 backdrop-blur-md border-b border-line px-7 py-3.5 flex items-center gap-6 no-print">
-          <button className={`${isCajero ? 'hidden' : 'p-2 -ml-2 text-ink'}`} onClick={() => {
-            if (window.innerWidth < 1024) setIsSidebarOpen(!isSidebarOpen);
-            else setIsDesktopSidebarOpen(!isDesktopSidebarOpen);
-          }}>
-            <Menu className="w-[18px] h-[18px]" />
+          <button className={`${isCajero ? 'hidden' : 'p-2 -ml-2 text-ink hover:text-brand-gold'}`} onClick={() => setIsSidebarOpen(true)}>
+            <Menu className="w-[20px] h-[20px]" />
           </button>
           
           <div className="shrink-0">
@@ -513,7 +511,7 @@ export default function LicoreriaPOS() {
       </main>
 
       {isSidebarOpen && (
-        <div className="fixed inset-0 bg-black/60 z-[45] backdrop-blur-sm lg:hidden" onClick={() => setIsSidebarOpen(false)} />
+        <div className="fixed inset-0 bg-black/60 z-[45] backdrop-blur-sm" onClick={() => setIsSidebarOpen(false)} />
       )}
     </div>
   );
