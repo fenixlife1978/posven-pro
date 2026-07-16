@@ -83,7 +83,7 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
           <meta charset="UTF-8">
           <style>
             @page { size: 80mm auto; margin: 0; }
-            html, body { height: auto; overflow: visible; margin: 0; padding: 0; }
+            html, body { height: auto; margin: 0; padding: 0; }
             body {
               font-family: 'Arial', 'Helvetica', sans-serif;
               width: 72mm;
@@ -97,7 +97,7 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
               print-color-adjust: exact;
               font-weight: 700;
             }
-            .thermal-80mm { width: 100%; display: block; overflow: hidden; page-break-after: avoid; }
+            .thermal-80mm { width: 100%; display: block; }
             .black-box { 
               background: #000 !important; 
               color: #fff !important; 
@@ -119,7 +119,6 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
             .bold { font-weight: 900; }
             .header-title { font-size: 20px; font-weight: 900; }
             .header-info { font-size: 10px; font-weight: 700; }
-            .items-table td { padding: 2px 0; }
           </style>
         </head>
         <body>
@@ -245,28 +244,20 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
                   )}
                 </div>
               ) : (
-                <div style={{ width: '100%', display: 'block' }}>
+                <div style={{ width: '100%' }}>
                   <DataRow label="N° CONTROL:" value={data.id} bold />
                   <DataRow label="CLIENTE:" value={customerName} bold />
                   <div className="separator" />
-                  <table className="items-table" style={{ width: '100%', marginBottom: '5px', pageBreakInside: 'auto' }}>
-                    <thead>
-                      <tr style={{ fontSize: '10px', borderBottom: '1px solid black' }}>
-                        <th style={{ textAlign: 'left', textTransform: 'uppercase' }}>PRODUCTO</th>
-                        <th style={{ textAlign: 'right', textTransform: 'uppercase' }}>TOTAL</th>
-                      </tr>
-                    </thead>
-                    <tbody style={{ textTransform: 'uppercase' }}>
-                      {data.items.map((item: any, idx: number) => (
-                        <tr key={idx} style={{ fontSize: '10px', pageBreakInside: 'avoid' }}>
-                          <td style={{ padding: '2px 0' }}>{item.cantidad || item.qty}x {(item.nombre || item.name).slice(0, 30)}</td>
-                          <td style={{ textAlign: 'right', fontWeight: 'bold' }}>{formatBs((item.subtotalUSD || (item.price * item.qty)) * state.tasa)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                  <p style={{ fontWeight: 900, textAlign: 'center', marginBottom: '4px', fontSize: '10px' }}>DESGLOSE DE PRODUCTOS</p>
+                  {data.items.map((item: any, idx: number) => (
+                    <DataRow 
+                      key={idx} 
+                      label={`${item.cantidad || item.qty}x ${(item.nombre || item.name).slice(0, 24)}`} 
+                      value={formatBs((item.subtotalUSD || (item.price * item.qty)) * state.tasa)} 
+                    />
+                  ))}
                   <div className="separator" />
-                  <div style={{ marginTop: '4px', pageBreakInside: 'avoid' }}>
+                  <div style={{ marginTop: '4px' }}>
                     <table style={{ width: '100%' }}>
                       <tbody>
                         <tr>
@@ -282,7 +273,7 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
 
               <div style={{ textAlign: 'center', marginTop: '15px', paddingTop: '8px', borderTop: '1px dotted #ccc', pageBreakInside: 'avoid' }}>
                 <p style={{ fontWeight: 'bold', margin: '0 0 2px 0' }}>¡Gracias por su preferencia!</p>
-                <p style={{ opacity: '0.6', fontSize: '8px', margin: '0' }}>PosVEN Pro v2.5 - Bloque Fiscal Imagen 3</p>
+                <p style={{ opacity: '0.6', fontSize: '8px', margin: '0' }}>PosVEN Pro v2.5 - Bloque Fiscal Unificado</p>
               </div>
             </div>
           </div>

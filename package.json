@@ -1,6 +1,6 @@
 {
   "name": "posven-pro",
-  "version": "2.5.6",
+  "version": "2.5.7",
   "private": true,
   "main": "electron/main.js",
   "author": "fenixlife1978",
@@ -8,11 +8,13 @@
   "scripts": {
     "dev": "next dev --turbopack -p 9002",
     "build": "next build",
+    "export": "next export",
     "start": "next start",
     "lint": "next lint",
     "electron:dev": "electron .",
-    "electron:build": "npm run build && electron-builder",
-    "electron:publish": "npm run build && electron-builder --publish always"
+    "electron:build": "npm run build && npm run export && electron-builder",
+    "electron:publish": "npm run build && npm run export && electron-builder --publish always",
+    "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {
     "@genkit-ai/google-genai": "^1.28.0",
@@ -78,21 +80,43 @@
       "output": "dist"
     },
     "files": [
-      "out/**/*",
       "electron/**/*",
-      "public/**/*",
       "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "out",
+        "to": "out",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "public",
+        "to": "public",
+        "filter": [
+          "**/*"
+        ]
+      }
     ],
     "win": {
       "target": [
-        "nsis"
+        {
+          "target": "nsis",
+          "arch": [
+            "x64",
+            "ia32"
+          ]
+        }
       ],
-      "icon": "public/posven-logo.png"
+      "icon": "public/posven-logo.ico"
     },
     "nsis": {
       "oneClick": false,
+      "perMachine": true,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
       "runAfterFinish": true,
       "shortcutName": "PosVEN Pro"
     },
