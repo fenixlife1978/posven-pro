@@ -16,7 +16,9 @@ import {
   X,
   ChevronLeft,
   ChevronRight,
-  Filter
+  Filter,
+  Eye,
+  Receipt
 } from 'lucide-react';
 import { exportarPDFLibroDiario } from '@/lib/pdf-generator';
 
@@ -32,6 +34,8 @@ export default function AccountingModule({ state, updateState }: { state: AppSta
   const pageSize = 20;
 
   const [showModal, setShowModal] = useState(false);
+  const [selectedEntry, setSelectedEntry] = useState<LibroDiarioEntry | null>(null);
+  
   const [formData, setFormData] = useState({
     concepto: '',
     montoUSD: '',
@@ -204,7 +208,7 @@ export default function AccountingModule({ state, updateState }: { state: AppSta
                 <th className="text-[10px] font-black uppercase py-4 text-left">Método</th>
                 <th className="text-[10px] font-black uppercase py-4 text-right">Ingreso</th>
                 <th className="text-[10px] font-black uppercase py-4 text-right">Egreso</th>
-                <th className="text-[10px] font-black uppercase py-4 px-6 text-center">Acción</th>
+                <th className="text-[10px] font-black uppercase py-4 px-6 text-center">Acciones</th>
               </tr>
             </thead>
             <tbody className="bg-white">
@@ -230,11 +234,16 @@ export default function AccountingModule({ state, updateState }: { state: AppSta
                       {e.tipo === 'egreso' ? <span className="font-black text-status-danger">-{Utils.fmtUSD(e.montoUSD)}</span> : '-'}
                     </td>
                     <td className="py-4 px-6 text-center">
-                       {e.referencia === 'MANUAL' ? (
-                         <button onClick={() => eliminarAsiento(e.id)} className="text-ink/20 hover:text-status-danger transition-colors p-2"><Trash2 className="w-4 h-4" /></button>
-                       ) : (
-                         <span className="text-[8px] font-black text-ink/20 uppercase">Auto</span>
-                       )}
+                       <div className="flex items-center justify-center gap-1">
+                          <button onClick={() => setSelectedEntry(e)} className="text-status-info hover:text-blue-700 transition-colors p-2" title="Ver Detalle Auditoría">
+                            <Eye className="w-4 h-4" />
+                          </button>
+                          {e.referencia === 'MANUAL' && (
+                            <button onClick={() => eliminarAsiento(e.id)} className="text-ink/20 hover:text-status-danger transition-colors p-2" title="Eliminar Asiento Manual">
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                       </div>
                     </td>
                   </tr>
                 ))
@@ -268,6 +277,105 @@ export default function AccountingModule({ state, updateState }: { state: AppSta
           </div>
         )}
       </div>
+
+      {/* MODAL DETALLE DE MOVIMIENTO */}
+      {selectedEntry && (
+        <div className="modal show" style={{ zIndex: 110 }}><div className="modal-bg" onClick={() => setSelectedEntry(null)}></div>
+          <div className="modal-box bg-white max-w-xl border-2 border-line rounded-2xl overflow-hidden shadow-2xl">
+            <div className="modal-head py-4 px-6 bg-ink text-white flex justify-between items-center">
+              <h3 className="font-black text-xs uppercase italic tracking-widest flex items-center gap-2">
+                <Eye className="w-4 h-4 text-brand-gold" /> AUDITORÍA DE MOVIMIENTO: {selectedEntry.id}
+              </h3>
+              <button onClick={() => setSelectedEntry(null)}><X className="text-white/40 hover:text-white" /></button>
+            </div>
+            <div className="modal-body p-6 space-y-6 max-h-[75vh] overflow-y-auto bg-white">
+              <div className="grid grid-cols-2 gap-4">
+                 <div className="p-3 bg-surface-soft rounded-lg border border-line">
+                   <label className="text-[8px] font-black uppercase text-ink/40 block mb-1">Categoría / Origen</label>
+                   <p className="text-xs font-black text-ink uppercase">{selectedEntry.categoria.replace('_', ' ')}</p>
+                 </div>
+                 <div className="p-3 bg-surface-soft rounded-lg border border-line">
+                   <label className="text-[8px] font-black uppercase text-ink/40 block mb-1">Fecha / Hora Registro</label>
+                   <p className="text-xs font-black text-ink">{Utils.fmtFecha(selectedEntry.fecha)} {selectedEntry.fecha.includes('T') ? selectedEntry.fecha.split('T')[1].slice(0, 5) : ''}</p>
+                 </div>
+              </div>
+
+              <div className="p-4 bg-brand-gold-soft/20 border border-brand-gold/20 rounded-xl">
+                 <label className="text-[8px] font-black uppercase text-brand-gold-deep block mb-1">Concepto Detallado</label>
+                 <p className="text-sm font-black text-ink uppercase italic leading-relaxed">{selectedEntry.concepto}</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                 <div className="p-4 bg-ink text-white rounded-xl text-center">
+                    <label className="text-[8px] font-black uppercase opacity-40 block mb-1">Monto en Divisas</label>
+                    <p className="text-2xl font-black text-brand-gold">{Utils.fmtUSD(selectedEntry.montoUSD)}</p>
+                 </div>
+                 <div className="p-4 bg-surface-soft border border-line rounded-xl text-center">
+                    <label className="text-[8px] font-black uppercase text-ink/40 block mb-1">Equivalente Bolívares</label>
+                    <p className="text-2xl font-black text-ink">{Utils.fmtBS(selectedEntry.montoBS)}</p>
+                 </div>
+              </div>
+
+              {/* Lógica de desglose de items */}
+              {(() => {
+                const ref = selectedEntry.referencia;
+                if (ref === 'MANUAL') return null;
+
+                const cleanRef = ref.split('-')[0];
+                const sale = state.ventas.find(v => v.id === cleanRef);
+                const cxp = state.cxp.find(c => c.id === ref || c.numeroFactura === ref);
+                const dev = state.devoluciones.find(d => d.id === ref);
+                const anu = state.anulaciones.find(a => a.id === ref);
+
+                let items: any[] = [];
+                if (sale) items = sale.items;
+                else if (cxp) items = cxp.items || [];
+                else if (dev) items = dev.items;
+                else if (anu) items = anu.items || [];
+
+                if (items.length === 0) return (
+                  <div className="py-8 text-center border-t border-line/20">
+                    <p className="text-[10px] font-black uppercase text-ink/20 italic tracking-widest">Sin desglose de ítems disponible para esta referencia ({ref})</p>
+                  </div>
+                );
+
+                return (
+                  <div className="space-y-3 animate-in slide-in-from-top-2 duration-300">
+                    <h4 className="text-[10px] font-black uppercase text-ink tracking-[0.2em] border-b border-line pb-2 flex items-center gap-2">
+                      <Receipt className="w-3 h-3" /> DESGLOSE DE PRODUCTOS
+                    </h4>
+                    <div className="bg-surface-soft/50 rounded-xl overflow-hidden border border-line/30 shadow-inner">
+                      <table className="w-full">
+                        <thead>
+                          <tr className="bg-ink/5">
+                            <th className="text-[8px] font-black uppercase p-2 text-left text-ink">Cant</th>
+                            <th className="text-[8px] font-black uppercase p-2 text-left text-ink">Descripción</th>
+                            <th className="text-[8px] font-black uppercase p-2 text-right text-ink">P. Unit</th>
+                            <th className="text-[8px] font-black uppercase p-2 text-right text-ink">Total</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {items.map((it: any, idx: number) => (
+                            <tr key={idx} className="border-b border-line/20 hover:bg-white/40">
+                              <td className="text-[10px] font-black p-2 text-ink">{it.cantidad || it.qty}</td>
+                              <td className="text-[10px] font-black uppercase p-2 truncate max-w-[220px] text-ink">{it.nombre || it.name}</td>
+                              <td className="text-[10px] font-black p-2 text-right text-ink">{Utils.fmtUSD(it.precioUnitUSD || it.costoUnitarioUSD || it.price || 0)}</td>
+                              <td className="text-[10px] font-black p-2 text-right text-brand-gold-deep">{Utils.fmtUSD(it.subtotalUSD || ((it.price || 0) * (it.qty || 0)))}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+            <div className="modal-foot p-5 bg-surface-soft border-t border-line text-right">
+               <button onClick={() => setSelectedEntry(null)} className="btn btn-primary px-10 font-black uppercase text-[10px] rounded-lg shadow-lg tracking-widest">Cerrar Auditoría</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* MODAL GASTO MANUAL */}
       {showModal && (
