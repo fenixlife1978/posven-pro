@@ -80,23 +80,9 @@
     },
     "files": [
       "electron/**/*",
+      "out/**/*",
+      "public/**/*",
       "package.json"
-    ],
-    "extraResources": [
-      {
-        "from": "out",
-        "to": "out",
-        "filter": [
-          "**/*"
-        ]
-      },
-      {
-        "from": "public",
-        "to": "public",
-        "filter": [
-          "**/*"
-        ]
-      }
     ],
     "win": {
       "target": [
@@ -108,7 +94,7 @@
           ]
         }
       ],
-      "icon": "public/posven-logo.ico"
+      "icon": "public/posven-logo.png"
     },
     "nsis": {
       "oneClick": false,
