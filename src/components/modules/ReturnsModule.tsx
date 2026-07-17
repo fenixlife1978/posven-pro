@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 
-export default function ReturnsModule({ state, updateState, onBackToPOS }: { state: AppState, updateState: (s: Partial<AppState>) => void, onBackToPOS: () => void }) {
+export default function ReturnsModule({ state, updateState, onBackToPOS, terminalId }: { state: AppState, updateState: (s: Partial<AppState>) => void, onBackToPOS: () => void, terminalId?: string }) {
   const [view, setView] = useState<'list' | 'create'>('list');
   const [saleSearch, setSaleSearch] = useState('');
   const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
@@ -29,8 +29,9 @@ export default function ReturnsModule({ state, updateState, onBackToPOS }: { sta
   const [reason, setMotivo] = useState('');
 
   const buscarVenta = () => {
-    const sale = state.ventas.find(v => v.id === saleSearch || v.id.endsWith(saleSearch));
-    if (!sale) return alert('Venta no encontrada');
+    // Solo permitir buscar ventas del terminal actual si se especificó terminalId
+    const sale = state.ventas.find(v => (v.id === saleSearch || v.id.endsWith(saleSearch)) && (!terminalId || v.terminalId === terminalId));
+    if (!sale) return alert('Venta no encontrada en este terminal.');
     if (sale.estado === 'anulada') return alert('Esta factura ya ha sido anulada previamente.');
     
     setSelectedSale(sale);
@@ -107,7 +108,8 @@ export default function ReturnsModule({ state, updateState, onBackToPOS }: { sta
           stockAntes,
           stockDespues: nuevosProductos[pIdx].stock,
           fecha: ahoraStr,
-          referencia: `DEVOLUCIÓN ${idDev} - REF VENTA ${selectedSale.id}`
+          referencia: `DEVOLUCIÓN ${idDev} - REF VENTA ${selectedSale.id}`,
+          terminalId: terminalId || 'GLOBAL'
         });
       }
     });
@@ -160,7 +162,8 @@ export default function ReturnsModule({ state, updateState, onBackToPOS }: { sta
           stockAntes,
           stockDespues: nuevosProductos[pIdx].stock,
           fecha: ahoraStr,
-          referencia: `ANULACIÓN TOTAL FACTURA #${selectedSale.id}`
+          referencia: `ANULACIÓN TOTAL FACTURA #${selectedSale.id}`,
+          terminalId: terminalId || 'GLOBAL'
         });
       }
     });
@@ -198,10 +201,17 @@ export default function ReturnsModule({ state, updateState, onBackToPOS }: { sta
   };
 
   const historialUnificado = useMemo(() => {
-    const devs = (state.devoluciones || []).map(d => ({ ...d, tipoOperacion: 'DEVOLUCIÓN' }));
-    const anus = (state.anulaciones || []).map(a => ({ ...a, tipoOperacion: 'ANULACIÓN', items: a.items || [] }));
+    // FILTRADO POR TERMINAL SOLICITADO
+    const devs = (state.devoluciones || [])
+      .filter(d => !terminalId || state.ventas.find(v => v.id === d.ventaId)?.terminalId === terminalId)
+      .map(d => ({ ...d, tipoOperacion: 'DEVOLUCIÓN' }));
+    
+    const anus = (state.anulaciones || [])
+      .filter(a => !terminalId || state.ventas.find(v => v.id === a.ventaId)?.terminalId === terminalId)
+      .map(a => ({ ...a, tipoOperacion: 'ANULACIÓN', items: a.items || [] }));
+    
     return [...devs, ...anus].sort((a, b) => b.fecha.localeCompare(a.fecha));
-  }, [state.devoluciones, state.anulaciones]);
+  }, [state.devoluciones, state.anulaciones, state.ventas, terminalId]);
 
   return (
     <div className="space-y-6">
@@ -228,7 +238,7 @@ export default function ReturnsModule({ state, updateState, onBackToPOS }: { sta
         <div className="card shadow-lg animate-in fade-in duration-300 border-line bg-white">
           <div className="card-head bg-surface-soft border-b border-line px-5 py-4">
             <h3 className="text-ink font-black text-xs uppercase tracking-widest flex items-center gap-2">
-              <ClipboardList className="w-4 h-4 text-status-info" /> Historial de N.C, Devoluciones y Anulaciones
+              <ClipboardList className="w-4 h-4 text-status-info" /> Historial de {terminalId ? `Terminal ${terminalId}` : 'Sistema'}
             </h3>
           </div>
           <div className="table-wrap">
@@ -245,7 +255,7 @@ export default function ReturnsModule({ state, updateState, onBackToPOS }: { sta
               </thead>
               <tbody className="bg-white">
                 {historialUnificado.length === 0 ? (
-                  <tr><td colSpan={6} className="text-center py-20 text-ink/20 font-black uppercase italic opacity-40">No hay operaciones registradas</td></tr>
+                  <tr><td colSpan={6} className="text-center py-20 text-ink/20 font-black uppercase italic opacity-40">No hay operaciones registradas para este terminal</td></tr>
                 ) : (
                   historialUnificado.map(d => (
                     <tr key={d.id} className="border-b border-line/30 hover:bg-surface-warm/20">
@@ -272,7 +282,7 @@ export default function ReturnsModule({ state, updateState, onBackToPOS }: { sta
                 <div className="p-5 bg-surface-soft rounded-full"><Search className="w-10 h-10 text-ink/20" /></div>
                 <div className="max-w-xs space-y-2">
                   <h3 className="text-ink font-black uppercase text-sm">Localizar Factura</h3>
-                  <p className="text-[10px] text-ink font-bold uppercase opacity-60">Ingrese el número de recibo para iniciar una devolución parcial o anulación total.</p>
+                  <p className="text-[10px] text-ink font-bold uppercase opacity-60">Solo se permiten reversiones de ventas generadas en este terminal por seguridad.</p>
                 </div>
                 <div className="flex gap-2 w-full max-w-sm">
                   <input 
