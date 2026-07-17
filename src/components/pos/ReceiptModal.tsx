@@ -89,7 +89,6 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
             *, *::before, *::after {
               box-sizing: border-box;
               overflow: visible !important;
-              contain: none !important;
             }
             html, body {
               height: auto;
@@ -97,29 +96,21 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
               padding: 0;
               background: #fff;
             }
-            body {
-              display: flex;
-              justify-content: center;
-            }
             @page {
               size: 80mm auto;
               margin: 0;
             }
             .thermal-ticket {
-              width: 72mm;
+              width: 80mm;
               font-family: 'Arial', 'Helvetica', sans-serif;
               font-size: 11px;
               font-weight: 700;
               color: #000;
               background: #fff;
               line-height: 1.15;
-              padding: 4mm;
+              padding: 2mm;
               -webkit-print-color-adjust: exact;
               print-color-adjust: exact;
-            }
-            .thermal-ticket * {
-              overflow: visible !important;
-              contain: none !important;
             }
             .thermal-ticket .separator {
               border-top: 1px dashed #000;
@@ -129,13 +120,6 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
             .thermal-ticket table {
               width: 100%;
               border-collapse: collapse;
-              page-break-inside: avoid;
-            }
-            .thermal-ticket td {
-              padding: 0;
-              margin: 0;
-              text-align: left;
-              font-size: 11px;
             }
             .thermal-ticket .section-title {
               font-weight: 900;
@@ -146,11 +130,11 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
           </style>
         </head>
         <body>
-          <div class="thermal-ticket" id="thermal-content"></div>
+          <div id="thermal-content"></div>
           <script>
-            document.getElementById('thermal-content').appendChild(
-              ${getSerializedContent(clonedContent)}
-            );
+            const content = document.getElementById('thermal-content');
+            const cloned = ${JSON.stringify(clonedContent.innerHTML)};
+            content.innerHTML = '<div class="thermal-ticket">' + cloned + '</div>';
             window.onload = function() {
               window.print();
               setTimeout(() => window.close(), 500);
@@ -165,9 +149,10 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[440px] p-0 bg-transparent border-none overflow-hidden shadow-none">
-        <div className="bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col border border-gray-200">
-          <div className="bg-black p-4 flex justify-between items-center">
+      <DialogContent className="sm:max-w-[480px] p-0 bg-white border-none overflow-hidden shadow-2xl rounded-2xl">
+        <div className="flex flex-col h-[85vh]">
+          {/* HEADER FIJO */}
+          <div className="bg-black p-4 flex justify-between items-center shrink-0">
             <h3 className="text-white font-black text-xs flex items-center gap-2 tracking-widest uppercase">
               <Printer size={16} className="text-brand-gold" /> VISTA PREVIA FISCAL
             </h3>
@@ -176,22 +161,21 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
             </button>
           </div>
 
-          <div
-            className="p-6 bg-gray-100 flex justify-center max-h-[70vh] overflow-y-auto custom-scrollbar"
-            style={{ display: 'contents' }}
-          >
+          {/* CUERPO SCROLLABLE */}
+          <div className="flex-1 overflow-y-auto bg-gray-100 py-6 flex justify-center">
             <div
               ref={printRef}
+              className="shadow-sm"
               style={{
-                width: '72mm',
+                width: '76mm',
                 boxSizing: 'border-box',
                 color: '#000',
                 fontSize: '11px',
                 fontWeight: 700,
-                display: 'block',
                 padding: '6mm',
                 background: '#fff',
                 lineHeight: '1.15',
+                minHeight: '100px'
               }}
             >
               {/* ENCABEZADO */}
@@ -229,7 +213,7 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
                 <div style={{ width: '100%' }}>
                   {type === 'REPORT_Z' && (
                     <div style={{ marginBottom: '10px' }}>
-                      <p className="section-title">DATOS DE CONTROL Y AUDITORÍA</p>
+                      <p style={{ fontWeight: 900, textAlign: 'center', marginBottom: '4px', fontSize: '10px' }}>DATOS DE CONTROL Y AUDITORÍA</p>
                       <DataRow label="Reporte Z N°:" value={String(data.numeroZ || 0).padStart(6, '0')} bold />
                       <DataRow label="Rango Facturas:" value={`${data.desdeFactura} - ${data.hastaFactura}`} />
                       <DataRow label="Rango Notas Cred:" value={`${data.desdeNC} - ${data.hastaNC}`} />
@@ -238,7 +222,7 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
                   )}
 
                   <div style={{ marginBottom: '10px' }}>
-                    <p className="section-title">RESUMEN DE FACTURACIÓN</p>
+                    <p style={{ fontWeight: 900, textAlign: 'center', marginBottom: '4px', fontSize: '10px' }}>RESUMEN DE FACTURACIÓN</p>
                     <DataRow label="Venta Bruta:" value={formatBs(data.brUSD * state.tasa)} />
                     <DataRow label="Descuentos:" value={'-' + formatBs(data.descUSD * state.tasa)} />
                     <DataRow label="Devoluciones:" value={'-' + formatBs(data.devUSD * state.tasa)} />
@@ -254,7 +238,7 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
                   </div>
 
                   <div style={{ marginBottom: '10px' }}>
-                    <p className="section-title">DESGLOSE FISCAL</p>
+                    <p style={{ fontWeight: 900, textAlign: 'center', marginBottom: '4px', fontSize: '10px' }}>DESGLOSE FISCAL</p>
                     <DataRow label="Monto Exento:" value={formatBs((data.exentoUSD || 0) * state.tasa)} />
                     <DataRow label="Base Imponible:" value={formatBs((data.baseImponibleUSD || 0) * state.tasa)} />
                     <DataRow label="IVA Recaudado (16%):" value={formatBs((data.ivaUSD || 0) * state.tasa)} />
@@ -262,7 +246,7 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
                   </div>
 
                   <div style={{ marginBottom: '10px' }}>
-                    <p className="section-title">MOVIMIENTOS DE CAJA</p>
+                    <p style={{ fontWeight: 900, textAlign: 'center', marginBottom: '4px', fontSize: '10px' }}>MOVIMIENTOS DE CAJA</p>
                     <DataRow label="Fondo de apertura Bs.:" value={formatBs(data.fondoAperturaBS || 0)} />
                     <DataRow label="Fondo de Apertura USD:" value={formatUsd(data.fondoAperturaUSD || 0)} />
                     <DataRow label="Entradas Caja:" value={formatBs((data.manualEntradas || 0) * state.tasa)} />
@@ -270,14 +254,14 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
                   </div>
 
                   <div style={{ marginBottom: '10px' }}>
-                    <p className="section-title">CONCILIACIÓN DE PAGOS</p>
+                    <p style={{ fontWeight: 900, textAlign: 'center', marginBottom: '4px', fontSize: '10px' }}>CONCILIACIÓN DE PAGOS</p>
                     {Object.entries(data.paymentMethods || {}).map(([method, val]) => (
                       <DataRow key={method} label={Utils.metodoLabel(method)} value={formatBs((val as number) * state.tasa)} />
                     ))}
                   </div>
 
                   <div style={{ marginBottom: '10px' }}>
-                    <p className="section-title">ESTADÍSTICAS DE JORNADA</p>
+                    <p style={{ fontWeight: 900, textAlign: 'center', marginBottom: '4px', fontSize: '10px' }}>ESTADÍSTICAS DE JORNADA</p>
                     <DataRow label="Facturas Emitidas:" value={String(data.stats.facturas)} />
                     <DataRow label="Notas Crédito:" value={String(data.stats.devoluciones)} />
                     <DataRow label="Docs. Anulados:" value={String(data.stats.anulaciones)} bold />
@@ -299,7 +283,7 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
                   <DataRow label="CLIENTE:" value={customerName} bold />
                   <span style={{ display: 'block', borderTop: '1px dashed #000', margin: '8px 0' }} />
 
-                  <p className="section-title">DESGLOSE DE PRODUCTOS</p>
+                  <p style={{ fontWeight: 900, textAlign: 'center', marginBottom: '4px', fontSize: '10px' }}>DESGLOSE DE PRODUCTOS</p>
                   {(data.items || []).map((item: any, idx: number) => (
                     <DataRow
                       key={idx}
@@ -332,7 +316,8 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
             </div>
           </div>
 
-          <div className="p-4 bg-white border-t border-gray-100 flex flex-col gap-3">
+          {/* FOOTER DE BOTONES FIJO */}
+          <div className="p-4 bg-white border-t border-gray-100 flex flex-col gap-3 shrink-0">
             <div className="grid grid-cols-2 gap-3">
               <button onClick={onClose} className="py-3 bg-[#E5E7EB] text-[#374151] font-black text-xs rounded-xl hover:bg-gray-300 transition-all uppercase tracking-widest">
                 Cerrar
@@ -349,9 +334,4 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
       </DialogContent>
     </Dialog>
   );
-}
-
-function getSerializedContent(node: HTMLElement): string {
-  const serializer = new (window as any).XMLSerializer();
-  return serializer.serializeToString(node);
 }
