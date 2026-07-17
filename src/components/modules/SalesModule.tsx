@@ -37,7 +37,8 @@ import {
   Contact,
   Maximize2,
   Minimize2,
-  Tag
+  Tag,
+  Loader2
 } from 'lucide-react';
 import { auth } from '@/lib/firebase';
 import { ReceiptModal } from '@/components/pos/ReceiptModal';
@@ -64,6 +65,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   const [reportSnapshot, setReportSnapshot] = useState<any>(null);
   const [cliente, setCliente] = useState('Consumidor final');
   const [isFullScreen, setIsFullScreen] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
   
   const [pagos, setPagos] = useState<PagoRealizado[]>([]);
   const [showMultiModal, setShowMultiModal] = useState(false);
@@ -275,113 +277,129 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     setEditandoTasa(false);
   };
 
-  const ejecutarVenta = (pagosFinales?: PagoRealizado[]) => {
-    if (state.carrito.length === 0) return;
-    const listadoPagos = pagosFinales || pagos;
-    const totalPagadoRecibido = listadoPagos.reduce((s, p) => s + p.montoUSD, 0);
-    const terminal = getCurrentTerminal();
-    const nextNum = terminal?.proximoRecibo || state.proximoRecibo;
-    const reciboId = String(nextNum).padStart(9, '0');
-    const ahoraStr = Utils.ahora();
-    
-    let vExento = 0, vBase = 0, vIVA = 0;
-    let prodsActualizados = [...state.productos], nuevosMovimientos: Movimiento[] = [];
+  const ejecutarVenta = async (pagosFinales?: PagoRealizado[]) => {
+    if (state.carrito.length === 0 || isProcessing) return;
+    setIsProcessing(true);
+    try {
+      const listadoPagos = pagosFinales || pagos;
+      const totalPagadoRecibido = listadoPagos.reduce((s, p) => s + p.montoUSD, 0);
+      const terminal = getCurrentTerminal();
+      const nextNum = terminal?.proximoRecibo || state.proximoRecibo;
+      const reciboId = String(nextNum).padStart(9, '0');
+      const ahoraStr = Utils.ahora();
+      
+      let vExento = 0, vBase = 0, vIVA = 0;
+      let prodsActualizados = [...state.productos], nuevosMovimientos: Movimiento[] = [];
 
-    state.carrito.forEach(item => {
-      const pIdx = prodsActualizados.findIndex(x => x.id === item.productoId);
-      if (pIdx === -1) return;
-      const p = { ...prodsActualizados[pIdx] };
-      if (p.aplicaIVA) { const base = item.subtotalUSD / 1.16; vBase += base; vIVA += (item.subtotalUSD - base); } else { vExento += item.subtotalUSD; }
-      if (p.isKit && p.kitType === 'stock_componentes' && p.kitItems) {
-        p.kitItems.forEach(ki => {
-          const cpIdx = prodsActualizados.findIndex(cp => cp.id === ki.productoId);
-          if (cpIdx !== -1) {
-            const cp = { ...prodsActualizados[cpIdx] };
-            const qty = item.cantidad * ki.cantidad, stockAntes = cp.stock;
-            cp.stock -= qty;
-            nuevosMovimientos.push({ id: Store.uid(), productoId: cp.id, tipo: 'venta', cantidad: -qty, stockAntes, stockDespues: cp.stock, fecha: ahoraStr, referencia: `KIT: ${p.nombre} - VENTA ${reciboId}`, terminalId: terminal?.id || 'GLOBAL' });
-            prodsActualizados[cpIdx] = cp;
-          }
-        });
-      } else {
-        const stockAntes = p.stock;
-        p.stock -= item.cantidad;
-        nuevosMovimientos.push({ id: Store.uid(), productoId: p.id, tipo: 'venta', cantidad: -item.cantidad, stockAntes, stockDespues: p.stock, fecha: ahoraStr, referencia: `VENTA ${reciboId}`, terminalId: terminal?.id || 'GLOBAL' });
-        prodsActualizados[pIdx] = p;
-      }
-    });
+      state.carrito.forEach(item => {
+        const pIdx = prodsActualizados.findIndex(x => x.id === item.productoId);
+        if (pIdx === -1) return;
+        const p = { ...prodsActualizados[pIdx] };
+        if (p.aplicaIVA) { const base = item.subtotalUSD / 1.16; vBase += base; vIVA += (item.subtotalUSD - base); } else { vExento += item.subtotalUSD; }
+        if (p.isKit && p.kitType === 'stock_componentes' && p.kitItems) {
+          p.kitItems.forEach(ki => {
+            const cpIdx = prodsActualizados.findIndex(cp => cp.id === ki.productoId);
+            if (cpIdx !== -1) {
+              const cp = { ...prodsActualizados[cpIdx] };
+              const qty = item.cantidad * ki.cantidad, stockAntes = cp.stock;
+              cp.stock -= qty;
+              nuevosMovimientos.push({ id: Store.uid(), productoId: cp.id, tipo: 'venta', cantidad: -qty, stockAntes, stockDespues: cp.stock, fecha: ahoraStr, referencia: `KIT: ${p.nombre} - VENTA ${reciboId}`, terminalId: terminal?.id || 'GLOBAL' });
+              prodsActualizados[cpIdx] = cp;
+            }
+          });
+        } else {
+          const stockAntes = p.stock;
+          p.stock -= item.cantidad;
+          nuevosMovimientos.push({ id: Store.uid(), productoId: p.id, tipo: 'venta', cantidad: -item.cantidad, stockAntes, stockDespues: p.stock, fecha: ahoraStr, referencia: `VENTA ${reciboId}`, terminalId: terminal?.id || 'GLOBAL' });
+          prodsActualizados[pIdx] = p;
+        }
+      });
 
-    const vIgtf = listadoPagos.filter(p => p.metodo === 'efectivo_usd' || p.metodo === 'zelle').reduce((acc, p) => acc + (p.montoUSD * 0.03), 0);
-    const nuevaVenta: Sale = { id: reciboId, fecha: ahoraStr, cliente, items: [...state.carrito], subtotalUSD, descuentoUSD: 0, totalUSD: subtotalUSD, totalBS, metodoPago: listadoPagos.length > 1 ? 'mixto' : (listadoPagos[0]?.metodo || 'efectivo_usd'), estado: 'completada', type: 'VENTA', received: totalPagadoRecibido, change: Math.max(0, totalPagadoRecibido - subtotalUSD), payments: [...listadoPagos], terminalId: terminal?.id, terminalName: terminal?.nombre || 'SISTEMA GLOBAL', cajeroId: auth?.currentUser?.uid, baseImponibleUSD: Utils.round(vBase), ivaUSD: Utils.round(vIVA), exentoUSD: Utils.round(vExento), igtfUSD: Utils.round(vIgtf) };
-    const nuevasEntradasDiario: LibroDiarioEntry[] = listadoPagos.map(p => ({ id: 'ACC-' + Store.uid().toUpperCase().slice(0, 5), fecha: ahoraStr, tipo: 'ingreso', categoria: 'VENTA', concepto: `VENTA #${reciboId} - CLIENTE: ${cliente.toUpperCase()}`, montoUSD: p.montoUSD, montoBS: p.montoBS, metodo: p.metodo, referencia: reciboId + '-' + (terminal?.id || 'GLOBAL') }));
-    updateState({ productos: prodsActualizados, ventas: [...state.ventas, nuevaVenta], movimientos: [...state.movimientos, ...nuevosMovimientos], libroDiario: [...nuevasEntradasDiario, ...(state.libroDiario || [])], carrito: [], proximoRecibo: state.proximoRecibo + 1, terminales: state.terminales.map(t => t.id === terminal?.id ? { ...t, proximoRecibo: t.proximoRecibo + 1 } : t) });
-    setLastProcessedSale(nuevaVenta); setShowReceiptModal(true); setPagos([]); setCliente('Consumidor final'); setSelectedProductDisplay(null);
+      const vIgtf = listadoPagos.filter(p => p.metodo === 'efectivo_usd' || p.metodo === 'zelle').reduce((acc, p) => acc + (p.montoUSD * 0.03), 0);
+      const nuevaVenta: Sale = { id: reciboId, fecha: ahoraStr, cliente, items: [...state.carrito], subtotalUSD, descuentoUSD: 0, totalUSD: subtotalUSD, totalBS, metodoPago: listadoPagos.length > 1 ? 'mixto' : (listadoPagos[0]?.metodo || 'efectivo_usd'), estado: 'completada', type: 'VENTA', received: totalPagadoRecibido, change: Math.max(0, totalPagadoRecibido - subtotalUSD), payments: [...listadoPagos], terminalId: terminal?.id, terminalName: terminal?.nombre || 'SISTEMA GLOBAL', cajeroId: auth?.currentUser?.uid, baseImponibleUSD: Utils.round(vBase), ivaUSD: Utils.round(vIVA), exentoUSD: Utils.round(vExento), igtfUSD: Utils.round(vIgtf) };
+      const nuevasEntradasDiario: LibroDiarioEntry[] = listadoPagos.map(p => ({ id: 'ACC-' + Store.uid().toUpperCase().slice(0, 5), fecha: ahoraStr, tipo: 'ingreso', categoria: 'VENTA', concepto: `VENTA #${reciboId} - CLIENTE: ${cliente.toUpperCase()}`, montoUSD: p.montoUSD, montoBS: p.montoBS, metodo: p.metodo, referencia: reciboId + '-' + (terminal?.id || 'GLOBAL') }));
+      await updateState({ productos: prodsActualizados, ventas: [...state.ventas, nuevaVenta], movimientos: [...state.movimientos, ...nuevosMovimientos], libroDiario: [...nuevasEntradasDiario, ...(state.libroDiario || [])], carrito: [], proximoRecibo: state.proximoRecibo + 1, terminales: state.terminales.map(t => t.id === terminal?.id ? { ...t, proximoRecibo: t.proximoRecibo + 1 } : t) });
+      setLastProcessedSale(nuevaVenta); setShowReceiptModal(true); setPagos([]); setCliente('Consumidor final'); setSelectedProductDisplay(null);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
-  const ejecutarAbono = (pagosAbono: PagoRealizado[]) => {
-    if (!showAbonoModal) return;
-    const totalAbonado = pagosAbono.reduce((s, p) => s + p.montoUSD, 0);
-    if (totalAbonado <= 0) return;
-    const ahoraStr = Utils.ahora(), terminal = getCurrentTerminal(), nextNum = terminal?.proximoRecibo || state.proximoRecibo, reciboId = 'PAY-' + String(nextNum).padStart(6, '0');
-    const nuevasDeudas = state.cxc.map(d => {
-      if (d.id === showAbonoModal.id) {
-        const nuevoSaldo = Math.max(0, d.saldoUSD - totalAbonado);
-        return { ...d, abonadoUSD: d.abonadoUSD + totalAbonado, saldoUSD: nuevoSaldo, estado: nuevoSaldo <= 0.001 ? 'pagada' : 'parcial', historialPagos: [...(d.historialPagos || []), { fecha: ahoraStr, montoUSD: totalAbonado, montoBS: totalAbonado * state.tasa, metodo: pagosAbono.length > 1 ? 'mixto' : pagosAbono[0].metodo, reciboId }] };
-      }
-      return d;
-    });
-    const nuevosAsientos: LibroDiarioEntry[] = pagosAbono.map(p => ({ id: 'ACC-' + Store.uid().toUpperCase().slice(0, 5), fecha: ahoraStr, tipo: 'ingreso', categoria: 'COBRO_DEUDA', concepto: `ABONO DEUDA #${showAbonoModal.id} - CLIENTE: ${showAbonoModal.cliente?.toUpperCase()}`, montoUSD: p.montoUSD, montoBS: p.montoBS, metodo: p.metodo, referencia: reciboId + '-' + (terminal?.id || 'GLOBAL') }));
-    const saleAbono: Sale = { id: reciboId, fecha: ahoraStr, cliente: showAbonoModal.cliente || 'CLIENTE', items: [{ productoId: 'ABONO', nombre: `ABONO A FACTURA #${showAbonoModal.id}`, cantidad: 1, precioUnitUSD: totalAbonado, subtotalUSD: totalAbonado }], subtotalUSD: totalAbonado, descuentoUSD: 0, totalUSD: totalAbonado, totalBS: totalAbonado * state.tasa, metodoPago: pagosAbono.length > 1 ? 'mixto' : pagosAbono[0].metodo, estado: 'completada', type: 'COBRO DEUDA', payments: [...pagosAbono], terminalId: terminal?.id, terminalName: terminal?.nombre || 'SISTEMA GLOBAL' };
-    updateState({ cxc: nuevasDeudas, libroDiario: [...nuevosAsientos, ...(state.libroDiario || [])], proximoRecibo: state.proximoRecibo + 1, ventas: [...state.ventas, saleAbono], terminales: state.terminales.map(t => t.id === terminal?.id ? { ...t, proximoRecibo: t.proximoRecibo + 1 } : t) });
-    setLastProcessedSale(saleAbono); setShowReceiptModal(true); setShowAbonoModal(null);
+  const ejecutarAbono = async (pagosAbono: PagoRealizado[]) => {
+    if (!showAbonoModal || isProcessing) return;
+    setIsProcessing(true);
+    try {
+      const totalAbonado = pagosAbono.reduce((s, p) => s + p.montoUSD, 0);
+      if (totalAbonado <= 0) return;
+      const ahoraStr = Utils.ahora(), terminal = getCurrentTerminal(), nextNum = terminal?.proximoRecibo || state.proximoRecibo, reciboId = 'PAY-' + String(nextNum).padStart(6, '0');
+      const nuevasDeudas = state.cxc.map(d => {
+        if (d.id === showAbonoModal.id) {
+          const nuevoSaldo = Math.max(0, d.saldoUSD - totalAbonado);
+          return { ...d, abonadoUSD: d.abonadoUSD + totalAbonado, saldoUSD: nuevoSaldo, estado: nuevoSaldo <= 0.001 ? 'pagada' : 'parcial', historialPagos: [...(d.historialPagos || []), { fecha: ahoraStr, montoUSD: totalAbonado, montoBS: totalAbonado * state.tasa, metodo: pagosAbono.length > 1 ? 'mixto' : pagosAbono[0].metodo, reciboId }] };
+        }
+        return d;
+      });
+      const nuevosAsientos: LibroDiarioEntry[] = pagosAbono.map(p => ({ id: 'ACC-' + Store.uid().toUpperCase().slice(0, 5), fecha: ahoraStr, tipo: 'ingreso', categoria: 'COBRO_DEUDA', concepto: `ABONO DEUDA #${showAbonoModal.id} - CLIENTE: ${showAbonoModal.cliente?.toUpperCase()}`, montoUSD: p.montoUSD, montoBS: p.montoBS, metodo: p.metodo, referencia: reciboId + '-' + (terminal?.id || 'GLOBAL') }));
+      const saleAbono: Sale = { id: reciboId, fecha: ahoraStr, cliente: showAbonoModal.cliente || 'CLIENTE', items: [{ productoId: 'ABONO', nombre: `ABONO A FACTURA #${showAbonoModal.id}`, cantidad: 1, precioUnitUSD: totalAbonado, subtotalUSD: totalAbonado }], subtotalUSD: totalAbonado, descuentoUSD: 0, totalUSD: totalAbonado, totalBS: totalAbonado * state.tasa, metodoPago: pagosAbono.length > 1 ? 'mixto' : pagosAbono[0].metodo, estado: 'completada', type: 'COBRO DEUDA', payments: [...pagosAbono], terminalId: terminal?.id, terminalName: terminal?.nombre || 'SISTEMA GLOBAL' };
+      await updateState({ cxc: nuevasDeudas, libroDiario: [...nuevosAsientos, ...(state.libroDiario || [])], proximoRecibo: state.proximoRecibo + 1, ventas: [...state.ventas, saleAbono], terminales: state.terminales.map(t => t.id === terminal?.id ? { ...t, proximoRecibo: t.proximoRecibo + 1 } : t) });
+      setLastProcessedSale(saleAbono); setShowReceiptModal(true); setShowAbonoModal(null);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
-  const ejecutarVentaACredito = () => {
-    if (state.carrito.length === 0) return;
+  const ejecutarVentaACredito = async () => {
+    if (state.carrito.length === 0 || isProcessing) return;
     let targetClient: Customer | null = selectedClient;
     if (showNewClientForm) {
       if (!newClient.name || !newClient.cedula) return alert("Datos incompletos.");
       targetClient = { id: Store.uid(), name: newClient.name.toUpperCase(), cedula: newClient.cedula.toUpperCase(), phone: newClient.phone, address: newClient.address, debt: 0 };
     }
     if (!targetClient) return alert("Seleccione un cliente.");
-    const terminal = getCurrentTerminal(), nextNum = terminal?.proximoRecibo || state.proximoRecibo, reciboId = String(nextNum).padStart(9, '0'), ahoraStr = Utils.ahora();
-    let vExento = 0, vBase = 0, vIVA = 0, prodsActualizados = [...state.productos], nuevosMovimientos: Movimiento[] = [];
-    state.carrito.forEach(item => {
-      const pIdx = prodsActualizados.findIndex(x => x.id === item.productoId);
-      if (pIdx === -1) return;
-      const p = { ...prodsActualizados[pIdx] };
-      if (p.aplicaIVA) { const base = item.subtotalUSD / 1.16; vBase += base; vIVA += (item.subtotalUSD - base); } else { vExento += item.subtotalUSD; }
-      if (p.isKit && p.kitType === 'stock_componentes' && p.kitItems) {
-        p.kitItems.forEach(ki => {
-          const cpIdx = prodsActualizados.findIndex(cp => cp.id === ki.productoId);
-          if (cpIdx !== -1) {
-            const cp = { ...prodsActualizados[cpIdx] };
-            const qty = item.cantidad * ki.cantidad, stockAntes = cp.stock;
-            cp.stock -= qty;
-            nuevosMovimientos.push({ id: Store.uid(), productoId: cp.id, tipo: 'venta', cantidad: -qty, stockAntes, stockDespues: cp.stock, fecha: ahoraStr, referencia: `KIT: ${p.nombre} - CRÉDITO ${reciboId}`, terminalId: terminal?.id || 'GLOBAL' });
-            prodsActualizados[cpIdx] = cp;
-          }
-        });
-      } else {
-        const stockAntes = p.stock;
-        p.stock -= item.cantidad;
-        nuevosMovimientos.push({ id: Store.uid(), productoId: item.productoId, tipo: 'venta', cantidad: -item.cantidad, stockAntes, stockDespues: p.stock, fecha: ahoraStr, referencia: `CRÉDITO ${reciboId}`, terminalId: terminal?.id || 'GLOBAL' });
-        prodsActualizados[pIdx] = p;
-      }
-    });
-    const nuevaVenta: Sale = { id: reciboId, fecha: ahoraStr, cliente: targetClient.name, items: [...state.carrito], subtotalUSD, descuentoUSD: 0, totalUSD: subtotalUSD, totalBS, metodoPago: 'credito', estado: 'completada', type: 'VENTA CRÉDITO', received: 0, change: 0, terminalId: terminal?.id, terminalName: terminal?.nombre || 'SISTEMA GLOBAL', cajeroId: auth?.currentUser?.uid, baseImponibleUSD: Utils.round(vBase), ivaUSD: Utils.round(vIVA), exentoUSD: Utils.round(vExento), igtfUSD: 0 };
-    const nuevaDeuda: Debt = { id: 'CRD-' + reciboId.slice(-6), fecha: ahoraStr.slice(0, 10), fechaVencimiento: '2099-12-31', cliente: targetClient.name, montoUSD: subtotalUSD, abonadoUSD: 0, saldoUSD: subtotalUSD, estado: 'pendiente', historialPagos: [], ventaId: reciboId };
-    updateState({ 
-      productos: prodsActualizados, 
-      ventas: [...state.ventas, nuevaVenta], 
-      movimientos: [...state.movimientos, ...nuevosMovimientos], 
-      cxc: [...state.cxc, nuevaDeuda], 
-      clientes: showNewClientForm ? [...(state.clientes || []), { ...targetClient, debt: subtotalUSD }] : (state.clientes || []).map(c => c.id === targetClient!.id ? { ...c, debt: (c.debt || 0) + subtotalUSD } : c), 
-      proximoRecibo: state.proximoRecibo + 1, 
-      terminales: state.terminales.map(t => t.id === terminal?.id ? { ...t, proximoRecibo: t.proximoRecibo + 1 } : t), 
-      carrito: [] 
-    });
-    setLastProcessedSale(nuevaVenta); setShowReceiptModal(true); setIsCreditView(false); setSelectedClient(null);
+    
+    setIsProcessing(true);
+    try {
+      const terminal = getCurrentTerminal(), nextNum = terminal?.proximoRecibo || state.proximoRecibo, reciboId = String(nextNum).padStart(9, '0'), ahoraStr = Utils.ahora();
+      let vExento = 0, vBase = 0, vIVA = 0, prodsActualizados = [...state.productos], nuevosMovimientos: Movimiento[] = [];
+      state.carrito.forEach(item => {
+        const pIdx = prodsActualizados.findIndex(x => x.id === item.productoId);
+        if (pIdx === -1) return;
+        const p = { ...prodsActualizados[pIdx] };
+        if (p.aplicaIVA) { const base = item.subtotalUSD / 1.16; vBase += base; vIVA += (item.subtotalUSD - base); } else { vExento += item.subtotalUSD; }
+        if (p.isKit && p.kitType === 'stock_componentes' && p.kitItems) {
+          p.kitItems.forEach(ki => {
+            const cpIdx = prodsActualizados.findIndex(cp => cp.id === ki.productoId);
+            if (cpIdx !== -1) {
+              const cp = { ...prodsActualizados[cpIdx] };
+              const qty = item.cantidad * ki.cantidad, stockAntes = cp.stock;
+              cp.stock -= qty;
+              nuevosMovimientos.push({ id: Store.uid(), productoId: cp.id, tipo: 'venta', cantidad: -qty, stockAntes, stockDespues: cp.stock, fecha: ahoraStr, referencia: `KIT: ${p.nombre} - CRÉDITO ${reciboId}`, terminalId: terminal?.id || 'GLOBAL' });
+              prodsActualizados[cpIdx] = cp;
+            }
+          });
+        } else {
+          const stockAntes = p.stock;
+          p.stock -= item.cantidad;
+          nuevosMovimientos.push({ id: Store.uid(), productoId: item.productoId, tipo: 'venta', cantidad: -item.cantidad, stockAntes, stockDespues: p.stock, fecha: ahoraStr, referencia: `CRÉDITO ${reciboId}`, terminalId: terminal?.id || 'GLOBAL' });
+          prodsActualizados[pIdx] = p;
+        }
+      });
+      const nuevaVenta: Sale = { id: reciboId, fecha: ahoraStr, cliente: targetClient.name, items: [...state.carrito], subtotalUSD, descuentoUSD: 0, totalUSD: subtotalUSD, totalBS, metodoPago: 'credito', estado: 'completada', type: 'VENTA CRÉDITO', received: 0, change: 0, terminalId: terminal?.id, terminalName: terminal?.nombre || 'SISTEMA GLOBAL', cajeroId: auth?.currentUser?.uid, baseImponibleUSD: Utils.round(vBase), ivaUSD: Utils.round(vIVA), exentoUSD: Utils.round(vExento), igtfUSD: 0 };
+      const nuevaDeuda: Debt = { id: 'CRD-' + reciboId.slice(-6), fecha: ahoraStr.slice(0, 10), fechaVencimiento: '2099-12-31', cliente: targetClient.name, montoUSD: subtotalUSD, abonadoUSD: 0, saldoUSD: subtotalUSD, estado: 'pendiente', historialPagos: [], ventaId: reciboId };
+      await updateState({ 
+        productos: prodsActualizados, 
+        ventas: [...state.ventas, nuevaVenta], 
+        movimientos: [...state.movimientos, ...nuevosMovimientos], 
+        cxc: [...state.cxc, nuevaDeuda], 
+        clientes: showNewClientForm ? [...(state.clientes || []), { ...targetClient, debt: subtotalUSD }] : (state.clientes || []).map(c => c.id === targetClient!.id ? { ...c, debt: (c.debt || 0) + subtotalUSD } : c), 
+        proximoRecibo: state.proximoRecibo + 1, 
+        terminales: state.terminales.map(t => t.id === terminal?.id ? { ...t, proximoRecibo: t.proximoRecibo + 1 } : t), 
+        carrito: [] 
+      });
+      setLastProcessedSale(nuevaVenta); setShowReceiptModal(true); setIsCreditView(false); setSelectedClient(null);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   return (
@@ -505,8 +523,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                         <Minimize2 className="w-6 h-6" />
                       </button>
                     )}
-                    <button onClick={() => saldoRestanteUSD <= 0.01 && state.carrito.length > 0 ? ejecutarVenta() : setShowMultiModal(true)} disabled={state.carrito.length === 0} className="w-14 h-14 bg-[#c8952e] text-black rounded-full shadow-lg flex items-center justify-center hover:bg-[#d9a540] transition-all transform hover:scale-105 active:scale-95 disabled:opacity-20 shrink-0">
-                      {saldoRestanteUSD <= 0.01 && state.carrito.length > 0 ? <Check className="w-8 h-8" /> : <Wallet className="w-8 h-8" />}
+                    <button onClick={() => saldoRestanteUSD <= 0.01 && state.carrito.length > 0 ? ejecutarVenta() : setShowMultiModal(true)} disabled={state.carrito.length === 0 || isProcessing} className="w-14 h-14 bg-[#c8952e] text-black rounded-full shadow-lg flex items-center justify-center hover:bg-[#d9a540] transition-all transform hover:scale-105 active:scale-95 disabled:opacity-20 shrink-0">
+                      {isProcessing ? <Loader2 className="w-8 h-8 animate-spin" /> : (saldoRestanteUSD <= 0.01 && state.carrito.length > 0 ? <Check className="w-8 h-8" /> : <Wallet className="w-8 h-8" />)}
                     </button>
                   </div>
                 </div>
@@ -675,7 +693,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                             {sale.items.map((it: any, idx: number) => (
                               <tr key={idx} className="border-b border-line/20">
                                  <td className="text-[9px] font-black p-2">{it.cantidad}</td>
-                                 <td className="text-[9px] font-black uppercase p-2 truncate max-w-[180px]">{item.nombre}</td>
+                                 <td className="text-[9px] font-black uppercase p-2 truncate max-w-[180px]">{it.nombre}</td>
                                  <td className="text-[9px] font-black p-2 text-right">{Utils.fmtUSD(it.precioUnitUSD)}</td>
                                  <td className="text-[9px] font-black p-2 text-right text-brand-gold-deep">{Utils.fmtUSD(it.subtotalUSD)}</td>
                               </tr>
@@ -778,10 +796,10 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                    <div className="bg-ink p-3 rounded-lg text-center mb-2"><p className="text-white/40 text-[8px] font-black uppercase mb-1">Monto a Deber</p><p className="text-2xl font-black text-brand-gold">{Utils.fmtUSD(subtotalUSD)}</p></div>
                    <div className="relative"><Search className="absolute left-3 top-2.5 w-4 h-4 text-ink opacity-30" /><input className="form-input pl-10 h-10 text-xs font-bold" placeholder="Buscar cliente..." value={clientSearch} onChange={e => setClientSearch(e.target.value)} /></div>
                    <div className="max-h-[160px] overflow-y-auto border border-line rounded-xl bg-gray-50 shadow-inner">{(filteredClients || []).map(c => (<div key={c.id} onClick={() => setSelectedClient(c)} className={`p-3 border-b border-line/40 cursor-pointer hover:bg-brand-gold-soft transition-all ${selectedClient?.id === c.id ? 'bg-brand-gold-soft border-l-4 border-l-brand-gold' : ''}`}><div className="text-xs font-black text-ink uppercase">{c.name}</div><div className="text-[10px] text-ink/40 mono">{c.cedula}</div></div>))}{filteredClients.length === 0 && <div className="p-10 text-center text-[10px] font-black text-ink/20 uppercase">No hay resultados</div>}</div>
-                   <div className="flex flex-col gap-2"><button className="btn bg-status-info-soft text-status-info border border-status-info/40 font-black uppercase text-[10px] h-10 flex items-center justify-center gap-2" onClick={() => setShowNewClientForm(true)}><UserPlus className="w-4 h-4" /> Registrar Nuevo</button><button className="btn btn-primary w-full h-12 font-black uppercase text-xs shadow-md" disabled={!selectedClient} onClick={ejecutarVentaACredito}>Cargar a Cartera</button></div>
+                   <div className="flex flex-col gap-2"><button className="btn bg-status-info-soft text-status-info border border-status-info/40 font-black uppercase text-[10px] h-10 flex items-center justify-center gap-2" onClick={() => setShowNewClientForm(true)}><UserPlus className="w-4 h-4" /> Registrar Nuevo</button><button className="btn btn-primary w-full h-12 font-black uppercase text-xs shadow-md" disabled={!selectedClient || isProcessing} onClick={ejecutarVentaACredito}>{isProcessing ? <Loader2 className="w-4 h-4 animate-spin mr-2 inline" /> : null}Cargar a Cartera</button></div>
                 </div>
               ) : (
-                <div className="space-y-4 animate-in slide-in-from-right-2 duration-200"><div className="space-y-2"><div className="space-y-1"><label className="text-9px font-black uppercase text-ink">Nombre Completo</label><input className="form-input h-9 text-xs font-black uppercase" value={newClient.name} onChange={e => setNewClient({...newClient, name: e.target.value})} /></div><div className="space-y-1"><label className="text-9px font-black uppercase text-ink">Cédula / RIF</label><input className="form-input h-9 text-xs font-black uppercase" value={newClient.cedula} onChange={e => setNewClient({...newClient, cedula: e.target.value})} /></div><div className="space-y-1"><label className="text-9px font-black uppercase text-ink">Teléfono (XXXX-XXXXXXX)</label><input className="form-input h-9 text-xs font-black uppercase" value={newClient.phone} onChange={e => setNewClient({...newClient, phone: e.target.value})} placeholder="04XX-XXXXXXX" /></div><div className="space-y-1"><label className="text-9px font-black uppercase text-ink">Dirección</label><input className="form-input h-9 text-xs font-black uppercase" value={newClient.address} onChange={e => setNewClient({...newClient, address: e.target.value})} /></div></div><button className="btn btn-primary w-full h-12 font-black uppercase text-xs shadow-md" onClick={ejecutarVentaACredito}>Guardar y Cargar</button><button className="text-[10px] text-ink font-black uppercase text-center w-full" onClick={() => setShowNewClientForm(false)}>Volver a la lista</button></div>
+                <div className="space-y-4 animate-in slide-in-from-right-2 duration-200"><div className="space-y-2"><div className="space-y-1"><label className="text-9px font-black uppercase text-ink">Nombre Completo</label><input className="form-input h-9 text-xs font-black uppercase" value={newClient.name} onChange={e => setNewClient({...newClient, name: e.target.value})} /></div><div className="space-y-1"><label className="text-9px font-black uppercase text-ink">Cédula / RIF</label><input className="form-input h-9 text-xs font-black uppercase" value={newClient.cedula} onChange={e => setNewClient({...newClient, cedula: e.target.value})} /></div><div className="space-y-1"><label className="text-9px font-black uppercase text-ink">Teléfono (XXXX-XXXXXXX)</label><input className="form-input h-9 text-xs font-black uppercase" value={newClient.phone} onChange={e => setNewClient({...newClient, phone: e.target.value})} placeholder="04XX-XXXXXXX" /></div><div className="space-y-1"><label className="text-9px font-black uppercase text-ink">Dirección</label><input className="form-input h-9 text-xs font-black uppercase" value={newClient.address} onChange={e => setNewClient({...newClient, address: e.target.value})} /></div></div><button className="btn btn-primary w-full h-12 font-black uppercase text-xs shadow-md" disabled={isProcessing} onClick={ejecutarVentaACredito}>{isProcessing ? <Loader2 className="w-4 h-4 animate-spin mr-2 inline" /> : null}Guardar y Cargar</button><button className="text-[10px] text-ink font-black uppercase text-center w-full" onClick={() => setShowNewClientForm(false)}>Volver a la lista</button></div>
               )}
             </div>
           </div>

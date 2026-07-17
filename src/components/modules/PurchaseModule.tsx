@@ -14,7 +14,8 @@ import {
   Info,
   X,
   Trash,
-  Boxes
+  Boxes,
+  Loader2
 } from 'lucide-react';
 import { Store, Utils } from '@/lib/db-store';
 import { AppState, Product, Movimiento, PaymentMethod, KitItem, Supplier, LibroDiarioEntry, Debt } from '@/lib/types';
@@ -34,43 +35,36 @@ interface PurchaseModuleProps {
 }
 
 export default function PurchaseModule({ state, updateState }: PurchaseModuleProps) {
-  // Helper local para formatear con 4 decimales
   const fmt4 = (v: number) => '$' + v.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
 
-  // 1. DATOS DE LA FACTURA
   const [proveedor, setProveedor] = useState('');
   const [numeroFactura, setNumeroFactura] = useState('');
   const [fecha, setFecha] = useState(Utils.hoy());
   const [tasaCompra, setTasaCompra] = useState<string | number>(state.tasa);
   
-  // 2. CONDICIONES DE PAGO
   const [condicion, setCondicion] = useState<'contado' | 'credito' | 'mixto'>('contado');
   const [diasPlazo, setDiasPlazo] = useState<string | number>('30');
   const [montoPagadoUSD, setMontoPagadoUSD] = useState<string | number>('0');
   const [montoPagadoBS, setMontoPagadoBS] = useState<string | number>('0');
 
-  // 3. AÑADIR PRODUCTOS
   const [busqueda, setBusqueda] = useState('');
   const [itemSeleccionado, setItemSeleccionado] = useState<Product | null>(null);
   const [cantidad, setCantidad] = useState<string | number>(1);
   const [costoInput, setCostoInput] = useState<string | number>(0);
   const [loteTemporal, setLoteTemporal] = useState<PurchaseItemTemp[]>([]);
+  const [isProcessing, setIsProcessing] = useState(false);
 
-  // Modal para nuevo producto
   const [showNewProductModal, setShowNewProductModal] = useState(false);
 
-  // Normalización de proveedores para evitar errores de tipo si hay datos antiguos (strings)
   const safeProveedores = useMemo(() => {
     return (state.proveedores || []).map(p => 
       typeof p === 'string' ? { id: p, nombre: p, rif: '', contacto: '', direccion: '', telefono: '' } : p
     );
   }, [state.proveedores]);
 
-  // Cálculos de Totales (Usando precisión de 4 decimales)
   const totalUSD = loteTemporal.reduce((acc, item) => acc + item.subtotalUSD, 0);
   const tasaActual = parseFloat(tasaCompra.toString()) || 1;
 
-  // Sincronizar montos al cambiar condición
   useEffect(() => {
     if (condicion === 'contado') {
       setMontoPagadoUSD(totalUSD.toFixed(4));
@@ -84,7 +78,6 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
   const pMontoPagadoUSD = parseFloat(montoPagadoUSD.toString()) || 0;
   const saldoPendienteUSD = Math.max(0, totalUSD - pMontoPagadoUSD);
 
-  // Handlers para montos mixtos
   const handleMontoUSDChange = (val: string) => {
     if (!/^\d*\.?\d*$/.test(val)) return;
     setMontoPagadoUSD(val);
@@ -99,7 +92,6 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
     setMontoPagadoUSD((nBS / tasaActual).toFixed(4));
   };
 
-  // Buscador de productos
   const matches = useMemo(() => {
     if (busqueda.trim().length < 2) return [];
     return state.productos.filter(p => 
@@ -137,105 +129,107 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
     setLoteTemporal(loteTemporal.filter((_, i) => i !== idx));
   };
 
-  const handleProcessPurchase = () => {
+  const handleProcessPurchase = async () => {
     if (!proveedor) return alert('Seleccione un proveedor');
     if (!numeroFactura) return alert('Ingrese el número de factura');
-    if (loteTemporal.length === 0) return alert('Agregue productos a la lista');
+    if (loteTemporal.length === 0 || isProcessing) return alert('Agregue productos a la lista');
 
-    const ahoraStr = Utils.ahora();
-    const pDias = parseInt(diasPlazo.toString()) || 0;
-    const fechaVencimiento = condicion !== 'contado' ? 
-      new Date(new Date(fecha).getTime() + (pDias * 24 * 60 * 60 * 1000)).toISOString().slice(0, 10) : 
-      fecha;
+    setIsProcessing(true);
+    try {
+      const ahoraStr = Utils.ahora();
+      const pDias = parseInt(diasPlazo.toString()) || 0;
+      const fechaVencimiento = condicion !== 'contado' ? 
+        new Date(new Date(fecha).getTime() + (pDias * 24 * 60 * 60 * 1000)).toISOString().slice(0, 10) : 
+        fecha;
 
-    const nuevosProductos = state.productos.map(p => {
-      const itemCompra = loteTemporal.find(i => i.productoId === p.id);
-      if (itemCompra) {
-        const stockActual = p.stock || 0;
-        const costoActual = p.costoUSD || 0;
-        const nuevaCantidad = itemCompra.cantidad;
-        const nuevoCosto = itemCompra.costoUnitarioUSD;
-        
-        const stockTotal = stockActual + nuevaCantidad;
-        // Costo Promedio Ponderado con 4 decimales
-        const costoPromedio = Math.round((((stockActual * costoActual) + (nuevaCantidad * nuevoCosto)) / stockTotal + Number.EPSILON) * 10000) / 10000;
+      const nuevosProductos = state.productos.map(p => {
+        const itemCompra = loteTemporal.find(i => i.productoId === p.id);
+        if (itemCompra) {
+          const stockActual = p.stock || 0;
+          const costoActual = p.costoUSD || 0;
+          const nuevaCantidad = itemCompra.cantidad;
+          const nuevoCosto = itemCompra.costoUnitarioUSD;
+          
+          const stockTotal = stockActual + nuevaCantidad;
+          const costoPromedio = Math.round((((stockActual * costoActual) + (nuevaCantidad * nuevoCosto)) / stockTotal + Number.EPSILON) * 10000) / 10000;
 
-        return { ...p, stock: stockTotal, costoUSD: costoPromedio };
-      }
-      return p;
-    });
-
-    const nuevosMovimientos: Movimiento[] = loteTemporal.map(item => {
-      const p = state.productos.find(prod => prod.id === item.productoId);
-      return {
-        id: Store.uid(),
-        productoId: item.productoId,
-        tipo: 'compra',
-        cantidad: item.cantidad,
-        stockAntes: p?.stock || 0,
-        stockDespues: (p?.stock || 0) + item.cantidad,
-        fecha: ahoraStr,
-        referencia: `COMPRA FACT: ${numeroFactura} - PROV: ${proveedor}`,
-        terminalId: 'ADMIN'
-      };
-    });
-
-    // ASIENTO CONTABLE: Solo el monto real pagado hoy
-    let nuevosAsientosDiario: LibroDiarioEntry[] = [];
-    if (pMontoPagadoUSD > 0.0001) {
-      nuevosAsientosDiario.push({
-        id: 'ACC-' + Store.uid().toUpperCase().slice(0, 5),
-        fecha: ahoraStr,
-        tipo: 'egreso',
-        categoria: 'COMPRA',
-        concepto: `COMPRA MERCANCIA FACT #${numeroFactura} - PROV: ${proveedor.toUpperCase()}`,
-        montoUSD: pMontoPagadoUSD,
-        montoBS: pMontoPagadoUSD * tasaActual,
-        metodo: 'efectivo_usd',
-        referencia: numeroFactura
+          return { ...p, stock: stockTotal, costoUSD: costoPromedio };
+        }
+        return p;
       });
+
+      const nuevosMovimientos: Movimiento[] = loteTemporal.map(item => {
+        const p = state.productos.find(prod => prod.id === item.productoId);
+        return {
+          id: Store.uid(),
+          productoId: item.productoId,
+          tipo: 'compra',
+          cantidad: item.cantidad,
+          stockAntes: p?.stock || 0,
+          stockDespues: (p?.stock || 0) + item.cantidad,
+          fecha: ahoraStr,
+          referencia: `COMPRA FACT: ${numeroFactura} - PROV: ${proveedor}`,
+          terminalId: 'ADMIN'
+        };
+      });
+
+      let nuevosAsientosDiario: LibroDiarioEntry[] = [];
+      if (pMontoPagadoUSD > 0.0001) {
+        nuevosAsientosDiario.push({
+          id: 'ACC-' + Store.uid().toUpperCase().slice(0, 5),
+          fecha: ahoraStr,
+          tipo: 'egreso',
+          categoria: 'COMPRA',
+          concepto: `COMPRA MERCANCIA FACT #${numeroFactura} - PROV: ${proveedor.toUpperCase()}`,
+          montoUSD: pMontoPagadoUSD,
+          montoBS: pMontoPagadoUSD * tasaActual,
+          metodo: 'efectivo_usd',
+          referencia: numeroFactura
+        });
+      }
+
+      const nuevasCxP = [...state.cxp];
+      if (saldoPendienteUSD > 0.0001) {
+        const initialHistory = pMontoPagadoUSD > 0.0001 ? [{
+          fecha: ahoraStr,
+          montoUSD: pMontoPagadoUSD,
+          montoBS: pMontoPagadoUSD * tasaActual,
+          metodo: 'efectivo_usd',
+          reciboId: 'INICIAL-CONTADO'
+        }] : [];
+
+        const nuevaDeuda: Debt = {
+          id: 'CXP-' + Store.uid().slice(0, 6).toUpperCase(),
+          fecha: fecha,
+          fechaVencimiento: fechaVencimiento,
+          proveedor: proveedor,
+          concepto: `FACTURA COMPRA #${numeroFactura}`,
+          montoUSD: totalUSD,
+          abonadoUSD: pMontoPagadoUSD,
+          saldoUSD: saldoPendienteUSD,
+          estado: pMontoPagadoUSD > 0.0001 ? 'parcial' : 'pendiente',
+          items: [...loteTemporal],
+          numeroFactura: numeroFactura,
+          historialPagos: initialHistory
+        };
+        nuevasCxP.push(nuevaDeuda);
+      }
+
+      await updateState({
+        productos: nuevosProductos,
+        movimientos: [...state.movimientos, ...nuevosMovimientos],
+        libroDiario: [...nuevosAsientosDiario, ...(state.libroDiario || [])],
+        cxp: nuevasCxP
+      });
+
+      alert('Compra registrada exitosamente.');
+      setProveedor('');
+      setNumeroFactura('');
+      setLoteTemporal([]);
+      setCondicion('contado');
+    } finally {
+      setIsProcessing(false);
     }
-
-    const nuevasCxP = [...state.cxp];
-    if (saldoPendienteUSD > 0.0001) {
-      // Registrar abono inicial si existe en el historial de la deuda
-      const initialHistory = pMontoPagadoUSD > 0.0001 ? [{
-        fecha: ahoraStr,
-        montoUSD: pMontoPagadoUSD,
-        montoBS: pMontoPagadoUSD * tasaActual,
-        metodo: 'efectivo_usd',
-        reciboId: 'INICIAL-CONTADO'
-      }] : [];
-
-      const nuevaDeuda: Debt = {
-        id: 'CXP-' + Store.uid().slice(0, 6).toUpperCase(),
-        fecha: fecha,
-        fechaVencimiento: fechaVencimiento,
-        proveedor: proveedor,
-        concepto: `FACTURA COMPRA #${numeroFactura}`,
-        montoUSD: totalUSD,
-        abonadoUSD: pMontoPagadoUSD,
-        saldoUSD: saldoPendienteUSD,
-        estado: pMontoPagadoUSD > 0.0001 ? 'parcial' : 'pendiente',
-        items: [...loteTemporal],
-        numeroFactura: numeroFactura,
-        historialPagos: initialHistory
-      };
-      nuevasCxP.push(nuevaDeuda);
-    }
-
-    updateState({
-      productos: nuevosProductos,
-      movimientos: [...state.movimientos, ...nuevosMovimientos],
-      libroDiario: [...nuevosAsientosDiario, ...(state.libroDiario || [])],
-      cxp: nuevasCxP
-    });
-
-    alert('Compra registrada exitosamente.');
-    setProveedor('');
-    setNumeroFactura('');
-    setLoteTemporal([]);
-    setCondicion('contado');
   };
 
   return (
@@ -250,7 +244,6 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* COLUMNA IZQUIERDA */}
         <div className="space-y-6">
           <div className="card shadow-lg border-line rounded-xl overflow-hidden bg-white">
             <div className="card-head bg-ink border-b border-white/10 px-6 py-4">
@@ -346,7 +339,6 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
           </div>
         </div>
 
-        {/* COLUMNA DERECHA */}
         <div className="lg:col-span-2 space-y-6">
           <div className="card shadow-lg border-line rounded-xl overflow-hidden bg-white">
             <div className="card-head bg-ink border-b border-white/10 px-6 py-4 flex items-center justify-between">
@@ -439,8 +431,13 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
                    <p className="text-lg font-black text-ink leading-none">{fmt4(saldoPendienteUSD)}</p>
                 </div>
               </div>
-              <button onClick={handleProcessPurchase} disabled={loteTemporal.length === 0} className="btn btn-primary h-14 px-10 font-black uppercase text-xs shadow-xl disabled:opacity-20 transition-all flex items-center gap-3">
-                Procesar e Importar Inventario <CheckCircle className="w-5 h-5" />
+              <button 
+                onClick={handleProcessPurchase} 
+                disabled={loteTemporal.length === 0 || isProcessing} 
+                className="btn btn-primary h-14 px-10 font-black uppercase text-xs shadow-xl disabled:opacity-20 transition-all flex items-center gap-3"
+              >
+                {isProcessing ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle className="w-5 h-5" />}
+                Procesar e Importar Inventario
               </button>
             </div>
           </div>

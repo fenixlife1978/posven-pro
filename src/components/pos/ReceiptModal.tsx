@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Printer, X, Zap, Share2, Monitor } from 'lucide-react';
+import { Printer, X, Zap, Share2, Monitor, Loader2 } from 'lucide-react';
 import { Store, Utils } from '@/lib/db-store';
 import { formatBs, formatUsd } from '@/lib/currency-formatter';
 import { auth } from '@/lib/firebase';
@@ -26,6 +26,7 @@ interface Props {
 export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' }: Props) {
   const state = Store.get();
   const printRef = useRef<HTMLDivElement>(null);
+  const [isPrinting, setIsPrinting] = useState(false);
 
   const isReport = type === 'REPORT_X' || type === 'REPORT_Z';
   const data = isReport ? reportData : sale;
@@ -66,11 +67,13 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
   };
 
   const handleNativePrint = async () => {
+    if (isPrinting) return;
     if (!window.electronAPI) {
       handlePrint();
       return;
     }
 
+    setIsPrinting(true);
     const SEPARATOR = '------------------------------------------------';
     const DOTS = '................................................';
     
@@ -151,18 +154,30 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
 
     try {
       await window.electronAPI.printTicket(printData);
-      setTimeout(onClose, 500);
+      setTimeout(() => {
+        setIsPrinting(false);
+        onClose();
+      }, 500);
     } catch (e) {
       handlePrint();
     }
   };
 
   const handlePrint = () => {
+    if (isPrinting) return;
+    setIsPrinting(true);
+    
     const printContent = printRef.current?.innerHTML;
-    if (!printContent) return;
+    if (!printContent) {
+      setIsPrinting(false);
+      return;
+    }
 
     const printWindow = window.open('', '_blank');
-    if (!printWindow) return;
+    if (!printWindow) {
+      setIsPrinting(false);
+      return;
+    }
 
     printWindow.document.write(`
       <html>
@@ -173,7 +188,7 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
             @page { size: 80mm auto; margin: 0; }
             body {
               font-family: 'Courier New', Courier, monospace;
-              width: 72mm;
+              width: 80mm;
               margin: 0;
               padding: 4mm;
               font-size: 11px;
@@ -207,7 +222,10 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
       </html>
     `);
     printWindow.document.close();
-    setTimeout(onClose, 1000);
+    setTimeout(() => {
+      setIsPrinting(false);
+      onClose();
+    }, 1000);
   };
 
   return (
@@ -227,9 +245,8 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
             <div 
               ref={printRef}
               className="thermal-80mm bg-white p-6 shadow-sm text-black font-mono select-none"
-              style={{ width: '72mm', boxSizing: 'border-box', color: '#000', fontSize: '11px', lineHeight: '1.3' }}
+              style={{ width: '100%', boxSizing: 'border-box', color: '#000', fontSize: '11px', lineHeight: '1.3' }}
             >
-              {/* ENCABEZADO IDÉNTICO IMAGEN 2 */}
               <div className="text-center pb-3 mb-3">
                 <h1 className="text-[20px] font-bold uppercase mb-2 leading-tight" style={{ fontFamily: 'Courier New, Courier, monospace' }}>
                   {state.empresa.nombre}
@@ -344,13 +361,15 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
 
           <div className="p-4 bg-white border-t border-gray-100 flex flex-col gap-3">
             <div className="grid grid-cols-2 gap-3">
-              <button onClick={onClose} className="py-3 bg-[#E5E7EB] text-[#374151] font-black text-xs rounded-xl hover:bg-gray-300 transition-all uppercase tracking-widest">Cerrar</button>
-              <button className="py-3 bg-[#2ECC71] text-white font-black text-xs rounded-xl hover:bg-green-600 flex items-center justify-center gap-2 uppercase tracking-widest shadow-sm"><Share2 size={14} /> Compartir</button>
+              <button onClick={onClose} disabled={isPrinting} className="py-3 bg-[#E5E7EB] text-[#374151] font-black text-xs rounded-xl hover:bg-gray-300 transition-all uppercase tracking-widest disabled:opacity-50">Cerrar</button>
+              <button disabled={isPrinting} className="py-3 bg-[#2ECC71] text-white font-black text-xs rounded-xl hover:bg-green-600 flex items-center justify-center gap-2 uppercase tracking-widest shadow-sm disabled:opacity-50"><Share2 size={14} /> Compartir</button>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <button onClick={handlePrint} className="py-3 bg-black text-white font-black text-xs rounded-xl hover:opacity-90 flex items-center justify-center gap-2 uppercase tracking-widest shadow-md"><Printer size={14} /> Estándar</button>
-              <button onClick={handleNativePrint} className="py-3 bg-[#C8952E] text-black font-black text-xs rounded-xl hover:bg-[#D9A540] transition-all flex items-center justify-center gap-2 uppercase tracking-widest shadow-lg">
-                <Zap size={16} className="fill-current" /> Impresión Roccia
+              <button onClick={handlePrint} disabled={isPrinting} className="py-3 bg-black text-white font-black text-xs rounded-xl hover:opacity-90 flex items-center justify-center gap-2 uppercase tracking-widest shadow-md disabled:opacity-50">
+                {isPrinting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Printer size={14} />} Estándar
+              </button>
+              <button onClick={handleNativePrint} disabled={isPrinting} className="py-3 bg-[#C8952E] text-black font-black text-xs rounded-xl hover:bg-[#D9A540] transition-all flex items-center justify-center gap-2 uppercase tracking-widest shadow-lg disabled:opacity-50">
+                {isPrinting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap size={16} className="fill-current" />} Impresión Roccia
               </button>
             </div>
           </div>
