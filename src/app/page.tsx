@@ -23,10 +23,14 @@ import {
   ShoppingBag,
   Monitor,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  AlertTriangle,
+  X,
+  CheckCircle2,
+  Calendar
 } from 'lucide-react';
 import { Store, initialState, Utils } from '@/lib/db-store';
-import { AppState, Terminal } from '@/lib/types';
+import { AppState, Terminal, Debt } from '@/lib/types';
 import { auth, db } from '@/lib/firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { doc, onSnapshot, getDoc } from 'firebase/firestore';
@@ -57,6 +61,10 @@ export default function LicoreriaPOS() {
   const [userProfile, setUserProfile] = useState<any>(null);
   const [showApertura, setShowApertura] = useState(false);
   const [aperturaData, setAperturaData] = useState({ bs: '0', usd: '0' });
+  
+  // Estados para Notificaciones de CxP
+  const [dueDebts, setDueDebts] = useState<Debt[]>([]);
+  const [showCxPAlert, setShowCxPAlert] = useState(false);
   
   const moduleInitialized = useRef(false);
 
@@ -176,6 +184,38 @@ export default function LicoreriaPOS() {
     };
   }, [router, loading]);
 
+  // LÓGICA DE NOTIFICACIONES CXP (CADA 6 HORAS / 72H VENCIMIENTO)
+  useEffect(() => {
+    if (!state.cxp || state.cxp.length === 0 || userRole !== 'administrador') return;
+
+    const checkDueDebts = () => {
+      const now = new Date();
+      const limitDate = new Date();
+      limitDate.setHours(limitDate.getHours() + 72); // 72 horas desde ahora
+
+      const pending = state.cxp.filter(d => {
+        if (d.estado === 'pagada') return false;
+        const dueDate = new Date(d.fechaVencimiento + 'T23:59:59');
+        return dueDate <= limitDate;
+      });
+
+      setDueDebts(pending);
+
+      if (pending.length > 0) {
+        const lastAlert = localStorage.getItem('posven_last_cxp_alert');
+        const sixHours = 6 * 60 * 60 * 1000;
+        
+        if (!lastAlert || (Date.now() - parseInt(lastAlert)) > sixHours) {
+          setShowCxPAlert(true);
+        }
+      }
+    };
+
+    checkDueDebts();
+    const interval = setInterval(checkDueDebts, 60000); // Revisar cada minuto internamente
+    return () => clearInterval(interval);
+  }, [state.cxp, userRole]);
+
   useEffect(() => {
     if (mounted) {
       const savedCart = sessionStorage.getItem('posven_current_cart');
@@ -228,6 +268,11 @@ export default function LicoreriaPOS() {
     if (userRole === 'cajero' && moduleId !== 'ventas') return;
     setActiveTab(moduleId);
     setIsSidebarOpen(false);
+  };
+
+  const markAlertAsRead = () => {
+    localStorage.setItem('posven_last_cxp_alert', Date.now().toString());
+    setShowCxPAlert(false);
   };
 
   const menuGroups = [
@@ -483,9 +528,16 @@ export default function LicoreriaPOS() {
 
           <div className="flex items-center gap-3 ml-auto">
             {!isCajero && (
-              <button className="relative w-[38px] h-[38px] rounded-[10px] bg-white border border-line flex items-center justify-center text-ink hover:text-brand-gold transition-colors shadow-sm-card">
-                <Bell className="w-4 h-4" />
-                <span className="absolute top-2.5 right-2.5 w-2 h-2 bg-status-danger rounded-full border-2 border-background" />
+              <button 
+                onClick={() => dueDebts.length > 0 && setShowCxPAlert(true)}
+                className="relative w-[38px] h-[38px] rounded-[10px] bg-white border border-line flex items-center justify-center text-ink hover:text-brand-gold transition-colors shadow-sm-card"
+              >
+                <Bell className={`w-4 h-4 ${dueDebts.length > 0 ? 'text-brand-gold animate-bounce' : ''}`} />
+                {dueDebts.length > 0 && (
+                  <span className="absolute -top-1 -right-1 w-5 h-5 bg-status-danger text-white rounded-full flex items-center justify-center text-[9px] font-black border-2 border-white">
+                    {dueDebts.length}
+                  </span>
+                )}
               </button>
             )}
             
@@ -516,6 +568,72 @@ export default function LicoreriaPOS() {
 
       {isSidebarOpen && (
         <div className="fixed inset-0 bg-black/60 z-[45] backdrop-blur-sm" onClick={() => setIsSidebarOpen(false)} />
+      )}
+
+      {/* CARTEL DE NOTIFICACIÓN CXP (CENTRAL) */}
+      {showCxPAlert && (
+        <div className="modal show" style={{ zIndex: 9999 }}>
+          <div className="modal-bg" />
+          <div className="modal-box max-w-lg bg-white border-2 border-line rounded-[32px] overflow-hidden shadow-2xl animate-in zoom-in duration-300">
+            <div className="modal-head py-5 px-8 bg-ink border-b border-white/10 flex justify-between items-center text-white">
+               <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-brand-gold rounded-xl flex items-center justify-center text-black shadow-lg">
+                    <AlertTriangle className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="font-black text-sm uppercase italic tracking-widest">Alerta de Vencimiento</h3>
+                    <p className="text-[9px] font-bold text-white/40 uppercase tracking-tighter">Compromisos con Proveedores</p>
+                  </div>
+               </div>
+               <button onClick={markAlertAsRead} className="text-white/20 hover:text-white transition-colors"><X className="w-5 h-5"/></button>
+            </div>
+            <div className="modal-body p-8 space-y-6 bg-white max-h-[60vh] overflow-y-auto">
+               <div className="p-4 bg-status-danger-soft border border-status-danger/20 rounded-2xl">
+                 <p className="text-[11px] font-bold text-status-danger uppercase leading-tight text-center">
+                   Usted tiene {dueDebts.length} facturas por pagar que vencen en menos de 72 horas.
+                 </p>
+               </div>
+
+               <div className="space-y-3">
+                 {dueDebts.map(d => {
+                   const diff = new Date(d.fechaVencimiento + 'T23:59:59').getTime() - Date.now();
+                   const days = Math.ceil(diff / (1000 * 60 * 60 * 24));
+                   return (
+                     <div key={d.id} className="p-4 bg-surface-soft border border-line rounded-2xl flex items-center justify-between group hover:border-brand-gold transition-all">
+                        <div className="space-y-1">
+                          <p className="text-[10px] font-black text-ink uppercase">{d.proveedor}</p>
+                          <div className="flex items-center gap-2">
+                             <span className="badge badge-neutral text-[8px] font-black uppercase">Ref: {d.numeroFactura || d.id.slice(-6)}</span>
+                             <span className="flex items-center gap-1 text-[9px] font-bold text-status-danger uppercase">
+                               <Calendar className="w-3 h-3" /> Vence en {days} {days === 1 ? 'día' : 'días'}
+                             </span>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-lg font-black text-ink">{Utils.fmtUSD(d.saldoUSD)}</p>
+                          <p className="text-[9px] font-bold text-ink/40 uppercase italic">Saldo Pendiente</p>
+                        </div>
+                     </div>
+                   );
+                 })}
+               </div>
+
+               <div className="bg-brand-gold-soft/30 p-4 rounded-2xl border border-brand-gold/10">
+                 <p className="text-[9px] font-bold text-brand-gold-deep uppercase leading-relaxed text-center italic">
+                   Este recordatorio volverá a aparecer en 6 horas para asegurar la liquidez de sus compromisos.
+                 </p>
+               </div>
+            </div>
+            <div className="modal-foot p-6 bg-surface-soft border-t border-line">
+               <button 
+                onClick={markAlertAsRead}
+                className="w-full h-14 bg-brand-gold text-black font-black text-sm rounded-2xl shadow-xl shadow-brand-gold/10 hover:bg-brand-gold-deep hover:text-white transition-all uppercase tracking-widest flex items-center justify-center gap-3"
+               >
+                 <CheckCircle2 className="w-5 h-5" /> Entendido, Revisaré los pagos
+               </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
