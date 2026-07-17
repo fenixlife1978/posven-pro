@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useMemo, useEffect } from 'react';
@@ -13,23 +12,26 @@ import {
   FileText, 
   Trash2, 
   Calendar,
-  Wallet,
-  DollarSign,
-  Briefcase,
-  Lightbulb,
   Scale,
   X,
-  RefreshCw
+  ChevronLeft,
+  ChevronRight,
+  Filter
 } from 'lucide-react';
 import { exportarPDFLibroDiario } from '@/lib/pdf-generator';
 
 export default function AccountingModule({ state, updateState }: { state: AppState, updateState: (s: Partial<AppState>) => void }) {
-  // Ajustamos el rango inicial a hoy para asegurar visibilidad inmediata
+  // Estados de Filtro
+  const [filterType, setFilterType] = useState<'hoy' | 'ayer' | 'mes' | 'rango'>('hoy');
   const [desde, setDesde] = useState(Utils.hoy());
   const [hasta, setHasta] = useState(Utils.hoy());
   const [search, setSearch] = useState('');
-  const [showModal, setShowModal] = useState(false);
+  
+  // Paginación
+  const [page, setPage] = useState(1);
+  const pageSize = 20;
 
+  const [showModal, setShowModal] = useState(false);
   const [formData, setFormData] = useState({
     concepto: '',
     montoUSD: '',
@@ -37,7 +39,31 @@ export default function AccountingModule({ state, updateState }: { state: AppSta
     metodo: 'efectivo_usd' as PaymentMethod
   });
 
-  const diario = useMemo(() => {
+  // Lógica de cálculo de fechas basada en el tipo de filtro
+  useEffect(() => {
+    const hoy = Utils.hoy();
+    if (filterType === 'hoy') {
+      setDesde(hoy);
+      setHasta(hoy);
+    } else if (filterType === 'ayer') {
+      const d = new Date();
+      d.setDate(d.getDate() - 1);
+      const ayer = d.toISOString().split('T')[0];
+      setDesde(ayer);
+      setHasta(ayer);
+    } else if (filterType === 'mes') {
+      const d = new Date();
+      const y = d.getFullYear();
+      const m = d.getMonth();
+      const first = new Date(y, m, 1).toISOString().split('T')[0];
+      const last = new Date(y, m + 1, 0).toISOString().split('T')[0];
+      setDesde(first);
+      setHasta(last);
+    }
+    setPage(1); // Reiniciar paginación al cambiar filtro
+  }, [filterType]);
+
+  const filteredDiario = useMemo(() => {
     return (state.libroDiario || []).filter(e => {
       if (!e.fecha) return false;
       const d = e.fecha.slice(0, 10);
@@ -49,9 +75,17 @@ export default function AccountingModule({ state, updateState }: { state: AppSta
     }).sort((a, b) => b.fecha.localeCompare(a.fecha));
   }, [state.libroDiario, desde, hasta, search]);
 
-  const totalIngresos = diario.filter(e => e.tipo === 'ingreso').reduce((s, e) => s + e.montoUSD, 0);
-  const totalEgresos = diario.filter(e => e.tipo === 'egreso').reduce((s, e) => s + e.montoUSD, 0);
+  // Totales basados en el filtro actual
+  const totalIngresos = filteredDiario.filter(e => e.tipo === 'ingreso').reduce((s, e) => s + e.montoUSD, 0);
+  const totalEgresos = filteredDiario.filter(e => e.tipo === 'egreso').reduce((s, e) => s + e.montoUSD, 0);
   const balanceNeto = totalIngresos - totalEgresos;
+
+  // Datos paginados
+  const totalPages = Math.ceil(filteredDiario.length / pageSize);
+  const paginatedData = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return filteredDiario.slice(start, start + pageSize);
+  }, [filteredDiario, page]);
 
   const handleSaveExpense = () => {
     if (!formData.concepto || !formData.montoUSD) return alert('Datos incompletos');
@@ -80,7 +114,7 @@ export default function AccountingModule({ state, updateState }: { state: AppSta
   };
 
   const handleExport = () => {
-    exportarPDFLibroDiario(diario, state.empresa, { totalIngresos, totalEgresos, balanceNeto });
+    exportarPDFLibroDiario(filteredDiario, state.empresa, { totalIngresos, totalEgresos, balanceNeto });
   };
 
   return (
@@ -90,14 +124,14 @@ export default function AccountingModule({ state, updateState }: { state: AppSta
           <h2 className="text-ink font-black uppercase italic tracking-tighter text-2xl flex items-center gap-2">
             <BookOpen className="text-brand-gold w-7 h-7" /> LIBRO DIARIO DE CONTABILIDAD
           </h2>
-          <p className="text-[10px] text-ink font-bold uppercase tracking-widest opacity-60">Control de Flujo de Efectivo Real (Ingresos vs Egresos)</p>
+          <p className="text-[10px] text-ink font-bold uppercase tracking-widest opacity-60">Control de Flujo de Efectivo Real</p>
         </div>
-        <div className="flex gap-2">
-          <button onClick={handleExport} className="btn btn-secondary h-11 px-6 font-black uppercase text-xs flex items-center gap-2 shadow-md">
-            <FileText className="w-4 h-4" /> Exportar Diario
+        <div className="flex gap-2 w-full sm:w-auto">
+          <button onClick={handleExport} className="flex-1 sm:flex-none btn btn-secondary h-11 px-6 font-black uppercase text-xs flex items-center justify-center gap-2 shadow-md">
+            <FileText className="w-4 h-4" /> Exportar PDF
           </button>
-          <button onClick={() => setShowModal(true)} className="btn btn-primary h-11 px-6 font-black uppercase text-xs flex items-center gap-2 shadow-lg">
-            <Plus className="w-4 h-4" /> Registrar Gasto Manual
+          <button onClick={() => setShowModal(true)} className="flex-1 sm:flex-none btn btn-primary h-11 px-6 font-black uppercase text-xs flex items-center justify-center gap-2 shadow-lg">
+            <Plus className="w-4 h-4" /> Nuevo Gasto
           </button>
         </div>
       </div>
@@ -105,68 +139,85 @@ export default function AccountingModule({ state, updateState }: { state: AppSta
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
         <div className="kpi bg-white border-line p-6 rounded-2xl shadow-sm border-l-[6px] border-l-status-success">
           <div className="text-ink text-[10px] font-black uppercase mb-1 opacity-60 flex justify-between">
-            Ingresos Totales <ArrowUpCircle className="w-3.5 h-3.5 text-status-success" />
+            Ingresos Periodo <ArrowUpCircle className="w-3.5 h-3.5 text-status-success" />
           </div>
-          <div className="text-3xl font-black text-status-success">{Utils.fmtUSD(totalIngresos)}</div>
-          <div className="text-xs font-bold text-ink/40 mt-1 uppercase">Entradas Reales</div>
+          <div className="text-2xl font-black text-status-success">{Utils.fmtUSD(totalIngresos)}</div>
         </div>
         <div className="kpi bg-white border-line p-6 rounded-2xl shadow-sm border-l-[6px] border-l-status-danger">
           <div className="text-ink text-[10px] font-black uppercase mb-1 opacity-60 flex justify-between">
-            Egresos Totales <ArrowDownCircle className="w-3.5 h-3.5 text-status-danger" />
+            Egresos Periodo <ArrowDownCircle className="w-3.5 h-3.5 text-status-danger" />
           </div>
-          <div className="text-3xl font-black text-status-danger">{Utils.fmtUSD(totalEgresos)}</div>
-          <div className="text-xs font-bold text-ink/40 mt-1 uppercase">Salidas de Dinero</div>
+          <div className="text-2xl font-black text-status-danger">{Utils.fmtUSD(totalEgresos)}</div>
         </div>
         <div className="kpi bg-ink text-white p-6 rounded-2xl shadow-xl border-l-[6px] border-l-brand-gold">
-          <div className="text-white/40 text-[10px] font-black uppercase mb-1 flex justify-between">
-            Balance Neto <Scale className="w-3.5 h-3.5 text-brand-gold" />
-          </div>
-          <div className={`text-3xl font-black ${balanceNeto >= 0 ? 'text-brand-gold' : 'text-status-danger'}`}>
+          <div className="text-white/40 text-[10px] font-black uppercase mb-1">Balance Neto</div>
+          <div className={`text-2xl font-black ${balanceNeto >= 0 ? 'text-brand-gold' : 'text-status-danger'}`}>
             {Utils.fmtUSD(balanceNeto)}
           </div>
-          <div className="text-[10px] font-bold text-white/20 mt-1 uppercase tracking-widest">Utilidad Operativa en Caja</div>
         </div>
       </div>
 
-      <div className="card bg-white border-line p-5 flex flex-wrap gap-6 items-end shadow-sm no-print">
+      <div className="card bg-white border-line p-5 flex flex-wrap gap-4 items-end shadow-sm no-print">
          <div className="form-group mb-0">
-            <label className="text-[9px] font-black text-ink/40 uppercase block mb-1">Desde</label>
-            <input type="date" className="form-input h-9 text-xs font-bold w-36" value={desde} onChange={e => setDesde(e.target.value)} />
+            <label className="text-[9px] font-black text-ink/40 uppercase block mb-1">Periodo de Consulta</label>
+            <div className="flex items-center gap-2">
+              <Filter className="w-4 h-4 text-brand-gold mr-1" />
+              <select 
+                className="form-select h-10 text-xs font-black uppercase bg-surface-soft border-line rounded-lg w-40"
+                value={filterType}
+                onChange={e => setFilterType(e.target.value as any)}
+              >
+                <option value="hoy">Hoy</option>
+                <option value="ayer">Ayer</option>
+                <option value="mes">Mes Actual</option>
+                <option value="rango">Rango Personalizado</option>
+              </select>
+            </div>
          </div>
-         <div className="form-group mb-0">
-            <label className="text-[9px] font-black text-ink/40 uppercase block mb-1">Hasta</label>
-            <input type="date" className="form-input h-9 text-xs font-bold w-36" value={hasta} onChange={e => setHasta(e.target.value)} />
-         </div>
-         <div className="relative flex-1">
-            <Search className="absolute left-3 top-2.5 w-4 h-4 text-ink/30" />
-            <input className="form-input pl-10 h-9 text-xs font-bold uppercase" placeholder="Buscar concepto o categoría..." value={search} onChange={e => setSearch(e.target.value)} />
+
+         {filterType === 'rango' && (
+           <div className="flex gap-2 animate-in slide-in-from-left-2">
+             <div className="form-group mb-0">
+                <label className="text-[9px] font-black text-ink/40 uppercase block mb-1">Desde</label>
+                <input type="date" className="form-input h-10 text-xs font-bold w-36" value={desde} onChange={e => setDesde(e.target.value)} />
+             </div>
+             <div className="form-group mb-0">
+                <label className="text-[9px] font-black text-ink/40 uppercase block mb-1">Hasta</label>
+                <input type="date" className="form-input h-10 text-xs font-bold w-36" value={hasta} onChange={e => setHasta(e.target.value)} />
+             </div>
+           </div>
+         )}
+
+         <div className="relative flex-1 min-w-[200px]">
+            <Search className="absolute left-3 top-3 w-4 h-4 text-ink/30" />
+            <input className="form-input pl-10 h-10 text-xs font-bold uppercase" placeholder="Buscar por concepto..." value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
          </div>
       </div>
 
       <div className="card bg-white border-line shadow-lg overflow-hidden rounded-xl">
         <div className="table-wrap">
-          <table>
+          <table className="w-full">
             <thead>
               <tr className="bg-ink text-white">
-                <th className="text-[10px] font-black uppercase py-4 px-6">Fecha y Hora</th>
-                <th className="text-[10px] font-black uppercase py-4">Concepto / Categoría</th>
-                <th className="text-[10px] font-black uppercase py-4">Método</th>
-                <th className="text-[10px] font-black uppercase py-4 text-right">Ingreso ($)</th>
-                <th className="text-[10px] font-black uppercase py-4 text-right">Egreso ($)</th>
+                <th className="text-[10px] font-black uppercase py-4 px-6 text-left">Fecha</th>
+                <th className="text-[10px] font-black uppercase py-4 text-left">Concepto / Categoría</th>
+                <th className="text-[10px] font-black uppercase py-4 text-left">Método</th>
+                <th className="text-[10px] font-black uppercase py-4 text-right">Ingreso</th>
+                <th className="text-[10px] font-black uppercase py-4 text-right">Egreso</th>
                 <th className="text-[10px] font-black uppercase py-4 px-6 text-center">Acción</th>
               </tr>
             </thead>
-            <tbody>
-              {diario.length === 0 ? (
-                <tr><td colSpan={6} className="text-center py-24 text-ink/20 font-black italic uppercase">No existen movimientos contables en este periodo seleccionado</td></tr>
+            <tbody className="bg-white">
+              {paginatedData.length === 0 ? (
+                <tr><td colSpan={6} className="text-center py-24 text-ink/20 font-black italic uppercase">Sin movimientos en este periodo</td></tr>
               ) : (
-                diario.map(e => (
+                paginatedData.map(e => (
                   <tr key={e.id} className="border-b border-line/30 hover:bg-surface-warm/20 transition-colors">
-                    <td className="py-4 px-6 text-xs font-bold text-ink">
-                      {Utils.fmtFecha(e.fecha)} <span className="text-ink/40 ml-1">{e.fecha.includes('T') ? e.fecha.split('T')[1].slice(0, 5) : ''}</span>
+                    <td className="py-4 px-6 text-[11px] font-bold text-ink">
+                      {Utils.fmtFecha(e.fecha)} <span className="opacity-40">{e.fecha.includes('T') ? e.fecha.split('T')[1].slice(0, 5) : ''}</span>
                     </td>
                     <td className="py-4">
-                       <div className="text-ink font-black text-xs uppercase">{e.concepto}</div>
+                       <div className="text-ink font-black text-xs uppercase truncate max-w-[200px]">{e.concepto}</div>
                        <div className="text-ink/50 text-[9px] font-bold uppercase tracking-widest">{e.categoria}</div>
                     </td>
                     <td className="py-4">
@@ -191,6 +242,31 @@ export default function AccountingModule({ state, updateState }: { state: AppSta
             </tbody>
           </table>
         </div>
+
+        {/* CONTROLES DE PAGINACIÓN */}
+        {totalPages > 1 && (
+          <div className="p-4 bg-surface-soft border-t border-line flex items-center justify-between">
+            <div className="text-[10px] font-black uppercase text-ink/40">
+              Página {page} de {totalPages} | Total {filteredDiario.length} Movimientos
+            </div>
+            <div className="flex gap-2">
+              <button 
+                onClick={() => setPage(p => Math.max(1, p - 1))} 
+                disabled={page === 1}
+                className="w-10 h-10 rounded-full border border-line bg-white flex items-center justify-center text-ink disabled:opacity-20 hover:border-brand-gold transition-all"
+              >
+                <ChevronLeft className="w-5 h-5" />
+              </button>
+              <button 
+                onClick={() => setPage(p => Math.min(totalPages, p + 1))} 
+                disabled={page === totalPages}
+                className="w-10 h-10 rounded-full border border-line bg-white flex items-center justify-center text-ink disabled:opacity-20 hover:border-brand-gold transition-all"
+              >
+                <ChevronRight className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* MODAL GASTO MANUAL */}
