@@ -352,10 +352,17 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       const totalAbonado = pagosAbono.reduce((s, p) => s + p.montoUSD, 0);
       if (totalAbonado <= 0) return;
       const ahoraStr = Utils.ahora(), terminal = getCurrentTerminal(), nextNum = terminal?.proximoRecibo || state.proximoRecibo, reciboId = 'PAY-' + String(nextNum).padStart(6, '0');
-      const nuevasDeudas = state.cxc.map(d => {
+      const nuevasDeudas: Debt[] = state.cxc.map(d => {
         if (d.id === showAbonoModal.id) {
           const nuevoSaldo = Math.max(0, d.saldoUSD - totalAbonado);
-          return { ...d, abonadoUSD: d.abonadoUSD + totalAbonado, saldoUSD: nuevoSaldo, estado: nuevoSaldo <= 0.001 ? 'pagada' : 'parcial', historialPagos: [...(d.historialPagos || []), { fecha: ahoraStr, montoUSD: totalAbonado, montoBS: totalAbonado * state.tasa, metodo: pagosAbono.length > 1 ? 'mixto' : pagosAbono[0].metodo, reciboId }] };
+          const updated: Debt = { 
+            ...d, 
+            abonadoUSD: d.abonadoUSD + totalAbonado, 
+            saldoUSD: nuevoSaldo, 
+            estado: (nuevoSaldo <= 0.001 ? 'pagada' : 'parcial') as 'pagada' | 'parcial', 
+            historialPagos: [...(d.historialPagos || []), { fecha: ahoraStr, montoUSD: totalAbonado, montoBS: totalAbonado * state.tasa, metodo: pagosAbono.length > 1 ? 'mixto' : pagosAbono[0].metodo, reciboId }] 
+          };
+          return updated;
         }
         return d;
       });
