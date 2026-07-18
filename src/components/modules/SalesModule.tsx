@@ -38,7 +38,8 @@ import {
   Maximize2,
   Minimize2,
   Tag,
-  Loader2
+  Loader2,
+  Hash
 } from 'lucide-react';
 import { auth } from '@/lib/firebase';
 import { ReceiptModal } from '@/components/pos/ReceiptModal';
@@ -83,7 +84,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   const [clientSearch, setClientSearch] = useState('');
   const [selectedClient, setSelectedClient] = useState<Customer | null>(null);
   const [showNewClientForm, setShowNewClientForm] = useState(false);
-  const [newClient, setNewClient] = useState({ name: '', cedula: 'V-', phone: '', address: '' });
+  const [newClient, setNewClient] = useState({ name: '', tipoDoc: 'V', cedula: '', phone: '', address: '' });
 
   const [editandoTasa, setEditandoTasa] = useState(false);
   const [nuevaTasa, setNuevaTasa] = useState(state.tasa.toString());
@@ -92,6 +93,15 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   const [showClientHistory, setShowClientHistory] = useState<string | null>(null);
 
   const searchInputRef = useRef<HTMLInputElement>(null);
+
+  const formatVNCedula = (val: string) => {
+    const digits = val.replace(/\D/g, '');
+    return digits.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  };
+
+  const handleNewClientCedulaChange = (val: string) => {
+    setNewClient({ ...newClient, cedula: formatVNCedula(val) });
+  };
 
   const currentTerminal = useMemo(() => {
     return auth?.currentUser ? state.terminales.find(t => t.usuarioId === auth.currentUser!.uid) : null;
@@ -353,7 +363,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     let targetClient: Customer | null = selectedClient;
     if (showNewClientForm) {
       if (!newClient.name || !newClient.cedula) return alert("Datos incompletos.");
-      targetClient = { id: Store.uid(), name: newClient.name.toUpperCase(), cedula: newClient.cedula.toUpperCase(), phone: newClient.phone, address: newClient.address, debt: 0 };
+      const fullId = `${newClient.tipoDoc}-${newClient.cedula}`;
+      targetClient = { id: Store.uid(), name: newClient.name.toUpperCase(), cedula: fullId, phone: newClient.phone, address: newClient.address, debt: 0 };
     }
     if (!targetClient) return alert("Seleccione un cliente.");
     
@@ -385,7 +396,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         }
       });
       const nuevaVenta: Sale = { id: reciboId, fecha: ahoraStr, cliente: targetClient.name, items: [...state.carrito], subtotalUSD, descuentoUSD: 0, totalUSD: subtotalUSD, totalBS, metodoPago: 'credito', estado: 'completada', type: 'VENTA CRÉDITO', received: 0, change: 0, terminalId: terminal?.id, terminalName: terminal?.nombre || 'SISTEMA GLOBAL', cajeroId: auth?.currentUser?.uid, baseImponibleUSD: Utils.round(vBase), ivaUSD: Utils.round(vIVA), exentoUSD: Utils.round(vExento), igtfUSD: 0 };
-      const nuevaDeuda: Debt = { id: 'CRD-' + reciboId.slice(-6), fecha: ahoraStr.slice(0, 10), fechaVencimiento: '2099-12-31', cliente: targetClient.name, montoUSD: subtotalUSD, abonadoUSD: 0, saldoUSD: subtotalUSD, estado: 'pendiente', historialPagos: [], ventaId: reciboId };
+      const nuevaDeuda: Debt = { id: 'CRD-' + reciboId.slice(-6), fecha: ahoraStr.slice(0, 10), fechaVencimiento: '2099-12-31', cliente: `${targetClient.name} [${targetClient.cedula}]`, montoUSD: subtotalUSD, abonadoUSD: 0, saldoUSD: subtotalUSD, estado: 'pendiente', historialPagos: [], ventaId: reciboId };
       await updateState({ 
         productos: prodsActualizados, 
         ventas: [...state.ventas, nuevaVenta], 
@@ -780,7 +791,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                </div>
             </div>
             <div className="modal-foot p-4 bg-surface-soft border-t border-line text-right">
-               <button onClick={() => setShowClientHistory(null)} className="btn btn-primary px-8 font-black uppercase text-[10px] rounded-lg shadow-md">Cerrar</button>
+               <button onClick={() => setShowClientHistory(null)} className="btn btn-primary px-8 font-black uppercase text-[10px] rounded-lg shadow-md">Cerrar Historial</button>
             </div>
           </div>
         </div>
@@ -799,7 +810,36 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                    <div className="flex flex-col gap-2"><button className="btn bg-status-info-soft text-status-info border border-status-info/40 font-black uppercase text-[10px] h-10 flex items-center justify-center gap-2" onClick={() => setShowNewClientForm(true)}><UserPlus className="w-4 h-4" /> Registrar Nuevo</button><button className="btn btn-primary w-full h-12 font-black uppercase text-xs shadow-md" disabled={!selectedClient || isProcessing} onClick={ejecutarVentaACredito}>{isProcessing ? <Loader2 className="w-4 h-4 animate-spin mr-2 inline" /> : null}Cargar a Cartera</button></div>
                 </div>
               ) : (
-                <div className="space-y-4 animate-in slide-in-from-right-2 duration-200"><div className="space-y-2"><div className="space-y-1"><label className="text-9px font-black uppercase text-ink">Nombre Completo</label><input className="form-input h-9 text-xs font-black uppercase" value={newClient.name} onChange={e => setNewClient({...newClient, name: e.target.value})} /></div><div className="space-y-1"><label className="text-9px font-black uppercase text-ink">Cédula / RIF</label><input className="form-input h-9 text-xs font-black uppercase" value={newClient.cedula} onChange={e => setNewClient({...newClient, cedula: e.target.value})} /></div><div className="space-y-1"><label className="text-9px font-black uppercase text-ink">Teléfono (XXXX-XXXXXXX)</label><input className="form-input h-9 text-xs font-black uppercase" value={newClient.phone} onChange={e => setNewClient({...newClient, phone: e.target.value})} placeholder="04XX-XXXXXXX" /></div><div className="space-y-1"><label className="text-9px font-black uppercase text-ink">Dirección</label><input className="form-input h-9 text-xs font-black uppercase" value={newClient.address} onChange={e => setNewClient({...newClient, address: e.target.value})} /></div></div><button className="btn btn-primary w-full h-12 font-black uppercase text-xs shadow-md" disabled={isProcessing} onClick={ejecutarVentaACredito}>{isProcessing ? <Loader2 className="w-4 h-4 animate-spin mr-2 inline" /> : null}Guardar y Cargar</button><button className="text-[10px] text-ink font-black uppercase text-center w-full" onClick={() => setShowNewClientForm(false)}>Volver a la lista</button></div>
+                <div className="space-y-4 animate-in slide-in-from-right-2 duration-200">
+                  <div className="space-y-2">
+                    <div className="space-y-1"><label className="text-[9px] font-black uppercase text-ink">Nombre Completo</label><input className="form-input h-9 text-xs font-black uppercase" value={newClient.name} onChange={e => setNewClient({...newClient, name: e.target.value})} /></div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-black uppercase text-ink">Cédula / Identificación</label>
+                      <div className="flex gap-1.5">
+                        <select 
+                          className="form-select w-16 h-9 text-[10px] font-black bg-surface-soft border-line"
+                          value={newClient.tipoDoc}
+                          onChange={e => setNewClient({ ...newClient, tipoDoc: e.target.value })}
+                        >
+                          {['V', 'E', 'J', 'G', 'P'].map(t => <option key={t} value={t}>{t}</option>)}
+                        </select>
+                        <div className="relative flex-1">
+                          <Hash className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-ink opacity-30" />
+                          <input 
+                            className="form-input pl-8 h-9 text-xs font-black" 
+                            placeholder="EJ: 13.313.521"
+                            value={newClient.cedula}
+                            onChange={e => handleNewClientCedulaChange(e.target.value)}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    <div className="space-y-1"><label className="text-[9px] font-black uppercase text-ink">Teléfono (XXXX-XXXXXXX)</label><input className="form-input h-9 text-xs font-black uppercase" value={newClient.phone} onChange={e => setNewClient({...newClient, phone: e.target.value})} placeholder="04XX-XXXXXXX" /></div>
+                    <div className="space-y-1"><label className="text-[9px] font-black uppercase text-ink">Dirección</label><input className="form-input h-9 text-xs font-black uppercase" value={newClient.address} onChange={e => setNewClient({...newClient, address: e.target.value})} /></div>
+                  </div>
+                  <button className="btn btn-primary w-full h-12 font-black uppercase text-xs shadow-md" disabled={isProcessing} onClick={ejecutarVentaACredito}>{isProcessing ? <Loader2 className="w-4 h-4 animate-spin mr-2 inline" /> : null}Guardar y Cargar</button>
+                  <button className="text-[10px] text-ink font-black uppercase text-center w-full" onClick={() => setShowNewClientForm(false)}>Volver a la lista</button>
+                </div>
               )}
             </div>
           </div>

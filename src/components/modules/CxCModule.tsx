@@ -22,7 +22,8 @@ import {
   User,
   Contact,
   Receipt,
-  BookOpen
+  BookOpen,
+  Hash
 } from 'lucide-react';
 import { exportarPDFCxC } from '@/lib/pdf-generator';
 
@@ -34,11 +35,22 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
 
   const [nuevaDeuda, setNuevaDeuda] = useState({
     cliente: '',
+    tipoDoc: 'V',
+    cedula: '',
     montoUSD: 0,
     fecha: Utils.hoy(),
     vencimiento: Utils.hoy(),
     sinVencimiento: false
   });
+
+  const formatCedula = (val: string) => {
+    const digits = val.replace(/\D/g, '');
+    return digits.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  };
+
+  const handleCedulaChange = (val: string) => {
+    setNuevaDeuda({ ...nuevaDeuda, cedula: formatCedula(val) });
+  };
 
   const pendientes = state.cxc.filter(x => x.estado !== 'pagada');
   const totalPendiente = pendientes.reduce((s, x) => s + x.saldoUSD, 0);
@@ -62,15 +74,19 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
   }, [pendientes]);
 
   const guardarDeudaDirecta = () => {
-    if (!nuevaDeuda.cliente || nuevaDeuda.montoUSD <= 0) {
-      alert('Por favor ingrese el cliente y un monto válido.');
+    if (!nuevaDeuda.cliente || !nuevaDeuda.cedula || nuevaDeuda.montoUSD <= 0) {
+      alert('Por favor ingrese el cliente, su cédula y un monto válido.');
       return;
     }
+
+    const idFull = `${nuevaDeuda.tipoDoc}-${nuevaDeuda.cedula}`;
+    const nombreFull = `${nuevaDeuda.cliente} [${idFull}]`;
+
     const nuevaEntrada = {
       id: 'DEU-' + Store.uid().toUpperCase().slice(0, 6),
       fecha: nuevaDeuda.fecha,
       fechaVencimiento: nuevaDeuda.sinVencimiento ? '2099-12-31' : nuevaDeuda.vencimiento,
-      cliente: nuevaDeuda.cliente,
+      cliente: nombreFull,
       montoUSD: nuevaDeuda.montoUSD,
       abonadoUSD: 0,
       saldoUSD: nuevaDeuda.montoUSD,
@@ -79,7 +95,7 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
     };
     updateState({ cxc: [...state.cxc, nuevaEntrada] });
     setShowModal(false);
-    setNuevaDeuda({ cliente: '', montoUSD: 0, fecha: Utils.hoy(), vencimiento: Utils.hoy(), sinVencimiento: false });
+    setNuevaDeuda({ cliente: '', tipoDoc: 'V', cedula: '', montoUSD: 0, fecha: Utils.hoy(), vencimiento: Utils.hoy(), sinVencimiento: false });
   };
 
   const eliminarDeuda = (deuda: any) => {
@@ -376,8 +392,31 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
             <div className="modal-body p-6 space-y-4">
               <div className="form-group">
                 <label className="text-ink text-[10px] font-black uppercase block mb-1">Nombre del Cliente</label>
-                <input className="form-input text-ink font-black uppercase" value={nuevaDeuda.cliente} onChange={e => setNuevaDeuda({...nuevaDeuda, cliente: e.target.value})} placeholder="Escribe el nombre..." />
+                <input className="form-input text-ink font-black uppercase" value={nuevaDeuda.cliente} onChange={e => setNuevaDeuda({...nuevaDeuda, cliente: e.target.value})} placeholder="ESCRIBA EL NOMBRE..." />
               </div>
+
+              <div className="form-group">
+                <label className="text-ink text-[10px] font-black uppercase block mb-1">Cédula / Identificación</label>
+                <div className="flex gap-2">
+                  <select 
+                    className="form-select w-20 h-11 text-xs font-black bg-surface-soft border-line"
+                    value={nuevaDeuda.tipoDoc}
+                    onChange={e => setNuevaDeuda({ ...nuevaDeuda, tipoDoc: e.target.value })}
+                  >
+                    {['V', 'E', 'J', 'G', 'P'].map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                  <div className="relative flex-1">
+                    <Hash className="absolute left-3 top-3 w-4 h-4 text-ink opacity-30" />
+                    <input 
+                      className="form-input pl-10 h-11 text-sm font-black text-ink" 
+                      placeholder="EJ: 13.313.521"
+                      value={nuevaDeuda.cedula}
+                      onChange={e => handleCedulaChange(e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+
               <div className="form-group">
                 <label className="text-ink text-[10px] font-black uppercase block mb-1">Monto (USD)</label>
                 <input type="number" className="form-input text-xl text-brand-gold-deep font-black" value={nuevaDeuda.montoUSD} onChange={e => setNuevaDeuda({...nuevaDeuda, montoUSD: parseFloat(e.target.value) || 0})} />
