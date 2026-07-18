@@ -5,7 +5,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Printer, X, Zap, Share2, Monitor, Loader2 } from 'lucide-react';
 import { Store, Utils } from '@/lib/db-store';
 import { formatBs, formatUsd } from '@/lib/currency-formatter';
-import { auth } from '@/lib/firebase';
 
 declare global {
   interface Window {
@@ -61,9 +60,14 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
     return (data.type || 'RECIBO DE VENTA').toUpperCase();
   };
 
-  const padRight = (label: string, value: string, width = 48) => {
-    const dots = width - label.length - value.length;
-    return label + (dots > 0 ? '.'.repeat(dots) : ' ') + value;
+  /**
+   * Helper para Font A (42 chars) - Alineación estricta con espacios
+   */
+  const formatLine = (label: string, value: string, width = 42) => {
+    const cleanLabel = label.trim().toUpperCase();
+    const cleanValue = value.trim();
+    const spaces = width - cleanLabel.length - cleanValue.length;
+    return cleanLabel + (spaces > 0 ? ' '.repeat(spaces) : ' ') + cleanValue;
   };
 
   const handleNativePrint = async () => {
@@ -74,8 +78,7 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
     }
 
     setIsPrinting(true);
-    const SEPARATOR = '------------------------------------------------';
-    const DOTS = '................................................';
+    const SEPARATOR = '------------------------------------------'; // 42 chars
     
     let printData: any[] = [
       { type: 'text', value: state.empresa.nombre.toUpperCase(), style: { fontWeight: "800", textAlign: 'center', fontSize: "20px" } },
@@ -91,66 +94,60 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
       printData.push({ type: 'text', value: SEPARATOR, style: { textAlign: 'center' } });
       
       if (type === 'REPORT_Z') {
-        printData.push({ type: 'text', value: 'DATOS DE CONTROL Y AUDITORÍA', style: { textAlign: 'center', fontWeight: "800" } });
-        printData.push({ type: 'text', value: `REPORTE Z N°: ${String(data.numeroZ || 0).padStart(6, '0')}`, style: { fontSize: "11px" } });
-        printData.push({ type: 'text', value: padRight('RANGO FACTURAS', `${data.desdeFactura} - ${data.hastaFactura}`), style: { fontSize: "10px" } });
-        printData.push({ type: 'text', value: padRight('RANGO NOTAS CRED', `${data.desdeNC} - ${data.hastaNC}`), style: { fontSize: "10px" } });
-        printData.push({ type: 'text', value: DOTS, style: { fontSize: "11px" } });
+        printData.push({ type: 'text', value: 'DATOS DE CONTROL', style: { textAlign: 'center', fontWeight: "800" } });
+        printData.push({ type: 'text', value: formatLine('REPORTE Z N°', String(data.numeroZ || 0).padStart(6, '0')), style: { fontSize: "11px" } });
+        printData.push({ type: 'text', value: formatLine('RANGO FACT', `${data.desdeFactura}-${data.hastaFactura}`), style: { fontSize: "10px" } });
+        printData.push({ type: 'text', value: SEPARATOR, style: { textAlign: 'center' } });
       }
 
-      printData.push({ type: 'text', value: 'RESUMEN DE FACTURACIÓN', style: { textAlign: 'center', fontWeight: "800" } });
-      printData.push({ type: 'text', value: padRight('VENTA BRUTA', formatBs(data.brUSD * state.tasa).replace('Bs. ', 'Bs.')), style: { fontSize: "11px" } });
-      printData.push({ type: 'text', value: padRight('DESCUENTOS', '-' + formatBs(data.descUSD * state.tasa).replace('Bs. ', 'Bs.')), style: { fontSize: "11px" } });
-      printData.push({ type: 'text', value: padRight('DEVOLUCIONES', '-' + formatBs(data.devUSD * state.tasa).replace('Bs. ', 'Bs.')), style: { fontSize: "11px" } });
-      printData.push({ type: 'text', value: padRight('VENTA NETA', formatBs(data.netUSD * state.tasa).replace('Bs. ', 'Bs.')), style: { fontSize: "12px", fontWeight: "700" } });
-      printData.push({ type: 'text', value: DOTS, style: { fontSize: "11px" } });
-
+      printData.push({ type: 'text', value: 'RESUMEN FACTURACION', style: { textAlign: 'center', fontWeight: "800" } });
+      printData.push({ type: 'text', value: formatLine('VENTA BRUTA', formatBs(data.brUSD * state.tasa).replace('Bs. ', 'Bs.')), style: { fontSize: "11px" } });
+      printData.push({ type: 'text', value: formatLine('DESCUENTOS', '-' + formatBs(data.descUSD * state.tasa).replace('Bs. ', 'Bs.')), style: { fontSize: "11px" } });
+      printData.push({ type: 'text', value: formatLine('DEVOLUCIONES', '-' + formatBs(data.devUSD * state.tasa).replace('Bs. ', 'Bs.')), style: { fontSize: "11px" } });
+      printData.push({ type: 'text', value: formatLine('VENTA NETA', formatBs(data.netUSD * state.tasa).replace('Bs. ', 'Bs.')), style: { fontSize: "12px", fontWeight: "700" } });
+      
+      printData.push({ type: 'text', value: SEPARATOR, style: { textAlign: 'center' } });
       printData.push({ type: 'text', value: 'DESGLOSE FISCAL', style: { textAlign: 'center', fontWeight: "800" } });
-      printData.push({ type: 'text', value: padRight('Monto Exento', formatBs((data.exentoUSD || 0) * state.tasa).replace('Bs. ', 'Bs.')), style: { fontSize: "11px" } });
-      printData.push({ type: 'text', value: padRight('Base Imponible', formatBs((data.baseImponibleUSD || 0) * state.tasa).replace('Bs. ', 'Bs.')), style: { fontSize: "11px" } });
-      printData.push({ type: 'text', value: padRight('IVA Recaudado (16%)', formatBs((data.ivaUSD || 0) * state.tasa).replace('Bs. ', 'Bs.')), style: { fontSize: "11px" } });
-      printData.push({ type: 'text', value: padRight('Total IGTF (3%)', formatBs((data.igtfUSD || 0) * state.tasa).replace('Bs. ', 'Bs.')), style: { fontSize: "11px" } });
-      printData.push({ type: 'text', value: DOTS, style: { fontSize: "11px" } });
+      printData.push({ type: 'text', value: formatLine('MONTO EXENTO', formatBs((data.exentoUSD || 0) * state.tasa).replace('Bs. ', 'Bs.')), style: { fontSize: "11px" } });
+      printData.push({ type: 'text', value: formatLine('BASE IMPONIBLE', formatBs((data.baseImponibleUSD || 0) * state.tasa).replace('Bs. ', 'Bs.')), style: { fontSize: "11px" } });
+      printData.push({ type: 'text', value: formatLine('IVA RECAUDADO', formatBs((data.ivaUSD || 0) * state.tasa).replace('Bs. ', 'Bs.')), style: { fontSize: "11px" } });
+      printData.push({ type: 'text', value: formatLine('TOTAL IGTF', formatBs((data.igtfUSD || 0) * state.tasa).replace('Bs. ', 'Bs.')), style: { fontSize: "11px" } });
 
-      printData.push({ type: 'text', value: 'CONCILIACIÓN DE PAGOS', style: { textAlign: 'center', fontWeight: "800" } });
+      printData.push({ type: 'text', value: SEPARATOR, style: { textAlign: 'center' } });
+      printData.push({ type: 'text', value: 'CONCILIACION PAGOS', style: { textAlign: 'center', fontWeight: "800" } });
       Object.entries(data.paymentMethods || {}).forEach(([method, val]) => {
-        printData.push({ type: 'text', value: padRight(Utils.metodoLabel(method).toUpperCase(), formatBs((val as number) * state.tasa).replace('Bs. ', 'Bs.')), style: { fontSize: "11px" } });
+        printData.push({ type: 'text', value: formatLine(Utils.metodoLabel(method), formatBs((val as number) * state.tasa).replace('Bs. ', 'Bs.')), style: { fontSize: "11px" } });
       });
-      printData.push({ type: 'text', value: padRight('SALIDAS / GASTOS CAJA', '-' + formatBs((data.manualSalidas || 0) * state.tasa).replace('Bs. ', 'Bs.')), style: { fontSize: "11px" } });
+      printData.push({ type: 'text', value: formatLine('SALIDAS CAJA', '-' + formatBs((data.manualSalidas || 0) * state.tasa).replace('Bs. ', 'Bs.')), style: { fontSize: "11px" } });
       
       if (type === 'REPORT_Z') {
         printData.push({ type: 'text', value: SEPARATOR, style: { textAlign: 'center' } });
-        printData.push({ type: 'text', value: 'ACUMULADOS HISTÓRICOS', style: { textAlign: 'center', fontWeight: "800" } });
-        printData.push({ type: 'text', value: padRight('GRAN TOTAL (BS)', formatBs(data.acumuladoHistoricoUSD * state.tasa).replace('Bs. ', 'Bs.')), style: { fontSize: "12px", fontWeight: "800" } });
+        printData.push({ type: 'text', value: formatLine('GRAN TOTAL (BS)', formatBs(data.acumuladoHistoricoUSD * state.tasa).replace('Bs. ', 'Bs.')), style: { fontSize: "12px", fontWeight: "800" } });
       }
 
     } else {
       printData.push({ type: 'text', value: getReportTitle(), style: { textAlign: 'center', fontWeight: "800", fontSize: "16px" } });
-      printData.push({ type: 'text', value: `N° CONTROL: ${data.id}`, style: { fontSize: "11px", fontWeight: "700" } });
-      printData.push({ type: 'text', value: `FECHA/HORA: ${transactionDate}`, style: { fontSize: "11px" } });
-      printData.push({ type: 'text', value: `CLIENTE: ${customerName}`, style: { fontSize: "11px" } });
+      printData.push({ type: 'text', value: formatLine('N° CONTROL', data.id), style: { fontSize: "11px", fontWeight: "700" } });
+      printData.push({ type: 'text', value: `FECHA/HORA: ${transactionDate}`, style: { fontSize: "10px" } });
+      printData.push({ type: 'text', value: `CLIENTE: ${customerName}`, style: { fontSize: "10px" } });
       printData.push({ type: 'text', value: SEPARATOR, style: { textAlign: 'center' } });
 
       data.items.forEach((item: any) => {
-        printData.push({ 
-          type: 'text', 
-          value: `${item.cantidad || item.qty}x ${(item.nombre || item.name).toUpperCase().slice(0, 30)}`, 
-          style: { fontWeight: "700", fontSize: "11px" } 
-        });
-        printData.push({ 
-          type: 'text', 
-          value: `      Total: ${formatBs((item.subtotalUSD || (item.price * item.qty)) * state.tasa).replace('Bs. ', 'Bs.')}`, 
-          style: { fontSize: "10px", textAlign: 'left' } 
-        });
+        const qty = item.cantidad || item.qty;
+        const name = (item.nombre || item.name).toUpperCase().slice(0, 30);
+        const totalLine = formatBs((item.subtotalUSD || (item.price * item.qty)) * state.tasa).replace('Bs. ', 'Bs.');
+        printData.push({ type: 'text', value: `${qty}x ${name}`, style: { fontWeight: "700", fontSize: "11px" } });
+        printData.push({ type: 'text', value: formatLine('', totalLine), style: { fontSize: "10px" } });
       });
 
       printData.push({ type: 'text', value: SEPARATOR, style: { textAlign: 'center' } });
-      printData.push({ type: 'text', value: padRight('TOTAL A PAGAR', formatBs(data.totalBS).replace('Bs. ', 'Bs.')), style: { textAlign: 'right', fontWeight: "800", fontSize: "18px" } });
+      printData.push({ type: 'text', value: formatLine('TOTAL A PAGAR', formatBs(data.totalBS).replace('Bs. ', 'Bs.')), style: { fontWeight: "800", fontSize: "18px" } });
+      printData.push({ type: 'text', value: formatLine('REF. USD', formatUsd(data.totalUSD)), style: { fontSize: "12px", fontWeight: "700" } });
     }
 
     printData.push({ type: 'text', value: SEPARATOR, style: { textAlign: 'center' } });
     printData.push({ type: 'text', value: '¡Gracias por su preferencia!', style: { textAlign: 'center', fontSize: "10px" } });
-    printData.push({ type: 'text', value: 'PosVEN Pro v2.5 - RC-8002 optimized\n\n\n', style: { textAlign: 'center', fontSize: "8px" } });
+    printData.push({ type: 'text', value: 'PosVEN Pro v2.5 - Font A (42c)\n\n\n', style: { textAlign: 'center', fontSize: "8px" } });
 
     try {
       await window.electronAPI.printTicket(printData);
@@ -191,22 +188,22 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
               width: 80mm;
               margin: 0;
               padding: 4mm;
-              font-size: 11px;
+              font-size: 12px;
               color: #000;
               background: #fff;
               line-height: 1.2;
+              letter-spacing: 0;
             }
-            .text-center { text-align: center; }
+            table { width: 100%; border-collapse: collapse; margin-bottom: 2px; }
+            td { vertical-align: top; padding: 1px 0; }
+            .text-left { text-align: left; }
             .text-right { text-align: right; }
+            .text-center { text-align: center; }
             .bold { font-weight: bold; }
-            .dashed-line { border-top: 1px dashed #000; margin: 5px 0; }
-            .solid-line { border-top: 1px solid #000; margin: 5px 0; }
-            .title { font-size: 18px; font-weight: bold; margin-bottom: 4px; text-transform: uppercase; }
-            .subtitle { font-size: 10px; margin-bottom: 2px; text-transform: uppercase; }
-            table { width: 100%; border-collapse: collapse; }
-            th, td { padding: 2px 0; }
-            .flex-row { display: flex; justify-content: space-between; }
-            .total-box { border-top: 1px solid #000; border-bottom: 1px solid #000; padding: 6px 0; margin: 8px 0; font-size: 16px; font-weight: bold; }
+            .separator { border-top: 1px dashed #000; margin: 4px 0; }
+            .header-title { font-size: 20px; font-weight: bold; margin-bottom: 4px; }
+            .section-title { font-size: 14px; font-weight: bold; text-align: center; margin: 5px 0; }
+            .total-line { font-size: 18px; font-weight: bold; }
           </style>
         </head>
         <body>
@@ -230,131 +227,163 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[440px] p-0 bg-transparent border-none overflow-hidden shadow-none">
-        <DialogHeader className="sr-only"><DialogTitle>Impresión Térmica 80mm</DialogTitle></DialogHeader>
+      <DialogContent className="sm:max-w-[460px] p-0 bg-transparent border-none overflow-hidden shadow-none">
+        <DialogHeader className="sr-only"><DialogTitle>Impresión Font A 42c</DialogTitle></DialogHeader>
 
         <div className="bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col border border-gray-200">
           <div className="bg-black p-4 flex justify-between items-center">
             <h3 className="text-white font-black text-xs flex items-center gap-2 tracking-widest uppercase">
-              <Printer size={16} className="text-brand-gold" /> VISTA PREVIA FISCAL
+              <Printer size={16} className="text-brand-gold" /> OPTIMIZADO FONT A (42c)
             </h3>
             <button onClick={onClose} className="text-white/40 hover:text-white transition-colors"><X size={20} /></button>
           </div>
 
-          <div className="p-6 bg-gray-100 flex justify-center max-h-[70vh] overflow-y-auto custom-scrollbar">
+          <div className="p-6 bg-gray-100 flex justify-center max-h-[65vh] overflow-y-auto custom-scrollbar">
             <div 
               ref={printRef}
               className="thermal-80mm bg-white p-6 shadow-sm text-black font-mono select-none"
-              style={{ width: '100%', boxSizing: 'border-box', color: '#000', fontSize: '11px', lineHeight: '1.3' }}
+              style={{ width: '100%', maxWidth: '80mm', color: '#000', fontSize: '12px', lineHeight: '1.2' }}
             >
-              <div className="text-center pb-3 mb-3">
-                <h1 className="text-[20px] font-bold uppercase mb-2 leading-tight" style={{ fontFamily: 'Courier New, Courier, monospace' }}>
-                  {state.empresa.nombre}
-                </h1>
-                <p className="text-[10px] mb-2 leading-snug uppercase">
-                  {state.empresa.direccion}
-                </p>
-                <p className="text-[10px] font-bold uppercase">
-                  RIF: {state.empresa.rif} | TEL: {state.empresa.telefono}
-                </p>
+              {/* Encabezado Fiscal */}
+              <div className="text-center mb-4">
+                <div className="text-[20px] font-bold uppercase leading-tight">{state.empresa.nombre}</div>
+                <div className="text-[10px] uppercase">{state.empresa.direccion}</div>
+                <div className="text-[11px] font-bold uppercase">RIF: {state.empresa.rif} | TEL: {state.empresa.telefono}</div>
               </div>
 
-              <div className="text-center mb-4 space-y-1">
-                <div className="text-[12px] font-bold uppercase">
-                  {getReportTitle()}
-                </div>
+              <div className="separator" />
+
+              {/* Título de Documento */}
+              <div className="text-center mb-3">
+                <div className="text-[14px] font-bold uppercase">{getReportTitle()}</div>
                 {isReport && (
-                  <div className="text-[10px] font-bold uppercase flex items-center justify-center gap-1">
-                    <Monitor size={10} /> TERMINAL: {terminalIdLabel}
-                  </div>
+                  <div className="text-[11px] font-bold uppercase">TERMINAL: {terminalIdLabel}</div>
                 )}
-                <div className="text-[10px] font-bold uppercase">
-                  FECHA/HORA: {transactionDate}
-                </div>
+                <div className="text-[11px] uppercase">EMISION: {transactionDate}</div>
               </div>
 
               {isReport && type === 'REPORT_Z' && (
-                <div className="border-t border-dashed border-black py-2 mb-2 space-y-1 text-[9px] text-center uppercase">
-                  <p className="font-bold">DATOS DE CONTROL Y AUDITORÍA</p>
-                  <div className="flex justify-between"><span>REPORTE Z N°:</span><span className="font-bold">{String(data.numeroZ || 0).padStart(6, '0')}</span></div>
-                  <div className="flex justify-between"><span>RANGO FACTURAS:</span><span>{data.desdeFactura} - {data.hastaFactura}</span></div>
-                  <div className="flex justify-between"><span>RANGO NOTAS CRED:</span><span>{data.desdeNC} - {data.hastaNC}</span></div>
+                <div className="mb-4">
+                  <div className="text-center font-bold text-[11px] mb-1">AUDITORIA DE CONTROL</div>
+                  <table style={{ width: '100%' }}>
+                    <tbody>
+                      <tr><td className="text-left uppercase">REPORTE Z N:</td><td className="text-right font-bold">{String(data.numeroZ || 0).padStart(6, '0')}</td></tr>
+                      <tr><td className="text-left uppercase">RANGO FACT:</td><td className="text-right">{data.desdeFactura}-{data.hastaFactura}</td></tr>
+                      <tr><td className="text-left uppercase">RANGO NC:</td><td className="text-right">{data.desdeNC}-{data.hastaNC}</td></tr>
+                    </tbody>
+                  </table>
                 </div>
               )}
 
+              <div className="separator" />
+
               {isReport ? (
-                <div className="border-t border-dashed border-black pt-3 mt-3 space-y-4">
-                  <div className="space-y-1">
-                    <p className="font-bold text-center mb-2 uppercase">RESUMEN DE FACTURACIÓN</p>
-                    <div className="flex justify-between"><span>VENTA BRUTA:</span><span>{formatBs(data.brUSD * state.tasa).replace('Bs. ', 'Bs.')}</span></div>
-                    <div className="flex justify-between"><span>DESCUENTOS:</span><span>-{formatBs(data.descUSD * state.tasa).replace('Bs. ', 'Bs.')}</span></div>
-                    <div className="flex justify-between"><span>DEVOLUCIONES:</span><span>-{formatBs(data.devUSD * state.tasa).replace('Bs. ', 'Bs.')}</span></div>
-                    <div className="flex justify-between font-bold border-t border-black pt-1"><span>VENTA NETA:</span><span>{formatBs(data.netUSD * state.tasa).replace('Bs. ', 'Bs.')}</span></div>
+                <div className="space-y-4">
+                  {/* Resumen de Facturación */}
+                  <div>
+                    <div className="text-center font-bold text-[11px] mb-1">RESUMEN FACTURACION</div>
+                    <table style={{ width: '100%' }}>
+                      <tbody>
+                        <tr><td className="text-left uppercase">VENTA BRUTA</td><td className="text-right">{formatBs(data.brUSD * state.tasa).replace('Bs. ', 'Bs.')}</td></tr>
+                        <tr><td className="text-left uppercase">DESCUENTOS</td><td className="text-right">-{formatBs(data.descUSD * state.tasa).replace('Bs. ', 'Bs.')}</td></tr>
+                        <tr><td className="text-left uppercase">DEVOLUCIONES</td><td className="text-right">-{formatBs(data.devUSD * state.tasa).replace('Bs. ', 'Bs.')}</td></tr>
+                        <tr className="bold"><td className="text-left uppercase">VENTA NETA</td><td className="text-right">{formatBs(data.netUSD * state.tasa).replace('Bs. ', 'Bs.')}</td></tr>
+                      </tbody>
+                    </table>
                   </div>
 
-                  <div className="space-y-1">
-                    <p className="font-bold text-center mb-2 uppercase">DESGLOSE FISCAL</p>
-                    <div className="flex justify-between"><span>Monto Exento:</span><span>{formatBs((data.exentoUSD || 0) * state.tasa).replace('Bs. ', 'Bs.')}</span></div>
-                    <div className="flex justify-between"><span>Base Imponible:</span><span>{formatBs((data.baseImponibleUSD || 0) * state.tasa).replace('Bs. ', 'Bs.')}</span></div>
-                    <div className="flex justify-between"><span>IVA Recaudado (16%):</span><span>{formatBs((data.ivaUSD || 0) * state.tasa).replace('Bs. ', 'Bs.')}</span></div>
-                    <div className="flex justify-between"><span>Total IGTF (3%):</span><span>{formatBs((data.igtfUSD || 0) * state.tasa).replace('Bs. ', 'Bs.')}</span></div>
+                  {/* Desglose Fiscal */}
+                  <div>
+                    <div className="text-center font-bold text-[11px] mb-1">DESGLOSE FISCAL</div>
+                    <table style={{ width: '100%' }}>
+                      <tbody>
+                        <tr><td className="text-left uppercase">MONTO EXENTO</td><td className="text-right">{formatBs((data.exentoUSD || 0) * state.tasa).replace('Bs. ', 'Bs.')}</td></tr>
+                        <tr><td className="text-left uppercase">BASE IMPONIBLE</td><td className="text-right">{formatBs((data.baseImponibleUSD || 0) * state.tasa).replace('Bs. ', 'Bs.')}</td></tr>
+                        <tr><td className="text-left uppercase">IVA (16%)</td><td className="text-right">{formatBs((data.ivaUSD || 0) * state.tasa).replace('Bs. ', 'Bs.')}</td></tr>
+                        <tr><td className="text-left uppercase">IGTF (3%)</td><td className="text-right">{formatBs((data.igtfUSD || 0) * state.tasa).replace('Bs. ', 'Bs.')}</td></tr>
+                      </tbody>
+                    </table>
                   </div>
 
-                  <div className="space-y-1">
-                    <p className="font-bold text-center mb-2 uppercase">CONCILIACIÓN DE PAGOS</p>
-                    {Object.entries(data.paymentMethods || {}).map(([method, val]) => (
-                      <div key={method} className="flex justify-between">
-                        <span className="uppercase">{Utils.metodoLabel(method)}:</span>
-                        <span>{formatBs((val as number) * state.tasa).replace('Bs. ', 'Bs.')}</span>
-                      </div>
-                    ))}
-                    <div className="flex justify-between"><span>SALIDAS / GASTOS:</span><span>-{formatBs((data.manualSalidas || 0) * state.tasa).replace('Bs. ', 'Bs.')}</span></div>
+                  {/* Conciliación */}
+                  <div>
+                    <div className="text-center font-bold text-[11px] mb-1">CONCILIACION CAJA</div>
+                    <table style={{ width: '100%' }}>
+                      <tbody>
+                        {Object.entries(data.paymentMethods || {}).map(([method, val]) => (
+                          <tr key={method}>
+                            <td className="text-left uppercase">{Utils.metodoLabel(method)}</td>
+                            <td className="text-right">{formatBs((val as number) * state.tasa).replace('Bs. ', 'Bs.')}</td>
+                          </tr>
+                        ))}
+                        <tr><td className="text-left uppercase">SALIDAS/GASTOS</td><td className="text-right">-{formatBs((data.manualSalidas || 0) * state.tasa).replace('Bs. ', 'Bs.')}</td></tr>
+                      </tbody>
+                    </table>
                   </div>
+
+                  {type === 'REPORT_Z' && (
+                    <div className="pt-2">
+                       <table style={{ width: '100%' }}>
+                        <tbody>
+                          <tr className="bold" style={{ fontSize: '13px' }}><td className="text-left uppercase">GRAN TOTAL BS</td><td className="text-right">{formatBs(data.acumuladoHistoricoUSD * state.tasa).replace('Bs. ', 'Bs.')}</td></tr>
+                        </tbody>
+                       </table>
+                    </div>
+                  )}
                 </div>
               ) : (
-                <div className="border-t border-dashed border-black pt-3">
-                  <div className="flex justify-between text-[10px] mb-2 font-bold">
-                    <span>N° CONTROL: {data.id}</span>
-                  </div>
-                  <div className="text-[10px] mb-4 uppercase font-bold">
-                    CLIENTE: {customerName}
-                  </div>
-                  <table className="w-full mb-3">
+                <div>
+                  {/* Cuerpo de Recibo de Venta */}
+                  <table style={{ width: '100%' }}>
+                    <tbody>
+                      <tr><td className="text-left bold uppercase">N CONTROL:</td><td className="text-right bold">{data.id}</td></tr>
+                      <tr><td className="text-left uppercase">CLIENTE:</td><td className="text-right">{customerName}</td></tr>
+                    </tbody>
+                  </table>
+
+                  <div className="separator" />
+
+                  <table style={{ width: '100%' }}>
                     <thead>
-                      <tr className="text-[10px] border-b border-dashed border-black">
-                        <th className="text-left py-1">PRODUCTO</th>
-                        <th className="text-right py-1">TOTAL</th>
+                      <tr className="bold" style={{ fontSize: '11px' }}>
+                        <td className="text-left">CANT/DESCRIPCION</td>
+                        <td className="text-right">TOTAL BS</td>
                       </tr>
                     </thead>
-                    <tbody className="uppercase">
+                    <tbody className="uppercase" style={{ fontSize: '11px' }}>
                       {data.items.map((item: any, idx: number) => (
-                        <tr key={idx} className="text-[10px]">
-                          <td className="py-1">
+                        <tr key={idx}>
+                          <td className="text-left" style={{ paddingBottom: '3px' }}>
                             {item.cantidad || item.qty}x {(item.nombre || item.name).slice(0, 25)}
                           </td>
-                          <td className="text-right py-1 font-bold">
+                          <td className="text-right bold">
                             {formatBs((item.subtotalUSD || (item.price * item.qty)) * state.tasa).replace('Bs. ', 'Bs.')}
                           </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
-                  <div className="border-t border-black pt-2 space-y-1">
-                    <div className="flex justify-between font-bold text-[14px]">
-                      <span>TOTAL A PAGAR:</span>
-                      <span>{formatBs(data.totalBS).replace('Bs. ', 'Bs.')}</span>
-                    </div>
-                    <div className="flex justify-between text-[11px]">
-                      <span>REF. USD:</span>
-                      <span>{formatUsd(data.totalUSD)}</span>
-                    </div>
-                  </div>
+
+                  <div className="separator" />
+
+                  <table style={{ width: '100%' }}>
+                    <tbody>
+                      <tr className="total-line">
+                        <td className="text-left uppercase">TOTAL PAGAR</td>
+                        <td className="text-right">{formatBs(data.totalBS).replace('Bs. ', 'Bs.')}</td>
+                      </tr>
+                      <tr className="bold" style={{ fontSize: '12px' }}>
+                        <td className="text-left uppercase">REF. DIVISA</td>
+                        <td className="text-right">{formatUsd(data.totalUSD)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
                 </div>
               )}
 
-              <div className="text-center mt-6 pt-4 border-t border-dotted border-black/30">
-                <p className="font-bold mb-2">¡Gracias por su preferencia!</p>
-                <p className="opacity-60 text-[8px]">PosVEN Pro v2.5 - RC-8002 optimized</p>
+              <div className="text-center mt-6 pt-4" style={{ borderTop: '1px dotted #000' }}>
+                <p className="bold uppercase mb-1">¡Gracias por su preferencia!</p>
+                <p className="opacity-60 text-[9px] uppercase">PosVEN Pro v2.5 - RC-8002 optimized</p>
               </div>
             </div>
           </div>
