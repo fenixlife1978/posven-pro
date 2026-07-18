@@ -330,7 +330,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         } else {
           const stockAntes = p.stock;
           p.stock -= item.cantidad;
-          nuevosMovimientos.push({ id: Store.uid(), productoId: p.id, tipo: 'venta', cantidad: -item.cantidad, stockAntes, stockDespues: p.stock, fecha: ahoraStr, referencia: `VENTA ${reciboId}`, terminalId: terminal?.id || 'GLOBAL' });
+          nuevosMovimientos.push({ id: Store.uid(), productoId: item.productoId, tipo: 'venta', cantidad: -item.cantidad, stockAntes, stockDespues: p.stock, fecha: ahoraStr, referencia: `VENTA ${reciboId}`, terminalId: terminal?.id || 'GLOBAL' });
           prodsActualizados[pIdx] = p;
         }
       });
@@ -406,7 +406,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         }
       });
       const nuevaVenta: Sale = { id: reciboId, fecha: ahoraStr, cliente: targetClient.name, items: [...state.carrito], subtotalUSD, descuentoUSD: 0, totalUSD: subtotalUSD, totalBS, metodoPago: 'credito', estado: 'completada', type: 'VENTA CRÉDITO', received: 0, change: 0, terminalId: terminal?.id, terminalName: terminal?.nombre || 'SISTEMA GLOBAL', cajeroId: auth?.currentUser?.uid, baseImponibleUSD: Utils.round(vBase), ivaUSD: Utils.round(vIVA), exentoUSD: Utils.round(vExento), igtfUSD: 0 };
-      const nuevaDeuda: Debt = { id: 'CRD-' + reciboId.slice(-6), fecha: ahoraStr.slice(0, 10), fechaVencimiento: '2099-12-31', cliente: `${targetClient.name} [${targetClient.cedula}]`, montoUSD: subtotalUSD, abonadoUSD: 0, saldoUSD: subtotalUSD, estado: 'pendiente', historialPagos: [], ventaId: reciboId };
+      const nuevaDeuda: Debt = { id: 'CRD-' + reciboId.slice(-6), fecha: ahoraStr.slice(0, 10), fechaVencimiento: '2099-12-31', cliente: `${targetClient.name} [${targetClient.cedula}]`, montoUSD: subtotalUSD, abonadoUSD: 0, saldoUSD: subtotalUSD, estado: 'pendiente' as 'pendiente', historialPagos: [], ventaId: reciboId };
       await updateState({ 
         productos: prodsActualizados, 
         ventas: [...state.ventas, nuevaVenta], 
@@ -825,19 +825,19 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                     <div className="space-y-1"><label className="text-[9px] font-black uppercase text-ink">Nombre Completo</label><input className="form-input h-9 text-xs font-black uppercase" value={newClient.name} onChange={e => setNewClient({...newClient, name: e.target.value})} /></div>
                     <div className="space-y-1">
                       <label className="text-[9px] font-black uppercase text-ink">Cédula / Identificación</label>
-                      <div className="flex gap-1.5">
+                      <div className="grid grid-cols-[80px_1fr] gap-1.5 items-center">
                         <select 
-                          className="form-select !w-16 shrink-0 h-9 text-[10px] font-black bg-surface-soft border-line"
+                          className="form-select h-9 text-[10px] font-black bg-surface-soft border-line w-full px-1"
                           value={newClient.tipoDoc}
                           onChange={e => setNewClient({ ...newClient, tipoDoc: e.target.value })}
                         >
                           {['V', 'E', 'J', 'G', 'P'].map(t => <option key={t} value={t}>{t}</option>)}
                         </select>
-                        <div className="relative flex-1">
+                        <div className="relative">
                           <Hash className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-ink opacity-30" />
                           <input 
-                            className="form-input pl-8 h-9 text-xs font-black" 
-                            placeholder="EJ: 13.313.521"
+                            className="form-input pl-8 h-9 text-xs font-black w-full" 
+                            placeholder="EJ: 13313521"
                             value={newClient.cedula}
                             onChange={e => handleNewClientCedulaChange(e.target.value)}
                           />
