@@ -274,9 +274,19 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     ? state.productos.filter(p => p.activo && (p.nombre.toLowerCase().includes(search.toLowerCase()) || p.codigo.toLowerCase().includes(search.toLowerCase()))).slice(0, 8)
     : [];
 
-  const filteredClients = clientSearch.trim().length > 0
-    ? (state.clientes || []).filter(c => c.name.toLowerCase().includes(clientSearch.toLowerCase()) || c.cedula.includes(clientSearch))
-    : [];
+  const filteredClients = useMemo(() => {
+    if (clientSearch.trim().length === 0) return [];
+    const searchLower = clientSearch.toLowerCase();
+    const searchNumeric = clientSearch.replace(/\D/g, '');
+
+    return (state.clientes || []).filter(c => {
+      const nameMatch = (c.name || '').toLowerCase().includes(searchLower);
+      const cedulaExactMatch = (c.cedula || '').toLowerCase().includes(searchLower);
+      const cedulaNumericMatch = searchNumeric.length > 0 && (c.cedula || '').replace(/\D/g, '').includes(searchNumeric);
+
+      return nameMatch || cedulaExactMatch || cedulaNumericMatch;
+    });
+  }, [clientSearch, state.clientes]);
 
   const getCurrentTerminal = () => currentTerminal;
 
