@@ -2,7 +2,7 @@
   "name": "posven-pro",
   "version": "2.5.7",
   "private": true,
-  "main": "electron/main.js",
+  "main": "main.js",
   "author": "fenixlife1978",
   "description": "Sistema de Punto de Venta Profesional para Venezuela",
   "scripts": {
@@ -79,7 +79,8 @@
       "output": "dist"
     },
     "files": [
-      "electron/**/*",
+      "main.js",
+      "preload.js",
       "out/**/*",
       "public/**/*",
       "package.json"
@@ -89,8 +90,7 @@
         {
           "target": "nsis",
           "arch": [
-            "x64",
-            "ia32"
+            "x64"
           ]
         }
       ],

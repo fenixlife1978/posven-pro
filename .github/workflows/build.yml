@@ -68,14 +68,3 @@ jobs:
           path: dist/*.exe
           if-no-files-found: error
           retention-days: 7
-
-      - name: Upload artifacts for debugging
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: debug-logs
-          path: |
-            dist/
-            out/
-            *.log
-          retention-days: 3
