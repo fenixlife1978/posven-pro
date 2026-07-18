@@ -399,7 +399,7 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
                 <label className="text-ink text-[10px] font-black uppercase block mb-1">Cédula / Identificación</label>
                 <div className="flex gap-2">
                   <select 
-                    className="form-select w-20 h-11 text-xs font-black bg-surface-soft border-line"
+                    className="form-select !w-20 shrink-0 h-11 text-xs font-black bg-surface-soft border-line"
                     value={nuevaDeuda.tipoDoc}
                     onChange={e => setNuevaDeuda({ ...nuevaDeuda, tipoDoc: e.target.value })}
                   >

@@ -827,7 +827,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                       <label className="text-[9px] font-black uppercase text-ink">Cédula / Identificación</label>
                       <div className="flex gap-1.5">
                         <select 
-                          className="form-select w-16 h-9 text-[10px] font-black bg-surface-soft border-line"
+                          className="form-select !w-16 shrink-0 h-9 text-[10px] font-black bg-surface-soft border-line"
                           value={newClient.tipoDoc}
                           onChange={e => setNewClient({ ...newClient, tipoDoc: e.target.value })}
                         >
