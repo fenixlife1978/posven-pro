@@ -82,7 +82,7 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
     const idFull = `${nuevaDeuda.tipoDoc}-${nuevaDeuda.cedula}`;
     const nombreFull = `${nuevaDeuda.cliente} [${idFull}]`;
 
-    const nuevaEntrada = {
+    const nuevaEntrada: Debt = {
       id: 'DEU-' + Store.uid().toUpperCase().slice(0, 6),
       fecha: nuevaDeuda.fecha,
       fechaVencimiento: nuevaDeuda.sinVencimiento ? '2099-12-31' : nuevaDeuda.vencimiento,
