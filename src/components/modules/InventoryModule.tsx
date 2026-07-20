@@ -59,6 +59,21 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
   const [showAjuste, setShowAjuste] = useState<string | null>(null);
   const [showProducto, setShowProducto] = useState<string | null | 'nuevo'>(null);
 
+  // ✅ CORRECCIÓN: Limpiar departamentos y categorías para evitar duplicados
+  const cleanDepartamentos = useMemo(() => {
+    const depts = (state.departamentos || [])
+      .map(d => d?.trim())
+      .filter(d => d && d.length > 0);
+    return Array.from(new Set(depts));
+  }, [state.departamentos]);
+
+  const cleanCategorias = useMemo(() => {
+    const cats = (state.categorias || [])
+      .map(c => c?.trim())
+      .filter(c => c && c.length > 0);
+    return Array.from(new Set(cats));
+  }, [state.categorias]);
+
   const prods = (state.productos || []).filter(p => 
     p.activo && 
     (p.nombre.toLowerCase().includes(search.toLowerCase()) || p.codigo.toLowerCase().includes(search.toLowerCase())) &&
@@ -116,7 +131,9 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
                   onChange={e => setDeptFilter(e.target.value)}
                 >
                   <option value="">DEPARTAMENTO</option>
-                  {(state.departamentos || []).map(d => <option key={d} value={d}>{d}</option>)}
+                  {cleanDepartamentos.map((d, index) => (
+                    <option key={`dept-${d}-${index}`} value={d}>{d}</option>
+                  ))}
                 </select>
                 <select 
                   className="form-select h-11 bg-white border-line text-xs font-black uppercase"
@@ -124,7 +141,9 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
                   onChange={e => setCatFilter(e.target.value)}
                 >
                   <option value="">CATEGORÍA</option>
-                  {(state.categorias || []).map(c => <option key={c} value={c}>{c}</option>)}
+                  {cleanCategorias.map((c, index) => (
+                    <option key={`cat-${c}-${index}`} value={c}>{c}</option>
+                  ))}
                 </select>
               </div>
             </div>
@@ -239,6 +258,7 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
         />
       )}
 
+      {/* ✅ CORRECCIÓN: Remover isOpen={true} - ProductFormModal no acepta esa prop */}
       {showProducto && (
         <ProductFormModal 
           state={state}
@@ -370,7 +390,7 @@ function ReporteGeneral({ state, onAction }: { state: AppState, onAction: (type:
             >
               <option value="">TODOS LOS DEPARTAMENTOS</option>
               {(state.departamentos || []).map(d => (
-                <option key={d} value={d}>{d?.toUpperCase()}</option>
+                <option key={`dept-report-${d}-${Math.random()}`} value={d}>{d?.toUpperCase()}</option>
               ))}
             </select>
           </div>
@@ -522,19 +542,34 @@ function ReporteVentas({ state }: { state: AppState }) {
   }, [state.ventas, desde, hasta, useDates, terminalId]);
 
   const groupedVentas = useMemo(() => {
-    const groups: Record<string, { nombre: string, cantidad: number, totalUSD: number }> = {};
+    const groups = new Map<string, { 
+      id: string, 
+      nombre: string, 
+      cantidad: number, 
+      totalUSD: number 
+    }>();
+    
     filteredVentas.forEach(v => {
       v.items.forEach(item => {
-        // CORRECCIÓN: Agrupar por nombre (normalizado) para evitar duplicados si el ID cambió o es el mismo producto
-        const nameKey = item.nombre.toUpperCase().trim();
-        if (!groups[nameKey]) {
-          groups[nameKey] = { nombre: item.nombre, cantidad: 0, totalUSD: 0 };
+        const productId = item.productoId || `temp-${item.nombre.trim()}`;
+        const normalizedName = item.nombre.toUpperCase().trim();
+        const key = `${productId}-${normalizedName}`;
+        
+        if (!groups.has(key)) {
+          groups.set(key, {
+            id: productId,
+            nombre: item.nombre.trim(),
+            cantidad: 0,
+            totalUSD: 0
+          });
         }
-        groups[nameKey].cantidad += item.cantidad;
-        groups[nameKey].totalUSD += item.subtotalUSD;
+        const group = groups.get(key)!;
+        group.cantidad += item.cantidad;
+        group.totalUSD += item.subtotalUSD;
       });
     });
-    return Object.values(groups).sort((a, b) => b.cantidad - a.cantidad);
+    
+    return Array.from(groups.values()).sort((a, b) => b.cantidad - a.cantidad);
   }, [filteredVentas]);
 
   return (
@@ -587,8 +622,11 @@ function ReporteVentas({ state }: { state: AppState }) {
               {groupedVentas.length === 0 ? (
                 <TableRow><TableCell colSpan={3} className="text-center py-20 text-ink/20 font-black italic uppercase">Sin ventas registradas para la selección actual</TableCell></TableRow>
               ) : (
-                groupedVentas.map((g, idx) => (
-                  <TableRow key={idx} className="border-b border-line/30 hover:bg-surface-warm/20 transition-colors">
+                groupedVentas.map((g) => (
+                  <TableRow 
+                    key={`${g.id}-${g.nombre.replace(/\s+/g, '-')}`} 
+                    className="border-b border-line/30 hover:bg-surface-warm/20 transition-colors"
+                  >
                     <TableCell className="font-black uppercase text-xs text-ink">{g.nombre}</TableCell>
                     <TableCell className="text-center font-black mono text-ink">{g.cantidad}</TableCell>
                     <TableCell className="text-right font-black text-brand-gold-deep mono">{Utils.fmtUSD(g.totalUSD)}</TableCell>
@@ -678,7 +716,7 @@ function ReporteDevoluciones({ state }: { state: AppState }) {
                   </thead>
                   <tbody>
                     {selectedDevolucion.items.map((it, idx) => (
-                      <tr key={idx} className="border-b border-line/20">
+                      <tr key={`${idx}-${it.productoId || it.nombre}`} className="border-b border-line/20">
                         <td className="text-[10px] font-bold p-2 uppercase">{it.nombre}</td>
                         <td className="text-[10px] font-black p-2 text-center">{it.cantidad}</td>
                         <td className="text-[10px] font-bold p-2 text-right">{Utils.fmtUSD(it.precioUnitUSD)}</td>
@@ -867,7 +905,6 @@ function ReporteKardex({ state, selectedId, onSelect }: { state: AppState, selec
   const [search, setSearch] = useState('');
   const selectedProd = selectedId ? state.productos.find(p => p.id === selectedId) : null;
   
-  // CORRECCIÓN: Orden cronológico absoluto (NUEVO ARRIBA) usando resolución completa
   const movs = useMemo(() => {
     if (!selectedId || !state.movimientos) return [];
     return state.movimientos

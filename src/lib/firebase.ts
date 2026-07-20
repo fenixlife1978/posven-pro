@@ -46,7 +46,14 @@ try {
   }
 } catch (e) {
   console.error("Firebase init error:", e);
-  app = initializeApp({ apiKey: "dummy", projectId: "dummy" });
+  app = initializeApp({ 
+    apiKey: "dummy", 
+    projectId: "dummy",
+    authDomain: "dummy",
+    storageBucket: "dummy",
+    messagingSenderId: "dummy",
+    appId: "dummy"
+  });
 }
 
 // ============================================================
@@ -59,10 +66,10 @@ let dbInstance: Firestore;
 
 if (typeof window !== "undefined" && isConfigValid) {
   try {
-    // Usamos persistentSingleTabManager para evitar errores de lease en Electron/Dev
+    // ✅ CORRECCIÓN: Pasar undefined explícitamente a persistentSingleTabManager
     dbInstance = initializeFirestore(app, {
       localCache: persistentLocalCache({
-        tabManager: persistentSingleTabManager()
+        tabManager: persistentSingleTabManager(undefined)
       })
     });
   } catch (e) {
@@ -75,8 +82,25 @@ if (typeof window !== "undefined" && isConfigValid) {
 
 export const db: Firestore = dbInstance;
 
-// Inicialización segura de RTDB
-export const rtdb: Database = getDatabase(app);
+// ✅ CORRECCIÓN: Inicialización segura de RTDB
+let rtdbInstance: Database;
+try {
+  rtdbInstance = getDatabase(app);
+} catch (e) {
+  console.error("RTDB init error:", e);
+  // Fallback: crear una app dummy
+  const fallbackApp = initializeApp({ 
+    apiKey: "dummy", 
+    projectId: "dummy",
+    authDomain: "dummy",
+    storageBucket: "dummy",
+    messagingSenderId: "dummy",
+    appId: "dummy"
+  });
+  rtdbInstance = getDatabase(fallbackApp);
+}
+
+export const rtdb: Database = rtdbInstance;
 
 export default app;
 

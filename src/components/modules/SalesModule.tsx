@@ -50,6 +50,7 @@ import { Utils, Store } from '@/lib/db-store';
 import ReturnsModule from '@/components/modules/ReturnsModule';
 import { cn } from '@/lib/utils';
 
+// ✅ CORRECCIÓN: Unificar la declaración de electronAPI
 declare global {
   interface Window {
     electronAPI?: {
@@ -336,7 +337,32 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       });
 
       const vIgtf = listadoPagos.filter(p => p.metodo === 'efectivo_usd' || p.metodo === 'zelle').reduce((acc, p) => acc + (p.montoUSD * 0.03), 0);
-      const nuevaVenta: Sale = { id: reciboId, fecha: ahoraStr, cliente, items: [...state.carrito], subtotalUSD, descuentoUSD: 0, totalUSD: subtotalUSD, totalBS, metodoPago: listadoPagos.length > 1 ? 'mixto' : (listadoPagos[0]?.metodo || 'efectivo_usd'), estado: 'completada', type: 'VENTA', received: totalPagadoRecibido, change: Math.max(0, totalPagadoRecibido - subtotalUSD), payments: [...listadoPagos], terminalId: terminal?.id, terminalName: terminal?.nombre || 'SISTEMA GLOBAL', cajeroId: auth?.currentUser?.uid, baseImponibleUSD: Utils.round(vBase), ivaUSD: Utils.round(vIVA), exentoUSD: Utils.round(vExento), igtfUSD: Utils.round(vIgtf) };
+      
+      const nuevaVenta: Sale = { 
+        id: reciboId, 
+        fecha: ahoraStr, 
+        cliente, 
+        items: [...state.carrito], 
+        subtotalUSD, 
+        descuentoUSD: 0, 
+        totalUSD: subtotalUSD, 
+        totalBS, 
+        metodoPago: listadoPagos.length > 1 ? 'mixto' : (listadoPagos[0]?.metodo || 'efectivo_usd'), 
+        estado: 'completada', 
+        type: 'VENTA', 
+        received: totalPagadoRecibido, 
+        change: Math.max(0, totalPagadoRecibido - subtotalUSD), 
+        payments: [...listadoPagos], 
+        terminalId: terminal?.id, 
+        terminalName: terminal?.nombre || 'SISTEMA GLOBAL', 
+        cajeroId: auth?.currentUser?.uid, 
+        baseImponibleUSD: Utils.round(vBase), 
+        ivaUSD: Utils.round(vIVA), 
+        exentoUSD: Utils.round(vExento), 
+        igtfUSD: Utils.round(vIgtf),
+        tasa: state.tasa
+      };
+      
       const nuevasEntradasDiario: LibroDiarioEntry[] = listadoPagos.map(p => ({ id: 'ACC-' + Store.uid().toUpperCase().slice(0, 5), fecha: ahoraStr, tipo: 'ingreso', categoria: 'VENTA', concepto: `VENTA #${reciboId} - CLIENTE: ${cliente.toUpperCase()}`, montoUSD: p.montoUSD, montoBS: p.montoBS, metodo: p.metodo, referencia: reciboId + '-' + (terminal?.id || 'GLOBAL') }));
       await updateState({ productos: prodsActualizados, ventas: [...state.ventas, nuevaVenta], movimientos: [...state.movimientos, ...nuevosMovimientos], libroDiario: [...nuevasEntradasDiario, ...(state.libroDiario || [])], carrito: [], proximoRecibo: state.proximoRecibo + 1, terminales: state.terminales.map(t => t.id === terminal?.id ? { ...t, proximoRecibo: t.proximoRecibo + 1 } : t) });
       setLastProcessedSale(nuevaVenta); setShowReceiptModal(true); setPagos([]); setCliente('Consumidor final'); setSelectedProductDisplay(null);
@@ -367,7 +393,25 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         return d;
       });
       const nuevosAsientos: LibroDiarioEntry[] = pagosAbono.map(p => ({ id: 'ACC-' + Store.uid().toUpperCase().slice(0, 5), fecha: ahoraStr, tipo: 'ingreso', categoria: 'COBRO_DEUDA', concepto: `ABONO DEUDA #${showAbonoModal.id} - CLIENTE: ${showAbonoModal.cliente?.toUpperCase()}`, montoUSD: p.montoUSD, montoBS: p.montoBS, metodo: p.metodo, referencia: reciboId + '-' + (terminal?.id || 'GLOBAL') }));
-      const saleAbono: Sale = { id: reciboId, fecha: ahoraStr, cliente: showAbonoModal.cliente || 'CLIENTE', items: [{ productoId: 'ABONO', nombre: `ABONO A FACTURA #${showAbonoModal.id}`, cantidad: 1, precioUnitUSD: totalAbonado, subtotalUSD: totalAbonado }], subtotalUSD: totalAbonado, descuentoUSD: 0, totalUSD: totalAbonado, totalBS: totalAbonado * state.tasa, metodoPago: pagosAbono.length > 1 ? 'mixto' : pagosAbono[0].metodo, estado: 'completada', type: 'COBRO DEUDA', payments: [...pagosAbono], terminalId: terminal?.id, terminalName: terminal?.nombre || 'SISTEMA GLOBAL' };
+      
+      const saleAbono: Sale = { 
+        id: reciboId, 
+        fecha: ahoraStr, 
+        cliente: showAbonoModal.cliente || 'CLIENTE', 
+        items: [{ productoId: 'ABONO', nombre: `ABONO A FACTURA #${showAbonoModal.id}`, cantidad: 1, precioUnitUSD: totalAbonado, subtotalUSD: totalAbonado }], 
+        subtotalUSD: totalAbonado, 
+        descuentoUSD: 0, 
+        totalUSD: totalAbonado, 
+        totalBS: totalAbonado * state.tasa, 
+        metodoPago: pagosAbono.length > 1 ? 'mixto' : pagosAbono[0].metodo, 
+        estado: 'completada', 
+        type: 'COBRO DEUDA', 
+        payments: [...pagosAbono], 
+        terminalId: terminal?.id, 
+        terminalName: terminal?.nombre || 'SISTEMA GLOBAL',
+        tasa: state.tasa
+      };
+      
       await updateState({ cxc: nuevasDeudas, libroDiario: [...nuevosAsientos, ...(state.libroDiario || [])], proximoRecibo: state.proximoRecibo + 1, ventas: [...state.ventas, saleAbono], terminales: state.terminales.map(t => t.id === terminal?.id ? { ...t, proximoRecibo: t.proximoRecibo + 1 } : t) });
       setLastProcessedSale(saleAbono); setShowReceiptModal(true); setShowAbonoModal(null);
     } finally {
@@ -412,7 +456,31 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
           prodsActualizados[pIdx] = p;
         }
       });
-      const nuevaVenta: Sale = { id: reciboId, fecha: ahoraStr, cliente: targetClient.name, items: [...state.carrito], subtotalUSD, descuentoUSD: 0, totalUSD: subtotalUSD, totalBS, metodoPago: 'credito', estado: 'completada', type: 'VENTA CRÉDITO', received: 0, change: 0, terminalId: terminal?.id, terminalName: terminal?.nombre || 'SISTEMA GLOBAL', cajeroId: auth?.currentUser?.uid, baseImponibleUSD: Utils.round(vBase), ivaUSD: Utils.round(vIVA), exentoUSD: Utils.round(vExento), igtfUSD: 0 };
+      
+      const nuevaVenta: Sale = { 
+        id: reciboId, 
+        fecha: ahoraStr, 
+        cliente: targetClient.name, 
+        items: [...state.carrito], 
+        subtotalUSD, 
+        descuentoUSD: 0, 
+        totalUSD: subtotalUSD, 
+        totalBS, 
+        metodoPago: 'credito', 
+        estado: 'completada', 
+        type: 'VENTA CRÉDITO', 
+        received: 0, 
+        change: 0, 
+        terminalId: terminal?.id, 
+        terminalName: terminal?.nombre || 'SISTEMA GLOBAL', 
+        cajeroId: auth?.currentUser?.uid, 
+        baseImponibleUSD: Utils.round(vBase), 
+        ivaUSD: Utils.round(vIVA), 
+        exentoUSD: Utils.round(vExento), 
+        igtfUSD: 0,
+        tasa: state.tasa
+      };
+      
       const nuevaDeuda: Debt = { id: 'CRD-' + reciboId.slice(-6), fecha: ahoraStr.slice(0, 10), fechaVencimiento: '2099-12-31', cliente: `${targetClient.name} [${targetClient.cedula}]`, montoUSD: subtotalUSD, abonadoUSD: 0, saldoUSD: subtotalUSD, estado: 'pendiente' as 'pendiente', historialPagos: [], ventaId: reciboId };
       await updateState({ 
         productos: prodsActualizados, 
@@ -672,7 +740,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         </div>
       )}
 
-      {showReceiptModal && (<ReceiptModal isOpen={showReceiptModal} onClose={() => { setShowReceiptModal(false); setLastProcessedSale(null); }} sale={lastProcessedSale} type="SALE" />)}
+      {/* ✅ CORRECCIÓN: Cambiar sale por saleData */}
+      {showReceiptModal && (<ReceiptModal isOpen={showReceiptModal} onClose={() => { setShowReceiptModal(false); setLastProcessedSale(null); }} saleData={lastProcessedSale} type="SALE" />)}
       {showReportType && reportSnapshot && (<ReceiptModal isOpen={!!showReportType} onClose={() => { if (showReportType === 'REPORT_Z') ejecutarCierreZ(); setShowReportType(null); }} reportData={reportSnapshot} type={showReportType} />)}
       {showMultiModal && (<FloatingPaymentModal total={totalBS} totalCents={Math.round(totalBS * 100)} exchangeRate={state.tasa} onClose={() => setShowMultiModal(false)} onConfirm={(data) => { ejecutarVenta(data.payments.map(p => ({ metodo: p.method as PaymentMethod, montoUSD: p.usdAmount || (p.amount / state.tasa), montoBS: p.amount }))); setShowMultiModal(false); }} />)}
       {showAbonoModal && (<FloatingPaymentModal total={showAbonoModal.saldoUSD * state.tasa} totalCents={Math.round(showAbonoModal.saldoUSD * state.tasa * 100)} exchangeRate={state.tasa} onClose={() => setShowAbonoModal(null)} allowPartial={true} onConfirm={(data) => { ejecutarAbono(data.payments.map(p => ({ metodo: p.method as PaymentMethod, montoUSD: p.usdAmount || (p.amount / state.tasa), montoBS: p.amount }))); }} />)}

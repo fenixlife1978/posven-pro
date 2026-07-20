@@ -1,3 +1,13 @@
+export interface User {
+  uid: string;
+  nombre: string;
+  email: string;
+  rol: 'administrador' | 'cajero';
+  accesoBloqueado: boolean;
+  fechaCreacion?: string;
+  isAuthenticated?: boolean;
+}
+
 export interface Product {
   id: string;
   codigo: string;
@@ -23,6 +33,54 @@ export interface Product {
   kitType?: 'stock_propio' | 'stock_componentes';
   kitItems?: KitItem[];
   proveedor?: string;
+  
+  // ========== PROPIEDADES PARA ProductForm ==========
+  barcode?: string;
+  internalCode?: string;
+  alternateCode?: string;
+  description?: string;
+  shortDescription?: string;
+  type?: string;
+  groupId?: number;
+  subgroupId?: number;
+  brandId?: number;
+  lineId?: number;
+  model?: string;
+  color?: string;
+  size?: string;
+  supplierId?: number;
+  supplierCode?: string;
+  unit?: string;
+  altUnit?: string;
+  conversionFactor?: number;
+  minStock?: number;
+  maxStock?: number;
+  reorderPoint?: number;
+  warehouse?: string;
+  managesLots?: boolean;
+  managesSerials?: boolean;
+  managesExpiration?: boolean;
+  costPrice?: number;
+  profitPercentage?: number;
+  priceVES?: number;
+  prices?: PriceTier[];
+  taxType?: string;
+  ivaRate?: number;
+  igtfRate?: number;
+  maxDiscount?: number;
+  netWeight?: number;
+  grossWeight?: number;
+  volume?: number;
+  barcodeLabel?: string;
+  observations?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface PriceTier {
+  name: string;
+  usd: number;
+  ves: number;
 }
 
 export interface KitItem {
@@ -74,12 +132,13 @@ export interface Sale {
   terminalId?: string;
   terminalName?: string;
   cajeroId?: string;
+  cajeroNombre?: string;
   payments?: PagoRealizado[];
-  // Fiscal fields
   baseImponibleUSD?: number;
   ivaUSD?: number;
   exentoUSD?: number;
   igtfUSD?: number;
+  tasa: number;
 }
 
 export interface Customer {
@@ -202,7 +261,44 @@ export interface ReportZ {
   };
 }
 
+// ========== TIPOS PARA ProductForm ==========
+export interface Brand {
+  id: number;
+  name: string;
+}
+
+export interface Group {
+  id: number;
+  name: string;
+}
+
+export interface Subgroup {
+  id: number;
+  name: string;
+  groupId: number;
+}
+
+export interface Line {
+  id: number;
+  name: string;
+}
+
+export interface SupplierForm {
+  id: number;
+  name: string;
+  code?: string;
+}
+
+export interface Config {
+  exchangeRate: number;
+  ivaRate: number;
+  igtfRate: number;
+}
+
+// ========== APP STATE ACTUALIZADO ==========
 export interface AppState {
+  user: User | null;
+  isAuthenticated: boolean;
   tasa: number;
   pinDevolucion: string;
   isInitialized?: boolean;
@@ -237,6 +333,21 @@ export interface AppState {
   marcas: string[];
   presentaciones: string[];
   proveedores: Supplier[];
+  
+  // ========== NUEVAS PROPIEDADES PARA ProductForm ==========
+  config: Config;
+  productCategories: string[];
+  productUnits: string[];
+  productColors: string[];
+  productSizes: string[];
+  brands: Brand[];
+  groups: Group[];
+  subgroups: Subgroup[];
+  lines: Line[];
+  suppliers: SupplierForm[];
+  products: Product[];
+  marcasString: string[];
+  proveedoresString: string[];
 }
 
 export type PaymentMethod = 'efectivo_usd' | 'efectivo_bs' | 'punto_venta' | 'biopago' | 'pagomovil' | 'zelle' | 'transferencia' | 'credito' | 'mixto' | 'otros' | 'nota_credito';

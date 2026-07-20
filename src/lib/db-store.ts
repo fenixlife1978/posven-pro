@@ -1,4 +1,4 @@
-"use client";
+'use client';
 
 import { AppState } from './types';
 import { db } from './firebase';
@@ -8,14 +8,12 @@ const STORAGE_KEY = 'posven_pro_session_data_cache';
 const COLLECTION = 'pos_system_data';
 const DOC_ID = 'state';
 
-/**
- * Estado inicial del sistema.
- * Al resetear, el sistema volverá exactamente a estos valores.
- */
 export const initialState: AppState = {
+  user: null,
+  isAuthenticated: false,
   tasa: 36.50,
   pinDevolucion: '000000',
-  isInitialized: false, // Flag crucial para detectar primer uso
+  isInitialized: false,
   productos: [],
   ventas: [],
   cxc: [],
@@ -42,11 +40,41 @@ export const initialState: AppState = {
     direccion: 'DIRECCIÓN FISCAL', 
     telefono: '0000-0000000' 
   },
+  // DEPARTAMENTOS Y CATEGORÍAS EXISTENTES
   departamentos: ['Licores', 'Viveres', 'Otros'],
   categorias: ['Ron', 'Vino', 'Cerveza', 'Whisky', 'Refrescos', 'Otros'],
   marcas: ['Genérica'],
   presentaciones: ['750ml', '1L', 'Unidad', 'Caja'],
-  proveedores: []
+  proveedores: [],
+  
+  // ========== NUEVAS PROPIEDADES PARA ProductForm ==========
+  // Configuración general
+  config: {
+    exchangeRate: 36.50,
+    ivaRate: 16,
+    igtfRate: 3
+  },
+  
+  // Listas para el formulario de productos
+  productCategories: ['Repuesto', 'Lubricante', 'Filtro', 'Químico', 'Accesorio', 'Batería', 'Caucho', 'Freno', 'Suspensión', 'Motor', 'Eléctrico', 'Transmisión', 'Servicio'],
+  productUnits: ['unidad', 'litro', 'galón', 'cuarto', 'paila', 'kit', 'juego', 'par', 'metro', 'kilogramo', 'gramo', 'tambor'],
+  productColors: ['No Aplica', 'Negro', 'Gris', 'Cromo', 'Rojo', 'Azul', 'Blanco', 'Ámbar'],
+  productSizes: ['N/A', 'Estándar', '0.10', '0.20', '0.30', '0.40', '0.50', '20', '30', '40', '50', '60'],
+  
+  // Colecciones para el formulario (con estructura de objetos con id)
+  brands: [], // { id: 1, name: 'Toyota' }
+  groups: [], // { id: 1, name: 'Tren Delantero' }
+  subgroups: [], // { id: 1, name: 'Amortiguadores', groupId: 1 }
+  lines: [], // { id: 1, name: 'Línea Pesada' }
+  suppliers: [], // { id: 1, name: 'Proveedor XYZ', code: 'RIF-123' }
+  
+  // Para compatibilidad con código existente que usa arrays de strings
+  // Estos se mantienen pero ahora también tenemos las versiones con objetos
+  marcasString: ['Genérica'],
+  proveedoresString: [],
+  
+  // Para almacenar los productos con estructura completa
+  products: [],
 };
 
 export const Store = {
@@ -120,7 +148,22 @@ export const Store = {
       acumuladoHistorico: state.acumuladoHistorico || 0,
       fechaUltimoZ: state.fechaUltimoZ || '',
       fondoCajaHoyUSD: state.fondoCajaHoyUSD || 0,
-      fondoCajaHoyBS: state.fondoCajaHoyBS || 0
+      fondoCajaHoyBS: state.fondoCajaHoyBS || 0,
+      
+      // ========== NUEVAS PROPIEDADES PARA ProductForm ==========
+      config: state.config || initialState.config,
+      productCategories: state.productCategories || initialState.productCategories,
+      productUnits: state.productUnits || initialState.productUnits,
+      productColors: state.productColors || initialState.productColors,
+      productSizes: state.productSizes || initialState.productSizes,
+      brands: state.brands || [],
+      groups: state.groups || [],
+      subgroups: state.subgroups || [],
+      lines: state.lines || [],
+      suppliers: state.suppliers || [],
+      products: state.products || [],
+      marcasString: state.marcasString || state.marcas || [],
+      proveedoresString: state.proveedoresString || state.proveedores || [],
     };
 
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ ...state, ...dataToPersist }));
@@ -162,7 +205,8 @@ export const Utils = {
     return isNaN(n) ? 0 : Math.round((n + Number.EPSILON) * 100) / 100;
   },
   fmtUSD: (v: number) => '$' + Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-  fmtBS: (v: number) => 'Bs. ' + Number(v).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+  fmtBS: (v: number, symbol = true) => (symbol ? 'Bs. ' : '') + Number(v).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+  fmtMono: (v: number, prefix = false) => (prefix ? '$' : '') + Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
   fmtFecha: (f: string) => {
     if (!f) return '-';
     const datePart = f.includes('T') ? f.split('T')[0] : f;

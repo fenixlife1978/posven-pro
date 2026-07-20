@@ -1,11 +1,11 @@
-"use client";
-
-import React, { useRef, useState } from 'react';
+import React, { useRef, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Printer, X, Zap, Share2, Monitor, Loader2 } from 'lucide-react';
+import { Printer, X, Zap, Share2, Monitor } from 'lucide-react';
 import { Store, Utils } from '@/lib/db-store';
 import { formatBs, formatUsd } from '@/lib/currency-formatter';
+import { auth } from '@/lib/firebase';
 
+// ✅ CORRECCIÓN: Agregar getAppVersion para que coincida con SalesModule
 declare global {
   interface Window {
     electronAPI?: {
@@ -18,25 +18,40 @@ declare global {
 interface Props {
   isOpen: boolean;
   onClose: () => void;
-  sale?: any; 
-  reportData?: any; 
+  saleData?: any;
+  reportData?: any;
   type?: 'SALE' | 'REPORT_X' | 'REPORT_Z';
+  storeInfo?: any;
 }
 
-export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' }: Props) {
+export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SALE', storeInfo }: Props) {
   const state = Store.get();
   const printRef = useRef<HTMLDivElement>(null);
-  const [isPrinting, setIsPrinting] = useState(false);
 
   const isReport = type === 'REPORT_X' || type === 'REPORT_Z';
-  const data = isReport ? reportData : sale;
+  const data = isReport ? reportData : saleData;
   
-  if (!data) return null;
+  if (!data) {
+    return null;
+  }
 
   const transactionDate = React.useMemo(() => {
     try {
-      const rawDate = data.fecha || data.date || Utils.ahora();
+      const rawDate = data.fecha || data.date || data.createdAt || Utils.ahora();
       const dateObj = new Date(rawDate);
+      
+      if (isNaN(dateObj.getTime())) {
+        return new Date().toLocaleString('es-VE', { 
+          timeZone: 'America/Caracas',
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true 
+        });
+      }
+      
       return dateObj.toLocaleString('es-VE', {
         timeZone: 'America/Caracas',
         day: '2-digit',
@@ -44,138 +59,164 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
         year: 'numeric',
         hour: '2-digit',
         minute: '2-digit',
-        second: '2-digit',
         hour12: true
       });
     } catch (e) {
       return new Date().toLocaleString('es-VE', { timeZone: 'America/Caracas' });
     }
-  }, [data.fecha, data.date]);
+  }, [data.fecha, data.date, data.createdAt]);
 
-  const customerName = (data.cliente || 'CONSUMIDOR FINAL').toUpperCase();
-  const terminalIdLabel = (data.terminalName || 'SISTEMA GLOBAL').toUpperCase();
-  
+  const customerName = React.useMemo(() => {
+    if (data.cliente) return data.cliente.toUpperCase();
+    if (data.customer?.name) return data.customer.name.toUpperCase();
+    if (data.customerName) return data.customerName.toUpperCase();
+    return 'CONSUMIDOR FINAL';
+  }, [data.cliente, data.customer, data.customerName]);
+
   const getReportTitle = () => {
-    if (type === 'REPORT_Z') return `REPORTE Z - CIERRE DIARIO`;
-    if (type === 'REPORT_X') return `REPORTE X - LECTURA PARCIAL`;
-    return (data.type || 'RECIBO DE VENTA').toUpperCase();
+    if (type === 'REPORT_Z') return '*** REPORTE Z ***';
+    if (type === 'REPORT_X') return '*** REPORTE X - ARQUEO ***';
+    return data.type || 'RECIBO DE VENTA';
   };
 
-  /**
-   * Helper para Font A (42 chars) - Alineación estricta con espacios
-   */
-  const formatLine = (label: string, value: string, width = 42) => {
-    const cleanLabel = label.trim().toUpperCase();
-    const cleanValue = value.trim();
-    const spaces = width - cleanLabel.length - cleanValue.length;
-    return cleanLabel + (spaces > 0 ? ' '.repeat(spaces) : ' ') + cleanValue;
+  const getReportSubtitle = () => {
+    if (type === 'REPORT_Z') return '(CIERRE DIARIO)';
+    if (type === 'REPORT_X') return '(LECTURA PARCIAL)';
+    return '';
   };
 
-  const handleNativePrint = async () => {
-    if (isPrinting) return;
-    if (!window.electronAPI) {
-      handlePrint();
-      return;
-    }
+  const getItems = () => {
+    if (data.items) return data.items;
+    if (data.products) return data.products;
+    if (data.detalles) return data.detalles;
+    return [];
+  };
 
-    setIsPrinting(true);
-    const SEPARATOR = '------------------------------------------'; // 42 chars
-    
-    let printData: any[] = [
-      { type: 'text', value: state.empresa.nombre.toUpperCase(), style: { fontWeight: "800", textAlign: 'center', fontSize: "20px" } },
-      { type: 'text', value: state.empresa.direccion.toUpperCase(), style: { textAlign: 'center', fontSize: "11px" } },
-      { type: 'text', value: `RIF: ${state.empresa.rif} | TEL: ${state.empresa.telefono}`, style: { textAlign: 'center', fontSize: "11px" } },
-      { type: 'text', value: SEPARATOR, style: { textAlign: 'center' } }
-    ];
-
+  const receiptNumber = React.useMemo(() => {
     if (isReport) {
-      printData.push({ type: 'text', value: getReportTitle(), style: { textAlign: 'center', fontWeight: "800", fontSize: "16px" } });
-      printData.push({ type: 'text', value: `TERMINAL: ${terminalIdLabel}`, style: { textAlign: 'center', fontWeight: "700", fontSize: "12px" } });
-      printData.push({ type: 'text', value: `FECHA/HORA: ${transactionDate}`, style: { fontSize: "11px", textAlign: 'center' } });
-      printData.push({ type: 'text', value: SEPARATOR, style: { textAlign: 'center' } });
-      
-      if (type === 'REPORT_Z') {
-        printData.push({ type: 'text', value: 'DATOS DE CONTROL', style: { textAlign: 'center', fontWeight: "800" } });
-        printData.push({ type: 'text', value: formatLine('REPORTE Z N°', String(data.numeroZ || 0).padStart(6, '0')), style: { fontSize: "11px" } });
-        printData.push({ type: 'text', value: formatLine('RANGO FACT', `${data.desdeFactura}-${data.hastaFactura}`), style: { fontSize: "10px" } });
-        printData.push({ type: 'text', value: SEPARATOR, style: { textAlign: 'center' } });
-      }
-
-      printData.push({ type: 'text', value: 'RESUMEN FACTURACION', style: { textAlign: 'center', fontWeight: "800" } });
-      printData.push({ type: 'text', value: formatLine('VENTA BRUTA', formatBs(data.brUSD * state.tasa).replace('Bs. ', 'Bs.')), style: { fontSize: "11px" } });
-      printData.push({ type: 'text', value: formatLine('DESCUENTOS', '-' + formatBs(data.descUSD * state.tasa).replace('Bs. ', 'Bs.')), style: { fontSize: "11px" } });
-      printData.push({ type: 'text', value: formatLine('DEVOLUCIONES', '-' + formatBs(data.devUSD * state.tasa).replace('Bs. ', 'Bs.')), style: { fontSize: "11px" } });
-      printData.push({ type: 'text', value: formatLine('VENTA NETA', formatBs(data.netUSD * state.tasa).replace('Bs. ', 'Bs.')), style: { fontSize: "12px", fontWeight: "700" } });
-      
-      printData.push({ type: 'text', value: SEPARATOR, style: { textAlign: 'center' } });
-      printData.push({ type: 'text', value: 'DESGLOSE FISCAL', style: { textAlign: 'center', fontWeight: "800" } });
-      printData.push({ type: 'text', value: formatLine('MONTO EXENTO', formatBs((data.exentoUSD || 0) * state.tasa).replace('Bs. ', 'Bs.')), style: { fontSize: "11px" } });
-      printData.push({ type: 'text', value: formatLine('BASE IMPONIBLE', formatBs((data.baseImponibleUSD || 0) * state.tasa).replace('Bs. ', 'Bs.')), style: { fontSize: "11px" } });
-      printData.push({ type: 'text', value: formatLine('IVA RECAUDADO', formatBs((data.ivaUSD || 0) * state.tasa).replace('Bs. ', 'Bs.')), style: { fontSize: "11px" } });
-      printData.push({ type: 'text', value: formatLine('TOTAL IGTF', formatBs((data.igtfUSD || 0) * state.tasa).replace('Bs. ', 'Bs.')), style: { fontSize: "11px" } });
-
-      printData.push({ type: 'text', value: SEPARATOR, style: { textAlign: 'center' } });
-      printData.push({ type: 'text', value: 'CONCILIACION PAGOS', style: { textAlign: 'center', fontWeight: "800" } });
-      Object.entries(data.paymentMethods || {}).forEach(([method, val]) => {
-        printData.push({ type: 'text', value: formatLine(Utils.metodoLabel(method), formatBs((val as number) * state.tasa).replace('Bs. ', 'Bs.')), style: { fontSize: "11px" } });
-      });
-      printData.push({ type: 'text', value: formatLine('SALIDAS CAJA', '-' + formatBs((data.manualSalidas || 0) * state.tasa).replace('Bs. ', 'Bs.')), style: { fontSize: "11px" } });
-      
-      if (type === 'REPORT_Z') {
-        printData.push({ type: 'text', value: SEPARATOR, style: { textAlign: 'center' } });
-        printData.push({ type: 'text', value: formatLine('GRAN TOTAL (BS)', formatBs(data.acumuladoHistoricoUSD * state.tasa).replace('Bs. ', 'Bs.')), style: { fontSize: "12px", fontWeight: "800" } });
-      }
-
-    } else {
-      printData.push({ type: 'text', value: getReportTitle(), style: { textAlign: 'center', fontWeight: "800", fontSize: "16px" } });
-      printData.push({ type: 'text', value: formatLine('N° CONTROL', data.id), style: { fontSize: "11px", fontWeight: "700" } });
-      printData.push({ type: 'text', value: `FECHA/HORA: ${transactionDate}`, style: { fontSize: "10px" } });
-      printData.push({ type: 'text', value: `CLIENTE: ${customerName}`, style: { fontSize: "10px" } });
-      printData.push({ type: 'text', value: SEPARATOR, style: { textAlign: 'center' } });
-
-      data.items.forEach((item: any) => {
-        const qty = item.cantidad || item.qty;
-        const name = (item.nombre || item.name).toUpperCase().slice(0, 30);
-        const totalLine = formatBs((item.subtotalUSD || (item.price * item.qty)) * state.tasa).replace('Bs. ', 'Bs.');
-        printData.push({ type: 'text', value: `${qty}x ${name}`, style: { fontWeight: "700", fontSize: "11px" } });
-        printData.push({ type: 'text', value: formatLine('', totalLine), style: { fontSize: "10px" } });
-      });
-
-      printData.push({ type: 'text', value: SEPARATOR, style: { textAlign: 'center' } });
-      printData.push({ type: 'text', value: formatLine('TOTAL A PAGAR', formatBs(data.totalBS).replace('Bs. ', 'Bs.')), style: { fontWeight: "800", fontSize: "18px" } });
-      printData.push({ type: 'text', value: formatLine('REF. USD', formatUsd(data.totalUSD)), style: { fontSize: "12px", fontWeight: "700" } });
+      if (type === 'REPORT_Z') return `Z-${String(data.numeroZ || 0).padStart(6, '0')}`;
+      return String(data.numeroX || data.numeroZ || 0).padStart(6, '0');
     }
+    if (data.id) return String(data.id);
+    if (data.numero) return String(data.numero);
+    if (data.controlNumber) return String(data.controlNumber);
+    return 'N/A';
+  }, [data.id, data.numero, data.controlNumber, data.numeroZ, data.numeroX, isReport, type]);
 
-    printData.push({ type: 'text', value: SEPARATOR, style: { textAlign: 'center' } });
-    printData.push({ type: 'text', value: '¡Gracias por su preferencia!', style: { textAlign: 'center', fontSize: "10px" } });
-    printData.push({ type: 'text', value: 'PosVEN Pro v2.5 - Font A (42c)\n\n\n', style: { textAlign: 'center', fontSize: "8px" } });
+  const terminalId = React.useMemo(() => {
+    if (data.terminalName) return String(data.terminalName);
+    if (data.caja) return String(data.caja);
+    if (data.terminal) return String(data.terminal);
+    if (data.terminalId) return String(data.terminalId);
+    return 'CAJA-01';
+  }, [data.terminalName, data.caja, data.terminal, data.terminalId]);
 
-    try {
-      await window.electronAPI.printTicket(printData);
-      setTimeout(() => {
-        setIsPrinting(false);
-        onClose();
-      }, 500);
-    } catch (e) {
-      handlePrint();
+  const cajeroNombre = React.useMemo(() => {
+    if (data.cajeroNombre) return data.cajeroNombre;
+    if (data.cajero) return data.cajero;
+    if (data.cashier) return data.cashier;
+    if (state.user) {
+      return state.user.nombre || state.user.email || 'Administrador';
     }
+    const currentUser = auth.currentUser;
+    if (currentUser) {
+      return currentUser.displayName || currentUser.email || 'Administrador';
+    }
+    return 'Administrador';
+  }, [data.cajeroNombre, data.cajero, data.cashier, state.user]);
+
+  const totalBs = React.useMemo(() => {
+    if (data.totalBS) return data.totalBS;
+    if (data.totalBs) return data.totalBs;
+    if (data.total) return data.total;
+    if (data.ventaNetaUSD) return data.ventaNetaUSD * state.tasa;
+    return 0;
+  }, [data.totalBS, data.totalBs, data.total, data.ventaNetaUSD, state.tasa]);
+
+  const totalUsd = React.useMemo(() => {
+    if (data.totalUSD) return data.totalUSD;
+    if (data.totalUsd) return data.totalUsd;
+    if (data.total) return data.total / (state.tasa || 1);
+    if (data.ventaNetaUSD) return data.ventaNetaUSD;
+    return 0;
+  }, [data.totalUSD, data.totalUsd, data.total, data.ventaNetaUSD, state.tasa]);
+
+  const montoExento = React.useMemo(() => {
+    if (data.exentoUSD) return data.exentoUSD;
+    if (data.exento) return data.exento;
+    return 0;
+  }, [data.exentoUSD, data.exento]);
+
+  const baseImponible = React.useMemo(() => {
+    if (data.baseImponibleUSD) return data.baseImponibleUSD;
+    if (data.baseImponible) return data.baseImponible;
+    if (data.baseGeneral) return data.baseGeneral;
+    return 0;
+  }, [data.baseImponibleUSD, data.baseImponible, data.baseGeneral]);
+
+  const iva = React.useMemo(() => {
+    if (data.ivaUSD) return data.ivaUSD;
+    if (data.iva) return data.iva;
+    if (data.ivaGeneral) return data.ivaGeneral;
+    return 0;
+  }, [data.ivaUSD, data.iva, data.ivaGeneral]);
+
+  const igtf = React.useMemo(() => {
+    if (data.igtfUSD) return data.igtfUSD;
+    if (data.igtf) return data.igtf;
+    return 0;
+  }, [data.igtfUSD, data.igtf]);
+
+  const getPaymentMethods = () => {
+    if (data.payments && Array.isArray(data.payments) && data.payments.length > 0) {
+      return data.payments;
+    }
+    if (data.paymentMethods && typeof data.paymentMethods === 'object') {
+      return data.paymentMethods;
+    }
+    if (data.formasPago && typeof data.formasPago === 'object') {
+      return data.formasPago;
+    }
+    if (data.metodosPago && typeof data.metodosPago === 'object') {
+      return data.metodosPago;
+    }
+    if (data.metodoPago) {
+      return { [data.metodoPago]: data.totalUSD || totalUsd };
+    }
+    return {};
+  };
+
+  const formatPaymentMethod = (method: string) => {
+    const methods: {[key: string]: string} = {
+      'efectivo': 'EFECTIVO',
+      'efectivo_bs': 'EFECTIVO (Bs.)',
+      'efectivo_usd': 'EFECTIVO (USD)',
+      'pago_movil': 'PAGO MÓVIL',
+      'pagomovil': 'PAGO MÓVIL',
+      'punto_venta': 'PUNTO DE VENTA',
+      'punto_de_venta': 'PUNTO DE VENTA',
+      'tarjeta': 'TARJETA',
+      'tarjeta_credito': 'TARJETA CRÉDITO',
+      'tarjeta_debito': 'TARJETA DÉBITO',
+      'credito': 'CRÉDITO',
+      'zelle': 'ZELLE',
+      'mixto': 'MIXTO',
+      'biopago': 'BIOPAGO',
+    };
+    return methods[method.toLowerCase()] || method.toUpperCase();
+  };
+
+  const isUsdPayment = (method: string) => {
+    const usdMethods = ['efectivo_usd', 'efectivo usd', 'usd', 'dolar', 'zelle'];
+    return usdMethods.some(m => method.toLowerCase().includes(m));
   };
 
   const handlePrint = () => {
-    if (isPrinting) return;
-    setIsPrinting(true);
-    
     const printContent = printRef.current?.innerHTML;
-    if (!printContent) {
-      setIsPrinting(false);
-      return;
-    }
+    if (!printContent) return;
 
     const printWindow = window.open('', '_blank');
-    if (!printWindow) {
-      setIsPrinting(false);
-      return;
-    }
+    if (!printWindow) return;
 
     printWindow.document.write(`
       <html>
@@ -186,25 +227,25 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
             @page { size: 80mm auto; margin: 0; }
             body {
               font-family: 'Courier New', Courier, monospace;
-              width: 80mm;
-              margin: 0;
+              width: 72mm;
+              margin: 0 auto;
               padding: 4mm;
-              font-size: 12px;
+              font-size: 11px;
               color: #000;
               background: #fff;
-              line-height: 1.2;
-              letter-spacing: 0;
+              line-height: 1.5;
             }
-            table { width: 100%; border-collapse: collapse; margin-bottom: 2px; }
-            td { vertical-align: top; padding: 1px 0; }
-            .text-left { text-align: left; }
-            .text-right { text-align: right; }
             .text-center { text-align: center; }
+            .text-right { text-align: right; }
+            .text-left { text-align: left; }
             .bold { font-weight: bold; }
-            .separator { border-top: 1px dashed #000; margin: 4px 0; }
-            .header-title { font-size: 20px; font-weight: bold; margin-bottom: 4px; }
-            .section-title { font-size: 14px; font-weight: bold; text-align: center; margin: 5px 0; }
-            .total-line { font-size: 18px; font-weight: bold; }
+            .section-title { font-weight: bold; text-align: center; font-size: 12px; margin: 8px 0 4px 0; }
+            .separator-dashed { border-top: 1px dashed #000; margin: 6px 0; }
+            .separator-solid { border-top: 1px solid #000; margin: 6px 0; }
+            .value { font-weight: bold; text-align: right; }
+            .label { text-align: left; }
+            .spacer { height: 4px; }
+            .line-item { display: flex; justify-content: space-between; width: 100%; padding: 1px 0; }
           </style>
         </head>
         <body>
@@ -215,191 +256,556 @@ export function ReceiptModal({ isOpen, onClose, sale, reportData, type = 'SALE' 
               window.onafterprint = function() { window.close(); };
               setTimeout(function() { window.close(); }, 1500);
             };
-          </script>
+          <\/script>
         </body>
       </html>
     `);
     printWindow.document.close();
-    setTimeout(() => {
-      setIsPrinting(false);
-      onClose();
-    }, 1000);
+    setTimeout(onClose, 1000);
+  };
+
+  const handleNativePrint = async () => {
+    if (!window.electronAPI) {
+      handlePrint();
+      return;
+    }
+
+    try {
+      const printContent = printRef.current?.innerHTML;
+      if (!printContent) {
+        handlePrint();
+        return;
+      }
+
+      const fullHtml = `
+        <html>
+          <head>
+            <meta charset="UTF-8">
+            <title>Impresion_PosVEN_Pro</title>
+            <style>
+              @page { size: 80mm auto; margin: 0; }
+              body {
+                font-family: 'Courier New', Courier, monospace;
+                width: 72mm;
+                margin: 0 auto;
+                padding: 4mm;
+                font-size: 11px;
+                color: #000;
+                background: #fff;
+                line-height: 1.5;
+              }
+              .text-center { text-align: center; }
+              .text-right { text-align: right; }
+              .text-left { text-align: left; }
+              .bold { font-weight: bold; }
+              .section-title { font-weight: bold; text-align: center; font-size: 12px; margin: 8px 0 4px 0; }
+              .separator-dashed { border-top: 1px dashed #000; margin: 6px 0; }
+              .separator-solid { border-top: 1px solid #000; margin: 6px 0; }
+              .value { font-weight: bold; text-align: right; }
+              .label { text-align: left; }
+              .spacer { height: 4px; }
+              .line-item { display: flex; justify-content: space-between; width: 100%; padding: 1px 0; }
+            </style>
+          </head>
+          <body>
+            ${printContent}
+          </body>
+        </html>
+      `;
+
+      await window.electronAPI.printTicket([
+        { type: 'html', value: fullHtml }
+      ]);
+      setTimeout(onClose, 500);
+    } catch (e) {
+      console.error('Error en impresión nativa:', e);
+      handlePrint();
+    }
   };
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[460px] p-0 bg-transparent border-none overflow-hidden shadow-none">
-        <DialogHeader className="sr-only"><DialogTitle>Impresión Font A 42c</DialogTitle></DialogHeader>
+      <DialogContent className="sm:max-w-[440px] p-0 bg-transparent border-none overflow-hidden shadow-none">
+        <DialogHeader className="sr-only"><DialogTitle>Impresión Térmica 80mm</DialogTitle></DialogHeader>
 
         <div className="bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col border border-gray-200">
           <div className="bg-black p-4 flex justify-between items-center">
             <h3 className="text-white font-black text-xs flex items-center gap-2 tracking-widest uppercase">
-              <Printer size={16} className="text-brand-gold" /> OPTIMIZADO FONT A (42c)
+              <Printer size={16} className="text-brand-gold" /> VISTA PREVIA FISCAL
             </h3>
             <button onClick={onClose} className="text-white/40 hover:text-white transition-colors"><X size={20} /></button>
           </div>
 
-          <div className="p-6 bg-gray-100 flex justify-center max-h-[65vh] overflow-y-auto custom-scrollbar">
+          <div className="p-6 bg-gray-100 flex justify-center max-h-[70vh] overflow-y-auto custom-scrollbar">
             <div 
               ref={printRef}
               className="thermal-80mm bg-white p-6 shadow-sm text-black font-mono select-none"
-              style={{ width: '100%', maxWidth: '80mm', color: '#000', fontSize: '12px', lineHeight: '1.2' }}
+              style={{ width: '72mm', boxSizing: 'border-box', color: '#000', fontSize: '11px', lineHeight: '1.5' }}
             >
-              {/* Encabezado Fiscal */}
-              <div className="text-center mb-4">
-                <div className="text-[20px] font-bold uppercase leading-tight">{state.empresa.nombre}</div>
-                <div className="text-[10px] uppercase">{state.empresa.direccion}</div>
-                <div className="text-[11px] font-bold uppercase">RIF: {state.empresa.rif} | TEL: {state.empresa.telefono}</div>
-              </div>
-
-              <div className="separator" />
-
-              {/* Título de Documento */}
-              <div className="text-center mb-3">
-                <div className="text-[14px] font-bold uppercase">{getReportTitle()}</div>
-                {isReport && (
-                  <div className="text-[11px] font-bold uppercase">TERMINAL: {terminalIdLabel}</div>
-                )}
-                <div className="text-[11px] uppercase">EMISION: {transactionDate}</div>
-              </div>
-
-              {isReport && type === 'REPORT_Z' && (
-                <div className="mb-4">
-                  <div className="text-center font-bold text-[11px] mb-1">AUDITORIA DE CONTROL</div>
-                  <table style={{ width: '100%' }}>
-                    <tbody>
-                      <tr><td className="text-left uppercase">REPORTE Z N:</td><td className="text-right font-bold">{String(data.numeroZ || 0).padStart(6, '0')}</td></tr>
-                      <tr><td className="text-left uppercase">RANGO FACT:</td><td className="text-right">{data.desdeFactura}-{data.hastaFactura}</td></tr>
-                      <tr><td className="text-left uppercase">RANGO NC:</td><td className="text-right">{data.desdeNC}-{data.hastaNC}</td></tr>
-                    </tbody>
-                  </table>
+              {/* ========================================== */}
+              {/* ENCABEZADO */}
+              {/* ========================================== */}
+              <div className="text-center pb-1">
+                <div className="text-[20px] font-bold uppercase leading-tight" style={{ fontFamily: 'Courier New, Courier, monospace' }}>
+                  {state.empresa.nombre || 'EFAS SOLUCIONES DIGITALES C.A.'}
                 </div>
-              )}
+                {state.empresa.rif && (
+                  <div className="text-[11px] font-bold uppercase">RIF: {state.empresa.rif}</div>
+                )}
+                {state.empresa.direccion && (
+                  <div className="text-[10px] leading-snug uppercase">{state.empresa.direccion}</div>
+                )}
+                {state.empresa.telefono && (
+                  <div className="text-[10px]">Tel: {state.empresa.telefono}</div>
+                )}
+              </div>
 
-              <div className="separator" />
+              <div className="spacer"></div>
 
-              {isReport ? (
-                <div className="space-y-4">
-                  {/* Resumen de Facturación */}
-                  <div>
-                    <div className="text-center font-bold text-[11px] mb-1">RESUMEN FACTURACION</div>
-                    <table style={{ width: '100%' }}>
-                      <tbody>
-                        <tr><td className="text-left uppercase">VENTA BRUTA</td><td className="text-right">{formatBs(data.brUSD * state.tasa).replace('Bs. ', 'Bs.')}</td></tr>
-                        <tr><td className="text-left uppercase">DESCUENTOS</td><td className="text-right">-{formatBs(data.descUSD * state.tasa).replace('Bs. ', 'Bs.')}</td></tr>
-                        <tr><td className="text-left uppercase">DEVOLUCIONES</td><td className="text-right">-{formatBs(data.devUSD * state.tasa).replace('Bs. ', 'Bs.')}</td></tr>
-                        <tr className="bold"><td className="text-left uppercase">VENTA NETA</td><td className="text-right">{formatBs(data.netUSD * state.tasa).replace('Bs. ', 'Bs.')}</td></tr>
-                      </tbody>
-                    </table>
-                  </div>
+              {/* ========================================== */}
+              {/* TÍTULO */}
+              {/* ========================================== */}
+              <div className="text-center">
+                <div className="text-[16px] font-bold uppercase">{getReportTitle()}</div>
+                {isReport && <div className="text-[12px] font-bold">{getReportSubtitle()}</div>}
+              </div>
 
-                  {/* Desglose Fiscal */}
-                  <div>
-                    <div className="text-center font-bold text-[11px] mb-1">DESGLOSE FISCAL</div>
-                    <table style={{ width: '100%' }}>
-                      <tbody>
-                        <tr><td className="text-left uppercase">MONTO EXENTO</td><td className="text-right">{formatBs((data.exentoUSD || 0) * state.tasa).replace('Bs. ', 'Bs.')}</td></tr>
-                        <tr><td className="text-left uppercase">BASE IMPONIBLE</td><td className="text-right">{formatBs((data.baseImponibleUSD || 0) * state.tasa).replace('Bs. ', 'Bs.')}</td></tr>
-                        <tr><td className="text-left uppercase">IVA (16%)</td><td className="text-right">{formatBs((data.ivaUSD || 0) * state.tasa).replace('Bs. ', 'Bs.')}</td></tr>
-                        <tr><td className="text-left uppercase">IGTF (3%)</td><td className="text-right">{formatBs((data.igtfUSD || 0) * state.tasa).replace('Bs. ', 'Bs.')}</td></tr>
-                      </tbody>
-                    </table>
-                  </div>
+              <div className="spacer"></div>
+              <div className="separator-dashed"></div>
+              <div className="spacer"></div>
 
-                  {/* Conciliación */}
-                  <div>
-                    <div className="text-center font-bold text-[11px] mb-1">CONCILIACION CAJA</div>
-                    <table style={{ width: '100%' }}>
-                      <tbody>
-                        {Object.entries(data.paymentMethods || {}).map(([method, val]) => (
-                          <tr key={method}>
-                            <td className="text-left uppercase">{Utils.metodoLabel(method)}</td>
-                            <td className="text-right">{formatBs((val as number) * state.tasa).replace('Bs. ', 'Bs.')}</td>
-                          </tr>
-                        ))}
-                        <tr><td className="text-left uppercase">SALIDAS/GASTOS</td><td className="text-right">-{formatBs((data.manualSalidas || 0) * state.tasa).replace('Bs. ', 'Bs.')}</td></tr>
-                      </tbody>
-                    </table>
-                  </div>
-
-                  {type === 'REPORT_Z' && (
-                    <div className="pt-2">
-                       <table style={{ width: '100%' }}>
-                        <tbody>
-                          <tr className="bold" style={{ fontSize: '13px' }}><td className="text-left uppercase">GRAN TOTAL BS</td><td className="text-right">{formatBs(data.acumuladoHistoricoUSD * state.tasa).replace('Bs. ', 'Bs.')}</td></tr>
-                        </tbody>
-                       </table>
+              {/* ========================================== */}
+              {/* INFORMACIÓN DEL DOCUMENTO */}
+              {/* ========================================== */}
+              <div className="text-[10px] font-bold space-y-1">
+                {isReport ? (
+                  <>
+                    <div className="line-item">
+                      <span className="label">FECHA: {transactionDate.split(',')[0] || '19/07/2026'}</span>
+                      <span className="value">HORA: {transactionDate.split(',')[1]?.trim() || '08:52 AM'}</span>
                     </div>
+                    <div className="line-item">
+                      <span className="label">Nº REPORTE {type === 'REPORT_Z' ? 'Z' : 'X'}: {receiptNumber}</span>
+                      <span className="value">CAJA: {terminalId}</span>
+                    </div>
+                    <div className="line-item">
+                      <span className="label">CAJERO: {cajeroNombre}</span>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="line-item">
+                      <span className="label">RECIBO DE VENTA: {receiptNumber}</span>
+                    </div>
+                    <div className="line-item">
+                      <span className="label">FECHA: {transactionDate.split(',')[0] || '19/07/2026'}</span>
+                      <span className="value">HORA: {transactionDate.split(',')[1]?.trim() || '10:30 AM'}</span>
+                    </div>
+                    <div className="line-item">
+                      <span className="label">CAJA: {terminalId}</span>
+                      <span className="value">CAJERO: {cajeroNombre}</span>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <div className="spacer"></div>
+              <div className="separator-dashed"></div>
+              <div className="spacer"></div>
+
+              {/* ========================================== */}
+              {/* CONTENIDO DEL REPORTE */}
+              {/* ========================================== */}
+              {isReport && (
+                <div>
+                  {/* CONTROL DE DOCUMENTOS - Solo REPORTE Z */}
+                  {type === 'REPORT_Z' && (
+                    <>
+                      <div className="section-title">CONTROL DE DOCUMENTOS</div>
+                      <div className="separator-dashed"></div>
+                      <div className="font-bold">FACTURAS EMITIDAS:</div>
+                      <div className="line-item">
+                        <span className="label">DESDE: {data.desdeFactura || 'N/A'}</span>
+                        <span className="value">HASTA: {data.hastaFactura || 'N/A'}</span>
+                      </div>
+                      <div className="line-item">
+                        <span className="label">TOTAL FACTURAS:</span>
+                        <span className="value">{String(data.stats?.facturas || 0).padStart(6, ' ')}</span>
+                      </div>
+                      <div className="mt-2 font-bold">NOTAS DE CRÉDITO EMITIDAS:</div>
+                      <div className="line-item">
+                        <span className="label">DESDE: {data.desdeNC || 'N/A'}</span>
+                        <span className="value">HASTA: {data.hastaNC || 'N/A'}</span>
+                      </div>
+                      <div className="line-item">
+                        <span className="label">TOTAL NOTAS CRÉDITO:</span>
+                        <span className="value">{String(data.stats?.devoluciones || 0).padStart(6, ' ')}</span>
+                      </div>
+                      <div className="line-item mt-1">
+                        <span className="label">CANT. DOCUMENTOS ANULADOS:</span>
+                        <span className="value">{String(data.stats?.anulaciones || 0).padStart(6, ' ')}</span>
+                      </div>
+                      <div className="separator-dashed"></div>
+                    </>
+                  )}
+
+                  {/* RESUMEN DE OPERACIONES */}
+                  <div className="section-title">RESUMEN DE OPERACIONES</div>
+                  <div className="separator-dashed"></div>
+                  <div className="line-item">
+                    <span className="label">VENTAS BRUTAS:</span>
+                    <span className="value">{formatBs(((data.ventaBrutaUSD || data.brUSD || 0) * state.tasa))}</span>
+                  </div>
+                  <div className="line-item">
+                    <span className="label">DESCUENTOS APLICADOS:</span>
+                    <span className="value">{formatBs(((data.descuentoUSD || data.descUSD || 0) * state.tasa))}</span>
+                  </div>
+                  <div className="line-item">
+                    <span className="label">DEVOLUCIONES (N. CRÉDITO):</span>
+                    <span className="value">{formatBs(((data.devolucionesUSD || data.devUSD || 0) * state.tasa))}</span>
+                  </div>
+                  <div className="separator-dashed"></div>
+                  <div className="line-item font-bold">
+                    <span className="label">VENTAS NETAS:</span>
+                    <span className="value">{formatBs(((data.ventaNetaUSD || data.netUSD || 0) * state.tasa))}</span>
+                  </div>
+                  <div className="separator-dashed"></div>
+
+                  {/* DESGLOSE DE IMPUESTOS */}
+                  <div className="section-title">DESGLOSE DE IMPUESTOS</div>
+                  <div className="separator-dashed"></div>
+                  <div className="line-item">
+                    <span className="label">VENTAS EXENTAS (E):</span>
+                    <span className="value">{formatBs(((data.exentoUSD || 0) * state.tasa))}</span>
+                  </div>
+                  <div className="line-item">
+                    <span className="label">BASE IMPONIBLE (G 16%):</span>
+                    <span className="value">{formatBs(((data.baseImponibleUSD || 0) * state.tasa))}</span>
+                  </div>
+                  <div className="line-item">
+                    <span className="label">IVA RECAUDADO (16%):</span>
+                    <span className="value">{formatBs(((data.ivaUSD || 0) * state.tasa))}</span>
+                  </div>
+                  <div className="line-item">
+                    <span className="label">RECAUDACIÓN IGTF (3%):</span>
+                    <span className="value">{formatBs(((data.igtfUSD || 0) * state.tasa))}</span>
+                  </div>
+                  <div className="separator-dashed"></div>
+
+                  {/* FORMAS DE PAGO */}
+                  <div className="section-title">FORMAS DE PAGO</div>
+                  <div className="separator-dashed"></div>
+                  {(() => {
+                    const paymentMethods = getPaymentMethods();
+                    if (Object.keys(paymentMethods).length > 0) {
+                      if (Array.isArray(paymentMethods)) {
+                        return paymentMethods.map((p: any, idx: number) => {
+                          const method = p.metodo || p.method || 'efectivo';
+                          const amount = p.montoUSD || p.amountUSD || p.monto || p.amount || 0;
+                          const isUsd = isUsdPayment(method);
+                          return (
+                            <div key={idx} className="line-item">
+                              <span className="label">{formatPaymentMethod(method)}:</span>
+                              <span className="value">{isUsd ? `$ ${formatUsd(amount)}` : formatBs(amount * state.tasa)}</span>
+                            </div>
+                          );
+                        });
+                      } else {
+                        return Object.entries(paymentMethods).map(([method, amount], idx) => {
+                          const amountNum = typeof amount === 'number' ? amount : 0;
+                          const isUsd = isUsdPayment(method);
+                          return (
+                            <div key={idx} className="line-item">
+                              <span className="label">{formatPaymentMethod(method)}:</span>
+                              <span className="value">{isUsd ? `$ ${formatUsd(amountNum)}` : formatBs(amountNum * state.tasa)}</span>
+                            </div>
+                          );
+                        });
+                      }
+                    }
+                    return null;
+                  })()}
+                  <div className="separator-dashed"></div>
+
+                  {/* MOVIMIENTO DE CAJA - CORREGIDO */}
+                  <div className="section-title">MOVIMIENTO DE CAJA</div>
+                  <div className="separator-dashed"></div>
+                  
+                  {(() => {
+                    const fondoAperturaUSD = data.fondoAperturaUSD || 0;
+                    
+                    // Calcular el total de efectivo en USD de los pagos
+                    let efectivoUsdPaymentAmount = 0;
+                    const paymentData = getPaymentMethods();
+                    if (paymentData && Object.keys(paymentData).length > 0) {
+                      if (Array.isArray(paymentData)) {
+                        paymentData.forEach((p: any) => {
+                          const method = p.metodo || p.method || 'efectivo';
+                          if (method === 'efectivo_usd') {
+                            efectivoUsdPaymentAmount += p.montoUSD || p.amountUSD || p.monto || p.amount || 0;
+                          }
+                        });
+                      } else {
+                        Object.entries(paymentData).forEach(([method, amount]) => {
+                          if (method === 'efectivo_usd') {
+                            efectivoUsdPaymentAmount += typeof amount === 'number' ? amount : 0;
+                          }
+                        });
+                      }
+                    } else if (data.metodoPago === 'efectivo_usd') {
+                      efectivoUsdPaymentAmount = data.totalUSD || totalUsd;
+                    }
+                    
+                    const efectivoEstimadoEnCajaUSD = fondoAperturaUSD + efectivoUsdPaymentAmount;
+                    const efectivoCajaBs = (data.efectivoRealCaja || data.efectivoEstimadoCaja || data.ventaNetaUSD || data.netUSD || 0) * state.tasa;
+                    
+                    return (
+                      <>
+                        <div className="line-item">
+                          <span className="label">FONDO DE APERTURA Bs.:</span>
+                          <span className="value">{formatBs(fondoAperturaUSD * state.tasa)}</span>
+                        </div>
+                        <div className="line-item">
+                          <span className="label">FONDO DE APERTURA USD:</span>
+                          <span className="value">${formatUsd(fondoAperturaUSD)}</span>
+                        </div>
+                        <div className="line-item">
+                          <span className="label">ENTRADAS DE EFECTIVO:</span>
+                          <span className="value">{formatBs(((data.entradasCajaUSD || data.manualEntradas || 0) * state.tasa))}</span>
+                        </div>
+                        <div className="line-item">
+                          <span className="label">SALIDAS DE EFECTIVO:</span>
+                          <span className="value">{formatBs(((data.salidasCajaUSD || data.manualSalidas || 0) * state.tasa))}</span>
+                        </div>
+                        <div className="separator-dashed"></div>
+                        <div className="line-item font-bold">
+                          <span className="label">{type === 'REPORT_Z' ? 'EFECTIVO REAL EN CAJA:' : 'EFECTIVO ESTIMADO EN CAJA:'}</span>
+                          <span className="value">{formatBs(efectivoCajaBs)}</span>
+                        </div>
+                        <div className="line-item font-bold">
+                          <span className="label">EFECTIVO ESTIMADO EN CAJA USD:</span>
+                          <span className="value">${formatUsd(efectivoEstimadoEnCajaUSD)}</span>
+                        </div>
+                      </>
+                    );
+                  })()}
+                  
+                  <div className="separator-dashed"></div>
+
+                  {/* ESTADÍSTICAS - Solo REPORTE X */}
+                  {type === 'REPORT_X' && (
+                    <>
+                      <div className="section-title">ESTADÍSTICAS DE VENTA</div>
+                      <div className="separator-dashed"></div>
+                      <div className="line-item">
+                        <span className="label">CANT. FACTURAS EMITIDAS:</span>
+                        <span className="value">{String(data.stats?.facturas || 0).padStart(6, ' ')}</span>
+                      </div>
+                      <div className="line-item">
+                        <span className="label">CANT. TRANSACCIONES ANULADAS:</span>
+                        <span className="value">{String(data.stats?.anulaciones || 0).padStart(6, ' ')}</span>
+                      </div>
+                      <div className="line-item">
+                        <span className="label">TICKET PROMEDIO:</span>
+                        <span className="value">{formatBs((data.stats?.ticketPromedio || 0) * state.tasa)}</span>
+                      </div>
+                      <div className="separator-dashed"></div>
+                    </>
+                  )}
+
+                  {/* TOTALES HISTÓRICOS - Solo REPORTE Z */}
+                  {type === 'REPORT_Z' && (
+                    <>
+                      <div className="section-title">TOTALES HISTÓRICOS</div>
+                      <div className="text-center text-[9px]">(ACUMULADO NO REINICIABLE)</div>
+                      <div className="separator-dashed"></div>
+                      <div className="line-item">
+                        <span className="label">GRAN TOTAL VENTAS:</span>
+                        <span className="value">{formatBs(((data.acumuladoHistoricoUSD || 0) * state.tasa))}</span>
+                      </div>
+                      <div className="line-item">
+                        <span className="label">GRAN TOTAL IVA:</span>
+                        <span className="value">{formatBs(((data.acumuladoIvaUSD || 0) * state.tasa))}</span>
+                      </div>
+                      <div className="separator-solid"></div>
+                      <div className="text-center font-bold text-[11px]">CIERRE DE JORNADA EXITOSO</div>
+                      <div className="separator-solid"></div>
+                    </>
+                  )}
+
+                  {/* PIE DE PÁGINA REPORTE X */}
+                  {type === 'REPORT_X' && (
+                    <>
+                      <div className="separator-solid"></div>
+                      <div className="text-center text-[10px]">DOCUMENTO NO VÁLIDO COMO</div>
+                      <div className="text-center text-[10px]">CIERRE FISCAL</div>
+                      <div className="separator-solid"></div>
+                    </>
                   )}
                 </div>
-              ) : (
-                <div>
-                  {/* Cuerpo de Recibo de Venta */}
-                  <table style={{ width: '100%' }}>
-                    <tbody>
-                      <tr><td className="text-left bold uppercase">N CONTROL:</td><td className="text-right bold">{data.id}</td></tr>
-                      <tr><td className="text-left uppercase">CLIENTE:</td><td className="text-right">{customerName}</td></tr>
-                    </tbody>
-                  </table>
-
-                  <div className="separator" />
-
-                  <table style={{ width: '100%' }}>
-                    <thead>
-                      <tr className="bold" style={{ fontSize: '11px' }}>
-                        <td className="text-left">CANT/DESCRIPCION</td>
-                        <td className="text-right">TOTAL BS</td>
-                      </tr>
-                    </thead>
-                    <tbody className="uppercase" style={{ fontSize: '11px' }}>
-                      {data.items.map((item: any, idx: number) => (
-                        <tr key={idx}>
-                          <td className="text-left" style={{ paddingBottom: '3px' }}>
-                            {item.cantidad || item.qty}x {(item.nombre || item.name).slice(0, 25)}
-                          </td>
-                          <td className="text-right bold">
-                            {formatBs((item.subtotalUSD || (item.price * item.qty)) * state.tasa).replace('Bs. ', 'Bs.')}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-
-                  <div className="separator" />
-
-                  <table style={{ width: '100%' }}>
-                    <tbody>
-                      <tr className="total-line">
-                        <td className="text-left uppercase">TOTAL PAGAR</td>
-                        <td className="text-right">{formatBs(data.totalBS).replace('Bs. ', 'Bs.')}</td>
-                      </tr>
-                      <tr className="bold" style={{ fontSize: '12px' }}>
-                        <td className="text-left uppercase">REF. DIVISA</td>
-                        <td className="text-right">{formatUsd(data.totalUSD)}</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
               )}
 
-              <div className="text-center mt-6 pt-4" style={{ borderTop: '1px dotted #000' }}>
-                <p className="bold uppercase mb-1">¡Gracias por su preferencia!</p>
-                <p className="opacity-60 text-[9px] uppercase">PosVEN Pro v2.5 - RC-8002 optimized</p>
+              {/* ========================================== */}
+              {/* RECIBO DE VENTA */}
+              {/* ========================================== */}
+              {!isReport && (
+                <>
+                  <div className="mb-3">
+                    <div className="text-[10px] font-bold mb-2">
+                      <div className="flex justify-between">
+                        <span className="w-8 text-left">CANT</span>
+                        <span className="flex-1 px-2 text-left">DESCRIPCIÓN</span>
+                        <span className="w-12 text-right">P.UNIT</span>
+                        <span className="w-12 text-right">TOTAL</span>
+                      </div>
+                    </div>
+                    <div className="separator-dashed"></div>
+
+                    {getItems().map((item: any, idx: number) => {
+                      const cantidad = item.cantidad || item.qty || 1;
+                      const nombre = (item.nombre || item.name || 'Producto').toUpperCase();
+                      const precioUnit = item.precioUnitUSD || item.precioUSD || item.price || 0;
+                      const subtotal = item.subtotalUSD || (precioUnit * cantidad);
+                      const alicuota = item.alicuota || item.ivaType || 'G';
+                      
+                      return (
+                        <div key={idx} className="text-[9px] mb-1">
+                          <div className="flex justify-between font-mono">
+                            <span className="w-8 text-left">{String(cantidad).padStart(2)}</span>
+                            <span className="flex-1 px-2 text-left">{nombre.substring(0, 30)}</span>
+                            <span className="w-12 text-right">${formatUsd(precioUnit)}</span>
+                            <span className="w-12 text-right font-bold">${formatUsd(subtotal)}</span>
+                          </div>
+                          <div className="text-right text-[8px] text-gray-600">({alicuota})</div>
+                        </div>
+                      );
+                    })}
+
+                    <div className="separator-solid"></div>
+                    <div className="line-item font-bold text-[11px]">
+                      <span className="label">SUBTOTAL:</span>
+                      <span className="value">${formatUsd(totalUsd)}</span>
+                    </div>
+                    {montoExento > 0 && (
+                      <div className="line-item text-[10px]">
+                        <span className="label">EXENTO:</span>
+                        <span className="value">${formatUsd(montoExento)}</span>
+                      </div>
+                    )}
+                    {baseImponible > 0 && (
+                      <>
+                        <div className="line-item text-[10px]">
+                          <span className="label">BASE IMPONIBLE (16%):</span>
+                          <span className="value">${formatUsd(baseImponible)}</span>
+                        </div>
+                        <div className="line-item text-[10px]">
+                          <span className="label">IVA (16%):</span>
+                          <span className="value">${formatUsd(iva)}</span>
+                        </div>
+                      </>
+                    )}
+                    {igtf > 0 && (
+                      <div className="line-item text-[10px]">
+                        <span className="label">IGTF (3%):</span>
+                        <span className="value">${formatUsd(igtf)}</span>
+                      </div>
+                    )}
+
+                    <div className="separator-solid"></div>
+                    <div className="line-item font-bold text-[14px]">
+                      <span className="label">TOTAL A PAGAR:</span>
+                      <span className="value">${formatUsd(totalUsd)}</span>
+                    </div>
+                    <div className="line-item text-[11px]">
+                      <span className="label">Total Bs:</span>
+                      <span className="value">{formatBs(totalBs)}</span>
+                    </div>
+
+                    <div className="separator-dashed"></div>
+                    <div className="font-bold text-[10px] mb-2">FORMA DE PAGO:</div>
+                    
+                    {(() => {
+                      const paymentData = getPaymentMethods();
+                      const hasPayments = paymentData && Object.keys(paymentData).length > 0;
+                      
+                      if (hasPayments) {
+                        if (Array.isArray(paymentData)) {
+                          return paymentData.map((p: any, idx: number) => {
+                            const method = p.metodo || p.method || 'efectivo';
+                            const amount = p.montoUSD || p.amountUSD || p.monto || p.amount || 0;
+                            const isUsd = isUsdPayment(method);
+                            return (
+                              <div key={idx} className="line-item text-[10px]">
+                                <span className="label">{formatPaymentMethod(method)}:</span>
+                                <span className="value">{isUsd ? `$${formatUsd(amount)}` : formatBs(amount * state.tasa)}</span>
+                              </div>
+                            );
+                          });
+                        } else {
+                          return Object.entries(paymentData).map(([method, amount], idx) => {
+                            const amountNum = typeof amount === 'number' ? amount : 0;
+                            const isUsd = isUsdPayment(method);
+                            return (
+                              <div key={idx} className="line-item text-[10px]">
+                                <span className="label">{formatPaymentMethod(method)}:</span>
+                                <span className="value">{isUsd ? `$${formatUsd(amountNum)}` : formatBs(amountNum * state.tasa)}</span>
+                              </div>
+                            );
+                          });
+                        }
+                      } else if (data.metodoPago) {
+                        const method = data.metodoPago;
+                        const amount = data.totalUSD || totalUsd;
+                        const isUsd = isUsdPayment(method);
+                        return (
+                          <div className="line-item text-[10px]">
+                            <span className="label">{formatPaymentMethod(method)}:</span>
+                            <span className="value">{isUsd ? `$${formatUsd(amount)}` : formatBs(amount * state.tasa)}</span>
+                          </div>
+                        );
+                      } else {
+                        return (
+                          <div className="line-item text-[10px]">
+                            <span className="label">EFECTIVO:</span>
+                            <span className="value">${formatUsd(totalUsd)}</span>
+                          </div>
+                        );
+                      }
+                    })()}
+
+                    {state.tasa && (
+                      <div className="text-[8px] text-gray-600 mt-1 text-center">
+                        (Tasa de cambio ref: 1 USD = Bs. {state.tasa.toFixed(2)})
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+
+              {/* ========================================== */}
+              {/* PIE DE PÁGINA */}
+              {/* ========================================== */}
+              <div className="text-center mt-4 pt-4 border-t border-dashed border-black/30">
+                {!isReport && (
+                  <div className="font-bold text-[11px] mb-1">¡Gracias por su preferencia!</div>
+                )}
+                <div className="opacity-60 text-[8px]">Generado por PosVEN pro v2.5.7</div>
               </div>
             </div>
           </div>
 
+          {/* ========================================== */}
+          {/* BOTONES DE ACCIÓN */}
+          {/* ========================================== */}
           <div className="p-4 bg-white border-t border-gray-100 flex flex-col gap-3">
             <div className="grid grid-cols-2 gap-3">
-              <button onClick={onClose} disabled={isPrinting} className="py-3 bg-[#E5E7EB] text-[#374151] font-black text-xs rounded-xl hover:bg-gray-300 transition-all uppercase tracking-widest disabled:opacity-50">Cerrar</button>
-              <button disabled={isPrinting} className="py-3 bg-[#2ECC71] text-white font-black text-xs rounded-xl hover:bg-green-600 flex items-center justify-center gap-2 uppercase tracking-widest shadow-sm disabled:opacity-50"><Share2 size={14} /> Compartir</button>
+              <button onClick={onClose} className="py-3 bg-[#E5E7EB] text-[#374151] font-black text-xs rounded-xl hover:bg-gray-300 transition-all uppercase tracking-widest">Cerrar</button>
+              <button className="py-3 bg-[#2ECC71] text-white font-black text-xs rounded-xl hover:bg-green-600 flex items-center justify-center gap-2 uppercase tracking-widest shadow-sm"><Share2 size={14} /> Compartir</button>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <button onClick={handlePrint} disabled={isPrinting} className="py-3 bg-black text-white font-black text-xs rounded-xl hover:opacity-90 flex items-center justify-center gap-2 uppercase tracking-widest shadow-md disabled:opacity-50">
-                {isPrinting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Printer size={14} />} Estándar
-              </button>
-              <button onClick={handleNativePrint} disabled={isPrinting} className="py-3 bg-[#C8952E] text-black font-black text-xs rounded-xl hover:bg-[#D9A540] transition-all flex items-center justify-center gap-2 uppercase tracking-widest shadow-lg disabled:opacity-50">
-                {isPrinting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap size={16} className="fill-current" />} Impresión Roccia
+              <button onClick={handlePrint} className="py-3 bg-black text-white font-black text-xs rounded-xl hover:opacity-90 flex items-center justify-center gap-2 uppercase tracking-widest shadow-md"><Printer size={14} /> Estándar</button>
+              <button onClick={handleNativePrint} className="py-3 bg-[#C8952E] text-black font-black text-xs rounded-xl hover:bg-[#D9A540] transition-all flex items-center justify-center gap-2 uppercase tracking-widest shadow-lg">
+                <Zap size={16} className="fill-current" /> Impresión Térmica
               </button>
             </div>
           </div>
