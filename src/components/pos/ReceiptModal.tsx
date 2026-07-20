@@ -5,7 +5,6 @@ import { Store, Utils } from '@/lib/db-store';
 import { formatBs, formatUsd } from '@/lib/currency-formatter';
 import { auth } from '@/lib/firebase';
 
-// ✅ CORRECCIÓN: Agregar getAppVersion para que coincida con SalesModule
 declare global {
   interface Window {
     electronAPI?: {
@@ -342,9 +341,6 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
               className="thermal-80mm bg-white p-6 shadow-sm text-black font-mono select-none"
               style={{ width: '72mm', boxSizing: 'border-box', color: '#000', fontSize: '11px', lineHeight: '1.5' }}
             >
-              {/* ========================================== */}
-              {/* ENCABEZADO */}
-              {/* ========================================== */}
               <div className="text-center pb-1">
                 <div className="text-[20px] font-bold uppercase leading-tight" style={{ fontFamily: 'Courier New, Courier, monospace' }}>
                   {state.empresa.nombre || 'EFAS SOLUCIONES DIGITALES C.A.'}
@@ -362,9 +358,6 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
 
               <div className="spacer"></div>
 
-              {/* ========================================== */}
-              {/* TÍTULO */}
-              {/* ========================================== */}
               <div className="text-center">
                 <div className="text-[16px] font-bold uppercase">{getReportTitle()}</div>
                 {isReport && <div className="text-[12px] font-bold">{getReportSubtitle()}</div>}
@@ -374,9 +367,6 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
               <div className="separator-dashed"></div>
               <div className="spacer"></div>
 
-              {/* ========================================== */}
-              {/* INFORMACIÓN DEL DOCUMENTO */}
-              {/* ========================================== */}
               <div className="text-[10px] font-bold space-y-1">
                 {isReport ? (
                   <>
@@ -413,12 +403,8 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
               <div className="separator-dashed"></div>
               <div className="spacer"></div>
 
-              {/* ========================================== */}
-              {/* CONTENIDO DEL REPORTE */}
-              {/* ========================================== */}
               {isReport && (
                 <div>
-                  {/* CONTROL DE DOCUMENTOS - Solo REPORTE Z */}
                   {type === 'REPORT_Z' && (
                     <>
                       <div className="section-title">CONTROL DE DOCUMENTOS</div>
@@ -449,7 +435,6 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
                     </>
                   )}
 
-                  {/* RESUMEN DE OPERACIONES */}
                   <div className="section-title">RESUMEN DE OPERACIONES</div>
                   <div className="separator-dashed"></div>
                   <div className="line-item">
@@ -471,7 +456,6 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
                   </div>
                   <div className="separator-dashed"></div>
 
-                  {/* DESGLOSE DE IMPUESTOS */}
                   <div className="section-title">DESGLOSE DE IMPUESTOS</div>
                   <div className="separator-dashed"></div>
                   <div className="line-item">
@@ -492,7 +476,6 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
                   </div>
                   <div className="separator-dashed"></div>
 
-                  {/* FORMAS DE PAGO */}
                   <div className="section-title">FORMAS DE PAGO</div>
                   <div className="separator-dashed"></div>
                   {(() => {
@@ -527,14 +510,12 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
                   })()}
                   <div className="separator-dashed"></div>
 
-                  {/* MOVIMIENTO DE CAJA - CORREGIDO */}
                   <div className="section-title">MOVIMIENTO DE CAJA</div>
                   <div className="separator-dashed"></div>
                   
                   {(() => {
                     const fondoAperturaUSD = data.fondoAperturaUSD || 0;
                     
-                    // Calcular el total de efectivo en USD de los pagos
                     let efectivoUsdPaymentAmount = 0;
                     const paymentData = getPaymentMethods();
                     if (paymentData && Object.keys(paymentData).length > 0) {
@@ -592,7 +573,6 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
                   
                   <div className="separator-dashed"></div>
 
-                  {/* ESTADÍSTICAS - Solo REPORTE X */}
                   {type === 'REPORT_X' && (
                     <>
                       <div className="section-title">ESTADÍSTICAS DE VENTA</div>
@@ -613,7 +593,6 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
                     </>
                   )}
 
-                  {/* TOTALES HISTÓRICOS - Solo REPORTE Z */}
                   {type === 'REPORT_Z' && (
                     <>
                       <div className="section-title">TOTALES HISTÓRICOS</div>
@@ -633,7 +612,6 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
                     </>
                   )}
 
-                  {/* PIE DE PÁGINA REPORTE X */}
                   {type === 'REPORT_X' && (
                     <>
                       <div className="separator-solid"></div>
@@ -645,9 +623,6 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
                 </div>
               )}
 
-              {/* ========================================== */}
-              {/* RECIBO DE VENTA */}
-              {/* ========================================== */}
               {!isReport && (
                 <>
                   <div className="mb-3">
@@ -782,9 +757,6 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
                 </>
               )}
 
-              {/* ========================================== */}
-              {/* PIE DE PÁGINA */}
-              {/* ========================================== */}
               <div className="text-center mt-4 pt-4 border-t border-dashed border-black/30">
                 {!isReport && (
                   <div className="font-bold text-[11px] mb-1">¡Gracias por su preferencia!</div>
@@ -794,9 +766,6 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
             </div>
           </div>
 
-          {/* ========================================== */}
-          {/* BOTONES DE ACCIÓN */}
-          {/* ========================================== */}
           <div className="p-4 bg-white border-t border-gray-100 flex flex-col gap-3">
             <div className="grid grid-cols-2 gap-3">
               <button onClick={onClose} className="py-3 bg-[#E5E7EB] text-[#374151] font-black text-xs rounded-xl hover:bg-gray-300 transition-all uppercase tracking-widest">Cerrar</button>

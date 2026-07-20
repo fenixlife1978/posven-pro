@@ -50,7 +50,6 @@ import { Utils, Store } from '@/lib/db-store';
 import ReturnsModule from '@/components/modules/ReturnsModule';
 import { cn } from '@/lib/utils';
 
-// ✅ CORRECCIÓN: Unificar la declaración de electronAPI
 declare global {
   interface Window {
     electronAPI?: {
@@ -553,7 +552,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
           </div>
 
           <div className="flex flex-1 gap-3 overflow-hidden">
-            <div className="w-1/4 flex flex-col gap-2">
+            <div className="w/1/4 flex flex-col gap-2">
               <div className="card p-3 space-y-3 bg-white border-line h-full flex flex-col">
                 <div className="form-group mb-0">
                   <label className="text-ink text-[10px] font-black uppercase block mb-1">IDENTIFICACIÓN CLIENTE</label>
@@ -740,7 +739,6 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         </div>
       )}
 
-      {/* ✅ CORRECCIÓN: Cambiar sale por saleData */}
       {showReceiptModal && (<ReceiptModal isOpen={showReceiptModal} onClose={() => { setShowReceiptModal(false); setLastProcessedSale(null); }} saleData={lastProcessedSale} type="SALE" />)}
       {showReportType && reportSnapshot && (<ReceiptModal isOpen={!!showReportType} onClose={() => { if (showReportType === 'REPORT_Z') ejecutarCierreZ(); setShowReportType(null); }} reportData={reportSnapshot} type={showReportType} />)}
       {showMultiModal && (<FloatingPaymentModal total={totalBS} totalCents={Math.round(totalBS * 100)} exchangeRate={state.tasa} onClose={() => setShowMultiModal(false)} onConfirm={(data) => { ejecutarVenta(data.payments.map(p => ({ metodo: p.method as PaymentMethod, montoUSD: p.usdAmount || (p.amount / state.tasa), montoBS: p.amount }))); setShowMultiModal(false); }} />)}
