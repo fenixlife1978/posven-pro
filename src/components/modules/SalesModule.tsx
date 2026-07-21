@@ -52,8 +52,8 @@ import { cn } from '@/lib/utils';
 
 declare global {
   interface Window {
-    electronAPI?: {
-      printTicket: (data: any) => Promise<void>;
+    electronAPI?: { 
+      printTicket: (data: any) => Promise<void>; 
       getAppVersion: () => Promise<string>;
     };
   }
@@ -126,13 +126,20 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     const igtfUSD = vActivas.reduce((s, v) => s + (v.igtfUSD || 0), 0);
 
     const paymentMethodsMap: Record<string, number> = {};
+    let vEfectivoBsBS = 0;
+    let vEfectivoUsdUSD = 0;
+
     vActivas.forEach(v => {
       if (v.payments && v.payments.length > 0) {
         v.payments.forEach(p => {
           paymentMethodsMap[p.metodo] = (paymentMethodsMap[p.metodo] || 0) + p.montoUSD;
+          if (p.metodo === 'efectivo_bs') vEfectivoBsBS += p.montoBS;
+          if (p.metodo === 'efectivo_usd') vEfectivoUsdUSD += p.montoUSD;
         });
       } else if (v.metodoPago) {
         paymentMethodsMap[v.metodoPago] = (paymentMethodsMap[v.metodoPago] || 0) + v.totalUSD;
+        if (v.metodoPago === 'efectivo_bs') vEfectivoBsBS += v.totalBS;
+        if (v.metodoPago === 'efectivo_usd') vEfectivoUsdUSD += v.totalUSD;
       }
     });
 
@@ -153,6 +160,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     return { 
       brUSD, devUSD, descUSD, netUSD, igtfUSD, ivaUSD, baseImponibleUSD, exentoUSD,
       paymentMethods: paymentMethodsMap,
+      ventasEfectivoBsBS: Utils.round(vEfectivoBsBS),
+      ventasEfectivoUsdUSD: Utils.round(vEfectivoUsdUSD),
       manualSalidas: totalSalidasCaja,
       manualEntradas: totalEntradasCaja,
       fondoAperturaUSD: state.fondoCajaHoyUSD || 0,
@@ -175,17 +184,44 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     const ahora = Utils.ahora();
     const numeroZ = state.ultimoZ + 1;
     const nuevoZ: ReportZ = {
-      id: 'Z-' + String(numeroZ).padStart(6, '0'), fecha: ahora, numeroZ, terminalName: data.terminalName,
-      desdeFactura: data.desdeFactura, hastaFactura: data.hastaFactura, desdeNotaCredito: data.desdeNC, hastaNotaCredito: data.hastaNC,
-      cantidadAnuladas: data.stats.anulaciones, ventaBrutaUSD: data.brUSD, descuentoUSD: data.descUSD, devolucionesUSD: data.devUSD,
-      ventaNetaUSD: data.netUSD, baseImponibleUSD: data.baseImponibleUSD, ivaUSD: data.ivaUSD, exentoUSD: data.exentoUSD,
-      igtfUSD: data.igtfUSD, metodosPago: { ...data.paymentMethods }, salidasCajaUSD: data.manualSalidas, entradasCajaUSD: data.manualEntradas,
-      fondoAperturaUSD: data.fondoAperturaUSD, fondoAperturaBS: data.fondoAperturaBS, acumuladoHistoricoUSD: data.acumuladoHistoricoUSD, stats: { ...data.stats }
+      id: 'Z-' + String(numeroZ).padStart(6, '0'), 
+      fecha: ahora, 
+      numeroZ, 
+      terminalName: data.terminalName,
+      desdeFactura: data.desdeFactura, 
+      hastaFactura: data.hastaFactura, 
+      desdeNotaCredito: data.desdeNC, 
+      hastaNotaCredito: data.hastaNC,
+      cantidadAnuladas: data.stats.anulaciones, 
+      ventaBrutaUSD: data.brUSD, 
+      descuentoUSD: data.descUSD, 
+      devolucionesUSD: data.devUSD,
+      ventaNetaUSD: data.netUSD, 
+      baseImponibleUSD: data.baseImponibleUSD, 
+      ivaUSD: data.ivaUSD, 
+      exentoUSD: data.exentoUSD,
+      igtfUSD: data.igtfUSD, 
+      metodosPago: { ...data.paymentMethods }, 
+      ventasEfectivoBsBS: data.ventasEfectivoBsBS,
+      ventasEfectivoUsdUSD: data.ventasEfectivoUsdUSD,
+      salidasCajaUSD: data.manualSalidas, 
+      entradasCajaUSD: data.manualEntradas,
+      fondoAperturaUSD: data.fondoAperturaUSD, 
+      fondoAperturaBS: data.fondoAperturaBS, 
+      acumuladoHistoricoUSD: data.acumuladoHistoricoUSD, 
+      stats: { ...data.stats }
     };
     
     if (typeof localStorage !== 'undefined') localStorage.removeItem('posven_apertura_done');
     
-    updateState({ reportesZ: [...(state.reportesZ || []), nuevoZ], ultimoZ: numeroZ, fechaUltimoZ: ahora, acumuladoHistorico: data.acumuladoHistoricoUSD, fondoCajaHoyBS: 0, fondoCajaHoyUSD: 0 });
+    updateState({ 
+      reportesZ: [...(state.reportesZ || []), nuevoZ], 
+      ultimoZ: numeroZ, 
+      fechaUltimoZ: ahora, 
+      acumuladoHistorico: data.acumuladoHistoricoUSD, 
+      fondoCajaHoyBS: 0, 
+      fondoCajaHoyUSD: 0 
+    });
     toast({ title: `Cierre Fiscal Z #${numeroZ} Exitoso` });
     setShowReportType(null);
   };
@@ -497,6 +533,10 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     }
   };
 
+  const handleBackToPOS = () => {
+    setView('pos');
+  };
+
   return (
     <div className="flex flex-col gap-2 h-[calc(100vh-100px)] max-w-7xl mx-auto w-full overflow-hidden">
       <div className="flex gap-2 no-print shrink-0 overflow-x-auto pb-1 items-center">
@@ -692,7 +732,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
           </div>
         </div>
       ) : (
-        <ReturnsModule state={state} updateState={updateState} onBackToPOS={() => setView('pos')} terminalId={currentTerminal?.id} />
+        <ReturnsModule state={state} updateState={updateState} onBackToPOS={handleBackToPOS} terminalId={currentTerminal?.id} />
       )}
 
       {priceSelectorItem && (
