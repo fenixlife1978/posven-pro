@@ -50,8 +50,6 @@ import { Utils, Store } from '@/lib/db-store';
 import ReturnsModule from '@/components/modules/ReturnsModule';
 import { cn } from '@/lib/utils';
 
-// ✅ ELIMINADO: El declare global ya está en ReceiptModal.tsx
-
 export default function SalesModule({ state, updateState }: { state: AppState, updateState: (s: Partial<AppState>) => void }) {
   const [search, setSearch] = useState('');
   const [view, setView] = useState<'pos' | 'history' | 'credits' | 'returns'>('pos');
@@ -119,13 +117,22 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     const igtfUSD = vActivas.reduce((s, v) => s + (v.igtfUSD || 0), 0);
 
     const paymentMethodsMap: Record<string, number> = {};
+    
+    // Cálculos exactos de ventas en efectivo por moneda
+    let totalVentasEfectivoBsBS = 0;
+    let totalVentasEfectivoUsdUSD = 0;
+
     vActivas.forEach(v => {
       if (v.payments && v.payments.length > 0) {
         v.payments.forEach(p => {
           paymentMethodsMap[p.metodo] = (paymentMethodsMap[p.metodo] || 0) + p.montoUSD;
+          if (p.metodo === 'efectivo_bs') totalVentasEfectivoBsBS += p.montoBS;
+          if (p.metodo === 'efectivo_usd') totalVentasEfectivoUsdUSD += p.montoUSD;
         });
       } else if (v.metodoPago) {
         paymentMethodsMap[v.metodoPago] = (paymentMethodsMap[v.metodoPago] || 0) + v.totalUSD;
+        if (v.metodoPago === 'efectivo_bs') totalVentasEfectivoBsBS += v.totalBS;
+        if (v.metodoPago === 'efectivo_usd') totalVentasEfectivoUsdUSD += v.totalUSD;
       }
     });
 
@@ -150,6 +157,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       manualEntradas: totalEntradasCaja,
       fondoAperturaUSD: state.fondoCajaHoyUSD || 0,
       fondoAperturaBS: state.fondoCajaHoyBS || 0,
+      ventasEfectivoBsBS: totalVentasEfectivoBsBS,
+      ventasEfectivoUsdUSD: totalVentasEfectivoUsdUSD,
       desdeFactura, hastaFactura, desdeNC, hastaNC,
       stats: { facturas: vActivas.length, devoluciones: dHoy.length, anulaciones: vAnuladas.length, ticketPromedio: vActivas.length > 0 ? (netUSD / vActivas.length) : 0 },
       fecha: Utils.ahora(), terminalName, terminalId: termId, numeroZ: state.ultimoZ + 1, acumuladoHistoricoUSD: state.acumuladoHistorico + netUSD
@@ -173,7 +182,10 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       cantidadAnuladas: data.stats.anulaciones, ventaBrutaUSD: data.brUSD, descuentoUSD: data.descUSD, devolucionesUSD: data.devUSD,
       ventaNetaUSD: data.netUSD, baseImponibleUSD: data.baseImponibleUSD, ivaUSD: data.ivaUSD, exentoUSD: data.exentoUSD,
       igtfUSD: data.igtfUSD, metodosPago: { ...data.paymentMethods }, salidasCajaUSD: data.manualSalidas, entradasCajaUSD: data.manualEntradas,
-      fondoAperturaUSD: data.fondoAperturaUSD, fondoAperturaBS: data.fondoAperturaBS, acumuladoHistoricoUSD: data.acumuladoHistoricoUSD, stats: { ...data.stats }
+      fondoAperturaUSD: data.fondoAperturaUSD, fondoAperturaBS: data.fondoAperturaBS, 
+      ventasEfectivoBsBS: data.ventasEfectivoBsBS, 
+      ventasEfectivoUsdUSD: data.ventasEfectivoUsdUSD,
+      acumuladoHistoricoUSD: data.acumuladoHistoricoUSD, stats: { ...data.stats }
     };
     
     if (typeof localStorage !== 'undefined') localStorage.removeItem('posven_apertura_done');
@@ -489,6 +501,18 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       setIsProcessing(false);
     }
   };
+
+  const historialUnificado = useMemo(() => {
+    const devs = (state.devoluciones || [])
+      .filter(d => !currentTerminal?.id || state.ventas.find(v => v.id === d.ventaId)?.terminalId === currentTerminal.id)
+      .map(d => ({ ...d, tipoOperacion: 'DEVOLUCIÓN' }));
+    
+    const anus = (state.anulaciones || [])
+      .filter(a => !currentTerminal?.id || state.ventas.find(v => v.id === a.ventaId)?.terminalId === currentTerminal.id)
+      .map(a => ({ ...a, tipoOperacion: 'ANULACIÓN', items: a.items || [] }));
+    
+    return [...devs, ...anus].sort((a, b) => b.fecha.localeCompare(a.fecha));
+  }, [state.devoluciones, state.anulaciones, state.ventas, currentTerminal]);
 
   return (
     <div className="flex flex-col gap-2 h-[calc(100vh-100px)] max-w-7xl mx-auto w-full overflow-hidden">
@@ -911,7 +935,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                         </div>
                       </div>
                     </div>
-                    <div className="space-y-1"><label className="text-[9px] font-black uppercase text-ink">Teléfono (XXXX-XXXXXXX)</label><input className="form-input h-9 text-xs font-black uppercase" value={newClient.phone} onChange={e => setNewClient({...newClient, phone: e.target.value})} placeholder="04XX-XXXXXXX" /></div>
+                    <div className="space-y-1"><label className="text-[9px] font-black uppercase text-ink">Teléfono (XXXX-XXXXXXX)</label><input className="form-input h-9 text-xs font-black uppercase" value={newClient.phone} onChange={e => setNewClient({...newClient, phone: e.target.value})} placeholder="0412-0000000" /></div>
                     <div className="space-y-1"><label className="text-[9px] font-black uppercase text-ink">Dirección</label><input className="form-input h-9 text-xs font-black uppercase" value={newClient.address} onChange={e => setNewClient({...newClient, address: e.target.value})} /></div>
                   </div>
                   <button className="btn btn-primary w-full h-12 font-black uppercase text-xs shadow-md" disabled={isProcessing} onClick={ejecutarVentaACredito}>{isProcessing ? <Loader2 className="w-4 h-4 animate-spin mr-2 inline" /> : null}Guardar y Cargar</button>
