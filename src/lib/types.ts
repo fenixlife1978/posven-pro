@@ -252,8 +252,6 @@ export interface ReportZ {
   entradasCajaUSD: number;
   fondoAperturaUSD: number;
   fondoAperturaBS: number;
-  ventasEfectivoBsBS: number;
-  ventasEfectivoUsdUSD: number;
   acumuladoHistoricoUSD: number;
   stats: {
     facturas: number;
@@ -297,6 +295,26 @@ export interface Config {
   igtfRate: number;
 }
 
+// ========== CASH SESSION ==========
+export interface CashSession {
+  openDate: string;
+  openAmount: number;
+  openAmountBs: number;
+  openAmountUsd: number;
+  openNotes?: string;
+  closeDate: string | null;
+  closeAmount: number | null;
+  closeAmountBs: number | null;
+  closeAmountUsd: number | null;
+  closeNotes?: string | null;
+  totalSales: number;
+  totalSalesBs: number;
+  totalSalesUsd: number;
+  totalCollections: number;
+  saleCount: number;
+  difference?: number;
+}
+
 // ========== APP STATE ACTUALIZADO ==========
 export interface AppState {
   user: User | null;
@@ -324,6 +342,12 @@ export interface AppState {
   fechaUltimoZ?: string;
   fondoCajaHoyUSD: number;
   fondoCajaHoyBS: number;
+  
+  // ========== PROPIEDADES PARA CASH MODULE ==========
+  isCashOpen: boolean;
+  cashData: CashSession | null;
+  cashHistory: CashSession[];
+  
   empresa: {
     nombre: string;
     rif: string;

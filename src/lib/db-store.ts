@@ -34,6 +34,12 @@ export const initialState: AppState = {
   fechaUltimoZ: '',
   fondoCajaHoyUSD: 0,
   fondoCajaHoyBS: 0,
+  
+  // ========== PROPIEDADES PARA CASH MODULE ==========
+  isCashOpen: false,
+  cashData: null,
+  cashHistory: [],
+  
   empresa: { 
     nombre: 'NOMBRE DE SU NEGOCIO', 
     rif: 'J-00000000-0', 
@@ -149,6 +155,11 @@ export const Store = {
       fechaUltimoZ: state.fechaUltimoZ || '',
       fondoCajaHoyUSD: state.fondoCajaHoyUSD || 0,
       fondoCajaHoyBS: state.fondoCajaHoyBS || 0,
+      
+      // ========== PROPIEDADES PARA CASH MODULE ==========
+      isCashOpen: state.isCashOpen || false,
+      cashData: state.cashData || null,
+      cashHistory: state.cashHistory || [],
       
       // ========== NUEVAS PROPIEDADES PARA ProductForm ==========
       config: state.config || initialState.config,

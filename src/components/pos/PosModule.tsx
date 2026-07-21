@@ -7,11 +7,21 @@ import { Input } from '@/components/ui/input';
 import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Store } from '@/lib/db-store';
-import { Product, CartItem, Sale, PaymentMethod } from '@/lib/types';
+import { Product, SaleItem, Sale, PaymentMethod } from '@/lib/types';
 import { toast } from '@/hooks/use-toast';
 import { PaymentModal } from './PaymentModal';
 import { CreditSaleModal } from './CreditSaleModal';
 import { ReceiptModal } from './ReceiptModal';
+
+// Definir CartItem localmente
+interface CartItem {
+  productId: string;
+  barcode: string;
+  name: string;
+  price: number;
+  qty: number;
+  maxStock: number;
+}
 
 export function PosModule() {
   const [products, setProducts] = useState<Product[]>([]);
@@ -26,27 +36,28 @@ export function PosModule() {
   const [isReceiptOpen, setIsReceiptOpen] = useState(false);
 
   useEffect(() => {
-    setProducts(Store.get('products', []));
-    setExchangeRate(Store.get('exchangeRate', 36.5));
-    setIsCashOpen(Store.get('isCashOpen', false));
+    const state = Store.get();
+    setProducts(state.productos || []);
+    setExchangeRate(state.tasa || 36.5);
+    setIsCashOpen(state.isCashOpen || false);
   }, []);
 
   const filteredProducts = useMemo(() => {
     if (!searchTerm) return [];
     return products.filter(p => 
-      p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-      p.barcode.includes(searchTerm)
+      (p.nombre?.toLowerCase().includes(searchTerm.toLowerCase()) || false) || 
+      (p.codigo?.includes(searchTerm) || false)
     ).slice(0, 10);
   }, [searchTerm, products]);
 
   const addToCart = (product: Product) => {
-    if (product.stock <= 0) {
+    if ((product.stock || 0) <= 0) {
       toast({ title: "Sin Stock", description: "Este producto no tiene existencias.", variant: "destructive" });
       return;
     }
     const existing = cart.find(c => c.productId === product.id);
     if (existing) {
-      if (existing.qty >= product.stock) {
+      if (existing.qty >= (product.stock || 0)) {
         toast({ title: "Stock Máximo", description: "No hay más unidades disponibles.", variant: "destructive" });
         return;
       }
@@ -54,11 +65,11 @@ export function PosModule() {
     } else {
       setCart([...cart, { 
         productId: product.id, 
-        barcode: product.barcode, 
-        name: product.name, 
-        price: product.price, 
+        barcode: product.codigo || '', 
+        name: product.nombre || 'Producto', 
+        price: product.precioUSD || 0, 
         qty: 1, 
-        maxStock: product.stock 
+        maxStock: product.stock || 0
       }]);
     }
     setSearchTerm('');
@@ -85,7 +96,9 @@ export function PosModule() {
     setLastSale(sale);
     setIsReceiptOpen(true);
     setCart([]);
-    setProducts(Store.get('products', [])); // Refresh stock
+    // Refresh stock
+    const state = Store.get();
+    setProducts(state.productos || []);
   };
 
   return (
@@ -122,13 +135,13 @@ export function PosModule() {
               onClick={() => addToCart(p)}
             >
               <div className="flex justify-between items-start">
-                <span className="font-semibold text-sm line-clamp-1">{p.name}</span>
-                <span className="text-primary font-bold text-sm">Bs. {p.price}</span>
+                <span className="font-semibold text-sm line-clamp-1">{p.nombre || 'Producto'}</span>
+                <span className="text-primary font-bold text-sm">${p.precioUSD?.toFixed(2) || '0.00'}</span>
               </div>
               <div className="flex justify-between items-end mt-2">
-                <span className="text-[10px] text-muted-foreground font-code">{p.barcode}</span>
-                <Badge variant={p.stock <= p.minStock ? "destructive" : "secondary"} className="text-[10px] py-0">
-                  Stock: {p.stock}
+                <span className="text-[10px] text-muted-foreground font-code">{p.codigo || 'N/A'}</span>
+                <Badge variant={(p.stock || 0) <= (p.stockMinimo || 3) ? "destructive" : "secondary"} className="text-[10px] py-0">
+                  Stock: {p.stock || 0}
                 </Badge>
               </div>
             </div>
@@ -186,7 +199,7 @@ export function PosModule() {
                     </Button>
                   </div>
                   <div className="w-24 text-right">
-                    <p className="font-bold text-sm">Bs. {(item.price * item.qty).toFixed(2)}</p>
+                    <p className="font-bold text-sm">${(item.price * item.qty).toFixed(2)}</p>
                   </div>
                   <Button variant="ghost" size="icon" className="text-destructive hover:bg-destructive/10" onClick={() => updateQty(item.productId, -999)}>
                     <Trash2 className="w-4 h-4" />
@@ -200,15 +213,15 @@ export function PosModule() {
             <div className="w-full space-y-1">
               <div className="flex justify-between text-sm text-muted-foreground">
                 <span>Subtotal</span>
-                <span>Bs. {subtotal.toFixed(2)}</span>
+                <span>${subtotal.toFixed(2)}</span>
               </div>
               <div className="flex justify-between text-2xl font-black text-primary">
                 <span>TOTAL</span>
-                <span>Bs. {subtotal.toFixed(2)}</span>
+                <span>${subtotal.toFixed(2)}</span>
               </div>
               <div className="flex justify-between text-lg font-bold text-emerald-500">
-                <span>≈ USD</span>
-                <span>$ {totalUSD.toFixed(2)}</span>
+                <span>≈ Bs.</span>
+                <span>Bs. {subtotal.toFixed(2)}</span>
               </div>
             </div>
             
@@ -255,7 +268,8 @@ export function PosModule() {
         <ReceiptModal 
           isOpen={isReceiptOpen}
           onClose={() => setIsReceiptOpen(false)}
-          sale={lastSale}
+          saleData={lastSale}
+          type="SALE"
         />
       )}
     </div>

@@ -5,7 +5,7 @@ import { BarChart3, TrendingUp, Sparkles, ShoppingBag, Loader2 } from 'lucide-re
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Store } from '@/lib/db-store';
-import { Sale, Product } from '@/lib/types';
+import { Sale, Product, SaleItem } from '@/lib/types';
 import { getAISalesIntel, AISalesIntelOutput } from '@/ai/flows/ai-sales-intel-recommendations';
 import {
   Table,
@@ -22,7 +22,8 @@ export function ReportsModule() {
   const [aiReport, setAiReport] = useState<AISalesIntelOutput | null>(null);
 
   useEffect(() => {
-    setSales(Store.get('sales', []));
+    const state = Store.get();
+    setSales(state.ventas || []);
   }, []);
 
   const totalBS = sales.reduce((acc, s) => acc + s.totalBS, 0);
@@ -31,19 +32,20 @@ export function ReportsModule() {
   const fetchAiIntel = async () => {
     setIsAiLoading(true);
     try {
-      // Map store sales to AI format
+      // Map store sales to AI format - usando las propiedades correctas de Sale
       const salesData = sales.map(s => ({
         saleId: s.id,
-        date: s.date,
-        items: s.items.map(i => ({
-          productId: i.productId,
-          name: i.name,
-          qty: i.qty,
-          price: i.price
+        date: s.fecha, // Cambiado de 'date' a 'fecha'
+        items: s.items.map((i: SaleItem) => ({
+          productId: i.productoId, // Cambiado de 'productId' a 'productoId'
+          name: i.nombre, // Cambiado de 'name' a 'nombre'
+          qty: i.cantidad, // Cambiado de 'qty' a 'cantidad'
+          price: i.precioUnitUSD // Cambiado de 'price' a 'precioUnitUSD'
         }))
       }));
 
-      const exchangeRate = Store.get('exchangeRate', 36.5);
+      const currentState = Store.get();
+      const exchangeRate = currentState.tasa || 36.5;
       const result = await getAISalesIntel({ salesData, exchangeRateBSUSD: exchangeRate });
       setAiReport(result);
     } catch (error) {
@@ -163,11 +165,11 @@ export function ReportsModule() {
             <TableBody>
               {sales.slice().reverse().map((s) => (
                 <TableRow key={s.id}>
-                  <TableCell>{new Date(s.date).toLocaleString()}</TableCell>
+                  <TableCell>{new Date(s.fecha).toLocaleString()}</TableCell> {/* Cambiado de 'date' a 'fecha' */}
                   <TableCell className="font-code font-bold text-primary">{s.id}</TableCell>
-                  <TableCell>{s.type}</TableCell>
+                  <TableCell>{s.type || 'VENTA'}</TableCell>
                   <TableCell className="font-bold">Bs. {s.totalBS.toFixed(2)}</TableCell>
-                  <TableCell>{s.customerName || 'Venta General'}</TableCell>
+                  <TableCell>{s.cliente || 'Venta General'}</TableCell> {/* Cambiado de 'customerName' a 'cliente' */}
                 </TableRow>
               ))}
               {sales.length === 0 && (

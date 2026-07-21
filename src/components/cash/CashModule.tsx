@@ -1,14 +1,13 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { Vault, Lock, Unlock, History, AlertTriangle } from 'lucide-react';
+import { Vault, Lock, Unlock, History, DollarSign } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Store } from '@/lib/db-store';
-import { CashSession } from '@/lib/types';
 import { toast } from '@/hooks/use-toast';
 import {
   Table,
@@ -18,60 +17,142 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
+import { AppState } from '@/lib/types';
+
+// Definir CashSession localmente
+interface CashSession {
+  openDate: string;
+  openAmount: number;
+  openAmountBs: number;
+  openAmountUsd: number;
+  openNotes?: string;
+  closeDate: string | null;
+  closeAmount: number | null;
+  closeAmountBs: number | null;
+  closeAmountUsd: number | null;
+  closeNotes?: string | null;
+  totalSales: number;
+  totalSalesBs: number;
+  totalSalesUsd: number;
+  totalCollections: number;
+  saleCount: number;
+  difference?: number;
+}
 
 export function CashModule({ onStatusChange }: { onStatusChange: (s: boolean) => void }) {
   const [isOpen, setIsOpen] = useState(false);
   const [currentSession, setCurrentSession] = useState<CashSession | null>(null);
   const [history, setHistory] = useState<CashSession[]>([]);
   
-  const [openAmount, setOpenAmount] = useState('0');
+  // Montos de apertura
+  const [openAmountBs, setOpenAmountBs] = useState('0');
+  const [openAmountUsd, setOpenAmountUsd] = useState('0');
   const [openNotes, setOpenNotes] = useState('');
   
   const [closeAmount, setCloseAmount] = useState('0');
   const [closeNotes, setCloseNotes] = useState('');
 
   useEffect(() => {
-    setIsOpen(Store.get('isCashOpen', false));
-    setCurrentSession(Store.get('cashData', null));
-    setHistory(Store.get('cashHistory', []));
+    const state = Store.get();
+    setIsOpen(state.isCashOpen || false);
+    setCurrentSession(state.cashData || null);
+    setHistory(state.cashHistory || []);
+    
+    // Cargar montos actuales si existen
+    if (state.fondoCajaHoyBS !== undefined && state.fondoCajaHoyBS > 0) {
+      setOpenAmountBs(state.fondoCajaHoyBS.toString());
+    }
+    if (state.fondoCajaHoyUSD !== undefined && state.fondoCajaHoyUSD > 0) {
+      setOpenAmountUsd(state.fondoCajaHoyUSD.toString());
+    }
   }, []);
 
   const handleOpen = () => {
-    const amount = parseFloat(openAmount) || 0;
+    const amountBs = parseFloat(openAmountBs) || 0;
+    const amountUsd = parseFloat(openAmountUsd) || 0;
+    
+    // Validar que al menos un fondo tenga valor
+    if (amountBs === 0 && amountUsd === 0) {
+      toast({ 
+        variant: "destructive", 
+        title: "Error", 
+        description: "Debe ingresar al menos un monto de apertura en Bs. o USD." 
+      });
+      return;
+    }
+    
     const session: CashSession = {
       openDate: new Date().toISOString(),
-      openAmount: amount,
+      openAmount: amountBs,
+      openAmountBs: amountBs,
+      openAmountUsd: amountUsd,
       openNotes,
       closeDate: null,
       closeAmount: null,
+      closeAmountBs: null,
+      closeAmountUsd: null,
       closeNotes: null,
       totalSales: 0,
+      totalSalesBs: 0,
+      totalSalesUsd: 0,
       totalCollections: 0,
       saleCount: 0
     };
-    Store.set('cashData', session);
-    Store.set('isCashOpen', true);
+    
+    // Obtener estado actual
+    const currentState = Store.get();
+    
+    // Actualizar el estado global
+    const newState: AppState = {
+      ...currentState,
+      fondoCajaHoyBS: amountBs,
+      fondoCajaHoyUSD: amountUsd,
+      isCashOpen: true,
+      cashData: session,
+      cashHistory: currentState.cashHistory || []
+    };
+    
+    Store.set(newState);
+    
     setIsOpen(true);
     setCurrentSession(session);
     onStatusChange(true);
-    toast({ title: "Caja Abierta", description: `Iniciada con Bs. ${amount}` });
+    
+    toast({ 
+      title: "Caja Abierta", 
+      description: `Iniciada con Bs. ${amountBs.toFixed(2)} y $${amountUsd.toFixed(2)}` 
+    });
   };
 
   const handleClose = () => {
     if (!currentSession) return;
     const amount = parseFloat(closeAmount) || 0;
+    
     const closed: CashSession = {
       ...currentSession,
       closeDate: new Date().toISOString(),
       closeAmount: amount,
+      closeAmountBs: amount,
+      closeAmountUsd: currentSession.openAmountUsd || 0,
       closeNotes,
       difference: amount - (currentSession.openAmount + currentSession.totalSales + currentSession.totalCollections)
     };
 
-    const newHistory = [closed, ...history];
-    Store.set('cashHistory', newHistory);
-    Store.set('cashData', null);
-    Store.set('isCashOpen', false);
+    const currentState = Store.get();
+    const newHistory = [closed, ...(currentState.cashHistory || [])];
+    
+    // Actualizar el estado global
+    const newState: AppState = {
+      ...currentState,
+      fondoCajaHoyBS: 0,
+      fondoCajaHoyUSD: 0,
+      isCashOpen: false,
+      cashData: null,
+      cashHistory: newHistory
+    };
+    
+    Store.set(newState);
     
     setIsOpen(false);
     setCurrentSession(null);
@@ -86,6 +167,7 @@ export function CashModule({ onStatusChange }: { onStatusChange: (s: boolean) =>
   };
 
   const expectedTotal = currentSession ? (currentSession.openAmount + currentSession.totalSales + currentSession.totalCollections) : 0;
+  const expectedTotalUsd = currentSession ? (currentSession.openAmountUsd || 0) + (currentSession.totalSalesUsd || 0) : 0;
 
   return (
     <div className="p-6 h-full flex flex-col gap-6 overflow-y-auto">
@@ -105,14 +187,35 @@ export function CashModule({ onStatusChange }: { onStatusChange: (s: boolean) =>
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label>Monto Inicial en Caja (BS)</Label>
-                <Input 
-                  type="number" 
-                  className="text-2xl h-14 font-black bg-emerald-500/5 border-emerald-500/30" 
-                  value={openAmount} 
-                  onChange={(e) => setOpenAmount(e.target.value)}
-                />
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-1">
+                    <Vault className="w-4 h-4" /> Fondo Bs.
+                  </Label>
+                  <Input 
+                    type="number" 
+                    className="text-xl h-12 font-black bg-emerald-500/5 border-emerald-500/30" 
+                    value={openAmountBs} 
+                    onChange={(e) => setOpenAmountBs(e.target.value)}
+                    placeholder="0.00"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-1">
+                    <DollarSign className="w-4 h-4" /> Fondo USD
+                  </Label>
+                  <Input 
+                    type="number" 
+                    className="text-xl h-12 font-black bg-emerald-500/5 border-emerald-500/30" 
+                    value={openAmountUsd} 
+                    onChange={(e) => setOpenAmountUsd(e.target.value)}
+                    placeholder="0.00"
+                    step="0.01"
+                  />
+                </div>
+              </div>
+              <div className="text-[10px] text-muted-foreground font-black uppercase">
+                ⚠️ Estos montos aparecerán en los Reportes X y Z como "FONDO DE APERTURA"
               </div>
               <div className="space-y-2">
                 <Label>Observaciones</Label>
@@ -132,12 +235,29 @@ export function CashModule({ onStatusChange }: { onStatusChange: (s: boolean) =>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="bg-black/40 rounded-xl p-4 space-y-2 mb-4">
-                <div className="flex justify-between text-sm"><span>Apertura:</span><span className="font-bold">Bs. {currentSession?.openAmount.toFixed(2)}</span></div>
-                <div className="flex justify-between text-sm"><span>Ventas (+) :</span><span className="font-bold text-emerald-500">Bs. {currentSession?.totalSales.toFixed(2)}</span></div>
-                <div className="flex justify-between text-sm"><span>Cobranzas (+) :</span><span className="font-bold text-emerald-500">Bs. {currentSession?.totalCollections.toFixed(2)}</span></div>
+                <div className="flex justify-between text-sm">
+                  <span>Apertura Bs.:</span>
+                  <span className="font-bold">Bs. {currentSession?.openAmount.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span>Apertura USD:</span>
+                  <span className="font-bold">${(currentSession?.openAmountUsd || 0).toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span>Ventas (+) Bs.:</span>
+                  <span className="font-bold text-emerald-500">Bs. {currentSession?.totalSales.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span>Ventas (+) USD:</span>
+                  <span className="font-bold text-emerald-500">${(currentSession?.totalSalesUsd || 0).toFixed(2)}</span>
+                </div>
                 <div className="border-t border-white/10 pt-2 flex justify-between font-black text-primary">
-                  <span>ESPERADO EN CAJA:</span>
+                  <span>ESPERADO EN CAJA Bs.:</span>
                   <span>Bs. {expectedTotal.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between font-black text-primary">
+                  <span>ESPERADO EN CAJA USD:</span>
+                  <span>${expectedTotalUsd.toFixed(2)}</span>
                 </div>
               </div>
 
@@ -173,7 +293,8 @@ export function CashModule({ onStatusChange }: { onStatusChange: (s: boolean) =>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Fecha</TableHead>
-                    <TableHead>Inicial</TableHead>
+                    <TableHead>Inicial Bs.</TableHead>
+                    <TableHead>Inicial USD</TableHead>
                     <TableHead>Final</TableHead>
                     <TableHead>Diff</TableHead>
                   </TableRow>
@@ -183,6 +304,7 @@ export function CashModule({ onStatusChange }: { onStatusChange: (s: boolean) =>
                     <TableRow key={i}>
                       <TableCell className="text-[10px]">{new Date(h.openDate).toLocaleDateString()}</TableCell>
                       <TableCell className="text-xs font-bold">Bs. {h.openAmount}</TableCell>
+                      <TableCell className="text-xs font-bold">${(h.openAmountUsd || 0).toFixed(2)}</TableCell>
                       <TableCell className="text-xs font-bold">Bs. {h.closeAmount}</TableCell>
                       <TableCell>
                         <Badge variant={(h.difference || 0) < 0 ? "destructive" : "secondary"}>
