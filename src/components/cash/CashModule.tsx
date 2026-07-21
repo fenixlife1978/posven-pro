@@ -46,11 +46,11 @@ export function CashModule({ onStatusChange }: { onStatusChange: (s: boolean) =>
   const [history, setHistory] = useState<CashSession[]>([]);
   
   // Montos de apertura
-  const [openAmountBs, setOpenAmountBs] = useState('0');
-  const [openAmountUsd, setOpenAmountUsd] = useState('0');
+  const [openAmountBs, setOpenAmountBs] = useState('');
+  const [openAmountUsd, setOpenAmountUsd] = useState('');
   const [openNotes, setOpenNotes] = useState('');
   
-  const [closeAmount, setCloseAmount] = useState('0');
+  const [closeAmount, setCloseAmount] = useState('');
   const [closeNotes, setCloseNotes] = useState('');
 
   useEffect(() => {
@@ -103,11 +103,11 @@ export function CashModule({ onStatusChange }: { onStatusChange: (s: boolean) =>
     // Obtener estado actual
     const currentState = Store.get();
     
-    // Actualizar el estado global
+    // ✅ ACTUALIZAR CORRECTAMENTE EL ESTADO GLOBAL
     const newState: AppState = {
       ...currentState,
-      fondoCajaHoyBS: amountBs,
-      fondoCajaHoyUSD: amountUsd,
+      fondoCajaHoyBS: amountBs,      // ✅ GUARDA EL MONTO EN BS
+      fondoCajaHoyUSD: amountUsd,    // ✅ GUARDA EL MONTO EN USD
       isCashOpen: true,
       cashData: session,
       cashHistory: currentState.cashHistory || []
@@ -120,7 +120,7 @@ export function CashModule({ onStatusChange }: { onStatusChange: (s: boolean) =>
     onStatusChange(true);
     
     toast({ 
-      title: "Caja Abierta", 
+      title: "✅ Caja Abierta", 
       description: `Iniciada con Bs. ${amountBs.toFixed(2)} y $${amountUsd.toFixed(2)}` 
     });
   };
@@ -142,7 +142,7 @@ export function CashModule({ onStatusChange }: { onStatusChange: (s: boolean) =>
     const currentState = Store.get();
     const newHistory = [closed, ...(currentState.cashHistory || [])];
     
-    // Actualizar el estado global
+    // ✅ LIMPIAR LOS FONDOS AL CERRAR
     const newState: AppState = {
       ...currentState,
       fondoCajaHoyBS: 0,
@@ -168,6 +168,12 @@ export function CashModule({ onStatusChange }: { onStatusChange: (s: boolean) =>
 
   const expectedTotal = currentSession ? (currentSession.openAmount + currentSession.totalSales + currentSession.totalCollections) : 0;
   const expectedTotalUsd = currentSession ? (currentSession.openAmountUsd || 0) + (currentSession.totalSalesUsd || 0) : 0;
+
+  // Función para prellenar con valores de ejemplo (para pruebas)
+  const fillExampleValues = () => {
+    setOpenAmountBs('7369.30');
+    setOpenAmountUsd('510.00');
+  };
 
   return (
     <div className="p-6 h-full flex flex-col gap-6 overflow-y-auto">
@@ -199,6 +205,7 @@ export function CashModule({ onStatusChange }: { onStatusChange: (s: boolean) =>
                     onChange={(e) => setOpenAmountBs(e.target.value)}
                     placeholder="0.00"
                   />
+                  <p className="text-[8px] text-muted-foreground">💰 Este monto aparecerá en Reportes X/Z como "FONDO DE APERTURA Bs."</p>
                 </div>
                 <div className="space-y-2">
                   <Label className="flex items-center gap-1">
@@ -212,15 +219,19 @@ export function CashModule({ onStatusChange }: { onStatusChange: (s: boolean) =>
                     placeholder="0.00"
                     step="0.01"
                   />
+                  <p className="text-[8px] text-muted-foreground">💰 Este monto aparecerá en Reportes X/Z como "FONDO DE APERTURA USD"</p>
                 </div>
               </div>
-              <div className="text-[10px] text-muted-foreground font-black uppercase">
+              
+              <div className="text-[10px] text-muted-foreground font-black uppercase bg-amber-500/10 p-3 rounded-lg border border-amber-500/20">
                 ⚠️ Estos montos aparecerán en los Reportes X y Z como "FONDO DE APERTURA"
               </div>
+              
               <div className="space-y-2">
                 <Label>Observaciones</Label>
                 <Textarea placeholder="Notas de apertura..." value={openNotes} onChange={(e) => setOpenNotes(e.target.value)} />
               </div>
+              
               <Button className="w-full h-14 bg-emerald-600 hover:bg-emerald-500 font-bold uppercase" onClick={handleOpen}>
                 Confirmar Apertura
               </Button>
