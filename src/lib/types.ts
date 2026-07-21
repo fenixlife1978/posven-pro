@@ -252,8 +252,6 @@ export interface ReportZ {
   entradasCajaUSD: number;
   fondoAperturaUSD: number;
   fondoAperturaBS: number;
-  ventasEfectivoBsBS: number;
-  ventasEfectivoUsdUSD: number;
   acumuladoHistoricoUSD: number;
   stats: {
     facturas: number;

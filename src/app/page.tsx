@@ -60,7 +60,7 @@ export default function LicoreriaPOS() {
   const [userRole, setUserRole] = useState<string | null>(null);
   const [userProfile, setUserProfile] = useState<any>(null);
   const [showApertura, setShowApertura] = useState(false);
-  const [aperturaData, setAperturaData] = useState({ bs: '0', usd: '0' });
+  const [aperturaData, setAperturaData] = useState({ bs: '', usd: '' });
   
   // Estados para Notificaciones de CxP
   const [dueDebts, setDueDebts] = useState<Debt[]>([]);
@@ -403,11 +403,22 @@ export default function LicoreriaPOS() {
               <button 
                 disabled={aperturaData.bs === '' || aperturaData.usd === ''} 
                 onClick={() => { 
+                  const bsValue = parseFloat(aperturaData.bs) || 0;
+                  const usdValue = parseFloat(aperturaData.usd) || 0;
+                  
+                  // ✅ GUARDAR CORRECTAMENTE EN EL ESTADO GLOBAL
+                  // Actualizar el estado local y persistir en Store
+                  const currentState = Store.get();
+                  const newState: AppState = {
+                    ...currentState,
+                    fondoCajaHoyBS: bsValue,
+                    fondoCajaHoyUSD: usdValue,
+                    isCashOpen: true
+                  };
+                  Store.set(newState);
+                  setState(newState);
+                  
                   localStorage.setItem('posven_apertura_done', 'true'); 
-                  updateState({
-                    fondoCajaHoyBS: parseFloat(aperturaData.bs) || 0,
-                    fondoCajaHoyUSD: parseFloat(aperturaData.usd) || 0
-                  });
                   setShowApertura(false); 
                 }} 
                 className="w-full h-14 bg-brand-gold text-ink font-black text-sm rounded-xl shadow-xl shadow-brand-gold/10 hover:bg-brand-gold-deep hover:text-white transition-all uppercase tracking-widest"
