@@ -1,6 +1,6 @@
-"use client";
+'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { AppState, Debt, Customer } from '@/lib/types';
 import { Utils, Store } from '@/lib/db-store';
 import { 
@@ -23,7 +23,8 @@ import {
   Contact,
   Receipt,
   BookOpen,
-  Hash
+  Hash,
+  RefreshCw
 } from 'lucide-react';
 import { exportarPDFCxC } from '@/lib/pdf-generator';
 
@@ -32,6 +33,7 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
   const [showDetails, setShowDetails] = useState<any>(null);
   const [expandedClient, setExpandedClient] = useState<string | null>(null);
   const [showClientHistory, setShowClientHistory] = useState<string | null>(null);
+  const [filterEstado, setFilterEstado] = useState<'todos' | 'pendiente' | 'pagada' | 'parcial'>('todos');
 
   const [nuevaDeuda, setNuevaDeuda] = useState({
     cliente: '',
@@ -52,26 +54,115 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
     setNuevaDeuda({ ...nuevaDeuda, cedula: formatCedula(val) });
   };
 
-  const pendientes = state.cxc.filter(x => x.estado !== 'pagada');
-  const totalPendiente = pendientes.reduce((s, x) => s + x.saldoUSD, 0);
+  // Obtener TODOS los clientes del sistema
+  const allCustomers: Customer[] = state.clientes || [];
+  
+  // Todas las deudas (incluyendo pagadas)
+  const todasLasDeudas = state.cxc || [];
+  
+  // Deudas pendientes (no pagadas) para el total
+  const pendientes = todasLasDeudas.filter((x: any) => x.estado !== 'pagada');
+  const totalPendiente = pendientes.reduce((s: number, x: any) => s + x.saldoUSD, 0);
 
-  // Agrupación de deudas por cliente
+  // Agrupar TODOS los clientes (incluyendo saldo 0)
   const groupedCredits = useMemo(() => {
-    const groups: Record<string, { totalUSD: number; debts: Debt[] }> = {};
-    pendientes.forEach(debt => {
+    const groups: Record<string, { 
+      totalUSD: number; 
+      debts: Debt[];
+      customer: Customer | null;
+    }> = {};
+
+    // 1. Primero, agregar todos los clientes del sistema (incluyendo saldo 0)
+    allCustomers.forEach((customer: Customer) => {
+      const name = customer.name;
+      if (!groups[name]) {
+        groups[name] = { 
+          totalUSD: 0, 
+          debts: [],
+          customer: customer
+        };
+      }
+    });
+
+    // 2. Luego, agregar las deudas de todos los clientes (incluyendo pagadas)
+    todasLasDeudas.forEach((debt: Debt) => {
       const name = debt.cliente || 'DESCONOCIDO';
       if (!groups[name]) {
-        groups[name] = { totalUSD: 0, debts: [] };
+        groups[name] = { 
+          totalUSD: 0, 
+          debts: [],
+          customer: null
+        };
       }
-      groups[name].totalUSD += debt.saldoUSD;
       groups[name].debts.push(debt);
+      // Solo sumar al total si la deuda no está pagada
+      if (debt.estado !== 'pagada') {
+        groups[name].totalUSD += debt.saldoUSD;
+      }
     });
-    
+
+    // Ordenar los grupos
     Object.keys(groups).forEach(name => {
-      groups[name].debts.sort((a, b) => a.fecha.localeCompare(b.fecha));
+      groups[name].debts.sort((a: Debt, b: Debt) => a.fecha.localeCompare(b.fecha));
     });
+
+    // Filtrar por estado si es necesario
+    if (filterEstado !== 'todos') {
+      const filteredGroups: Record<string, any> = {};
+      Object.keys(groups).forEach(name => {
+        const group = groups[name];
+        const filteredDebts = group.debts.filter((d: Debt) => d.estado === filterEstado);
+        if (filteredDebts.length > 0) {
+          filteredGroups[name] = {
+            ...group,
+            debts: filteredDebts,
+            totalUSD: filteredDebts.reduce((s: number, d: Debt) => s + (d.estado !== 'pagada' ? d.saldoUSD : 0), 0)
+          };
+        } else {
+          // Si no tiene deudas del estado filtrado, pero el cliente existe, lo mostramos
+          if (group.customer && group.debts.length === 0) {
+            filteredGroups[name] = group;
+          }
+        }
+      });
+      return filteredGroups;
+    }
+
     return groups;
-  }, [pendientes]);
+  }, [todasLasDeudas, allCustomers, filterEstado]);
+
+  // Función para sincronizar clientes desde CxC
+  const syncCustomersFromCxC = () => {
+    const clientesExistentes = new Set(allCustomers.map((c: Customer) => c.name));
+    const clientesFromCxC = new Set(todasLasDeudas.map((d: Debt) => d.cliente).filter((name): name is string => name !== undefined && name !== null && name !== ''));
+    
+    const nuevosClientes: Customer[] = [];
+    clientesFromCxC.forEach((name: string) => {
+      if (!clientesExistentes.has(name)) {
+        // Extraer nombre y cédula del string "NOMBRE [V-123456]"
+        const match = name.match(/^(.*?)\s*\[(.*?)\]$/);
+        const nombreLimpio = match ? match[1].trim() : name;
+        const cedulaLimpia = match ? match[2].trim() : '';
+        nuevosClientes.push({
+          id: `CUS-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+          name: nombreLimpio,
+          cedula: cedulaLimpia || 'SIN-CEDULA',
+          address: 'Sin dirección',
+          phone: 'Sin teléfono',
+          debt: 0
+        });
+      }
+    });
+
+    if (nuevosClientes.length > 0) {
+      updateState({ clientes: [...allCustomers, ...nuevosClientes] });
+    }
+  };
+
+  // Sincronizar al cargar el módulo
+  useEffect(() => {
+    syncCustomersFromCxC();
+  }, []);
 
   const guardarDeudaDirecta = () => {
     if (!nuevaDeuda.cliente || !nuevaDeuda.cedula || nuevaDeuda.montoUSD <= 0) {
@@ -81,6 +172,27 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
 
     const idFull = `${nuevaDeuda.tipoDoc}-${nuevaDeuda.cedula}`;
     const nombreFull = `${nuevaDeuda.cliente} [${idFull}]`;
+
+    // Verificar si el cliente ya existe en la lista de clientes
+    const clienteExistente = allCustomers.find((c: Customer) => c.cedula === idFull || c.name === nuevaDeuda.cliente);
+    if (!clienteExistente) {
+      // Crear nuevo cliente
+      const nuevoCliente: Customer = {
+        id: `CUS-${Date.now()}`,
+        name: nuevaDeuda.cliente,
+        cedula: idFull,
+        address: 'Sin dirección',
+        phone: 'Sin teléfono',
+        debt: nuevaDeuda.montoUSD
+      };
+      updateState({ clientes: [...allCustomers, nuevoCliente] });
+    } else {
+      // Actualizar deuda del cliente existente
+      const updatedCustomers = allCustomers.map((c: Customer) => 
+        c.id === clienteExistente.id ? { ...c, debt: (c.debt || 0) + nuevaDeuda.montoUSD } : c
+      );
+      updateState({ clientes: updatedCustomers });
+    }
 
     const nuevaEntrada: Debt = {
       id: 'DEU-' + Store.uid().toUpperCase().slice(0, 6),
@@ -100,11 +212,17 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
 
   const eliminarDeuda = (deuda: any) => {
     if (!confirm(`¿Seguro que desea eliminar el registro ${deuda.id}? Esta acción no se puede deshacer.`)) return;
-    const nuevas = state.cxc.filter(x => x.id !== deuda.id);
-    const nuevosClientes = (state.clientes || []).map(c => 
-      c.name === deuda.cliente ? { ...c, debt: Math.max(0, (c.debt || 0) - deuda.saldoUSD) } : c
-    );
-    updateState({ cxc: nuevas, clientes: nuevosClientes });
+    const nuevas = state.cxc.filter((x: Debt) => x.id !== deuda.id);
+    
+    // Actualizar deuda del cliente
+    const clientesActualizados = allCustomers.map((c: Customer) => {
+      if (c.name === deuda.cliente || c.cedula === deuda.cliente) {
+        return { ...c, debt: Math.max(0, (c.debt || 0) - deuda.saldoUSD) };
+      }
+      return c;
+    });
+    
+    updateState({ cxc: nuevas, clientes: clientesActualizados });
   };
 
   const handleExportPDF = () => {
@@ -113,14 +231,14 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex justify-between items-center flex-wrap gap-2">
         <div>
           <h2 className="text-ink font-black uppercase italic tracking-tighter text-2xl flex items-center gap-2">
             <HandCoins className="text-brand-gold w-7 h-7" /> COBRANZAS (GESTIÓN GLOBAL)
           </h2>
           <p className="text-[10px] text-ink font-black uppercase tracking-widest">Seguimiento de Cartera de Clientes y Morosidad</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           <button onClick={handleExportPDF} className="btn btn-secondary h-11 px-6 font-black uppercase text-xs flex items-center gap-2 shadow-md">
             <FileText className="w-4 h-4" /> Reporte CxC
           </button>
@@ -130,12 +248,47 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      {/* FILTROS */}
+      <div className="flex items-center gap-4 bg-white p-3 rounded-xl border border-line shadow-sm flex-wrap">
+        <span className="text-[10px] font-black uppercase text-ink">Filtrar por estado:</span>
+        <div className="flex gap-2 flex-wrap">
+          {['todos', 'pendiente', 'parcial', 'pagada'].map(estado => (
+            <button
+              key={estado}
+              onClick={() => setFilterEstado(estado as any)}
+              className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${
+                filterEstado === estado 
+                  ? 'bg-brand-gold text-black shadow-md' 
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              {estado === 'todos' ? 'Todos' : estado}
+            </button>
+          ))}
+        </div>
+        <button 
+          onClick={syncCustomersFromCxC} 
+          className="ml-auto px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-[10px] font-black hover:bg-blue-100 transition-all flex items-center gap-1"
+        >
+          <RefreshCw className="w-3 h-3" /> Sincronizar
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="kpi bg-white border-line shadow-md p-6 rounded-2xl flex items-center gap-4">
            <div className="p-3 bg-ink text-brand-gold rounded-xl"><ClipboardList /></div>
            <div>
+              <div className="text-ink text-[10px] font-black uppercase mb-0.5">Total Clientes</div>
+              <div className="text-3xl font-black text-ink">{Object.keys(groupedCredits).length}</div>
+           </div>
+        </div>
+        <div className="kpi bg-white border-line shadow-md p-6 rounded-2xl flex items-center gap-4">
+           <div className="p-3 bg-ink text-brand-gold rounded-xl"><Clock /></div>
+           <div>
               <div className="text-ink text-[10px] font-black uppercase mb-0.5">Clientes con Deuda</div>
-              <div className="text-3xl font-black text-ink">{Object.entries(groupedCredits).length}</div>
+              <div className="text-3xl font-black text-ink">
+                {Object.keys(groupedCredits).filter(name => groupedCredits[name].totalUSD > 0).length}
+              </div>
            </div>
         </div>
         <div className="kpi bg-white border-line shadow-md p-6 rounded-2xl border-l-[6px] border-l-status-danger">
@@ -146,10 +299,13 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
       </div>
 
       <div className="card shadow-xl border-line rounded-xl overflow-hidden bg-white">
-        <div className="card-head bg-ink border-b border-white/10 px-6 py-4">
+        <div className="card-head bg-ink border-b border-white/10 px-6 py-4 flex justify-between items-center">
           <h3 className="text-white font-black text-xs uppercase italic tracking-tighter flex items-center gap-2">
             <ClipboardList className="w-5 h-5 text-brand-gold" /> LISTADO CONSOLIDADO POR CLIENTE
           </h3>
+          <span className="text-white/40 text-[10px] font-black uppercase">
+            {Object.keys(groupedCredits).length} clientes totales
+          </span>
         </div>
         <div className="table-wrap">
           <table className="w-full">
@@ -160,79 +316,116 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
                 <th className="text-ink font-black text-[10px] uppercase text-right">Documentos</th>
                 <th className="text-ink font-black text-[10px] uppercase text-right">Saldo USD</th>
                 <th className="text-ink font-black text-[10px] uppercase text-right">Saldo BS</th>
+                <th className="text-ink font-black text-[10px] uppercase text-center">Estado</th>
                 <th className="text-ink font-black text-[10px] uppercase text-center">Acciones</th>
               </tr>
             </thead>
             <tbody>
               {Object.entries(groupedCredits).length === 0 ? (
-                <tr><td colSpan={6} className="text-center py-20 text-ink font-black uppercase italic">No hay deudas registradas</td></tr>
+                <tr><td colSpan={7} className="text-center py-20 text-ink font-black uppercase italic">No hay clientes registrados</td></tr>
               ) : (
-                Object.entries(groupedCredits).map(([clientName, group]) => (
-                  <React.Fragment key={clientName}>
-                    <tr className="border-b border-line hover:bg-surface-warm/20 transition-colors">
-                      <td className="px-6 py-4">
-                         <button onClick={() => setExpandedClient(expandedClient === clientName ? null : clientName)} className="text-brand-gold hover:scale-110 transition-transform">
-                            {expandedClient === clientName ? <ChevronUp /> : <ChevronDown />}
-                         </button>
-                      </td>
-                      <td className="py-4">
-                         <div className="text-ink font-black text-sm uppercase">{clientName}</div>
-                         <div className="text-[10px] text-ink font-black uppercase tracking-widest">Saldo Pendiente</div>
-                      </td>
-                      <td className="text-right py-4 font-black text-ink">{group.debts.length} Facturas</td>
-                      <td className="text-right py-4 font-black text-status-info text-base">{Utils.fmtUSD(group.totalUSD)}</td>
-                      <td className="text-right py-4 font-black text-ink">{Utils.fmtBS(group.totalUSD * state.tasa)}</td>
-                      <td className="text-center py-4">
-                         <div className="flex items-center justify-center gap-2">
-                           <button 
-                              onClick={() => setShowClientHistory(clientName)} 
-                              className="w-10 h-10 rounded-full flex items-center justify-center bg-white text-status-success border-2 border-status-success/20 hover:bg-status-success hover:text-white transition-all shadow-md"
-                              title="Consultar Historial Maestro"
-                           >
-                              <Eye className="w-5 h-5" />
-                           </button>
-                         </div>
-                      </td>
-                    </tr>
-                    {expandedClient === clientName && (
-                      <tr className="bg-surface-soft/40 animate-in slide-in-from-top-1 duration-200">
-                         <td colSpan={6} className="px-12 py-4">
-                            <div className="card border-line bg-white shadow-inner rounded-xl overflow-hidden">
-                               <table className="w-full">
-                                  <thead className="bg-ink/5">
-                                     <tr>
-                                        <th className="text-[9px] font-black uppercase p-2 text-left text-ink">Emisión</th>
-                                        <th className="text-[9px] font-black uppercase p-2 text-left text-ink">Vencimiento</th>
-                                        <th className="text-[9px] font-black uppercase p-2 text-left text-ink">ID Factura</th>
-                                        <th className="text-[9px] font-black uppercase p-2 text-right text-ink">Saldo USD</th>
-                                        <th className="text-[9px] font-black uppercase p-2 text-center text-ink">Auditoría</th>
-                                     </tr>
-                                  </thead>
-                                  <tbody>
-                                     {group.debts.map(d => (
-                                        <tr key={d.id} className="border-b border-line/20 hover:bg-brand-gold-soft/10">
-                                           <td className="text-[10px] font-black p-2 text-ink">{Utils.fmtFecha(d.fecha)}</td>
-                                           <td className={`text-[10px] font-black p-2 ${d.fechaVencimiento < Utils.hoy() ? 'text-status-danger' : 'text-ink'}`}>
-                                              {d.fechaVencimiento === '2099-12-31' ? 'ABIERTA' : Utils.fmtFecha(d.fechaVencimiento)}
-                                           </td>
-                                           <td className="text-[10px] font-black p-2 mono text-ink">{d.id}</td>
-                                           <td className="text-[10px] font-black p-2 text-right text-brand-gold-deep">{Utils.fmtUSD(d.saldoUSD)}</td>
-                                           <td className="p-2 text-center">
-                                              <div className="flex justify-center gap-1">
-                                                <button onClick={() => setShowDetails(d)} className="text-ink hover:text-brand-gold p-1 transition-colors"><Eye className="w-3.5 h-3.5"/></button>
-                                                <button onClick={() => eliminarDeuda(d)} className="text-ink hover:text-status-danger p-1"><Trash2 className="w-3.5 h-3.5" /></button>
-                                              </div>
-                                           </td>
-                                        </tr>
-                                     ))}
-                                  </tbody>
-                               </table>
-                            </div>
-                         </td>
+                Object.entries(groupedCredits).map(([clientName, group]) => {
+                  const tieneDeudaPendiente = group.totalUSD > 0;
+                  const tieneDeudas = group.debts.length > 0;
+                  
+                  return (
+                    <React.Fragment key={clientName}>
+                      <tr className={`border-b border-line hover:bg-surface-warm/20 transition-colors ${!tieneDeudaPendiente && tieneDeudas ? 'opacity-60' : ''}`}>
+                        <td className="px-6 py-4">
+                           {tieneDeudas ? (
+                             <button onClick={() => setExpandedClient(expandedClient === clientName ? null : clientName)} className="text-brand-gold hover:scale-110 transition-transform">
+                                {expandedClient === clientName ? <ChevronUp /> : <ChevronDown />}
+                             </button>
+                           ) : (
+                             <span className="text-gray-300">-</span>
+                           )}
+                        </td>
+                        <td className="py-4">
+                           <div className="text-ink font-black text-sm uppercase">{clientName}</div>
+                           <div className="text-[10px] text-ink font-black uppercase tracking-widest">
+                             {tieneDeudaPendiente ? 'Saldo Pendiente' : 'Cliente al día'}
+                           </div>
+                        </td>
+                        <td className="text-right py-4 font-black text-ink">{group.debts.length} Facturas</td>
+                        <td className={`text-right py-4 font-black text-base ${tieneDeudaPendiente ? 'text-status-info' : 'text-green-600'}`}>
+                          {Utils.fmtUSD(group.totalUSD)}
+                        </td>
+                        <td className="text-right py-4 font-black text-ink">{Utils.fmtBS(group.totalUSD * state.tasa)}</td>
+                        <td className="text-center py-4">
+                          {tieneDeudaPendiente ? (
+                            <span className="badge badge-warn font-black text-[8px] uppercase px-3">Con Deuda</span>
+                          ) : group.debts.length > 0 ? (
+                            <span className="badge badge-ok font-black text-[8px] uppercase px-3">Pagado</span>
+                          ) : (
+                            <span className="badge badge-info font-black text-[8px] uppercase px-3">Sin Deudas</span>
+                          )}
+                        </td>
+                        <td className="text-center py-4">
+                           <div className="flex items-center justify-center gap-2">
+                             {tieneDeudas ? (
+                               <button 
+                                  onClick={() => setShowClientHistory(clientName)} 
+                                  className="w-10 h-10 rounded-full flex items-center justify-center bg-white text-status-success border-2 border-status-success/20 hover:bg-status-success hover:text-white transition-all shadow-md"
+                                  title="Consultar Historial Maestro"
+                               >
+                                  <Eye className="w-5 h-5" />
+                               </button>
+                             ) : (
+                               <span className="text-gray-300 text-[10px] font-black">Sin historial</span>
+                             )}
+                           </div>
+                        </td>
                       </tr>
-                    )}
-                  </React.Fragment>
-                ))
+                      {expandedClient === clientName && group.debts.length > 0 && (
+                        <tr className="bg-surface-soft/40 animate-in slide-in-from-top-1 duration-200">
+                           <td colSpan={7} className="px-12 py-4">
+                              <div className="card border-line bg-white shadow-inner rounded-xl overflow-hidden">
+                                 <table className="w-full">
+                                    <thead className="bg-ink/5">
+                                       <tr>
+                                          <th className="text-[9px] font-black uppercase p-2 text-left text-ink">Emisión</th>
+                                          <th className="text-[9px] font-black uppercase p-2 text-left text-ink">Vencimiento</th>
+                                          <th className="text-[9px] font-black uppercase p-2 text-left text-ink">ID Factura</th>
+                                          <th className="text-[9px] font-black uppercase p-2 text-right text-ink">Monto</th>
+                                          <th className="text-[9px] font-black uppercase p-2 text-right text-ink">Saldo USD</th>
+                                          <th className="text-[9px] font-black uppercase p-2 text-center text-ink">Estado</th>
+                                          <th className="text-[9px] font-black uppercase p-2 text-center text-ink">Auditoría</th>
+                                       </tr>
+                                    </thead>
+                                    <tbody>
+                                       {group.debts.map((d: Debt) => (
+                                          <tr key={d.id} className="border-b border-line/20 hover:bg-brand-gold-soft/10">
+                                             <td className="text-[10px] font-black p-2 text-ink">{Utils.fmtFecha(d.fecha)}</td>
+                                             <td className={`text-[10px] font-black p-2 ${d.fechaVencimiento < Utils.hoy() && d.estado !== 'pagada' ? 'text-status-danger' : 'text-ink'}`}>
+                                                {d.fechaVencimiento === '2099-12-31' ? 'ABIERTA' : Utils.fmtFecha(d.fechaVencimiento)}
+                                             </td>
+                                             <td className="text-[10px] font-black p-2 mono text-ink">{d.id}</td>
+                                             <td className="text-[10px] font-black p-2 text-right text-ink">{Utils.fmtUSD(d.montoUSD)}</td>
+                                             <td className="text-[10px] font-black p-2 text-right text-brand-gold-deep">{Utils.fmtUSD(d.saldoUSD)}</td>
+                                             <td className="p-2 text-center">
+                                               <span className={`badge ${d.estado === 'pagada' ? 'badge-ok' : (d.estado === 'parcial' ? 'badge-info' : 'badge-warn')} font-black text-[8px] uppercase px-3`}>
+                                                 {d.estado}
+                                               </span>
+                                             </td>
+                                             <td className="p-2 text-center">
+                                                <div className="flex justify-center gap-1">
+                                                  <button onClick={() => setShowDetails(d)} className="text-ink hover:text-brand-gold p-1 transition-colors"><Eye className="w-3.5 h-3.5"/></button>
+                                                  {d.estado !== 'pagada' && (
+                                                    <button onClick={() => eliminarDeuda(d)} className="text-ink hover:text-status-danger p-1"><Trash2 className="w-3.5 h-3.5" /></button>
+                                                  )}
+                                                </div>
+                                             </td>
+                                          </tr>
+                                       ))}
+                                    </tbody>
+                                 </table>
+                              </div>
+                           </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -261,9 +454,8 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
                  </div>
               </div>
 
-              {/* DETALLE DE VENTA ORIGINAL */}
               {(() => {
-                const sale = state.ventas.find(v => v.id === showDetails.ventaId || v.id === showDetails.id);
+                const sale = state.ventas.find((v: any) => v.id === showDetails.ventaId || v.id === showDetails.id);
                 if (!sale) return null;
                 return (
                   <div className="space-y-3 animate-in slide-in-from-top-2 duration-300">
@@ -351,7 +543,7 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
                       </tr>
                     </thead>
                     <tbody>
-                      {state.cxc.filter(d => d.cliente === showClientHistory).sort((a,b) => b.fecha.localeCompare(a.fecha)).map(d => (
+                      {state.cxc.filter((d: Debt) => d.cliente === showClientHistory).sort((a: Debt, b: Debt) => b.fecha.localeCompare(a.fecha)).map((d: Debt) => (
                         <tr key={d.id} className="border-b border-line/30 hover:bg-surface-warm/20 transition-colors">
                           <td className="p-4 text-xs font-black text-ink">{Utils.fmtFecha(d.fecha)}</td>
                           <td className="p-4 text-xs font-black mono text-ink">{d.id}</td>
@@ -383,7 +575,7 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
         <div className="modal show">
           <div className="modal-bg" onClick={() => setShowModal(false)}></div>
           <div className="modal-box bg-white max-w-md border-2 border-line rounded-2xl overflow-hidden shadow-2xl">
-            <div className="modal-head py-4 px-6 bg-surface-soft border-b border-line">
+            <div className="modal-head py-4 px-6 bg-surface-soft border-b border-line flex justify-between items-center">
               <h3 className="text-ink font-black uppercase text-sm flex items-center gap-2">
                 <HandCoins className="w-5 h-5 text-brand-gold" /> Cargar Deuda Directa
               </h3>
