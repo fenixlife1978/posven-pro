@@ -139,6 +139,54 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
     return 0;
   }, [data.totalUSD, data.totalUsd, data.total, data.ventaNetaUSD, state.tasa]);
 
+  // ===== FUNCIÓN PARA OBTENER MÉTODOS DE PAGO =====
+  const getPaymentMethods = () => {
+    if (data.payments && Array.isArray(data.payments) && data.payments.length > 0) {
+      return data.payments;
+    }
+    if (data.paymentMethods && typeof data.paymentMethods === 'object') {
+      return data.paymentMethods;
+    }
+    if (data.metodosPago && typeof data.metodosPago === 'object') {
+      return data.metodosPago;
+    }
+    if (data.formasPago && typeof data.formasPago === 'object') {
+      return data.formasPago;
+    }
+    if (data.metodoPago) {
+      return { [data.metodoPago]: data.totalUSD || totalUsd };
+    }
+    return {};
+  };
+
+  // ===== FORMATO DE MÉTODO DE PAGO =====
+  const formatPaymentMethod = (method: string) => {
+    const methods: {[key: string]: string} = {
+      'efectivo': 'EFECTIVO',
+      'efectivo_bs': 'EFECTIVO (Bs.)',
+      'efectivo_usd': 'EFECTIVO (USD)',
+      'pago_movil': 'PAGO MÓVIL',
+      'pagomovil': 'PAGO MÓVIL',
+      'punto_venta': 'PUNTO DE VENTA',
+      'punto_de_venta': 'PUNTO DE VENTA',
+      'tarjeta': 'TARJETA',
+      'tarjeta_credito': 'TARJETA CRÉDITO',
+      'tarjeta_debito': 'TARJETA DÉBITO',
+      'credito': 'CRÉDITO',
+      'zelle': 'ZELLE',
+      'mixto': 'MIXTO',
+      'biopago': 'BIOPAGO',
+      'transferencia': 'TRANSFERENCIA'
+    };
+    return methods[method.toLowerCase()] || method.toUpperCase();
+  };
+
+  // ===== DETECTAR SI ES PAGO EN USD =====
+  const isUsdPayment = (method: string) => {
+    const usdMethods = ['efectivo_usd', 'efectivo usd', 'usd', 'dolar', 'zelle'];
+    return usdMethods.some(m => method.toLowerCase().includes(m));
+  };
+
   const handlePrint = () => {
     const printContent = printRef.current?.innerHTML;
     if (!printContent) return;
@@ -182,7 +230,7 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
               window.onafterprint = function() { window.close(); };
               setTimeout(function() { window.close(); }, 1500);
             };
-          </script>
+          <\/script>
         </body>
       </html>
     `);
@@ -327,22 +375,121 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
                    </tbody></table>
 
                    <div className="separator-dashed"></div>
+                   
+                   {/* ===== DESGLOSE DE MÉTODOS DE PAGO ===== */}
+                   <div className="text-center font-bold">DESGLOSE POR MÉTODOS DE PAGO</div>
+                   <div className="separator-dashed"></div>
+                   <table><tbody>
+                     {(() => {
+                       const paymentMethods = getPaymentMethods();
+                       
+                       if (Object.keys(paymentMethods).length > 0) {
+                         if (Array.isArray(paymentMethods)) {
+                           return paymentMethods.map((p: any, idx: number) => {
+                             const method = p.metodo || p.method || 'efectivo';
+                             const amountUSD = p.montoUSD || p.amountUSD || p.monto || p.amount || 0;
+                             const amountBS = p.montoBS || p.amountBS || (amountUSD * state.tasa) || 0;
+                             const isUsd = isUsdPayment(method);
+                             
+                             return (
+                               <tr key={idx}>
+                                 <td>{formatPaymentMethod(method)}:</td>
+                                 <td className="text-right">{isUsd ? `$ ${formatUsd(amountUSD)}` : formatBs(amountBS)}</td>
+                               </tr>
+                             );
+                           });
+                         } else {
+                           return Object.entries(paymentMethods).map(([method, amount], idx) => {
+                             const amountNum = typeof amount === 'number' ? amount : 0;
+                             const amountUSD = amountNum;
+                             const amountBS = amountNum * state.tasa;
+                             const isUsd = isUsdPayment(method);
+                             
+                             return (
+                               <tr key={idx}>
+                                 <td>{formatPaymentMethod(method)}:</td>
+                                 <td className="text-right">{isUsd ? `$ ${formatUsd(amountUSD)}` : formatBs(amountBS)}</td>
+                               </tr>
+                             );
+                           });
+                         }
+                       }
+                       return <tr><td colSpan={2} className="text-center">SIN DATOS DE PAGO</td></tr>;
+                     })()}
+                   </tbody></table>
+
+                   <div className="separator-dashed"></div>
+
+                   {/* ===== MOVIMIENTO DE CAJA CORREGIDO - INCLUYE COBROS DE DEUDA ===== */}
                    <div className="text-center font-bold">MOVIMIENTO DE CAJA</div>
                    <div className="separator-dashed"></div>
                    {(() => {
-                     const fondoBs = data.fondoAperturaBS || 0;
-                     const fondoUsd = data.fondoAperturaUSD || 0;
-                     const ventasEfectivoBs = data.ventasEfectivoBsBS || 0;
-                     const ventasEfectivoUsd = data.ventasEfectivoUsdUSD || 0;
+                     const fondoBs = data.fondoAperturaBS || data.fondoAperturaBs || 0;
+                     const fondoUsd = data.fondoAperturaUSD || data.fondoAperturaUsd || 0;
+                     
+                     // Calcular ventas en efectivo desde los métodos de pago
+                     let ventasEfectivoBs = 0;
+                     let ventasEfectivoUsd = 0;
+                     const paymentMethods = getPaymentMethods();
+                     
+                     if (Object.keys(paymentMethods).length > 0) {
+                       if (Array.isArray(paymentMethods)) {
+                         paymentMethods.forEach((p: any) => {
+                           const method = p.metodo || p.method || 'efectivo';
+                           const amountUSD = p.montoUSD || p.amountUSD || p.monto || p.amount || 0;
+                           const amountBS = p.montoBS || p.amountBS || (amountUSD * state.tasa) || 0;
+                           const isUsd = isUsdPayment(method);
+                           
+                           if (method === 'efectivo_bs' || (method === 'efectivo' && !isUsd)) {
+                             ventasEfectivoBs += amountBS;
+                           } else if (method === 'efectivo_usd' || isUsd) {
+                             ventasEfectivoUsd += amountUSD;
+                           }
+                         });
+                       } else {
+                         Object.entries(paymentMethods).forEach(([method, amount]) => {
+                           const amountNum = typeof amount === 'number' ? amount : 0;
+                           const amountUSD = amountNum;
+                           const amountBS = amountNum * state.tasa;
+                           const isUsd = isUsdPayment(method);
+                           
+                           if (method === 'efectivo_bs' || (method === 'efectivo' && !isUsd)) {
+                             ventasEfectivoBs += amountBS;
+                           } else if (method === 'efectivo_usd' || isUsd) {
+                             ventasEfectivoUsd += amountUSD;
+                           }
+                         });
+                       }
+                     }
+                     
+                     // ===== INCLUIR COBROS DE DEUDA EN EFECTIVO =====
+                     const cobrosDeudaBs = data.cobrosDeudaBs || data.cobrosDeudaBS || 0;
+                     const cobrosDeudaUsd = data.cobrosDeudaUsd || data.cobrosDeudaUSD || 0;
+                     
+                     // Sumar cobros de deuda a las ventas en efectivo
+                     const totalVentasEfectivoBs = ventasEfectivoBs + cobrosDeudaBs;
+                     const totalVentasEfectivoUsd = ventasEfectivoUsd + cobrosDeudaUsd;
                      
                      return (
                        <table><tbody>
                          <tr><td>FONDO APERTURA Bs.:</td><td className="text-right">{formatBs(fondoBs)}</td></tr>
-                         <tr><td>FONDO APERTURA USD:</td><td className="text-right">${formatUsd(fondoUsd).replace('$','')}</td></tr>
-                         <tr><td>VENTAS EFECTIVO Bs.:</td><td className="text-right">{formatBs(ventasEfectivoBs)}</td></tr>
-                         <tr><td>VENTAS EFECTIVO USD:</td><td className="text-right">${formatUsd(ventasEfectivoUsd).replace('$','')}</td></tr>
-                         <tr className="bold"><td>TOTAL ESTIMADO Bs.:</td><td className="text-right">{formatBs(fondoBs + ventasEfectivoBs)}</td></tr>
-                         <tr className="bold"><td>TOTAL ESTIMADO USD:</td><td className="text-right">${formatUsd(fondoUsd + ventasEfectivoUsd).replace('$','')}</td></tr>
+                         <tr><td>FONDO APERTURA USD:</td><td className="text-right">$ {formatUsd(fondoUsd)}</td></tr>
+                         <tr><td>VENTAS EFECTIVO Bs.:</td><td className="text-right">{formatBs(totalVentasEfectivoBs)}</td></tr>
+                         <tr><td>VENTAS EFECTIVO USD:</td><td className="text-right">$ {formatUsd(totalVentasEfectivoUsd)}</td></tr>
+                         {cobrosDeudaBs > 0 && (
+                           <tr className="text-[10px] text-gray-600">
+                             <td>└ COBROS DE DEUDA Bs.:</td>
+                             <td className="text-right">{formatBs(cobrosDeudaBs)}</td>
+                           </tr>
+                         )}
+                         {cobrosDeudaUsd > 0 && (
+                           <tr className="text-[10px] text-gray-600">
+                             <td>└ COBROS DE DEUDA USD:</td>
+                             <td className="text-right">$ {formatUsd(cobrosDeudaUsd)}</td>
+                           </tr>
+                         )}
+                         <tr className="bold"><td>TOTAL ESTIMADO Bs.:</td><td className="text-right">{formatBs(fondoBs + totalVentasEfectivoBs)}</td></tr>
+                         <tr className="bold"><td>TOTAL ESTIMADO USD:</td><td className="text-right">$ {formatUsd(fondoUsd + totalVentasEfectivoUsd)}</td></tr>
                        </tbody></table>
                      );
                    })()}
@@ -386,15 +533,27 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
                      <tr className="bold"><td>TOTAL EN Bs.:</td><td className="text-right">{formatBs(totalBs)}</td></tr>
                    </tbody></table>
                    <div className="separator-dashed"></div>
+                   
+                   {/* ===== DESGLOSE DE PAGOS EN RECIBO ===== */}
                    <div className="text-center font-bold">FORMA DE PAGO</div>
                    {(() => {
                      const pays = data.payments || [];
                      return (
                        <table><tbody>
-                         {pays.length > 0 ? pays.map((p: any, i: number) => (
-                           <tr key={i}><td>{Utils.metodoLabel(p.metodo).toUpperCase()}:</td><td className="text-right">{p.metodo.includes('usd') || p.metodo === 'zelle' ? `$${formatUsd(p.montoUSD).replace('$','')}` : formatBs(p.montoBS)}</td></tr>
-                         )) : (
-                           <tr><td>{Utils.metodoLabel(data.metodoPago).toUpperCase()}:</td><td className="text-right">${formatUsd(totalUsd).replace('$','')}</td></tr>
+                         {pays.length > 0 ? pays.map((p: any, i: number) => {
+                           const isUsd = isUsdPayment(p.metodo);
+                           const amount = p.montoUSD || p.monto || 0;
+                           return (
+                             <tr key={i}>
+                               <td>{Utils.metodoLabel(p.metodo).toUpperCase()}:</td>
+                               <td className="text-right">{isUsd ? `$ ${formatUsd(amount).replace('$','')}` : formatBs(p.montoBS || (amount * state.tasa))}</td>
+                             </tr>
+                           );
+                         }) : (
+                           <tr>
+                             <td>{Utils.metodoLabel(data.metodoPago).toUpperCase()}:</td>
+                             <td className="text-right">${formatUsd(totalUsd).replace('$','')}</td>
+                           </tr>
                          )}
                          {data.change > 0 && <tr><td>SU VUELTO Bs.:</td><td className="text-right">{formatBs(data.change)}</td></tr>}
                          <tr><td colSpan={2} className="text-center text-[9px] mt-1">(Tasa Ref: {state.tasa.toFixed(2)} Bs/USD)</td></tr>

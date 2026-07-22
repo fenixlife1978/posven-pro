@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState } from 'react';
@@ -6,10 +5,20 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { CartItem, PaymentMethod, Sale } from '@/lib/types';
+import { PaymentMethod, Sale, SaleItem } from '@/lib/types';
 import { Store } from '@/lib/db-store';
 import { toast } from '@/hooks/use-toast';
 import { DollarSign, Banknote, CreditCard, Smartphone, CheckCircle2 } from 'lucide-react';
+
+// Definir CartItem localmente
+interface CartItem {
+  productId: string;
+  barcode: string;
+  name: string;
+  price: number;
+  qty: number;
+  maxStock: number;
+}
 
 interface Props {
   isOpen: boolean;
@@ -40,45 +49,72 @@ export function PaymentModal({ isOpen, onClose, cart, exchangeRate, onComplete }
       return;
     }
 
-    const nextSaleNum = Store.get('nextSaleNum', 1);
+    // Obtener estado actual
+    const currentState = Store.get();
+    
+    // Generar número de recibo
+    const nextSaleNum = currentState.proximoRecibo || 1;
     const saleId = `V-${String(nextSaleNum).padStart(6, '0')}`;
-    Store.set('nextSaleNum', nextSaleNum + 1);
+    
+    // Obtener productos actuales
+    const products = currentState.productos || [];
+    
+    // Crear items de venta
+    const saleItems: SaleItem[] = cart.map(item => ({
+      productoId: item.productId,
+      nombre: item.name,
+      cantidad: item.qty,
+      precioUnitUSD: item.price,
+      subtotalUSD: item.price * item.qty
+    }));
 
+    // Actualizar stock
+    const updatedProducts = products.map(p => {
+      const cartItem = cart.find(item => item.productId === p.id);
+      if (cartItem) {
+        return { ...p, stock: (p.stock || 0) - cartItem.qty };
+      }
+      return p;
+    });
+
+    // Crear la venta
     const sale: Sale = {
       id: saleId,
-      date: new Date().toISOString(),
-      type: 'CONTADO',
-      paymentMethod: method,
-      items: [...cart],
-      totalBS,
-      totalUSD,
+      fecha: new Date().toISOString(),
+      cliente: 'Consumidor final',
+      items: saleItems,
+      subtotalUSD: totalUSD,
+      descuentoUSD: 0,
+      totalUSD: totalUSD,
+      totalBS: totalBS,
+      metodoPago: method,
+      estado: 'completada',
+      type: 'VENTA',
       received: actualReceived,
-      change,
-      paid: totalBS,
-      balance: 0
+      change: change,
+      tasa: exchangeRate,
+      payments: [{
+        metodo: method,
+        montoUSD: totalUSD,
+        montoBS: totalBS
+      }]
     };
 
-    // Update sales
-    const sales = Store.get<Sale[]>('sales', []);
-    Store.set('sales', [...sales, sale]);
+    // Actualizar estado global
+    const newState = {
+      ...currentState,
+      proximoRecibo: nextSaleNum + 1,
+      ventas: [...(currentState.ventas || []), sale],
+      productos: updatedProducts
+    };
+    
+    Store.set(newState);
 
-    // Update stock
-    const products = Store.get<any[]>('products', []);
-    cart.forEach(item => {
-      const p = products.find(prod => prod.id === item.productId);
-      if (p) p.stock -= item.qty;
+    toast({ 
+      title: "✅ Venta Exitosa", 
+      description: `Venta ${saleId} procesada correctamente.` 
     });
-    Store.set('products', products);
-
-    // Update cash session
-    const cashData = Store.get<any>('cashData', null);
-    if (cashData) {
-      cashData.totalSales += totalBS;
-      cashData.saleCount += 1;
-      Store.set('cashData', cashData);
-    }
-
-    toast({ title: "Venta Exitosa", description: `Venta ${saleId} procesada.` });
+    
     onComplete(sale);
     onClose();
     setReceivedBS('');
