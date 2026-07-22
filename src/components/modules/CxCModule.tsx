@@ -27,8 +27,10 @@ import {
   RefreshCw
 } from 'lucide-react';
 import { exportarPDFCxC } from '@/lib/pdf-generator';
+import { useToast } from '@/hooks/use-toast';
 
 export default function CxCModule({ state, updateState }: { state: AppState, updateState: (s: Partial<AppState>) => void }) {
+  const { toast } = useToast();
   const [showModal, setShowModal] = useState(false);
   const [showDetails, setShowDetails] = useState<any>(null);
   const [expandedClient, setExpandedClient] = useState<string | null>(null);
@@ -163,6 +165,52 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
   useEffect(() => {
     syncCustomersFromCxC();
   }, []);
+
+  // ===== NUEVA FUNCIÓN: ELIMINAR CLIENTE COMPLETO =====
+  const eliminarCliente = (clientName: string) => {
+    // Verificar si el cliente tiene deudas pendientes
+    const tieneDeudasPendientes = todasLasDeudas.some(
+      (d: Debt) => d.cliente === clientName && d.estado !== 'pagada'
+    );
+    
+    if (tieneDeudasPendientes) {
+      toast({ 
+        variant: "destructive",
+        title: "No se puede eliminar", 
+        description: `El cliente "${clientName}" tiene deudas pendientes.` 
+      });
+      return;
+    }
+
+    // Verificar si el cliente tiene deudas (aunque estén pagadas)
+    const tieneDeudas = todasLasDeudas.some((d: Debt) => d.cliente === clientName);
+    
+    let mensajeConfirmacion = `¿Está seguro de eliminar permanentemente al cliente "${clientName}"`;
+    if (tieneDeudas) {
+      mensajeConfirmacion += " y todo su historial de deudas (pagadas)";
+    }
+    mensajeConfirmacion += "?";
+
+    if (!confirm(mensajeConfirmacion)) {
+      return;
+    }
+
+    // Eliminar cliente de la lista de clientes
+    const clientesActualizados = allCustomers.filter((c: Customer) => c.name !== clientName);
+    
+    // Eliminar todas las deudas del cliente
+    const deudasActualizadas = todasLasDeudas.filter((d: Debt) => d.cliente !== clientName);
+    
+    updateState({ 
+      clientes: clientesActualizados, 
+      cxc: deudasActualizadas 
+    });
+    
+    toast({ 
+      title: "Cliente eliminado", 
+      description: `El cliente "${clientName}" ha sido eliminado permanentemente.` 
+    });
+  };
 
   const guardarDeudaDirecta = () => {
     if (!nuevaDeuda.cliente || !nuevaDeuda.cedula || nuevaDeuda.montoUSD <= 0) {
@@ -363,15 +411,34 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
                         <td className="text-center py-4">
                            <div className="flex items-center justify-center gap-2">
                              {tieneDeudas ? (
-                               <button 
-                                  onClick={() => setShowClientHistory(clientName)} 
-                                  className="w-10 h-10 rounded-full flex items-center justify-center bg-white text-status-success border-2 border-status-success/20 hover:bg-status-success hover:text-white transition-all shadow-md"
-                                  title="Consultar Historial Maestro"
-                               >
-                                  <Eye className="w-5 h-5" />
-                               </button>
+                               <>
+                                 <button 
+                                   onClick={() => setShowClientHistory(clientName)} 
+                                   className="w-10 h-10 rounded-full flex items-center justify-center bg-white text-status-success border-2 border-status-success/20 hover:bg-status-success hover:text-white transition-all shadow-md"
+                                   title="Consultar Historial Maestro"
+                                 >
+                                   <Eye className="w-5 h-5" />
+                                 </button>
+                                 {/* ===== BOTÓN ELIMINAR CLIENTE - SOLO SI NO TIENE DEUDAS PENDIENTES ===== */}
+                                 {!tieneDeudaPendiente && (
+                                   <button 
+                                     onClick={() => eliminarCliente(clientName)} 
+                                     className="w-10 h-10 rounded-full flex items-center justify-center bg-white text-status-danger border-2 border-status-danger/20 hover:bg-status-danger hover:text-white transition-all shadow-md"
+                                     title="Eliminar Cliente"
+                                   >
+                                     <Trash2 className="w-5 h-5" />
+                                   </button>
+                                 )}
+                               </>
                              ) : (
-                               <span className="text-gray-300 text-[10px] font-black">Sin historial</span>
+                               /* ===== CLIENTE SIN DEUDAS - MOSTRAR PAPELERA DIRECTAMENTE ===== */
+                               <button 
+                                 onClick={() => eliminarCliente(clientName)} 
+                                 className="w-10 h-10 rounded-full flex items-center justify-center bg-white text-status-danger border-2 border-status-danger/20 hover:bg-status-danger hover:text-white transition-all shadow-md"
+                                 title="Eliminar Cliente"
+                               >
+                                 <Trash2 className="w-5 h-5" />
+                               </button>
                              )}
                            </div>
                         </td>
