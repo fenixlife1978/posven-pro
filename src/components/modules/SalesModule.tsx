@@ -43,6 +43,7 @@ import {
 } from 'lucide-react';
 import { auth } from '@/lib/firebase';
 import { ReceiptModal } from '@/components/pos/ReceiptModal';
+import { CreditModal } from '@/components/pos/CreditSaleModal';
 import FloatingPaymentModal from '@/components/pos/FloatingPaymentModal';
 import { toast } from '@/hooks/use-toast';
 import { AppState, SaleItem, Sale, PaymentMethod, ReportZ, PagoRealizado, Customer, Return, ReturnItem, Product, Debt, Movimiento, LibroDiarioEntry } from '@/lib/types';
@@ -50,7 +51,85 @@ import { Utils, Store } from '@/lib/db-store';
 import ReturnsModule from '@/components/modules/ReturnsModule';
 import { cn } from '@/lib/utils';
 
-// ✅ ELIMINADO: El declare global ya está en ReceiptModal.tsx
+// ============================================================
+// UTILIDADES DE NORMALIZACIÓN DE CÉDULA (integradas)
+// ============================================================
+
+/**
+ * Normaliza una cédula según el tipo de documento
+ * - Para V- y E-: formato con puntos (XX.XXX.XXX)
+ * - Para J-, G-, P-: solo dígitos sin formato
+ */
+function normalizeCedula(cedula: string, docType?: string): string {
+  if (!cedula) return '';
+  
+  let type = docType || '';
+  let number = cedula;
+  
+  const match = cedula.match(/^([A-Z]-?)?(.*)/);
+  if (match) {
+    if (match[1] && !docType) {
+      type = match[1].replace('-', '').trim() + '-';
+    }
+    number = match[2] || '';
+  }
+  
+  const cleanNumber = number.replace(/[^0-9]/g, '');
+  
+  if (!type) type = 'V-';
+  
+  if (type === 'V-' || type === 'E-') {
+    const digits = cleanNumber;
+    if (digits.length <= 2) return `${type}${digits}`;
+    if (digits.length <= 5) return `${type}${digits.slice(0, 2)}.${digits.slice(2)}`;
+    if (digits.length <= 8) return `${type}${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5)}`;
+    return `${type}${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}`;
+  }
+  
+  return `${type}${cleanNumber}`;
+}
+
+/**
+ * Obtiene solo el número de cédula sin puntos ni tipo
+ */
+function getRawCedula(cedula: string): string {
+  return cedula.replace(/[^0-9]/g, '');
+}
+
+/**
+ * Busca un cliente por cédula normalizada, ignorando formato
+ */
+function findCustomerByCedula(customers: any[], cedula: string): any | null {
+  const raw = getRawCedula(cedula);
+  return customers.find(c => getRawCedula(c.cedula) === raw) || null;
+}
+
+/**
+ * Busca deudas por cédula del cliente (en el campo cliente)
+ */
+function findDebtsByCedula(deudas: any[], cedula: string): any[] {
+  const raw = getRawCedula(cedula);
+  return deudas.filter(d => {
+    if (!d.cliente) return false;
+    const match = d.cliente.match(/^(.*?)\s*\[(.*?)\]$/);
+    if (match) {
+      return getRawCedula(match[2]) === raw;
+    }
+    return false;
+  });
+}
+
+/**
+ * Extrae el tipo de documento (V-, J-, etc.) de una cédula
+ */
+function extractDocType(cedula: string): string {
+  const match = cedula.match(/^([A-Z]-?)/);
+  return match ? match[1].replace('-', '').trim() + '-' : 'V-';
+}
+
+// ============================================================
+// COMPONENTE PRINCIPAL
+// ============================================================
 
 export default function SalesModule({ state, updateState }: { state: AppState, updateState: (s: Partial<AppState>) => void }) {
   const [search, setSearch] = useState('');
@@ -73,7 +152,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   
   const [priceSelectorItem, setPriceSelectorItem] = useState<{ index: number, product: Product } | null>(null);
 
-  const [isCreditView, setIsCreditView] = useState(false);
+  // ===== ESTADOS PARA CREDIT MODAL =====
+  const [isCreditModalOpen, setIsCreditModalOpen] = useState(false);
   const [clientSearch, setClientSearch] = useState('');
   const [selectedClient, setSelectedClient] = useState<Customer | null>(null);
   const [showNewClientForm, setShowNewClientForm] = useState(false);
@@ -87,13 +167,27 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
 
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  const formatVNCedula = (val: string) => {
+  // ===== CORREGIDO: Formato de cédula según tipo =====
+  const formatCedulaByType = (val: string, type: string) => {
+    if (type !== 'V' && type !== 'E') {
+      return val.replace(/\D/g, '');
+    }
     const digits = val.replace(/\D/g, '');
-    return digits.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+    if (digits.length <= 2) return digits;
+    if (digits.length <= 5) return digits.slice(0, 2) + '.' + digits.slice(2);
+    if (digits.length <= 8) return digits.slice(0, 2) + '.' + digits.slice(2, 5) + '.' + digits.slice(5);
+    return digits.slice(0, 2) + '.' + digits.slice(2, 5) + '.' + digits.slice(5, 8);
   };
 
   const handleNewClientCedulaChange = (val: string) => {
-    setNewClient({ ...newClient, cedula: formatVNCedula(val) });
+    const formatted = formatCedulaByType(val, newClient.tipoDoc);
+    setNewClient({ ...newClient, cedula: formatted });
+  };
+
+  const handleNewClientTipoDocChange = (tipo: string) => {
+    const cleanNumber = newClient.cedula.replace(/\./g, '');
+    const formatted = formatCedulaByType(cleanNumber, tipo);
+    setNewClient({ ...newClient, tipoDoc: tipo, cedula: formatted });
   };
 
   const currentTerminal = useMemo(() => {
@@ -355,9 +449,33 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         tasa: state.tasa
       };
       
-      const nuevasEntradasDiario: LibroDiarioEntry[] = listadoPagos.map(p => ({ id: 'ACC-' + Store.uid().toUpperCase().slice(0, 5), fecha: ahoraStr, tipo: 'ingreso', categoria: 'VENTA', concepto: `VENTA #${reciboId} - CLIENTE: ${cliente.toUpperCase()}`, montoUSD: p.montoUSD, montoBS: p.montoBS, metodo: p.metodo, referencia: reciboId + '-' + (terminal?.id || 'GLOBAL') }));
-      await updateState({ productos: prodsActualizados, ventas: [...state.ventas, nuevaVenta], movimientos: [...state.movimientos, ...nuevosMovimientos], libroDiario: [...nuevasEntradasDiario, ...(state.libroDiario || [])], carrito: [], proximoRecibo: state.proximoRecibo + 1, terminales: state.terminales.map(t => t.id === terminal?.id ? { ...t, proximoRecibo: t.proximoRecibo + 1 } : t) });
-      setLastProcessedSale(nuevaVenta); setShowReceiptModal(true); setPagos([]); setCliente('Consumidor final'); setSelectedProductDisplay(null);
+      const nuevasEntradasDiario: LibroDiarioEntry[] = listadoPagos.map(p => ({ 
+        id: 'ACC-' + Store.uid().toUpperCase().slice(0, 5), 
+        fecha: ahoraStr, 
+        tipo: 'ingreso', 
+        categoria: 'VENTA', 
+        concepto: `VENTA #${reciboId} - CLIENTE: ${cliente.toUpperCase()}`, 
+        montoUSD: p.montoUSD, 
+        montoBS: p.montoBS, 
+        metodo: p.metodo, 
+        referencia: reciboId + '-' + (terminal?.id || 'GLOBAL') 
+      }));
+      
+      await updateState({ 
+        productos: prodsActualizados, 
+        ventas: [...state.ventas, nuevaVenta], 
+        movimientos: [...state.movimientos, ...nuevosMovimientos], 
+        libroDiario: [...nuevasEntradasDiario, ...(state.libroDiario || [])], 
+        carrito: [], 
+        proximoRecibo: state.proximoRecibo + 1, 
+        terminales: state.terminales.map(t => t.id === terminal?.id ? { ...t, proximoRecibo: t.proximoRecibo + 1 } : t) 
+      });
+      
+      setLastProcessedSale(nuevaVenta); 
+      setShowReceiptModal(true); 
+      setPagos([]); 
+      setCliente('Consumidor final'); 
+      setSelectedProductDisplay(null);
     } finally {
       setIsProcessing(false);
     }
@@ -384,7 +502,17 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         }
         return d;
       });
-      const nuevosAsientos: LibroDiarioEntry[] = pagosAbono.map(p => ({ id: 'ACC-' + Store.uid().toUpperCase().slice(0, 5), fecha: ahoraStr, tipo: 'ingreso', categoria: 'COBRO_DEUDA', concepto: `ABONO DEUDA #${showAbonoModal.id} - CLIENTE: ${showAbonoModal.cliente?.toUpperCase()}`, montoUSD: p.montoUSD, montoBS: p.montoBS, metodo: p.metodo, referencia: reciboId + '-' + (terminal?.id || 'GLOBAL') }));
+      const nuevosAsientos: LibroDiarioEntry[] = pagosAbono.map(p => ({ 
+        id: 'ACC-' + Store.uid().toUpperCase().slice(0, 5), 
+        fecha: ahoraStr, 
+        tipo: 'ingreso', 
+        categoria: 'COBRO_DEUDA', 
+        concepto: `ABONO DEUDA #${showAbonoModal.id} - CLIENTE: ${showAbonoModal.cliente?.toUpperCase()}`, 
+        montoUSD: p.montoUSD, 
+        montoBS: p.montoBS, 
+        metodo: p.metodo, 
+        referencia: reciboId + '-' + (terminal?.id || 'GLOBAL') 
+      }));
       
       const saleAbono: Sale = { 
         id: reciboId, 
@@ -404,27 +532,37 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         tasa: state.tasa
       };
       
-      await updateState({ cxc: nuevasDeudas, libroDiario: [...nuevosAsientos, ...(state.libroDiario || [])], proximoRecibo: state.proximoRecibo + 1, ventas: [...state.ventas, saleAbono], terminales: state.terminales.map(t => t.id === terminal?.id ? { ...t, proximoRecibo: t.proximoRecibo + 1 } : t) });
-      setLastProcessedSale(saleAbono); setShowReceiptModal(true); setShowAbonoModal(null);
+      await updateState({ 
+        cxc: nuevasDeudas, 
+        libroDiario: [...nuevosAsientos, ...(state.libroDiario || [])], 
+        proximoRecibo: state.proximoRecibo + 1, 
+        ventas: [...state.ventas, saleAbono], 
+        terminales: state.terminales.map(t => t.id === terminal?.id ? { ...t, proximoRecibo: t.proximoRecibo + 1 } : t) 
+      });
+      
+      setLastProcessedSale(saleAbono); 
+      setShowReceiptModal(true); 
+      setShowAbonoModal(null);
     } finally {
       setIsProcessing(false);
     }
   };
 
-  const ejecutarVentaACredito = async () => {
+  // ===== CORREGIDO: FUNCIÓN PARA EJECUTAR VENTA A CRÉDITO CON CLIENTE =====
+  const ejecutarVentaACredito = async (customer: Customer) => {
     if (state.carrito.length === 0 || isProcessing) return;
-    let targetClient: Customer | null = selectedClient;
-    if (showNewClientForm) {
-      if (!newClient.name || !newClient.cedula) return alert("Datos incompletos.");
-      const fullId = `${newClient.tipoDoc}-${newClient.cedula}`;
-      targetClient = { id: Store.uid(), name: newClient.name.toUpperCase(), cedula: fullId, phone: newClient.phone, address: newClient.address, debt: 0 };
-    }
-    if (!targetClient) return alert("Seleccione un cliente.");
+    if (!customer) return alert("Seleccione un cliente.");
     
     setIsProcessing(true);
     try {
-      const terminal = getCurrentTerminal(), nextNum = terminal?.proximoRecibo || state.proximoRecibo, reciboId = String(nextNum).padStart(9, '0'), ahoraStr = Utils.ahora();
-      let vExento = 0, vBase = 0, vIVA = 0, prodsActualizados = [...state.productos], nuevosMovimientos: Movimiento[] = [];
+      const terminal = getCurrentTerminal();
+      const nextNum = terminal?.proximoRecibo || state.proximoRecibo;
+      const reciboId = String(nextNum).padStart(9, '0');
+      const ahoraStr = Utils.ahora();
+      
+      let vExento = 0, vBase = 0, vIVA = 0;
+      let prodsActualizados = [...state.productos], nuevosMovimientos: Movimiento[] = [];
+      
       state.carrito.forEach(item => {
         const pIdx = prodsActualizados.findIndex(x => x.id === item.productoId);
         if (pIdx === -1) return;
@@ -452,7 +590,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       const nuevaVenta: Sale = { 
         id: reciboId, 
         fecha: ahoraStr, 
-        cliente: targetClient.name, 
+        cliente: customer.name, 
         items: [...state.carrito], 
         subtotalUSD, 
         descuentoUSD: 0, 
@@ -473,21 +611,66 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         tasa: state.tasa
       };
       
-      const nuevaDeuda: Debt = { id: 'CRD-' + reciboId.slice(-6), fecha: ahoraStr.slice(0, 10), fechaVencimiento: '2099-12-31', cliente: `${targetClient.name} [${targetClient.cedula}]`, montoUSD: subtotalUSD, abonadoUSD: 0, saldoUSD: subtotalUSD, estado: 'pendiente' as 'pendiente', historialPagos: [], ventaId: reciboId };
+      // Normalizar cédula para la deuda (asegurar formato correcto)
+      const cedulaNormalizada = normalizeCedula(customer.cedula, extractDocType(customer.cedula));
+      const nombreCliente = customer.name;
+      
+      const nuevaDeuda: Debt = { 
+        id: 'CRD-' + reciboId.slice(-6), 
+        fecha: ahoraStr.slice(0, 10), 
+        fechaVencimiento: '2099-12-31', 
+        cliente: `${nombreCliente} [${cedulaNormalizada}]`, 
+        montoUSD: subtotalUSD, 
+        abonadoUSD: 0, 
+        saldoUSD: subtotalUSD, 
+        estado: 'pendiente' as 'pendiente', 
+        historialPagos: [], 
+        ventaId: reciboId 
+      };
+      
       await updateState({ 
         productos: prodsActualizados, 
         ventas: [...state.ventas, nuevaVenta], 
         movimientos: [...state.movimientos, ...nuevosMovimientos], 
         cxc: [...state.cxc, nuevaDeuda], 
-        clientes: showNewClientForm ? [...(state.clientes || []), { ...targetClient, debt: subtotalUSD }] : (state.clientes || []).map(c => c.id === targetClient!.id ? { ...c, debt: (c.debt || 0) + subtotalUSD } : c), 
+        clientes: (state.clientes || []).map(c => c.id === customer.id ? { ...c, debt: (c.debt || 0) + subtotalUSD } : c), 
         proximoRecibo: state.proximoRecibo + 1, 
         terminales: state.terminales.map(t => t.id === terminal?.id ? { ...t, proximoRecibo: t.proximoRecibo + 1 } : t), 
         carrito: [] 
       });
-      setLastProcessedSale(nuevaVenta); setShowReceiptModal(true); setIsCreditView(false); setSelectedClient(null);
+      
+      setLastProcessedSale(nuevaVenta); 
+      setShowReceiptModal(true); 
+      setIsCreditModalOpen(false); 
+      setSelectedClient(null);
     } finally {
       setIsProcessing(false);
     }
+  };
+
+  // ===== HANDLER PARA EL CREDIT MODAL =====
+  const handleCreditModalConfirm = (customer: Customer, amount: number) => {
+    // Verificar si el cliente tiene una cédula normalizada
+    if (customer.cedula && !customer.cedula.includes('.')) {
+      // Si la cédula no tiene formato, normalizarla
+      const tipo = extractDocType(customer.cedula);
+      const cedulaNormalizada = normalizeCedula(customer.cedula, tipo);
+      // Actualizar el cliente antes de proceder
+      const customers = state.clientes || [];
+      const exists = findCustomerByCedula(customers, cedulaNormalizada);
+      if (exists) {
+        // Usar el cliente existente
+        setSelectedClient(exists);
+        setIsCreditModalOpen(false);
+        setTimeout(() => ejecutarVentaACredito(exists), 100);
+        return;
+      }
+      // Actualizar el cliente con la cédula normalizada
+      customer.cedula = cedulaNormalizada;
+    }
+    setSelectedClient(customer);
+    setIsCreditModalOpen(false);
+    setTimeout(() => ejecutarVentaACredito(customer), 100);
   };
 
   return (
@@ -561,7 +744,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                     </div>
                   )}
                   {state.carrito.length > 0 && (
-                    <button onClick={() => setIsCreditView(true)} className="w-full h-10 border-2 border-status-info text-status-info hover:bg-status-info-soft font-black uppercase text-[10px] rounded-xl transition-all mt-4">Cargar a Crédito</button>
+                    <button onClick={() => setIsCreditModalOpen(true)} className="w-full h-10 border-2 border-status-info text-status-info hover:bg-status-info-soft font-black uppercase text-[10px] rounded-xl transition-all mt-4">Cargar a Crédito</button>
                   )}
                 </div>
               </div>
@@ -732,10 +915,63 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         </div>
       )}
 
-      {showReceiptModal && (<ReceiptModal isOpen={showReceiptModal} onClose={() => { setShowReceiptModal(false); setLastProcessedSale(null); }} saleData={lastProcessedSale} type="SALE" />)}
-      {showReportType && reportSnapshot && (<ReceiptModal isOpen={!!showReportType} onClose={() => { if (showReportType === 'REPORT_Z') ejecutarCierreZ(); setShowReportType(null); }} reportData={reportSnapshot} type={showReportType} />)}
-      {showMultiModal && (<FloatingPaymentModal total={totalBS} totalCents={Math.round(totalBS * 100)} exchangeRate={state.tasa} onClose={() => setShowMultiModal(false)} onConfirm={(data) => { ejecutarVenta(data.payments.map(p => ({ metodo: p.method as PaymentMethod, montoUSD: p.usdAmount || (p.amount / state.tasa), montoBS: p.amount }))); setShowMultiModal(false); }} />)}
-      {showAbonoModal && (<FloatingPaymentModal total={showAbonoModal.saldoUSD * state.tasa} totalCents={Math.round(showAbonoModal.saldoUSD * state.tasa * 100)} exchangeRate={state.tasa} onClose={() => setShowAbonoModal(null)} allowPartial={true} onConfirm={(data) => { ejecutarAbono(data.payments.map(p => ({ metodo: p.method as PaymentMethod, montoUSD: p.usdAmount || (p.amount / state.tasa), montoBS: p.amount }))); }} />)}
+      {showReceiptModal && (
+        <ReceiptModal 
+          isOpen={showReceiptModal} 
+          onClose={() => { 
+            setShowReceiptModal(false); 
+            setLastProcessedSale(null); 
+          }} 
+          saleData={lastProcessedSale} 
+          type="SALE" 
+        />
+      )}
+      
+      {showReportType && reportSnapshot && (
+        <ReceiptModal 
+          isOpen={!!showReportType} 
+          onClose={() => { 
+            if (showReportType === 'REPORT_Z') ejecutarCierreZ(); 
+            setShowReportType(null); 
+          }} 
+          reportData={reportSnapshot} 
+          type={showReportType} 
+        />
+      )}
+      
+      {showMultiModal && (
+        <FloatingPaymentModal 
+          total={totalBS} 
+          totalCents={Math.round(totalBS * 100)} 
+          exchangeRate={state.tasa} 
+          onClose={() => setShowMultiModal(false)} 
+          onConfirm={(data) => { 
+            ejecutarVenta(data.payments.map(p => ({ 
+              metodo: p.method as PaymentMethod, 
+              montoUSD: p.usdAmount || (p.amount / state.tasa), 
+              montoBS: p.amount 
+            }))); 
+            setShowMultiModal(false); 
+          }} 
+        />
+      )}
+      
+      {showAbonoModal && (
+        <FloatingPaymentModal 
+          total={showAbonoModal.saldoUSD * state.tasa} 
+          totalCents={Math.round(showAbonoModal.saldoUSD * state.tasa * 100)} 
+          exchangeRate={state.tasa} 
+          onClose={() => setShowAbonoModal(null)} 
+          allowPartial={true} 
+          onConfirm={(data) => { 
+            ejecutarAbono(data.payments.map(p => ({ 
+              metodo: p.method as PaymentMethod, 
+              montoUSD: p.usdAmount || (p.amount / state.tasa), 
+              montoBS: p.amount 
+            }))); 
+          }} 
+        />
+      )}
 
       {showDetails && (
         <div className="modal show" style={{ zIndex: 110 }}><div className="modal-bg" onClick={() => setShowDetails(null)}></div>
@@ -874,54 +1110,20 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         </div>
       )}
 
-      {isCreditView && (
-        <div className="modal show"><div className="modal-bg" onClick={() => setIsCreditView(false)}></div>
-          <div className="modal-box max-w-[380px] bg-white border-2 border-line">
-            <div className="modal-head py-3 px-4 border-b border-line bg-surface-soft flex justify-between"><h3 className="text-ink text-xs font-black uppercase tracking-widest flex items-center gap-2"><HandCoins className="w-4 h-4 text-brand-gold" /> CARGAR CRÉDITO</h3><button onClick={() => setIsCreditView(false)}><X size={18} /></button></div>
-            <div className="modal-body p-4 space-y-4">
-              {!showNewClientForm ? (
-                <div className="space-y-3">
-                   <div className="bg-ink p-3 rounded-lg text-center mb-2"><p className="text-white/40 text-[8px] font-black uppercase mb-1">Monto a Deber</p><p className="text-2xl font-black text-brand-gold">{Utils.fmtUSD(subtotalUSD)}</p></div>
-                   <div className="relative"><Search className="absolute left-3 top-2.5 w-4 h-4 text-ink opacity-30" /><input className="form-input pl-10 h-10 text-xs font-bold" placeholder="Buscar cliente..." value={clientSearch} onChange={e => setClientSearch(e.target.value)} /></div>
-                   <div className="max-h-[160px] overflow-y-auto border border-line rounded-xl bg-gray-50 shadow-inner">{(filteredClients || []).map(c => (<div key={c.id} onClick={() => setSelectedClient(c)} className={`p-3 border-b border-line/40 cursor-pointer hover:bg-brand-gold-soft transition-all ${selectedClient?.id === c.id ? 'bg-brand-gold-soft border-l-4 border-l-brand-gold' : ''}`}><div className="text-xs font-black text-ink uppercase">{c.name}</div><div className="text-[10px] text-ink/40 mono">{c.cedula}</div></div>))}{filteredClients.length === 0 && <div className="p-10 text-center text-[10px] font-black text-ink/20 uppercase">No hay resultados</div>}</div>
-                   <div className="flex flex-col gap-2"><button className="btn bg-status-info-soft text-status-info border border-status-info/40 font-black uppercase text-[10px] h-10 flex items-center justify-center gap-2" onClick={() => setShowNewClientForm(true)}><UserPlus className="w-4 h-4" /> Registrar Nuevo</button><button className="btn btn-primary w-full h-12 font-black uppercase text-xs shadow-md" disabled={!selectedClient || isProcessing} onClick={ejecutarVentaACredito}>{isProcessing ? <Loader2 className="w-4 h-4 animate-spin mr-2 inline" /> : null}Cargar a Cartera</button></div>
-                </div>
-              ) : (
-                <div className="space-y-4 animate-in slide-in-from-right-2 duration-200">
-                  <div className="space-y-2">
-                    <div className="space-y-1"><label className="text-[9px] font-black uppercase text-ink">Nombre Completo</label><input className="form-input h-9 text-xs font-black uppercase" value={newClient.name} onChange={e => setNewClient({...newClient, name: e.target.value})} /></div>
-                    <div className="space-y-1">
-                      <label className="text-[9px] font-black uppercase text-ink">Cédula / Identificación</label>
-                      <div className="grid grid-cols-[80px_1fr] gap-1.5 items-center">
-                        <select 
-                          className="form-select h-9 text-[10px] font-black bg-surface-soft border-line w-full px-1"
-                          value={newClient.tipoDoc}
-                          onChange={e => setNewClient({ ...newClient, tipoDoc: e.target.value })}
-                        >
-                          {['V', 'E', 'J', 'G', 'P'].map(t => <option key={t} value={t}>{t}</option>)}
-                        </select>
-                        <div className="relative">
-                          <Hash className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-ink opacity-30" />
-                          <input 
-                            className="form-input pl-8 h-9 text-xs font-black w-full" 
-                            placeholder="EJ: 13313521"
-                            value={newClient.cedula}
-                            onChange={e => handleNewClientCedulaChange(e.target.value)}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                    <div className="space-y-1"><label className="text-[9px] font-black uppercase text-ink">Teléfono (XXXX-XXXXXXX)</label><input className="form-input h-9 text-xs font-black uppercase" value={newClient.phone} onChange={e => setNewClient({...newClient, phone: e.target.value})} placeholder="04XX-XXXXXXX" /></div>
-                    <div className="space-y-1"><label className="text-[9px] font-black uppercase text-ink">Dirección</label><input className="form-input h-9 text-xs font-black uppercase" value={newClient.address} onChange={e => setNewClient({...newClient, address: e.target.value})} /></div>
-                  </div>
-                  <button className="btn btn-primary w-full h-12 font-black uppercase text-xs shadow-md" disabled={isProcessing} onClick={ejecutarVentaACredito}>{isProcessing ? <Loader2 className="w-4 h-4 animate-spin mr-2 inline" /> : null}Guardar y Cargar</button>
-                  <button className="text-[10px] text-ink font-black uppercase text-center w-full" onClick={() => setShowNewClientForm(false)}>Volver a la lista</button>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      {/* ============================================================ */}
+      {/* MODAL DE CRÉDITO - AHORA RECIBE CLIENTES Y DEUDAS PARA MOSTRAR SALDO */}
+      {/* ============================================================ */}
+      <CreditModal
+        isOpen={isCreditModalOpen}
+        onClose={() => setIsCreditModalOpen(false)}
+        onConfirm={handleCreditModalConfirm}
+        totalAmount={subtotalUSD}
+        {...({ 
+          clients: state.clientes || [], 
+          debts: state.cxc || [], 
+          initialClientName: cliente 
+        } as any)}
+      />
     </div>
   );
 }
