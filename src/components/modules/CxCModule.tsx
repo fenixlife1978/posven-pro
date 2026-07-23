@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import { AppState, Debt, Customer } from '@/lib/types';
 import { Utils, Store } from '@/lib/db-store';
 import { 
@@ -79,53 +79,52 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
   const pendientes = todasLasDeudas.filter((x: any) => x.estado !== 'pagada');
   const totalPendiente = pendientes.reduce((s: number, x: any) => s + x.saldoUSD, 0);
 
-  // Agrupar TODOS los clientes (incluyendo saldo 0)
+  // Agrupar SOLO clientes que existen en state.clientes
   const groupedCredits = useMemo(() => {
     const groups: Record<string, { 
       totalUSD: number; 
       debts: Debt[];
-      customer: Customer | null;
+      customer: Customer;
     }> = {};
 
-    // 1. Primero, agregar todos los clientes del sistema (incluyendo saldo 0)
+    // 1. Primero, agregar todos los clientes del sistema
     allCustomers.forEach((customer: Customer) => {
-      const name = customer.name;
-      if (!groups[name]) {
-        groups[name] = { 
-          totalUSD: 0, 
-          debts: [],
-          customer: customer
-        };
-      }
+      groups[customer.name] = { 
+        totalUSD: 0, 
+        debts: [],
+        customer: customer
+      };
     });
 
-    // 2. Luego, agregar las deudas de todos los clientes (incluyendo pagadas)
+    // 2. Luego, agregar las deudas de esos clientes
     todasLasDeudas.forEach((debt: Debt) => {
-      const name = debt.cliente || 'DESCONOCIDO';
-      if (!groups[name]) {
-        groups[name] = { 
-          totalUSD: 0, 
-          debts: [],
-          customer: null
-        };
-      }
-      groups[name].debts.push(debt);
-      // Solo sumar al total si la deuda no está pagada
-      if (debt.estado !== 'pagada') {
-        groups[name].totalUSD += debt.saldoUSD;
+      // Extraer solo el nombre del cliente de la deuda (sin el [V-123456])
+      const nombreCliente = debt.cliente ? debt.cliente.split(' [')[0] : 'DESCONOCIDO';
+      
+      // Buscar el cliente en los grupos
+      const customerKey = Object.keys(groups).find(key => key === nombreCliente);
+      
+      if (customerKey) {
+        groups[customerKey].debts.push(debt);
+        // Solo sumar al total si la deuda no está pagada
+        if (debt.estado !== 'pagada') {
+          groups[customerKey].totalUSD += debt.saldoUSD;
+        }
       }
     });
 
-    // Ordenar los grupos
-    Object.keys(groups).forEach(name => {
-      groups[name].debts.sort((a: Debt, b: Debt) => a.fecha.localeCompare(b.fecha));
+    // Ordenar los grupos por nombre
+    const sortedGroups: Record<string, any> = {};
+    Object.keys(groups).sort().forEach(key => {
+      groups[key].debts.sort((a: Debt, b: Debt) => a.fecha.localeCompare(b.fecha));
+      sortedGroups[key] = groups[key];
     });
 
     // Filtrar por estado si es necesario
     if (filterEstado !== 'todos') {
       const filteredGroups: Record<string, any> = {};
-      Object.keys(groups).forEach(name => {
-        const group = groups[name];
+      Object.keys(sortedGroups).forEach(name => {
+        const group = sortedGroups[name];
         const filteredDebts = group.debts.filter((d: Debt) => d.estado === filterEstado);
         if (filteredDebts.length > 0) {
           filteredGroups[name] = {
@@ -133,57 +132,24 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
             debts: filteredDebts,
             totalUSD: filteredDebts.reduce((s: number, d: Debt) => s + (d.estado !== 'pagada' ? d.saldoUSD : 0), 0)
           };
-        } else {
-          // Si no tiene deudas del estado filtrado, pero el cliente existe, lo mostramos
-          if (group.customer && group.debts.length === 0) {
-            filteredGroups[name] = group;
-          }
         }
+        // Los clientes sin deudas no se muestran cuando hay filtro activo
       });
       return filteredGroups;
     }
 
-    return groups;
+    // Cuando filterEstado === 'todos', devolvemos todos los grupos
+    return sortedGroups;
   }, [todasLasDeudas, allCustomers, filterEstado]);
 
-  // Función para sincronizar clientes desde CxC
-  const syncCustomersFromCxC = () => {
-    const clientesExistentes = new Set(allCustomers.map((c: Customer) => c.name));
-    const clientesFromCxC = new Set(todasLasDeudas.map((d: Debt) => d.cliente).filter((name): name is string => name !== undefined && name !== null && name !== ''));
-    
-    const nuevosClientes: Customer[] = [];
-    clientesFromCxC.forEach((name: string) => {
-      if (!clientesExistentes.has(name)) {
-        // Extraer nombre y cédula del string "NOMBRE [V-123456]"
-        const match = name.match(/^(.*?)\s*\[(.*?)\]$/);
-        const nombreLimpio = match ? match[1].trim() : name;
-        const cedulaLimpia = match ? match[2].trim() : '';
-        nuevosClientes.push({
-          id: `CUS-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-          name: nombreLimpio,
-          cedula: cedulaLimpia || 'SIN-CEDULA',
-          address: 'Sin dirección',
-          phone: 'Sin teléfono',
-          debt: 0
-        });
-      }
-    });
-
-    if (nuevosClientes.length > 0) {
-      updateState({ clientes: [...allCustomers, ...nuevosClientes] });
-    }
-  };
-
-  // Sincronizar al cargar el módulo
-  useEffect(() => {
-    syncCustomersFromCxC();
-  }, []);
-
-  // ===== NUEVA FUNCIÓN: ELIMINAR CLIENTE COMPLETO =====
+  // ===== ELIMINAR CLIENTE COMPLETO =====
   const eliminarCliente = (clientName: string) => {
     // Verificar si el cliente tiene deudas pendientes
     const tieneDeudasPendientes = todasLasDeudas.some(
-      (d: Debt) => d.cliente === clientName && d.estado !== 'pagada'
+      (d: Debt) => {
+        const nombreCliente = d.cliente ? d.cliente.split(' [')[0] : '';
+        return nombreCliente === clientName && d.estado !== 'pagada';
+      }
     );
     
     if (tieneDeudasPendientes) {
@@ -196,7 +162,12 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
     }
 
     // Verificar si el cliente tiene deudas (aunque estén pagadas)
-    const tieneDeudas = todasLasDeudas.some((d: Debt) => d.cliente === clientName);
+    const tieneDeudas = todasLasDeudas.some(
+      (d: Debt) => {
+        const nombreCliente = d.cliente ? d.cliente.split(' [')[0] : '';
+        return nombreCliente === clientName;
+      }
+    );
     
     let mensajeConfirmacion = `¿Está seguro de eliminar permanentemente al cliente "${clientName}"`;
     if (tieneDeudas) {
@@ -212,7 +183,10 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
     const clientesActualizados = allCustomers.filter((c: Customer) => c.name !== clientName);
     
     // Eliminar todas las deudas del cliente
-    const deudasActualizadas = todasLasDeudas.filter((d: Debt) => d.cliente !== clientName);
+    const deudasActualizadas = todasLasDeudas.filter((d: Debt) => {
+      const nombreCliente = d.cliente ? d.cliente.split(' [')[0] : '';
+      return nombreCliente !== clientName;
+    });
     
     updateState({ 
       clientes: clientesActualizados, 
@@ -235,7 +209,8 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
     const nombreFull = `${nuevaDeuda.cliente} [${idFull}]`;
 
     // Verificar si el cliente ya existe en la lista de clientes
-    const clienteExistente = allCustomers.find((c: Customer) => c.cedula === idFull || c.name === nuevaDeuda.cliente);
+    const clienteExistente = allCustomers.find((c: Customer) => c.name === nuevaDeuda.cliente);
+    
     if (!clienteExistente) {
       // Crear nuevo cliente con teléfono y dirección
       const nuevoCliente: Customer = {
@@ -413,7 +388,10 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
                         <td className="py-4">
                            <div className="text-ink font-black text-sm uppercase">{clientName}</div>
                            <div className="text-[10px] text-ink font-black uppercase tracking-widest">
-                             {tieneDeudaPendiente ? 'Saldo Pendiente' : 'Cliente al día'}
+                             {group.customer?.cedula ? `ID: ${group.customer.cedula}` : 'SIN IDENTIFICACIÓN'}
+                           </div>
+                           <div className="text-[9px] text-ink/60 font-black uppercase">
+                             {group.customer?.phone && group.customer.phone !== 'Sin teléfono' ? `📞 ${group.customer.phone}` : ''}
                            </div>
                         </td>
                         <td className="text-right py-4 font-black text-ink">{group.debts.length} Facturas</td>
@@ -632,23 +610,29 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
                       </tr>
                     </thead>
                     <tbody>
-                      {state.cxc.filter((d: Debt) => d.cliente === showClientHistory).sort((a: Debt, b: Debt) => b.fecha.localeCompare(a.fecha)).map((d: Debt) => (
-                        <tr key={d.id} className="border-b border-line/30 hover:bg-surface-warm/20 transition-colors">
-                          <td className="p-4 text-xs font-black text-ink">{Utils.fmtFecha(d.fecha)}</td>
-                          <td className="p-4 text-xs font-black mono text-ink">{d.id}</td>
-                          <td className="p-4 text-right text-xs font-black text-ink">{Utils.fmtUSD(d.montoUSD)}</td>
-                          <td className="p-4 text-right text-xs font-black text-status-success">{Utils.fmtUSD(d.abonadoUSD)}</td>
-                          <td className="p-4 text-right text-sm font-black text-brand-gold-deep">{Utils.fmtUSD(d.saldoUSD)}</td>
-                          <td className="p-4 text-center">
-                            <span className={`badge ${d.estado === 'pagada' ? 'badge-ok' : (d.estado === 'parcial' ? 'badge-info' : 'badge-warn')} font-black text-[8px] uppercase px-3`}>
-                              {d.estado}
-                            </span>
-                          </td>
-                          <td className="p-4 text-center">
-                             <button onClick={() => setShowDetails(d)} className="w-10 h-10 rounded-full flex items-center justify-center bg-white text-status-success border-2 border-status-success/20 hover:bg-status-success hover:text-white transition-all shadow-md"><Eye className="w-5 h-5"/></button>
-                          </td>
-                        </tr>
-                      ))}
+                      {state.cxc
+                        .filter((d: Debt) => {
+                          const nombreCliente = d.cliente ? d.cliente.split(' [')[0] : '';
+                          return nombreCliente === showClientHistory;
+                        })
+                        .sort((a: Debt, b: Debt) => b.fecha.localeCompare(a.fecha))
+                        .map((d: Debt) => (
+                          <tr key={d.id} className="border-b border-line/30 hover:bg-surface-warm/20 transition-colors">
+                            <td className="p-4 text-xs font-black text-ink">{Utils.fmtFecha(d.fecha)}</td>
+                            <td className="p-4 text-xs font-black mono text-ink">{d.id}</td>
+                            <td className="p-4 text-right text-xs font-black text-ink">{Utils.fmtUSD(d.montoUSD)}</td>
+                            <td className="p-4 text-right text-xs font-black text-status-success">{Utils.fmtUSD(d.abonadoUSD)}</td>
+                            <td className="p-4 text-right text-sm font-black text-brand-gold-deep">{Utils.fmtUSD(d.saldoUSD)}</td>
+                            <td className="p-4 text-center">
+                              <span className={`badge ${d.estado === 'pagada' ? 'badge-ok' : (d.estado === 'parcial' ? 'badge-info' : 'badge-warn')} font-black text-[8px] uppercase px-3`}>
+                                {d.estado}
+                              </span>
+                            </td>
+                            <td className="p-4 text-center">
+                              <button onClick={() => setShowDetails(d)} className="w-10 h-10 rounded-full flex items-center justify-center bg-white text-status-success border-2 border-status-success/20 hover:bg-status-success hover:text-white transition-all shadow-md"><Eye className="w-5 h-5"/></button>
+                            </td>
+                          </tr>
+                        ))}
                     </tbody>
                   </table>
                </div>
@@ -664,7 +648,6 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
         <div className="modal show">
           <div className="modal-bg" onClick={() => setShowModal(false)}></div>
           <div className="modal-box bg-white max-w-md border-2 border-line rounded-2xl overflow-hidden shadow-2xl">
-            {/* === MODAL HEADER CON FONDO NEGRO (CORREGIDO) === */}
             <div className="modal-head py-4 px-6 bg-ink border-b border-white/10 flex justify-between items-center">
               <h3 className="text-white font-black uppercase text-sm flex items-center gap-2">
                 <HandCoins className="w-5 h-5 text-brand-gold" /> Cargar Deuda Directa
@@ -699,7 +682,6 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
                 </div>
               </div>
 
-              {/* === NUEVO CAMPO: TELÉFONO === */}
               <div className="form-group">
                 <label className="text-ink text-[10px] font-black uppercase block mb-1">Teléfono</label>
                 <div className="relative">
@@ -713,7 +695,6 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
                 </div>
               </div>
 
-              {/* === NUEVO CAMPO: DIRECCIÓN === */}
               <div className="form-group">
                 <label className="text-ink text-[10px] font-black uppercase block mb-1">Dirección</label>
                 <div className="relative">
