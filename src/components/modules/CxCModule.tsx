@@ -24,7 +24,8 @@ import {
   Receipt,
   BookOpen,
   Hash,
-  RefreshCw
+  Phone,
+  MapPin
 } from 'lucide-react';
 import { exportarPDFCxC } from '@/lib/pdf-generator';
 import { useToast } from '@/hooks/use-toast';
@@ -41,6 +42,8 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
     cliente: '',
     tipoDoc: 'V',
     cedula: '',
+    telefono: '',
+    direccion: '',
     montoUSD: 0,
     fecha: Utils.hoy(),
     vencimiento: Utils.hoy(),
@@ -54,6 +57,16 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
 
   const handleCedulaChange = (val: string) => {
     setNuevaDeuda({ ...nuevaDeuda, cedula: formatCedula(val) });
+  };
+
+  const formatTelefono = (val: string) => {
+    const digits = val.replace(/\D/g, '');
+    if (digits.length <= 4) return digits;
+    return digits.slice(0, 4) + '-' + digits.slice(4, 11);
+  };
+
+  const handleTelefonoChange = (val: string) => {
+    setNuevaDeuda({ ...nuevaDeuda, telefono: formatTelefono(val) });
   };
 
   // Obtener TODOS los clientes del sistema
@@ -224,20 +237,25 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
     // Verificar si el cliente ya existe en la lista de clientes
     const clienteExistente = allCustomers.find((c: Customer) => c.cedula === idFull || c.name === nuevaDeuda.cliente);
     if (!clienteExistente) {
-      // Crear nuevo cliente
+      // Crear nuevo cliente con teléfono y dirección
       const nuevoCliente: Customer = {
         id: `CUS-${Date.now()}`,
         name: nuevaDeuda.cliente,
         cedula: idFull,
-        address: 'Sin dirección',
-        phone: 'Sin teléfono',
+        address: nuevaDeuda.direccion || 'Sin dirección',
+        phone: nuevaDeuda.telefono || 'Sin teléfono',
         debt: nuevaDeuda.montoUSD
       };
       updateState({ clientes: [...allCustomers, nuevoCliente] });
     } else {
-      // Actualizar deuda del cliente existente
+      // Actualizar datos del cliente existente (teléfono y dirección)
       const updatedCustomers = allCustomers.map((c: Customer) => 
-        c.id === clienteExistente.id ? { ...c, debt: (c.debt || 0) + nuevaDeuda.montoUSD } : c
+        c.id === clienteExistente.id ? { 
+          ...c, 
+          debt: (c.debt || 0) + nuevaDeuda.montoUSD,
+          address: nuevaDeuda.direccion || c.address || 'Sin dirección',
+          phone: nuevaDeuda.telefono || c.phone || 'Sin teléfono'
+        } : c
       );
       updateState({ clientes: updatedCustomers });
     }
@@ -255,7 +273,17 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
     };
     updateState({ cxc: [...state.cxc, nuevaEntrada] });
     setShowModal(false);
-    setNuevaDeuda({ cliente: '', tipoDoc: 'V', cedula: '', montoUSD: 0, fecha: Utils.hoy(), vencimiento: Utils.hoy(), sinVencimiento: false });
+    setNuevaDeuda({ 
+      cliente: '', 
+      tipoDoc: 'V', 
+      cedula: '', 
+      telefono: '',
+      direccion: '',
+      montoUSD: 0, 
+      fecha: Utils.hoy(), 
+      vencimiento: Utils.hoy(), 
+      sinVencimiento: false 
+    });
   };
 
   const eliminarDeuda = (deuda: any) => {
@@ -314,12 +342,6 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
             </button>
           ))}
         </div>
-        <button 
-          onClick={syncCustomersFromCxC} 
-          className="ml-auto px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-[10px] font-black hover:bg-blue-100 transition-all flex items-center gap-1"
-        >
-          <RefreshCw className="w-3 h-3" /> Sincronizar
-        </button>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -642,11 +664,12 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
         <div className="modal show">
           <div className="modal-bg" onClick={() => setShowModal(false)}></div>
           <div className="modal-box bg-white max-w-md border-2 border-line rounded-2xl overflow-hidden shadow-2xl">
-            <div className="modal-head py-4 px-6 bg-surface-soft border-b border-line flex justify-between items-center">
-              <h3 className="text-ink font-black uppercase text-sm flex items-center gap-2">
+            {/* === MODAL HEADER CON FONDO NEGRO (CORREGIDO) === */}
+            <div className="modal-head py-4 px-6 bg-ink border-b border-white/10 flex justify-between items-center">
+              <h3 className="text-white font-black uppercase text-sm flex items-center gap-2">
                 <HandCoins className="w-5 h-5 text-brand-gold" /> Cargar Deuda Directa
               </h3>
-              <button onClick={() => setShowModal(false)} className="text-ink hover:text-brand-gold"><X /></button>
+              <button onClick={() => setShowModal(false)} className="text-white hover:text-brand-gold transition-colors"><X className="w-5 h-5" /></button>
             </div>
             <div className="modal-body p-6 space-y-5">
               <div className="form-group">
@@ -673,6 +696,34 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
                       onChange={e => handleCedulaChange(e.target.value)}
                     />
                   </div>
+                </div>
+              </div>
+
+              {/* === NUEVO CAMPO: TELÉFONO === */}
+              <div className="form-group">
+                <label className="text-ink text-[10px] font-black uppercase block mb-1">Teléfono</label>
+                <div className="relative">
+                  <Phone className="absolute left-3 top-3 w-4 h-4 text-ink opacity-30" />
+                  <input 
+                    className="form-input pl-10 h-11 text-sm font-black text-ink w-full" 
+                    placeholder="EJ: 0412-1234567"
+                    value={nuevaDeuda.telefono}
+                    onChange={e => handleTelefonoChange(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              {/* === NUEVO CAMPO: DIRECCIÓN === */}
+              <div className="form-group">
+                <label className="text-ink text-[10px] font-black uppercase block mb-1">Dirección</label>
+                <div className="relative">
+                  <MapPin className="absolute left-3 top-3 w-4 h-4 text-ink opacity-30" />
+                  <input 
+                    className="form-input pl-10 h-11 text-sm font-black text-ink w-full" 
+                    placeholder="ESCRIBA LA DIRECCIÓN..."
+                    value={nuevaDeuda.direccion}
+                    onChange={e => setNuevaDeuda({...nuevaDeuda, direccion: e.target.value})}
+                  />
                 </div>
               </div>
 
