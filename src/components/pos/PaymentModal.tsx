@@ -100,15 +100,12 @@ export function PaymentModal({ isOpen, onClose, cart, exchangeRate, onComplete }
       }]
     };
 
-    // Actualizar estado global
-    const newState = {
-      ...currentState,
+    // Actualizar estado global (merge para no pisar otros datos)
+    Store.set({
       proximoRecibo: nextSaleNum + 1,
       ventas: [...(currentState.ventas || []), sale],
       productos: updatedProducts
-    };
-    
-    Store.set(newState);
+    });
 
     toast({ 
       title: "✅ Venta Exitosa", 

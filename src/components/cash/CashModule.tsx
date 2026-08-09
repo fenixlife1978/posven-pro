@@ -18,7 +18,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { AppState } from '@/lib/types';
 
 // Definir CashSession localmente
 interface CashSession {
@@ -100,20 +99,13 @@ export function CashModule({ onStatusChange }: { onStatusChange: (s: boolean) =>
       saleCount: 0
     };
     
-    // Obtener estado actual
-    const currentState = Store.get();
-    
-    // ✅ ACTUALIZAR CORRECTAMENTE EL ESTADO GLOBAL
-    const newState: AppState = {
-      ...currentState,
+    // ✅ ACTUALIZAR CORRECTAMENTE EL ESTADO GLOBAL (merge para no pisar otros datos)
+    Store.set({
       fondoCajaHoyBS: amountBs,      // ✅ GUARDA EL MONTO EN BS
       fondoCajaHoyUSD: amountUsd,    // ✅ GUARDA EL MONTO EN USD
       isCashOpen: true,
-      cashData: session,
-      cashHistory: currentState.cashHistory || []
-    };
-    
-    Store.set(newState);
+      cashData: session
+    });
     
     setIsOpen(true);
     setCurrentSession(session);
@@ -142,17 +134,14 @@ export function CashModule({ onStatusChange }: { onStatusChange: (s: boolean) =>
     const currentState = Store.get();
     const newHistory = [closed, ...(currentState.cashHistory || [])];
     
-    // ✅ LIMPIAR LOS FONDOS AL CERRAR
-    const newState: AppState = {
-      ...currentState,
+    // ✅ LIMPIAR LOS FONDOS AL CERRAR (merge para no pisar otros datos)
+    Store.set({
       fondoCajaHoyBS: 0,
       fondoCajaHoyUSD: 0,
       isCashOpen: false,
       cashData: null,
       cashHistory: newHistory
-    };
-    
-    Store.set(newState);
+    });
     
     setIsOpen(false);
     setCurrentSession(null);

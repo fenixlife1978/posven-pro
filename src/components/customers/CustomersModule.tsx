@@ -78,7 +78,6 @@ export function CustomersModule() {
     
     // Actualizar el store
     Store.set({ 
-      ...store, 
       clientes: clientesActualizados, 
       cxc: deudasActualizadas 
     });

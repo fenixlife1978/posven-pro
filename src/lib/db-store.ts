@@ -83,51 +83,12 @@ export const initialState: AppState = {
   products: [],
 };
 
-export const Store = {
-  subscribe(callback: (state: Partial<AppState>) => void) {
-    if (typeof window === 'undefined' || !db) return () => {};
+let dirty = false;
+let writeChain: Promise<unknown> = Promise.resolve();
 
-    const docRef = doc(db, COLLECTION, DOC_ID);
-    
-    return onSnapshot(docRef, (snapshot) => {
-      if (snapshot.exists()) {
-        const val = snapshot.data();
-        const merged = { ...initialState, ...val };
-        delete (merged as any).carrito; 
-        callback(merged);
-        sessionStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
-      } else {
-        const local = Store.get();
-        callback(local);
-        
-        const { carrito, ...toPersist } = initialState;
-        if (db) setDoc(docRef, toPersist).catch(e => console.error("Error init firestore:", e));
-      }
-    }, (error) => {
-      if (error.code !== 'permission-denied') {
-        console.warn("Firestore Sync Warning:", error);
-      }
-      callback(Store.get());
-    });
-  },
-
-  get(): AppState {
-    if (typeof window === 'undefined') return initialState;
-    const d = sessionStorage.getItem(STORAGE_KEY);
-    if (!d) return initialState;
-    try {
-      const parsed = JSON.parse(d);
-      return { ...initialState, ...parsed };
-    } catch {
-      return initialState;
-    }
-  },
-
-  async set(state: AppState) {
-    if (typeof window === 'undefined') return;
-    
-    const dataToPersist = {
-      tasa: state.tasa,
+function buildPersist(state: AppState) {
+  return {
+    tasa: state.tasa,
       pinDevolucion: state.pinDevolucion,
       isInitialized: state.isInitialized ?? true,
       productos: state.productos || [],
@@ -176,12 +137,79 @@ export const Store = {
       marcasString: state.marcasString || state.marcas || [],
       proveedoresString: state.proveedoresString || state.proveedores || [],
     };
+}
 
-    sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ ...state, ...dataToPersist }));
+export const Store = {
+  subscribe(callback: (state: Partial<AppState>) => void) {
+    if (typeof window === 'undefined' || !db) return () => {};
+
+    const docRef = doc(db, COLLECTION, DOC_ID);
     
+    return onSnapshot(docRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const val = snapshot.data();
+        const remote = { ...initialState, ...val };
+        delete (remote as any).carrito;
+        const local = Store.get();
+        const localPersist = buildPersist(local);
+        const remotePersist = buildPersist(remote);
+
+        if (dirty && JSON.stringify(localPersist) !== JSON.stringify(remotePersist)) {
+          writeChain = writeChain
+            .then(() => setDoc(docRef, localPersist))
+            .then(() => { dirty = false; })
+            .catch((e) => console.error("Sync heal error:", e));
+          const dbUpdate = { ...remote, ...localPersist };
+          callback(dbUpdate);
+          sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ ...dbUpdate, carrito: local.carrito }));
+        } else {
+          dirty = false;
+          callback(remote);
+          sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ ...remote, carrito: local.carrito }));
+        }
+      } else {
+        const local = Store.get();
+        callback(local);
+        
+        const { carrito, ...toPersist } = initialState;
+        if (db) setDoc(docRef, toPersist).catch(e => console.error("Error init firestore:", e));
+      }
+    }, (error) => {
+      if (error.code !== 'permission-denied') {
+        console.warn("Firestore Sync Warning:", error);
+      }
+      callback(Store.get());
+    });
+  },
+
+  get(): AppState {
+    if (typeof window === 'undefined') return initialState;
+    const d = sessionStorage.getItem(STORAGE_KEY);
+    if (!d) return initialState;
+    try {
+      const parsed = JSON.parse(d);
+      return { ...initialState, ...parsed };
+    } catch {
+      return initialState;
+    }
+  },
+
+  async set(patch: Partial<AppState>) {
+    if (typeof window === 'undefined') return;
+
+    const prev = Store.get();
+    const full = { ...initialState, ...prev, ...patch };
+    const dataToPersist = buildPersist(full);
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ ...full, ...dataToPersist }));
+
+    dirty = true;
+
     if (db) {
       const docRef = doc(db, COLLECTION, DOC_ID);
-      return await setDoc(docRef, dataToPersist);
+      writeChain = writeChain
+        .then(() => setDoc(docRef, dataToPersist))
+        .catch((e) => console.error("Error persistiendo:", e));
+      return writeChain;
     }
   },
 

@@ -127,17 +127,11 @@ export function ReceivablesModule() {
       allCusts[cIdx].debt = Math.max(0, (allCusts[cIdx].debt || 0) - amount);
     }
 
-    // Get current state
-    const currentState = Store.get();
-    
-    // Update state
-    const newState = {
-      ...currentState,
+    // Update state (merge en Store para no pisar otros datos)
+    Store.set({
       cxc: all,
       clientes: allCusts
-    };
-    
-    Store.set(newState);
+    });
     setReceivables(all);
     setCustomers(allCusts);
     

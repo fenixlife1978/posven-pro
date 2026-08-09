@@ -203,7 +203,7 @@ export function CreditModal({ isOpen, onClose, onConfirm, totalAmount }: CreditM
           debt: foundCustomer.debt || 0
         };
         const updatedCustomers = [...customers, newCustomer];
-        Store.set({ ...store, clientes: updatedCustomers });
+        Store.set({ clientes: updatedCustomers });
         setFoundCustomer({ ...newCustomer });
         onConfirm(newCustomer, totalAmount);
       } else {
