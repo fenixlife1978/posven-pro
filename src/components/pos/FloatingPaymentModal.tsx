@@ -63,7 +63,7 @@ export default function FloatingPaymentModal({
   const [isProcessing, setIsProcessing] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Estados para la calculadora "Quiero Pagar"
+  // Estados para la calculadora informativa "Quiero Pagar"
   const [showConverter, setShowConverter] = useState(false);
   const [calcUSD, setCalcUSD] = useState('');
   const [calcBS, setCalcBS] = useState('');
@@ -133,20 +133,6 @@ export default function FloatingPaymentModal({
     }
     setInputValue('');
     if (!amountToUse) inputRef.current?.focus();
-  };
-
-  const applyConverter = () => {
-    if (lastEdited === 'USD' && calcUSD) {
-      setCurrentMethod('efectivo_usd');
-      addPayment(calcUSD, 'efectivo_usd');
-    } else if (lastEdited === 'BS' && calcBS) {
-      setCurrentMethod('efectivo_bs');
-      addPayment(calcBS, 'efectivo_bs');
-    }
-    setShowConverter(false);
-    setCalcUSD('');
-    setCalcBS('');
-    setLastEdited(null);
   };
 
   const removePayment = (id: string) => {
@@ -223,7 +209,6 @@ export default function FloatingPaymentModal({
       </div>
 
       <div className="p-4 space-y-4">
-        {/* RESUMEN DE TOTALES */}
         <div className="grid grid-cols-2 gap-4">
           <div className="bg-surface-soft p-4 rounded-2xl text-center border border-line shadow-inner">
             <span className="text-[10px] font-black text-ink/40 uppercase tracking-widest block mb-1">Total Factura</span>
@@ -237,19 +222,18 @@ export default function FloatingPaymentModal({
           </div>
         </div>
 
-        {/* MODO CALCULADORA "QUIERO PAGAR" */}
         <div className="relative">
           {!showConverter ? (
             <button 
               onClick={() => setShowConverter(true)}
               className="w-full h-10 bg-brand-gold-soft border border-brand-gold/30 rounded-xl flex items-center justify-center gap-2 text-brand-gold-deep font-black text-[11px] uppercase hover:bg-brand-gold hover:text-white transition-all shadow-sm mb-2"
             >
-              <ArrowRightLeft size={14} /> Quiero Pagar (Calculadora de Cambio)
+              <ArrowRightLeft size={14} /> Quiero Pagar (Consultar Cambio)
             </button>
           ) : (
             <div className="bg-ink p-5 rounded-2xl border-2 border-brand-gold animate-in zoom-in-95 duration-200 shadow-xl mb-2">
               <div className="flex justify-between items-center mb-4">
-                <h4 className="text-brand-gold font-black text-[10px] uppercase tracking-[0.2em]">Calculadora de Equivalencia</h4>
+                <h4 className="text-brand-gold font-black text-[10px] uppercase tracking-[0.2em]">Calculadora Informativa</h4>
                 <button onClick={() => setShowConverter(false)} className="text-white/40 hover:text-white"><X size={16}/></button>
               </div>
               
@@ -297,7 +281,6 @@ export default function FloatingPaymentModal({
                 </div>
               </div>
 
-              {/* VISUALIZACIÓN EN GRANDE */}
               {(calcUSD || calcBS) && (
                 <div className="mt-6 p-4 bg-white/5 border border-white/10 rounded-2xl text-center animate-in fade-in slide-in-from-top-2">
                   <span className="text-[8px] font-black text-white/30 uppercase tracking-[0.3em]">EQUIVALENCIA AL CAMBIO</span>
@@ -308,19 +291,12 @@ export default function FloatingPaymentModal({
                       <p className="text-4xl font-black text-brand-gold leading-none">{formatUsd(parseFloat(calcUSD) || 0)}</p>
                     )}
                   </div>
-                  <button 
-                    onClick={applyConverter}
-                    className="mt-4 w-full h-12 bg-brand-gold text-ink font-black uppercase text-xs rounded-xl flex items-center justify-center gap-2 hover:bg-white transition-all shadow-lg"
-                  >
-                    <Check size={16} /> Aplicar y Añadir Pago
-                  </button>
                 </div>
               )}
             </div>
           )}
         </div>
 
-        {/* INPUT DE PAGO CONVENCIONAL */}
         {!showConverter && (
           <div className="grid grid-cols-[1fr_120px_auto] gap-2 items-end bg-white border border-line p-3 rounded-2xl shadow-sm">
             <div className="space-y-1">
@@ -353,7 +329,6 @@ export default function FloatingPaymentModal({
           </div>
         )}
 
-        {/* LISTADO DE PAGOS CARGADOS */}
         <div className="bg-surface-soft/50 rounded-2xl border border-line overflow-hidden">
           <div className="px-4 py-2 bg-ink text-white/40 text-[9px] font-black uppercase tracking-widest">Lote de Pagos Actual</div>
           <div className="max-h-24 overflow-y-auto divide-y divide-line/30">
@@ -384,7 +359,6 @@ export default function FloatingPaymentModal({
           </div>
         </div>
 
-        {/* ESTADO FINAL (FALTANTE O VUELTO) */}
         <div className={cn(
           "rounded-[24px] p-5 text-center border-2 transition-all duration-300 shadow-lg",
           remainingCents > 0 ? "bg-status-danger-soft border-status-danger/20" : "bg-status-success-soft border-status-success/20"
