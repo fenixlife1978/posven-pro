@@ -45,7 +45,7 @@ function normalizeCedula(cedula: string, docType?: string): string {
 }
 
 function getRawCedula(cedula: string): string {
-  return cedula.replace(/[^0-9]/g, '');
+  return (cedula || '').replace(/[^0-9]/g, '');
 }
 
 function extractDocType(cedula: string): string {
@@ -114,76 +114,68 @@ export function CreditModal({ isOpen, onClose, onConfirm, totalAmount }: CreditM
     }
   };
 
-  const findCustomer = (fullDoc: string): Customer | null => {
-    const raw = getRawCedula(fullDoc);
-    let customer: Customer | null = null;
-    
+  // Busca un cliente por cédula o nombre entre TODOS los clientes registrados
+  // (con o sin deuda) y también entre las deudas CxC sin ficha de cliente.
+  const findCustomer = (q: string, isName: boolean): Customer | null => {
+    const raw = isName ? '' : getRawCedula(q);
     const customers: Customer[] = store.clientes || [];
-    const found = customers.find(c => getRawCedula(c.cedula) === raw);
-    if (found) {
-      customer = { ...found };
-    }
-    
     const deudas: Debt[] = store.cxc || [];
+
+    // 1. Clientes registrados: coincidencia exacta de cédula (ignorando formato) o por nombre.
+    const cliente = isName
+      ? (customers.find(c => (c.name || '').toUpperCase().includes(q)) || null)
+      : (customers.find(c => getRawCedula(c.cedula) === raw) || null);
+
+    // 2. Deudas CxC del cliente, para mostrar su saldo actual (aunque sea cero).
     const deudasCliente = deudas.filter(d => {
       if (!d.cliente) return false;
       const match = d.cliente.match(/^(.*?)\s*\[(.*?)\]$/);
-      return match && getRawCedula(match[2]) === raw;
+      if (!match) return false;
+      if (isName) return (match[1] || '').trim().toUpperCase().includes(q);
+      return getRawCedula(match[2]) === raw;
     });
     const totalDeuda = deudasCliente.reduce((sum, d) => sum + (d.saldoUSD || 0), 0);
-    
-    if (!customer) {
-      if (deudasCliente.length > 0) {
-        const primera = deudasCliente[0];
-        const match = primera.cliente?.match(/^(.*?)\s*\[(.*?)\]$/);
-        if (match) {
-          const tipo = extractDocType(fullDoc);
-          const cedulaNormalizada = normalizeCedula(match[2], tipo);
-          customer = {
-            id: `CUS-${Date.now()}`,
-            name: match[1].trim(),
-            cedula: cedulaNormalizada,
-            address: 'Sin dirección',
-            phone: 'Sin teléfono',
-            debt: totalDeuda
-          };
-        }
+
+    // 3. Cliente registrado encontrado: devolverlo con su deuda actual.
+    if (cliente) return { ...cliente, debt: totalDeuda };
+
+    // 4. Solo tiene deudas registradas (sin ficha de cliente): construirlo desde la deuda.
+    if (deudasCliente.length > 0) {
+      const primera = deudasCliente[0];
+      const match = primera.cliente?.match(/^(.*?)\s*\[(.*?)\]$/);
+      if (match) {
+        return {
+          id: `CUS-${Date.now()}`,
+          name: (match[1] || '').trim(),
+          cedula: normalizeCedula(match[2], extractDocType(match[2])),
+          address: 'Sin dirección',
+          phone: 'Sin teléfono',
+          debt: totalDeuda
+        };
       }
-    } else {
-      customer.debt = totalDeuda;
     }
-    
-    return customer;
+
+    return null;
   };
 
   const handleSearch = () => {
-    if (!docNumber.trim()) {
+    const searchStr = docNumber.trim().toUpperCase();
+    if (!searchStr) {
       toast({ title: "Dato Requerido", description: "Por favor, ingrese un documento o nombre.", variant: "destructive" });
       return;
     }
 
-    const searchStr = docNumber.trim().toUpperCase();
-    
-    // 1. Intentar búsqueda por Identificación (Normalizada)
-    const cleanDoc = docNumber.replace(/\./g, '');
-    const fullDoc = `${docType}${cleanDoc}`;
-    let customer = findCustomer(fullDoc);
+    const isName = /[A-Z]/.test(searchStr);
+    const q = isName ? searchStr : `${docType}${searchStr.replace(/\./g, '')}`;
+    const customer = findCustomer(q, isName);
 
-    // 2. Si no se encontró por ID, intentar búsqueda por Nombre en la lista de clientes
-    if (!customer) {
-      const customers: Customer[] = store.clientes || [];
-      customer = customers.find(c => (c.name || '').toUpperCase().includes(searchStr)) || null;
-    }
-    
     if (customer) {
       setFoundCustomer(customer);
       setView('found');
     } else {
       setFoundCustomer(null);
       // Si lo buscado tiene letras, lo pre-cargamos como nombre para el registro nuevo
-      if (/[A-Z]/.test(searchStr)) {
-        setNewName(searchStr);
-      }
+      if (isName) setNewName(searchStr);
       setView('create');
     }
   };
@@ -191,7 +183,8 @@ export function CreditModal({ isOpen, onClose, onConfirm, totalAmount }: CreditM
   const handleConfirmCharge = () => {
     if (foundCustomer) {
       const customers: Customer[] = store.clientes || [];
-      const exists = customers.some(c => getRawCedula(c.cedula) === getRawCedula(foundCustomer.cedula));
+      const rawCedula = getRawCedula(foundCustomer.cedula);
+      const exists = rawCedula.length > 0 && customers.some(c => getRawCedula(c.cedula) === rawCedula);
       if (!exists) {
         const cedulaNormalizada = normalizeCedula(foundCustomer.cedula, extractDocType(foundCustomer.cedula));
         const newCustomer: Customer = {
@@ -218,8 +211,8 @@ export function CreditModal({ isOpen, onClose, onConfirm, totalAmount }: CreditM
     const normalizedCedula = normalizeCedula(fullDoc);
     const raw = getRawCedula(normalizedCedula);
     
-    if (!newName.trim() || !fullDoc) {
-      toast({ title: "Campos Incompletos", description: "El nombre y la identificación son obligatorios.", variant: "destructive" });
+    if (!newName.trim() || raw.length === 0) {
+      toast({ title: "Campos Incompletos", description: "El nombre y el número de identificación son obligatorios.", variant: "destructive" });
       return;
     }
 

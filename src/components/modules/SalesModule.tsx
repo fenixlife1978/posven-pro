@@ -149,6 +149,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   const [lastProcessedSale, setLastProcessedSale] = useState<any | null>(null);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [selectedProductDisplay, setSelectedProductDisplay] = useState<Product | null>(null);
+  const [stockEdit, setStockEdit] = useState<Product | null>(null);
+  const [stockEditValue, setStockEditValue] = useState('');
   
   const [priceSelectorItem, setPriceSelectorItem] = useState<{ index: number, product: Product } | null>(null);
 
@@ -350,6 +352,30 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     updateState({ carrito: nuevo });
     setPriceSelectorItem(null);
     toast({ title: "Precio Actualizado", description: `Nuevo precio: ${Utils.fmtUSD(newPrice)}` });
+  };
+
+  // Ajuste manual de stock desde el POS (respaldado en la colección de productos)
+  const guardarStockManual = () => {
+    if (!stockEdit) return;
+    const nuevoStock = Math.max(0, parseFloat(stockEditValue) || 0);
+    const delta = Utils.round(nuevoStock - (stockEdit.stock || 0));
+    const mov: Movimiento = {
+      id: Store.uid(),
+      productoId: stockEdit.id,
+      tipo: delta >= 0 ? 'ajuste_entrada' : 'ajuste_salida',
+      cantidad: delta,
+      stockAntes: stockEdit.stock || 0,
+      stockDespues: nuevoStock,
+      fecha: Utils.ahora(),
+      referencia: 'AJUSTE MANUAL POS',
+      terminalId: getCurrentTerminal()?.id || 'GLOBAL'
+    };
+    updateState({
+      productos: state.productos.map(p => p.id === stockEdit.id ? { ...p, stock: nuevoStock } : p),
+      movimientos: [...state.movimientos, mov]
+    });
+    setStockEdit(null);
+    toast({ title: "Stock Actualizado", description: `${stockEdit.nombre}: ${nuevoStock} Und.` });
   };
 
   const subtotalUSD = state.carrito.reduce((s, i) => s + i.subtotalUSD, 0);
@@ -628,12 +654,27 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         ventaId: reciboId 
       };
       
+      // Asegurar que el cliente quede registrado en la cartera (upsert) y su saldo
+      // refleje la nueva deuda, para que persista en todos los usuarios/dispositivos.
+      const clientesBase = state.clientes || [];
+      const clienteIdx = clientesBase.findIndex(c => c.id === customer.id);
+      const clientesActualizados = clienteIdx >= 0
+        ? clientesBase.map(c => c.id === customer.id ? { ...c, debt: (c.debt || 0) + subtotalUSD } : c)
+        : [...clientesBase, {
+            id: customer.id,
+            name: nombreCliente,
+            cedula: cedulaNormalizada,
+            phone: customer.phone || '',
+            address: customer.address || '',
+            debt: subtotalUSD
+          }];
+
       await updateState({ 
         productos: prodsActualizados, 
         ventas: [...state.ventas, nuevaVenta], 
         movimientos: [...state.movimientos, ...nuevosMovimientos], 
         cxc: [...state.cxc, nuevaDeuda], 
-        clientes: (state.clientes || []).map(c => c.id === customer.id ? { ...c, debt: (c.debt || 0) + subtotalUSD } : c), 
+        clientes: clientesActualizados, 
         proximoRecibo: state.proximoRecibo + 1, 
         terminales: state.terminales.map(t => t.id === terminal?.id ? { ...t, proximoRecibo: t.proximoRecibo + 1 } : t), 
         carrito: [] 
@@ -738,7 +779,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                 <div className="flex-1 overflow-y-auto space-y-2 pt-2 border-t border-line/10">
                   {selectedProductDisplay && (
                     <div className="space-y-3 animate-in slide-in-from-bottom-2 duration-300">
-                       <div className="p-3 bg-surface-soft border border-line rounded-xl text-center"><span className="text-[9px] font-black uppercase text-ink opacity-40 block mb-1">STOCK DISPONIBLE</span><span className={`text-2xl font-black ${selectedProductDisplay.stock <= (selectedProductDisplay.stockMinimo || 3) ? 'text-status-danger' : selectedProductDisplay.stock <= (selectedProductDisplay.stockMinimo || 3) * 2 ? 'text-status-warn' : 'text-status-success'}`}>{selectedProductDisplay.stock} <span className="text-xs">UND</span></span></div>
+                       <div className="p-3 bg-surface-soft border border-line rounded-xl text-center relative"><span className="text-[9px] font-black uppercase text-ink opacity-40 block mb-1">STOCK DISPONIBLE</span><span className={`text-2xl font-black ${selectedProductDisplay.stock <= (selectedProductDisplay.stockMinimo || 3) ? 'text-status-danger' : selectedProductDisplay.stock <= (selectedProductDisplay.stockMinimo || 3) * 2 ? 'text-status-warn' : 'text-status-success'}`}>{selectedProductDisplay.stock} <span className="text-xs">UND</span></span><button onClick={() => { setStockEdit(selectedProductDisplay); setStockEditValue(String(selectedProductDisplay.stock || 0)); }} title="Ajustar stock manualmente" className="absolute top-1 right-1 p-1 text-ink/30 hover:text-brand-gold-deep transition-colors"><RefreshCw className="w-3.5 h-3.5" /></button></div>
                        <div className="p-3 bg-surface-soft border border-line rounded-xl text-center"><span className="text-[9px] font-black uppercase text-ink opacity-40 block mb-1">PRECIO UNITARIO USD</span><span className="text-2xl font-black text-ink">{Utils.fmtUSD(selectedProductDisplay.precioUSD)}</span></div>
                        <div className="p-3 bg-brand-gold-soft/30 border border-brand-gold-soft/30 rounded-xl text-center"><span className="text-[9px] font-black uppercase text-brand-gold-deep block mb-1">EQUIVALENTE EN BOLÍVARES</span><span className="text-2xl font-black text-brand-gold-deep">{Utils.fmtBS(selectedProductDisplay.precioUSD * state.tasa)}</span></div>
                     </div>
@@ -1105,6 +1146,36 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
             </div>
             <div className="modal-foot p-4 bg-surface-soft border-t border-line text-right">
                <button onClick={() => setShowClientHistory(null)} className="btn btn-primary px-8 font-black uppercase text-[10px] rounded-lg shadow-md">Cerrar Historial</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* AJUSTE MANUAL DE STOCK (POS) */}
+      {/* ============================================================ */}
+      {stockEdit && (
+        <div className="fixed inset-0 bg-black/60 flex justify-center items-center z-50 p-4 animate-in fade-in-50">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xs p-5 space-y-4">
+            <div>
+              <p className="text-[10px] font-black uppercase text-gray-400 mb-1">Ajustar Stock Manual</p>
+              <p className="font-black text-sm text-ink uppercase leading-tight truncate">{stockEdit.nombre}</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={stockEditValue}
+                onChange={e => setStockEditValue(e.target.value.replace(/[^0-9.]/g, ''))}
+                onKeyDown={e => e.key === 'Enter' && guardarStockManual()}
+                className="flex-1 h-11 px-4 bg-gray-50 border border-gray-200 rounded-xl font-black focus:ring-2 focus:ring-[#D4A017] outline-none text-center text-lg"
+                autoFocus
+              />
+              <span className="text-[10px] font-black text-gray-400 uppercase">Und.</span>
+            </div>
+            <p className="text-[9px] font-bold text-gray-400 uppercase leading-tight">Stock actual: <b className="text-ink">{stockEdit.stock || 0}</b> Und.</p>
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setStockEdit(null)} className="px-4 py-2 text-gray-400 font-bold hover:text-gray-600 transition-colors text-xs uppercase">Cancelar</button>
+              <button onClick={guardarStockManual} className="px-5 py-2 bg-blue-600 text-white rounded-xl font-black text-xs uppercase hover:bg-blue-700 transition-all"><Check className="w-3.5 h-3.5 inline mr-1" />Guardar</button>
             </div>
           </div>
         </div>
