@@ -213,8 +213,10 @@ function syncArrayToCollection(name: string, prevArr: any[] | undefined, newArr:
 // Sincroniza productos con su colección raíz de forma ATOMICA para el stock:
 // calcula deltas por producto y los aplica con transacciones de Firestore para que
 // dos o más cajas no se pisen el inventario entre sí (sin last-write-wins con pérdida).
-function syncProductosTransactional(prevArr: any[] | undefined, newArr: any[] | undefined): Promise<void> {
-  if (!db) return Promise.resolve();
+// Devuelve el mapa { productId → stock final REAL en Firestore } para poder anclar
+// los números del kardex a la verdad (y no a la copia local de cada caja).
+function syncProductosTransactional(prevArr: any[] | undefined, newArr: any[] | undefined): Promise<Map<string, number> | undefined> {
+  if (!db) return Promise.resolve(undefined);
   const prevList = prevArr || [];
   const newList = newArr || [];
   const prevById = new Map(prevList.filter(x => x && x.id).map(x => [String(x.id), x]));
@@ -227,11 +229,14 @@ function syncProductosTransactional(prevArr: any[] | undefined, newArr: any[] | 
   );
   const removedIds = [...prevById.keys()].filter(id => !newById.has(id));
 
-  if (createdIds.length === 0 && changedIds.length === 0 && removedIds.length === 0) return Promise.resolve();
+  if (createdIds.length === 0 && changedIds.length === 0 && removedIds.length === 0) return Promise.resolve(new Map());
 
   return runTransaction(db, async (tx) => {
+    const finalStocks = new Map<string, number>();
     for (const id of createdIds) {
-      tx.set(doc(db, PRODUCTOS_COLLECTION, id), sanitizeForFirestore(newById.get(id)), { merge: true });
+      const prod = newById.get(id) || {};
+      tx.set(doc(db, PRODUCTOS_COLLECTION, id), sanitizeForFirestore(prod), { merge: true });
+      finalStocks.set(id, typeof prod.stock === 'number' ? prod.stock : 0);
     }
     for (const id of changedIds) {
       const prevP = prevById.get(id) || {};
@@ -243,15 +248,55 @@ function syncProductosTransactional(prevArr: any[] | undefined, newArr: any[] | 
       const snap = await tx.get(ref);
       const remote = snap.exists() ? snap.data() : null;
       const baseStock = remote && typeof remote.stock === 'number' ? remote.stock : (delta === 0 ? newStock : 0);
-      tx.set(ref, sanitizeForFirestore({ ...newP, stock: baseStock + delta }), { merge: true });
+      const finalStock = baseStock + delta;
+      tx.set(ref, sanitizeForFirestore({ ...newP, stock: finalStock }), { merge: true });
+      finalStocks.set(id, finalStock);
     }
     for (const id of removedIds) {
       tx.delete(doc(db, PRODUCTOS_COLLECTION, id));
     }
-  }).catch((e) => {
+    return finalStocks;
+  }).catch(async (e) => {
     console.error("Error transaccional productos:", e);
-    return syncArrayToCollection(PRODUCTOS_COLLECTION, prevArr, newArr);
+    await syncArrayToCollection(PRODUCTOS_COLLECTION, prevArr, newArr);
+    return undefined;
   });
+}
+
+// Corrige los números de stock grabados en los movimientos NUEVOS de este lote,
+// anclándolos al stock REAL de Firestore leído en la transacción atómica.
+// Así el kardex encadena correctamente aunque dos cajas manejen el mismo
+// producto con copias locales distintas (cada caja graba su propio "antes/después").
+function correctMovimientosStocks(prevMovs: any[] | undefined, fullMovs: any[] | undefined, finalStocks: Map<string, number>): any[] | null {
+  if (!Array.isArray(fullMovs) || !Array.isArray(prevMovs)) return null;
+  const prevIds = new Set(prevMovs.map(m => m && m.id).filter(Boolean));
+  const newMovs = fullMovs.filter(m => m && m.id && !prevIds.has(m.id));
+  if (newMovs.length === 0) return null;
+
+  const byProduct = new Map<string, any[]>();
+  newMovs.forEach(m => {
+    const arr = byProduct.get(m.productoId) || [];
+    arr.push(m);
+    byProduct.set(m.productoId, arr);
+  });
+
+  const corrections = new Map<string, any>();
+  byProduct.forEach((list, pid) => {
+    const final = finalStocks.get(pid);
+    if (final === undefined) return;
+    const totalDelta = list.reduce((s, m) => s + (Number(m.cantidad) || 0), 0);
+    let running = Math.round((final - totalDelta) * 100) / 100;
+    list.forEach(m => {
+      const delta = Number(m.cantidad) || 0;
+      const antes = running;
+      const despues = Math.round((running + delta) * 100) / 100;
+      corrections.set(m.id, { ...m, stockAntes: antes, stockDespues: despues });
+      running = despues;
+    });
+  });
+
+  if (corrections.size === 0) return null;
+  return fullMovs.map(m => (corrections.has(m.id) ? corrections.get(m.id) : m));
 }
 
 // Elimina del doc de state los campos legacy productos/movimientos.
@@ -413,9 +458,21 @@ export const Store = {
     if (patch.productos !== undefined) {
       writeChain = writeChain
         .then(() => syncProductosTransactional(prev.productos, full.productos))
-        .catch((e) => console.error("Error persistiendo productos:", e));
-    }
-    if (patch.movimientos !== undefined) {
+        .then((finalStocks) => {
+          let movs = full.movimientos;
+          if (patch.movimientos !== undefined && finalStocks && finalStocks.size > 0) {
+            const corrected = correctMovimientosStocks(prev.movimientos, full.movimientos, finalStocks);
+            if (corrected) {
+              movs = corrected;
+              sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ ...Store.get(), movimientos: corrected }));
+            }
+          }
+          if (patch.movimientos !== undefined) {
+            return syncArrayToCollection(MOVIMIENTOS_COLLECTION, prev.movimientos, movs);
+          }
+        })
+        .catch((e) => console.error("Error persistiendo:", e));
+    } else if (patch.movimientos !== undefined) {
       writeChain = writeChain
         .then(() => syncArrayToCollection(MOVIMIENTOS_COLLECTION, prev.movimientos, full.movimientos))
         .catch((e) => console.error("Error persistiendo movimientos:", e));
