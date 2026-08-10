@@ -2,7 +2,7 @@
 
 import { AppState } from './types';
 import { db } from './firebase';
-import { doc, setDoc, onSnapshot, collection, query, writeBatch, deleteField } from "firebase/firestore";
+import { doc, setDoc, onSnapshot, collection, query, writeBatch, deleteField, runTransaction } from "firebase/firestore";
 
 const STORAGE_KEY = 'posven_pro_session_data_cache';
 const COLLECTION = 'pos_system_data';
@@ -210,6 +210,50 @@ function syncArrayToCollection(name: string, prevArr: any[] | undefined, newArr:
   return batch.commit();
 }
 
+// Sincroniza productos con su colección raíz de forma ATOMICA para el stock:
+// calcula deltas por producto y los aplica con transacciones de Firestore para que
+// dos o más cajas no se pisen el inventario entre sí (sin last-write-wins con pérdida).
+function syncProductosTransactional(prevArr: any[] | undefined, newArr: any[] | undefined): Promise<void> {
+  if (!db) return Promise.resolve();
+  const prevList = prevArr || [];
+  const newList = newArr || [];
+  const prevById = new Map(prevList.filter(x => x && x.id).map(x => [String(x.id), x]));
+  const newById = new Map(newList.filter(x => x && x.id).map(x => [String(x.id), x]));
+
+  const createdIds = [...newById.keys()].filter(id => !prevById.has(id));
+  const changedIds = [...newById.keys()].filter(id =>
+    prevById.has(id) &&
+    JSON.stringify(sanitizeForFirestore(prevById.get(id))) !== JSON.stringify(sanitizeForFirestore(newById.get(id)))
+  );
+  const removedIds = [...prevById.keys()].filter(id => !newById.has(id));
+
+  if (createdIds.length === 0 && changedIds.length === 0 && removedIds.length === 0) return Promise.resolve();
+
+  return runTransaction(db, async (tx) => {
+    for (const id of createdIds) {
+      tx.set(doc(db, PRODUCTOS_COLLECTION, id), sanitizeForFirestore(newById.get(id)), { merge: true });
+    }
+    for (const id of changedIds) {
+      const prevP = prevById.get(id) || {};
+      const newP = newById.get(id) || {};
+      const prevStock = typeof prevP.stock === 'number' ? prevP.stock : 0;
+      const newStock = typeof newP.stock === 'number' ? newP.stock : 0;
+      const delta = newStock - prevStock;
+      const ref = doc(db, PRODUCTOS_COLLECTION, id);
+      const snap = await tx.get(ref);
+      const remote = snap.exists() ? snap.data() : null;
+      const baseStock = remote && typeof remote.stock === 'number' ? remote.stock : (delta === 0 ? newStock : 0);
+      tx.set(ref, sanitizeForFirestore({ ...newP, stock: baseStock + delta }), { merge: true });
+    }
+    for (const id of removedIds) {
+      tx.delete(doc(db, PRODUCTOS_COLLECTION, id));
+    }
+  }).catch((e) => {
+    console.error("Error transaccional productos:", e);
+    return syncArrayToCollection(PRODUCTOS_COLLECTION, prevArr, newArr);
+  });
+}
+
 // Elimina del doc de state los campos legacy productos/movimientos.
 function cleanupLegacyStateDoc(): Promise<void> {
   if (!db) return Promise.resolve();
@@ -368,7 +412,7 @@ export const Store = {
     // 1) Productos / movimientos → sus propias colecciones raíz (por documento).
     if (patch.productos !== undefined) {
       writeChain = writeChain
-        .then(() => syncArrayToCollection(PRODUCTOS_COLLECTION, prev.productos, full.productos))
+        .then(() => syncProductosTransactional(prev.productos, full.productos))
         .catch((e) => console.error("Error persistiendo productos:", e));
     }
     if (patch.movimientos !== undefined) {
