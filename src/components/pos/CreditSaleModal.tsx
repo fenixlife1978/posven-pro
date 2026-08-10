@@ -129,6 +129,14 @@ export function CreditModal({ isOpen, onClose, onConfirm, totalAmount }: CreditM
     const customers: Customer[] = store.clientes || [];
     const deudas: Debt[] = store.cxc || [];
 
+    // Separa nombre y cédula de un registro de deuda, tolerando el formato
+    // "NOMBRE [V-123456]" y también los registros viejos sin corchetes.
+    const parseDebt = (clienteRaw: string): { nombre: string; cedula: string } => {
+      const m = clienteRaw.match(/^(.*?)\s*\[(.*?)\]$/);
+      if (m) return { nombre: m[1], cedula: m[2] };
+      return { nombre: clienteRaw, cedula: '' };
+    };
+
     // 1. Clientes registrados que coinciden (cédula exacta ignorando formato, o nombre parcial).
     const clientesMatch = customers.filter(c =>
       isName
@@ -136,24 +144,23 @@ export function CreditModal({ isOpen, onClose, onConfirm, totalAmount }: CreditM
         : getRawCedula(c.cedula) === raw
     );
 
-    // 2. Deudas CxC que coinciden, para calcular el saldo de cada cliente.
+    // 2. Deudas CxC que coinciden, para calcular el saldo y reconstruir clientes sin ficha.
     const deudasMatch = deudas.filter(d => {
       if (!d.cliente) return false;
-      const match = d.cliente.match(/^(.*?)\s*\[(.*?)\]$/);
-      if (!match) return false;
-      if (isName) return normalizeText(match[1]).includes(normalizeText(q));
-      return getRawCedula(match[2]) === raw;
+      const { nombre, cedula } = parseDebt(d.cliente);
+      if (isName) return normalizeText(nombre).includes(normalizeText(q));
+      return getRawCedula(cedula) === raw;
     });
 
     const deudaPorCedula = new Map<string, number>();
     const deudaPorNombre = new Map<string, number>();
-    deudasMatch.forEach(d => {
-      const match = d.cliente.match(/^(.*?)\s*\[(.*?)\]$/);
-      if (!match) return;
-      const ced = getRawCedula(match[2]);
-      const nombre = normalizeText(match[1]);
-      deudaPorCedula.set(ced, (deudaPorCedula.get(ced) || 0) + (d.saldoUSD || 0));
-      deudaPorNombre.set(nombre, (deudaPorNombre.get(nombre) || 0) + (d.saldoUSD || 0));
+    deudas.forEach(d => {
+      if (!d.cliente) return;
+      const { nombre, cedula } = parseDebt(d.cliente);
+      const ced = getRawCedula(cedula);
+      const nkey = normalizeText(nombre);
+      if (ced) deudaPorCedula.set(ced, (deudaPorCedula.get(ced) || 0) + (d.saldoUSD || 0));
+      if (nkey) deudaPorNombre.set(nkey, (deudaPorNombre.get(nkey) || 0) + (d.saldoUSD || 0));
     });
 
     const seen = new Set<string>();
@@ -173,18 +180,19 @@ export function CreditModal({ isOpen, onClose, onConfirm, totalAmount }: CreditM
 
     // 4. Clientes que solo tienen deudas CxC (sin ficha): se construyen desde la deuda.
     deudasMatch.forEach(d => {
-      const match = d.cliente.match(/^(.*?)\s*\[(.*?)\]$/);
-      if (!match) return;
-      const ced = getRawCedula(match[2]);
-      if (seen.has(ced)) return;
-      seen.add(ced);
+      if (!d.cliente) return;
+      const { nombre, cedula } = parseDebt(d.cliente);
+      const ced = getRawCedula(cedula);
+      const key = ced || `NOM-${normalizeText(nombre)}`;
+      if (seen.has(key)) return;
+      seen.add(key);
       out.push({
         id: `CUS-${Date.now()}-${out.length}`,
-        name: (match[1] || '').trim(),
-        cedula: normalizeCedula(match[2], extractDocType(match[2])),
+        name: (nombre || '').trim(),
+        cedula: ced ? normalizeCedula(cedula, extractDocType(cedula)) : 'SIN DOCUMENTO',
         address: 'Sin dirección',
         phone: 'Sin teléfono',
-        debt: deudaPorCedula.get(ced) || 0
+        debt: ced ? (deudaPorCedula.get(ced) || 0) : (deudaPorNombre.get(normalizeText(nombre)) || 0)
       });
     });
 
