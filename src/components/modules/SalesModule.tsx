@@ -39,7 +39,8 @@ import {
   Minimize2,
   Tag,
   Loader2,
-  Hash
+  Hash,
+  PackagePlus
 } from 'lucide-react';
 import { auth } from '@/lib/firebase';
 import { ReceiptModal } from '@/components/pos/ReceiptModal';
@@ -151,6 +152,10 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   const [selectedProductDisplay, setSelectedProductDisplay] = useState<Product | null>(null);
   const [stockEdit, setStockEdit] = useState<Product | null>(null);
   const [stockEditValue, setStockEditValue] = useState('');
+  const [showStockTool, setShowStockTool] = useState(false);
+  const [stockProductId, setStockProductId] = useState('');
+  const [stockValue, setStockValue] = useState('');
+  const [stockSearch, setStockSearch] = useState('');
   
   const [priceSelectorItem, setPriceSelectorItem] = useState<{ index: number, product: Product } | null>(null);
 
@@ -377,6 +382,43 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     setStockEdit(null);
     toast({ title: "Stock Actualizado", description: `${stockEdit.nombre}: ${nuevoStock} Und.` });
   };
+
+  // Ajuste manual de stock desde el icono de la barra del POS (por si hay inconsistencia)
+  const guardarStockTool = () => {
+    if (!stockProductId) return;
+    const prod = state.productos.find(p => p.id === stockProductId);
+    if (!prod) return;
+    const nuevoStock = Math.max(0, parseFloat(stockValue) || 0);
+    const delta = Utils.round(nuevoStock - (prod.stock || 0));
+    const mov: Movimiento = {
+      id: Store.uid(),
+      productoId: prod.id,
+      tipo: delta >= 0 ? 'ajuste_entrada' : 'ajuste_salida',
+      cantidad: delta,
+      stockAntes: prod.stock || 0,
+      stockDespues: nuevoStock,
+      fecha: Utils.ahora(),
+      referencia: 'AJUSTE MANUAL POS',
+      terminalId: getCurrentTerminal()?.id || 'GLOBAL'
+    };
+    updateState({
+      productos: state.productos.map(p => p.id === prod.id ? { ...p, stock: nuevoStock } : p),
+      movimientos: [...state.movimientos, mov]
+    });
+    setShowStockTool(false);
+    setStockProductId('');
+    setStockValue('');
+    setStockSearch('');
+    toast({ title: "Stock Actualizado", description: `${prod.nombre}: ${nuevoStock} Und.` });
+  };
+
+  const stockProduct = stockProductId ? (state.productos.find(p => p.id === stockProductId) || null) : null;
+  const productosStock = (() => {
+    const activos = (state.productos || []).filter(p => p.activo);
+    if (!stockSearch.trim()) return activos.slice(0, 8);
+    const q = stockSearch.trim().toLowerCase();
+    return activos.filter(p => (p.nombre || '').toLowerCase().includes(q) || (p.codigo || '').toLowerCase().includes(q)).slice(0, 8);
+  })();
 
   const subtotalUSD = state.carrito.reduce((s, i) => s + i.subtotalUSD, 0);
   const totalBS = subtotalUSD * state.tasa;
@@ -761,6 +803,10 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                 </div>
               )}
             </div>
+
+            <button onClick={() => { setShowStockTool(true); setStockProductId(''); setStockValue(''); setStockSearch(''); }} title="Ajustar stock manual (por si hay inconsistencia)" className="w-10 h-10 rounded-full bg-white border border-brand-gold/30 shadow-sm shrink-0 flex items-center justify-center text-brand-gold-deep hover:bg-brand-gold/20 hover:scale-105 active:scale-95 transition-all">
+              <PackagePlus className="w-5 h-5" />
+            </button>
 
             <div className="flex items-center gap-2 bg-white px-4 py-1.5 rounded-full border border-brand-gold/30 shadow-sm shrink-0">
               <div className="w-8 h-8 rounded-full overflow-hidden border border-line shrink-0"><img src="/bcv-logo.png" alt="BCV" className="w-full h-full object-cover" /></div>
@@ -1176,6 +1222,60 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
             <div className="flex justify-end gap-2">
               <button onClick={() => setStockEdit(null)} className="px-4 py-2 text-gray-400 font-bold hover:text-gray-600 transition-colors text-xs uppercase">Cancelar</button>
               <button onClick={guardarStockManual} className="px-5 py-2 bg-blue-600 text-white rounded-xl font-black text-xs uppercase hover:bg-blue-700 transition-all"><Check className="w-3.5 h-3.5 inline mr-1" />Guardar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showStockTool && (
+        <div className="fixed inset-0 bg-black/60 flex justify-center items-center z-50 p-4 animate-in fade-in-50">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-5 space-y-4">
+            <div>
+              <p className="text-[10px] font-black uppercase text-gray-400 mb-1">Ajustar Stock Manual</p>
+              <p className="font-black text-sm text-ink uppercase leading-tight">Corregir inventario por inconsistencia</p>
+            </div>
+            <div>
+              <label className="text-[9px] font-black uppercase text-gray-400 block mb-1">Buscar producto</label>
+              <input
+                type="text"
+                value={stockSearch}
+                onChange={e => setStockSearch(e.target.value)}
+                placeholder="Nombre o código..."
+                className="w-full h-10 px-4 bg-gray-50 border border-gray-200 rounded-xl font-bold focus:ring-2 focus:ring-[#D4A017] outline-none text-sm"
+              />
+              <div className="max-h-44 overflow-y-auto mt-2 space-y-1 pr-1">
+                {productosStock.length === 0 && <p className="text-center text-[10px] font-bold text-gray-400 uppercase py-3">Sin productos</p>}
+                {productosStock.map(p => (
+                  <button
+                    key={p.id}
+                    onClick={() => { setStockProductId(p.id); setStockValue(String(p.stock || 0)); }}
+                    className={`w-full flex items-center justify-between px-3 py-2 rounded-xl border text-left transition-all ${stockProductId === p.id ? 'bg-brand-gold/15 border-brand-gold/40' : 'bg-gray-50 border-line hover:border-brand-gold/40'}`}
+                  >
+                    <span className="text-[11px] font-black uppercase text-ink truncate">{p.nombre}</span>
+                    <span className={`text-[10px] font-black shrink-0 ml-2 ${p.stock <= (p.stockMinimo || 3) ? 'text-status-danger' : p.stock <= (p.stockMinimo || 3) * 2 ? 'text-status-warn' : 'text-status-success'}`}>{p.stock || 0} Und.</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+            {stockProduct && (
+              <div>
+                <label className="text-[9px] font-black uppercase text-gray-400 block mb-1">Nuevo stock — {stockProduct.nombre}</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={stockValue}
+                    onChange={e => setStockValue(e.target.value.replace(/[^0-9.]/g, ''))}
+                    onKeyDown={e => e.key === 'Enter' && guardarStockTool()}
+                    className="flex-1 h-11 px-4 bg-gray-50 border border-gray-200 rounded-xl font-black focus:ring-2 focus:ring-[#D4A017] outline-none text-center text-lg"
+                  />
+                  <span className="text-[10px] font-black text-gray-400 uppercase">Und.</span>
+                </div>
+                <p className="text-[9px] font-bold text-gray-400 uppercase leading-tight mt-1">Stock actual: <b className="text-ink">{stockProduct.stock || 0}</b> Und.</p>
+              </div>
+            )}
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setShowStockTool(false)} className="px-4 py-2 text-gray-400 font-bold hover:text-gray-600 transition-colors text-xs uppercase">Cancelar</button>
+              <button onClick={guardarStockTool} disabled={!stockProductId} className="px-5 py-2 bg-blue-600 text-white rounded-xl font-black text-xs uppercase hover:bg-blue-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed"><Check className="w-3.5 h-3.5 inline mr-1" />Guardar</button>
             </div>
           </div>
         </div>
