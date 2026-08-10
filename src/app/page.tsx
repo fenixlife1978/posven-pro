@@ -259,7 +259,7 @@ export default function LicoreriaPOS() {
   const updateState = (newState: Partial<AppState>) => {
     setState(prev => {
       const updated = { ...prev, ...newState } as AppState;
-      Store.set(updated);
+      Store.set(newState);
       return updated;
     });
   };
