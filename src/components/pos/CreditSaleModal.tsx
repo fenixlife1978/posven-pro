@@ -53,6 +53,11 @@ function extractDocType(cedula: string): string {
   return match ? match[1].replace('-', '').trim() + '-' : 'V-';
 }
 
+// Mayúsculas y sin tildes, para que "José" coincida con "Jose" y viceversa
+function normalizeText(s: string): string {
+  return (s || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
 // ============================================================
 // COMPONENTE PRINCIPAL
 // ============================================================
@@ -68,10 +73,11 @@ export function CreditModal({ isOpen, onClose, onConfirm, totalAmount }: CreditM
   const { toast } = useToast();
   const [store, setStore] = useState<any>(Store.get());
 
-  const [view, setView] = useState<'search' | 'found' | 'create'>('search');
+  const [view, setView] = useState<'search' | 'results' | 'found' | 'create'>('search');
   const [docType, setDocType] = useState('V-');
   const [docNumber, setDocNumber] = useState('');
   const [foundCustomer, setFoundCustomer] = useState<Customer | null>(null);
+  const [results, setResults] = useState<Customer[]>([]);
   const [newName, setNewName] = useState('');
   const [newPhone, setNewPhone] = useState('');
   const [newAddress, setNewAddress] = useState('');
@@ -87,6 +93,7 @@ export function CreditModal({ isOpen, onClose, onConfirm, totalAmount }: CreditM
       setDocType('V-');
       setDocNumber('');
       setFoundCustomer(null);
+      setResults([]);
       setNewName('');
       setNewPhone('');
       setNewAddress('');
@@ -114,48 +121,74 @@ export function CreditModal({ isOpen, onClose, onConfirm, totalAmount }: CreditM
     }
   };
 
-  // Busca un cliente por cédula o nombre entre TODOS los clientes registrados
+  // Busca clientes por cédula o nombre entre TODOS los clientes registrados
   // (con o sin deuda) y también entre las deudas CxC sin ficha de cliente.
-  const findCustomer = (q: string, isName: boolean): Customer | null => {
+  // Devuelve TODOS los que coinciden (puede haber varios "Rafael", por ejemplo).
+  const findCustomers = (q: string, isName: boolean): Customer[] => {
     const raw = isName ? '' : getRawCedula(q);
     const customers: Customer[] = store.clientes || [];
     const deudas: Debt[] = store.cxc || [];
 
-    // 1. Clientes registrados: coincidencia exacta de cédula (ignorando formato) o por nombre.
-    const cliente = isName
-      ? (customers.find(c => (c.name || '').toUpperCase().includes(q)) || null)
-      : (customers.find(c => getRawCedula(c.cedula) === raw) || null);
+    // 1. Clientes registrados que coinciden (cédula exacta ignorando formato, o nombre parcial).
+    const clientesMatch = customers.filter(c =>
+      isName
+        ? normalizeText(c.name).includes(normalizeText(q))
+        : getRawCedula(c.cedula) === raw
+    );
 
-    // 2. Deudas CxC del cliente, para mostrar su saldo actual (aunque sea cero).
-    const deudasCliente = deudas.filter(d => {
+    // 2. Deudas CxC que coinciden, para calcular el saldo de cada cliente.
+    const deudasMatch = deudas.filter(d => {
       if (!d.cliente) return false;
       const match = d.cliente.match(/^(.*?)\s*\[(.*?)\]$/);
       if (!match) return false;
-      if (isName) return (match[1] || '').trim().toUpperCase().includes(q);
+      if (isName) return normalizeText(match[1]).includes(normalizeText(q));
       return getRawCedula(match[2]) === raw;
     });
-    const totalDeuda = deudasCliente.reduce((sum, d) => sum + (d.saldoUSD || 0), 0);
 
-    // 3. Cliente registrado encontrado: devolverlo con su deuda actual.
-    if (cliente) return { ...cliente, debt: totalDeuda };
+    const deudaPorCedula = new Map<string, number>();
+    const deudaPorNombre = new Map<string, number>();
+    deudasMatch.forEach(d => {
+      const match = d.cliente.match(/^(.*?)\s*\[(.*?)\]$/);
+      if (!match) return;
+      const ced = getRawCedula(match[2]);
+      const nombre = normalizeText(match[1]);
+      deudaPorCedula.set(ced, (deudaPorCedula.get(ced) || 0) + (d.saldoUSD || 0));
+      deudaPorNombre.set(nombre, (deudaPorNombre.get(nombre) || 0) + (d.saldoUSD || 0));
+    });
 
-    // 4. Solo tiene deudas registradas (sin ficha de cliente): construirlo desde la deuda.
-    if (deudasCliente.length > 0) {
-      const primera = deudasCliente[0];
-      const match = primera.cliente?.match(/^(.*?)\s*\[(.*?)\]$/);
-      if (match) {
-        return {
-          id: `CUS-${Date.now()}`,
-          name: (match[1] || '').trim(),
-          cedula: normalizeCedula(match[2], extractDocType(match[2])),
-          address: 'Sin dirección',
-          phone: 'Sin teléfono',
-          debt: totalDeuda
-        };
-      }
-    }
+    const seen = new Set<string>();
+    const out: Customer[] = [];
 
-    return null;
+    // 3. Clientes registrados (prioridad), con su saldo actual (aunque sea cero).
+    clientesMatch.forEach(c => {
+      const rawC = getRawCedula(c.cedula);
+      const key = rawC || (c.id || '');
+      if (seen.has(key)) return;
+      seen.add(key);
+      const debt = rawC
+        ? (deudaPorCedula.get(rawC) ?? 0)
+        : (deudaPorNombre.get(normalizeText(c.name)) ?? 0);
+      out.push({ ...c, debt });
+    });
+
+    // 4. Clientes que solo tienen deudas CxC (sin ficha): se construyen desde la deuda.
+    deudasMatch.forEach(d => {
+      const match = d.cliente.match(/^(.*?)\s*\[(.*?)\]$/);
+      if (!match) return;
+      const ced = getRawCedula(match[2]);
+      if (seen.has(ced)) return;
+      seen.add(ced);
+      out.push({
+        id: `CUS-${Date.now()}-${out.length}`,
+        name: (match[1] || '').trim(),
+        cedula: normalizeCedula(match[2], extractDocType(match[2])),
+        address: 'Sin dirección',
+        phone: 'Sin teléfono',
+        debt: deudaPorCedula.get(ced) || 0
+      });
+    });
+
+    return out;
   };
 
   const handleSearch = () => {
@@ -165,19 +198,31 @@ export function CreditModal({ isOpen, onClose, onConfirm, totalAmount }: CreditM
       return;
     }
 
-    const isName = /[A-Z]/.test(searchStr);
-    const q = isName ? searchStr : `${docType}${searchStr.replace(/\./g, '')}`;
-    const customer = findCustomer(q, isName);
+    const isName = /[a-zA-Z]/.test(searchStr) && !/^[A-Z]-\d/.test(searchStr);
+    const q = isName ? searchStr : `${docType}${searchStr.replace(/[^0-9]/g, '')}`;
+    const matches = findCustomers(q, isName);
 
-    if (customer) {
-      setFoundCustomer(customer);
+    if (matches.length === 1) {
+      setFoundCustomer(matches[0]);
+      setResults([]);
       setView('found');
+    } else if (matches.length > 1) {
+      setFoundCustomer(null);
+      setResults(matches);
+      setView('results');
     } else {
       setFoundCustomer(null);
+      setResults([]);
       // Si lo buscado tiene letras, lo pre-cargamos como nombre para el registro nuevo
       if (isName) setNewName(searchStr);
       setView('create');
     }
+  };
+
+  const selectResult = (c: Customer) => {
+    setFoundCustomer(c);
+    setResults([]);
+    setView('found');
   };
 
   const handleConfirmCharge = () => {
@@ -249,6 +294,7 @@ export function CreditModal({ isOpen, onClose, onConfirm, totalAmount }: CreditM
   const handleBackToSearch = () => {
     setView('search');
     setFoundCustomer(null);
+    setResults([]);
     setDocNumber('');
     setNewName('');
     setNewPhone('');
@@ -309,6 +355,28 @@ export function CreditModal({ isOpen, onClose, onConfirm, totalAmount }: CreditM
               <div className="flex justify-end gap-2">
                 <button onClick={onClose} className="px-6 py-2 text-gray-400 font-bold hover:text-gray-600 transition-colors text-xs uppercase">Cancelar</button>
               </div>
+            </div>
+          )}
+
+          {view === 'results' && (
+            <div className="space-y-3 animate-in zoom-in-95 duration-200">
+              <p className="text-[10px] font-black text-gray-400 uppercase mb-1 ml-1">Se encontraron {results.length} clientes. Seleccione uno:</p>
+              <div className="space-y-2 max-h-[45vh] overflow-y-auto pr-1">
+                {results.map((c, i) => (
+                  <button
+                    key={c.id || i}
+                    onClick={() => selectResult(c)}
+                    className="w-full bg-blue-50 border border-blue-100 rounded-2xl p-4 text-left hover:border-blue-300 hover:shadow-md transition-all"
+                  >
+                    <p className="font-black text-sm text-blue-900 uppercase truncate">{c.name}</p>
+                    <div className="flex justify-between items-center mt-1">
+                      <p className="text-[10px] text-blue-400 font-bold uppercase">ID: {c.cedula}</p>
+                      <p className="text-[10px] font-black text-red-600">DEUDA: {formatUsd(c.debt || 0)}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+              <button onClick={handleBackToSearch} className="w-full text-center text-[10px] font-black text-gray-400 uppercase hover:text-blue-600">Buscar otro cliente</button>
             </div>
           )}
 
