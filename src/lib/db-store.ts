@@ -14,7 +14,7 @@ const PAGE_SIZE = 10;
 const CONFIG_COLLECTION = 'config';
 const CONFIG_DOC_ID = 'general';
 const CATALOGOS_COLLECTION = 'catalogos';
-const RTDB_PRODUCTS_PATH = 'productos';
+const RTDB_PRODUCTS_PATH = 'pos_system_data/productos';
 
 // ============================================================
 // UBICACIÓN EN FIRESTORE POR LISTA DEL ESTADO.

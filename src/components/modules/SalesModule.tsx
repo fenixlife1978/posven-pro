@@ -173,6 +173,10 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     setHistPage(1);
   }, [view]);
 
+  const currentTerminal = useMemo(() => {
+    return auth?.currentUser ? state.terminales.find(t => t.usuarioId === auth.currentUser!.uid) : null;
+  }, [state.terminales]);
+
   const histVentas = useMemo(() => {
     return (state.ventas || [])
       .filter(v => v.terminalId === currentTerminal?.id && v.fecha > (state.fechaUltimoZ || ''))
@@ -208,10 +212,6 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     const formatted = formatCedulaByType(cleanNumber, tipo);
     setNewClient({ ...newClient, tipoDoc: tipo, cedula: formatted });
   };
-
-  const currentTerminal = useMemo(() => {
-    return auth?.currentUser ? state.terminales.find(t => t.usuarioId === auth.currentUser!.uid) : null;
-  }, [state.terminales]);
 
   const getFreshReportData = () => {
     const corteTimestamp = state.fechaUltimoZ || '';
