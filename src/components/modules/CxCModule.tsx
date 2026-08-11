@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { AppState, Debt, Customer } from '@/lib/types';
 import { Utils, Store } from '@/lib/db-store';
 import { 
@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import { exportarPDFCxC } from '@/lib/pdf-generator';
 import { useToast } from '@/hooks/use-toast';
+import { Pagination } from '@/components/ui/pagination';
 
 export default function CxCModule({ state, updateState }: { state: AppState, updateState: (s: Partial<AppState>) => void }) {
   const { toast } = useToast();
@@ -37,6 +38,12 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
   const [expandedClient, setExpandedClient] = useState<string | null>(null);
   const [showClientHistory, setShowClientHistory] = useState<string | null>(null);
   const [filterEstado, setFilterEstado] = useState<'todos' | 'pendiente' | 'pagada' | 'parcial'>('todos');
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
+
+  useEffect(() => {
+    setPage(1);
+  }, [filterEstado]);
 
   const [nuevaDeuda, setNuevaDeuda] = useState({
     cliente: '',
@@ -141,6 +148,11 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
     // Cuando filterEstado === 'todos', devolvemos todos los grupos
     return sortedGroups;
   }, [todasLasDeudas, allCustomers, filterEstado]);
+
+  const creditEntries = Object.entries(groupedCredits);
+  const creditTotalPages = Math.max(1, Math.ceil(creditEntries.length / pageSize));
+  const creditSafePage = Math.min(page, creditTotalPages);
+  const pageCreditEntries = creditEntries.slice((creditSafePage - 1) * pageSize, creditSafePage * pageSize);
 
   // ===== ELIMINAR CLIENTE COMPLETO =====
   const eliminarCliente = (clientName: string) => {
@@ -369,7 +381,7 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
               {Object.entries(groupedCredits).length === 0 ? (
                 <tr><td colSpan={7} className="text-center py-20 text-ink font-black uppercase italic">No hay clientes registrados</td></tr>
               ) : (
-                Object.entries(groupedCredits).map(([clientName, group]) => {
+                pageCreditEntries.map(([clientName, group]) => {
                   const tieneDeudaPendiente = group.totalUSD > 0;
                   const tieneDeudas = group.debts.length > 0;
                   
@@ -497,6 +509,7 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
             </tbody>
           </table>
         </div>
+        <Pagination page={creditSafePage} totalPages={creditTotalPages} total={creditEntries.length} pageSize={pageSize} onPageChange={setPage} />
       </div>
 
       {/* MODAL DETALLES AVANZADOS */}

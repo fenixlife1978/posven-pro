@@ -47,6 +47,7 @@ import {
   exportarPDFDevoluciones
 } from '@/lib/pdf-generator';
 import { ProductFormModal } from '@/components/inventory/ProductFormModal';
+import { Pagination } from '@/components/ui/pagination';
 
 export function InventoryModule({ state, updateState }: { state: AppState, updateState: (s: Partial<AppState>) => void }) {
   const [activeTab, setActiveTab] = useState('productos');
@@ -55,10 +56,15 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
   const [deptFilter, setDeptFilter] = useState('');
   const [selectedKardexId, setSelectedKardexId] = useState<string | null>(null);
   const [selectedCPPId, setSelectedCPPId] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
     Store.ensureLoaded('movimientos');
   }, []);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, catFilter, deptFilter]);
   
   const [showAjuste, setShowAjuste] = useState<string | null>(null);
   const [showProducto, setShowProducto] = useState<string | null | 'nuevo'>(null);
@@ -86,6 +92,11 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
   );
 
   const lowStockCount = prods.filter(p => p.stock <= (p.stockMinimo || 0)).length;
+
+  const pageSize = 10;
+  const totalPages = Math.max(1, Math.ceil(prods.length / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const pageProds = prods.slice((safePage - 1) * pageSize, safePage * pageSize);
 
   const eliminar = (id: string) => {
     if (!confirm('¿Seguro que desea eliminar este producto?')) return;
@@ -184,7 +195,7 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
                   {prods.length === 0 ? (
                     <TableRow><TableCell colSpan={7} className="text-center py-20 text-ink/20 font-black italic uppercase">No se encontraron productos coincidentes</TableCell></TableRow>
                   ) : (
-                    prods.map(p => (
+                    pageProds.map(p => (
                       <TableRow key={p.id} className="border-b border-line/30 hover:bg-surface-warm/20 transition-colors">
                         <TableCell className="mono text-xs font-black text-ink">{p.codigo}</TableCell>
                         <TableCell className="font-bold text-ink uppercase">
@@ -215,6 +226,7 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
                 </TableBody>
               </Table>
             </div>
+            <Pagination page={safePage} totalPages={totalPages} total={prods.length} pageSize={pageSize} onPageChange={setPage} />
           </Card>
         </div>
       );

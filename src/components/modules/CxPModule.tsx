@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { exportarPDFCxP } from '@/lib/pdf-generator';
+import { Pagination } from '@/components/ui/pagination';
 
 interface CxPModuleProps {
   state: AppState;
@@ -32,6 +33,13 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
   const [showPaymentModal, setShowPaymentModal] = useState<any>(null);
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('efectivo_usd');
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
+
+  const cxpList = state.cxp || [];
+  const cxpTotalPages = Math.max(1, Math.ceil(cxpList.length / pageSize));
+  const cxpSafePage = Math.min(page, cxpTotalPages);
+  const cxpPageData = cxpList.slice((cxpSafePage - 1) * pageSize, cxpSafePage * pageSize);
   
   // Estado para el modal de Deuda Directa
   const [showDeudaDirectaModal, setShowDeudaDirectaModal] = useState(false);
@@ -264,7 +272,7 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
                   </td>
                 </tr>
               ) : (
-                state.cxp.map((x: Debt) => (
+                cxpPageData.map((x: Debt) => (
                   <tr key={x.id} className="border-b border-line/40 hover:bg-surface-warm/20 transition-colors">
                     <td className="text-ink font-black text-xs py-4 px-6">{Utils.fmtFecha(x.fecha)}</td>
                     <td className={`text-xs font-black py-4 ${x.fechaVencimiento < Utils.hoy() && x.estado !== 'pagada' ? 'text-status-danger' : 'text-ink'}`}>
@@ -294,6 +302,7 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
             </tbody>
           </table>
         </div>
+        <Pagination page={cxpSafePage} totalPages={cxpTotalPages} total={cxpList.length} pageSize={pageSize} onPageChange={setPage} />
       </div>
 
       {/* MODAL DETALLES AVANZADOS (HISTORIAL) */}

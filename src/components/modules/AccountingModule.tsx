@@ -31,7 +31,7 @@ export default function AccountingModule({ state, updateState }: { state: AppSta
   
   // Paginación
   const [page, setPage] = useState(1);
-  const pageSize = 20;
+  const pageSize = 10;
 
   const [showModal, setShowModal] = useState(false);
   const [selectedEntry, setSelectedEntry] = useState<LibroDiarioEntry | null>(null);
