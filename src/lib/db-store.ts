@@ -3,7 +3,7 @@
 import { AppState } from './types';
 import { db, rtdb } from './firebase';
 import {
-  collection, doc, getDoc, getDocs, onSnapshot, orderBy, limit, query, setDoc, where,
+  collection, doc, getDoc, getDocs, getCountFromServer, onSnapshot, orderBy, limit, query, setDoc, where,
   writeBatch, runTransaction, startAfter
 } from "firebase/firestore";
 import type { DocumentData, QueryDocumentSnapshot } from "firebase/firestore";
@@ -295,18 +295,33 @@ function syncProductosRTDB(prevArr: any[] | undefined, newArr: any[] | undefined
     .catch(e => console.error('RTDB sync productos:', e));
 }
 
-// Si el espejo RTDB está vacío, lo siembra desde Firestore (1 sola lectura completa por sesión).
+// Sincroniza el espejo RTDB con Firestore (migración y sanado):
+//  - Si el espejo está vacío → lo siembra COMPLETO desde Firestore.
+//  - Si está incompleto (menos productos que Firestore) → lo repuebla completo.
+// Firestore sigue siendo la fuente de verdad; RTDB es el espejo barato de tiempo real.
 async function bootstrapProductos(): Promise<void> {
   if (!rtdb || !db) return;
   try {
     const snap = await rtdbGet(ref(rtdb, RTDB_PRODUCTS_PATH));
     const val = snap.val();
-    if (val && Object.keys(val).length > 0) {
-      applyPatch({ productos: Object.values(val).filter(Boolean) });
-    } else {
+    const mirrorItems: any[] = val ? Object.values(val).filter(Boolean) : [];
+
+    if (mirrorItems.length === 0) {
       const items = await loadCollection('productos');
       if (items.length > 0) {
         applyPatch({ productos: mergeById((cache as any).productos, items) });
+        const updates: Record<string, any> = {};
+        items.forEach(p => { updates[String(p.id)] = sanitizeForFirestore(p); });
+        await update(ref(rtdb, RTDB_PRODUCTS_PATH), updates);
+      }
+      return;
+    }
+
+    applyPatch({ productos: mergeById((cache as any).productos, mirrorItems) });
+    const count = await getCountFromServer(query(collection(db, 'productos'))).catch(() => null);
+    if (count && count.data().count !== mirrorItems.length) {
+      const items = await loadCollection('productos');
+      if (items.length > 0) {
         const updates: Record<string, any> = {};
         items.forEach(p => { updates[String(p.id)] = sanitizeForFirestore(p); });
         await update(ref(rtdb, RTDB_PRODUCTS_PATH), updates);
