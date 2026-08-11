@@ -4,7 +4,6 @@ import React, { useState, useEffect } from 'react';
 import { AppState } from '@/lib/types';
 import { Save, AlertTriangle, RefreshCw, Database } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
-import { initialState } from '@/lib/db-store';
 import { db, auth } from '@/lib/firebase';
 import { collection, getDocs, deleteDoc, doc, setDoc, writeBatch, query, limit } from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
@@ -162,12 +161,10 @@ export default function ConfigModule({ state, updateState }: { state: AppState, 
         console.warn('⚠️ Error al limpiar pos_system_data:', e);
       }
 
-      // ===== 3. REINICIAR ESTADO GLOBAL =====
-      const stateRef = doc(db, 'pos_system_data', 'state');
-      await setDoc(stateRef, {
-        ...initialState,
+      // ===== 3. REINICIAR CONFIGURACIÓN GLOBAL (config/general) =====
+      const configRef = doc(db, 'config', 'general');
+      await setDoc(configRef, {
         isInitialized: false,
-        fechaFormateo: new Date().toISOString(),
         ultimoZ: 0,
         proximoRecibo: 1,
         proximaDevolucion: 1,
@@ -177,14 +174,15 @@ export default function ConfigModule({ state, updateState }: { state: AppState, 
         fondoCajaHoyUSD: 0,
         fondoCajaHoyBS: 0,
         tasa: state.tasa || 36.50,
+        pinDevolucion: '000000',
         empresa: {
           nombre: 'NOMBRE DE SU NEGOCIO',
           rif: 'J-00000000-0',
           direccion: 'DIRECCIÓN FISCAL',
           telefono: '0000-0000000'
         }
-      });
-      console.log('✅ Estado global reiniciado con valores iniciales.');
+      }, { merge: true });
+      console.log('✅ Configuración global reiniciada con valores iniciales.');
 
       // ===== 4. LIMPIAR SESIÓN Y SALIR =====
       if (typeof sessionStorage !== 'undefined') sessionStorage.clear();

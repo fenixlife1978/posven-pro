@@ -30,3 +30,6 @@ Thumbs.db
 *.log
 .next/
 .next/
+
+# build logs
+build-log*.txt

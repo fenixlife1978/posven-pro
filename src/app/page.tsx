@@ -33,7 +33,7 @@ import { Store, initialState, Utils } from '@/lib/db-store';
 import { AppState, Terminal, Debt } from '@/lib/types';
 import { auth, db } from '@/lib/firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { doc, onSnapshot, getDoc } from 'firebase/firestore';
+import { doc, onSnapshot, getDoc, collection, query, getDocs, where } from 'firebase/firestore';
 import DashboardModule from '@/components/modules/DashboardModule';
 import { InventoryModule } from '@/components/modules/InventoryModule';
 import SalesModule from '@/components/modules/SalesModule';
@@ -67,10 +67,10 @@ export default function LicoreriaPOS() {
   const [showCxPAlert, setShowCxPAlert] = useState(false);
   
   const moduleInitialized = useRef(false);
+  const profileUnsubRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     setMounted(true);
-    let unsubscribeProfile: any = null;
 
     const timerSafety = setTimeout(() => {
       if (loading) {
@@ -89,7 +89,8 @@ export default function LicoreriaPOS() {
         router.push('/login');
       } else {
         try {
-          unsubscribeProfile = onSnapshot(doc(db, 'users', currentUser.uid), (docSnap) => {
+          if (profileUnsubRef.current) profileUnsubRef.current();
+          profileUnsubRef.current = onSnapshot(doc(db, 'users', currentUser.uid), (docSnap) => {
             if (!auth.currentUser) return;
 
             if (docSnap.exists()) {
@@ -108,8 +109,8 @@ export default function LicoreriaPOS() {
                 const aperturaConfirmada = localStorage.getItem('posven_apertura_done') === 'true';
 
                 if (data.rol === 'cajero') {
-                   getDoc(doc(db, 'pos_system_data', 'state')).then(configSnap => {
-                      const terminals = (configSnap.data()?.terminales || []) as Terminal[];
+                   getDocs(query(collection(db, 'terminales'), where('usuarioId', '==', currentUser.uid))).then(configSnap => {
+                      const terminals = configSnap.docs.map(d => d.data()) as Terminal[];
                       const hasTerminal = terminals.some((t: Terminal) => t.usuarioId === currentUser.uid);
                       
                       if (!hasTerminal) {
@@ -166,7 +167,8 @@ export default function LicoreriaPOS() {
       window.addEventListener('offline', hOffline);
       return () => {
         unsubscribeAuth();
-        if (unsubscribeProfile) unsubscribeProfile();
+        if (profileUnsubRef.current) profileUnsubRef.current();
+        profileUnsubRef.current = null;
         unsubscribeStore();
         clearInterval(timerClock);
         clearTimeout(timerSafety);
@@ -177,12 +179,13 @@ export default function LicoreriaPOS() {
     
     return () => {
       unsubscribeAuth();
-      if (unsubscribeProfile) unsubscribeProfile();
+      if (profileUnsubRef.current) profileUnsubRef.current();
+      profileUnsubRef.current = null;
       unsubscribeStore();
       clearInterval(timerClock);
       clearTimeout(timerSafety);
     };
-  }, [router, loading]);
+  }, [router]);
 
   // LÓGICA DE NOTIFICACIONES CXP (CADA 6 HORAS / 72H VENCIMIENTO)
   useEffect(() => {

@@ -2,18 +2,63 @@
 
 import { AppState } from './types';
 import { db } from './firebase';
-import { doc, setDoc, onSnapshot, collection, query, writeBatch, deleteField, runTransaction } from "firebase/firestore";
+import {
+  collection, doc, getDoc, getDocs, onSnapshot, orderBy, limit, query, setDoc, where,
+  writeBatch, runTransaction, startAfter
+} from "firebase/firestore";
+import type { DocumentData, QueryDocumentSnapshot } from "firebase/firestore";
 
 const STORAGE_KEY = 'posven_pro_session_data_cache';
-const COLLECTION = 'pos_system_data';
-const DOC_ID = 'state';
+const PAGE_SIZE = 10;
+const CONFIG_COLLECTION = 'config';
+const CONFIG_DOC_ID = 'general';
+const CATALOGOS_COLLECTION = 'catalogos';
 
 // ============================================================
-// COLECCIONES RAÍZ: productos e inventario (movimientos) ya NO
-// viven dentro de pos_system_data/state, tienen su propia colección.
+// UBICACIÓN EN FIRESTORE POR LISTA DEL ESTADO.
+// Cada lista vive en SU PROPIA COLECCIÓN (documento por registro).
+// El doc pos_system_data/state YA NO se lee ni se escribe.
 // ============================================================
-const PRODUCTOS_COLLECTION = 'productos';
-const MOVIMIENTOS_COLLECTION = 'movimientos';
+const COLLECTIONS: Record<string, string> = {
+  productos: 'productos',
+  movimientos: 'movimientos',
+  ventas: 'ventas',
+  cxc: 'cxc',
+  cxp: 'cxp',
+  clientes: 'clientes',
+  proveedores: 'proveedores',
+  devoluciones: 'devoluciones',
+  anulaciones: 'anulaciones',
+  terminales: 'terminales',
+  libroDiario: 'libroDiario',
+  reportesZ: 'reportesZ',
+  cashHistory: 'caja',
+};
+
+// Catálogos: viven como docs catalogos/{nombre} con { lista: [...] }
+const CATALOG_FIELDS: Record<string, string> = {
+  categorias: 'categorias',
+  departamentos: 'departamentos',
+  marcas: 'marcas',
+  presentaciones: 'presentaciones',
+  productCategories: 'productCategories',
+  productUnits: 'productUnits',
+  productColors: 'productColors',
+  productSizes: 'productSizes',
+  brands: 'brands',
+  groups: 'groups',
+  subgroups: 'subgroups',
+  lines: 'lines',
+  suppliers: 'suppliers',
+};
+
+// Campos de configuración que se guardan en config/general (nunca en state)
+const CONFIG_FIELDS = [
+  'tasa', 'pinDevolucion', 'isInitialized', 'empresa',
+  'proximoRecibo', 'proximaDevolucion', 'proximaAnulacion',
+  'ultimoZ', 'fechaUltimoZ', 'acumuladoHistorico',
+  'fondoCajaHoyUSD', 'fondoCajaHoyBS', 'isCashOpen', 'cashData', 'config',
+];
 
 export const initialState: AppState = {
   user: null,
@@ -41,124 +86,70 @@ export const initialState: AppState = {
   fechaUltimoZ: '',
   fondoCajaHoyUSD: 0,
   fondoCajaHoyBS: 0,
-  
-  // ========== PROPIEDADES PARA CASH MODULE ==========
+
   isCashOpen: false,
   cashData: null,
   cashHistory: [],
-  
-  empresa: { 
-    nombre: 'NOMBRE DE SU NEGOCIO', 
-    rif: 'J-00000000-0', 
-    direccion: 'DIRECCIÓN FISCAL', 
-    telefono: '0000-0000000' 
+
+  empresa: {
+    nombre: 'NOMBRE DE SU NEGOCIO',
+    rif: 'J-00000000-0',
+    direccion: 'DIRECCIÓN FISCAL',
+    telefono: '0000-0000000'
   },
-  // DEPARTAMENTOS Y CATEGORÍAS EXISTENTES
   departamentos: ['Licores', 'Viveres', 'Otros'],
   categorias: ['Ron', 'Vino', 'Cerveza', 'Whisky', 'Refrescos', 'Otros'],
   marcas: ['Genérica'],
   presentaciones: ['750ml', '1L', 'Unidad', 'Caja'],
   proveedores: [],
-  
-  // ========== NUEVAS PROPIEDADES PARA ProductForm ==========
-  // Configuración general
+
   config: {
     exchangeRate: 36.50,
     ivaRate: 16,
     igtfRate: 3
   },
-  
-  // Listas para el formulario de productos
+
   productCategories: ['Repuesto', 'Lubricante', 'Filtro', 'Químico', 'Accesorio', 'Batería', 'Caucho', 'Freno', 'Suspensión', 'Motor', 'Eléctrico', 'Transmisión', 'Servicio'],
   productUnits: ['unidad', 'litro', 'galón', 'cuarto', 'paila', 'kit', 'juego', 'par', 'metro', 'kilogramo', 'gramo', 'tambor'],
   productColors: ['No Aplica', 'Negro', 'Gris', 'Cromo', 'Rojo', 'Azul', 'Blanco', 'Ámbar'],
   productSizes: ['N/A', 'Estándar', '0.10', '0.20', '0.30', '0.40', '0.50', '20', '30', '40', '50', '60'],
-  
-  // Colecciones para el formulario (con estructura de objetos con id)
-  brands: [], // { id: 1, name: 'Toyota' }
-  groups: [], // { id: 1, name: 'Tren Delantero' }
-  subgroups: [], // { id: 1, name: 'Amortiguadores', groupId: 1 }
-  lines: [], // { id: 1, name: 'Línea Pesada' }
-  suppliers: [], // { id: 1, name: 'Proveedor XYZ', code: 'RIF-123' }
-  
-  // Para compatibilidad con código existente que usa arrays de strings
-  // Estos se mantienen pero ahora también tenemos las versiones con objetos
+
+  brands: [],
+  groups: [],
+  subgroups: [],
+  lines: [],
+  suppliers: [],
+
   marcasString: ['Genérica'],
   proveedoresString: [],
-  
-  // Para almacenar los productos con estructura completa
+
   products: [],
 };
 
-let dirty = false;
-let writeChain: Promise<unknown> = Promise.resolve();
-
-// Últimas copias locales de las colecciones raíz (espejo para la UI)
-let lastProductos: any[] = [];
-let lastMovimientos: any[] = [];
-
-// Datos legacy que aún pudieran estar dentro de pos_system_data/state
-let legacyProductos: any[] | null = null;
-let legacyMovimientos: any[] | null = null;
-let productosEmpty = true;
-let movimientosEmpty = true;
-let migrationStarted = false;
-
-// Campos que se persisten dentro del doc pos_system_data/state.
-// NUNCA incluye productos ni movimientos (viven en sus propias colecciones).
-function buildPersist(state: AppState) {
-  return {
-    tasa: state.tasa,
-    pinDevolucion: state.pinDevolucion,
-    isInitialized: state.isInitialized ?? true,
-    ventas: state.ventas || [],
-    cxc: state.cxc || [],
-    cxp: state.cxp || [],
-    clientes: state.clientes || [],
-    devoluciones: state.devoluciones || [],
-    anulaciones: state.anulaciones || [],
-    libroDiario: state.libroDiario || [],
-    terminales: state.terminales || [],
-    empresa: state.empresa,
-    departamentos: state.departamentos,
-    categorias: state.categorias,
-    marcas: state.marcas,
-    presentaciones: state.presentaciones,
-    proveedores: state.proveedores,
-    reportesZ: state.reportesZ || [],
-    ultimoZ: state.ultimoZ || 0,
-    proximoRecibo: state.proximoRecibo || 1,
-    proximaDevolucion: state.proximaDevolucion || 1,
-    proximaAnulacion: state.proximaAnulacion || 1,
-    acumuladoHistorico: state.acumuladoHistorico || 0,
-    fechaUltimoZ: state.fechaUltimoZ || '',
-    fondoCajaHoyUSD: state.fondoCajaHoyUSD || 0,
-    fondoCajaHoyBS: state.fondoCajaHoyBS || 0,
-    
-    // ========== PROPIEDADES PARA CASH MODULE ==========
-    isCashOpen: state.isCashOpen || false,
-    cashData: state.cashData || null,
-    cashHistory: state.cashHistory || [],
-    
-    // ========== NUEVAS PROPIEDADES PARA ProductForm ==========
-    config: state.config || initialState.config,
-    productCategories: state.productCategories || initialState.productCategories,
-    productUnits: state.productUnits || initialState.productUnits,
-    productColors: state.productColors || initialState.productColors,
-    productSizes: state.productSizes || initialState.productSizes,
-    brands: state.brands || [],
-    groups: state.groups || [],
-    subgroups: state.subgroups || [],
-    lines: state.lines || [],
-    suppliers: state.suppliers || [],
-    products: state.products || [],
-    marcasString: state.marcasString || state.marcas || [],
-    proveedoresString: state.proveedoresString || state.proveedores || [],
-  };
+// ============================================================
+// CACHE EN MEMORIA + sessionStorage (SOLO para mostrar UI rápido).
+// El cache NUNCA se sube a Firestore (no más sobrescritura de datos).
+// ============================================================
+function readSession(): Partial<AppState> {
+  if (typeof window === 'undefined') return {};
+  try {
+    const d = sessionStorage.getItem(STORAGE_KEY);
+    return d ? (JSON.parse(d) as Partial<AppState>) : {};
+  } catch { return {}; }
 }
 
-// Firestore rechaza undefined (y NaN/Infinity) en cualquier profundidad:
-// los elimina/normaliza para que un solo dato inválido no tumbe TODA la escritura.
+let cache: AppState = { ...initialState, ...readSession() } as AppState;
+const listeners = new Set<(s: Partial<AppState>) => void>();
+
+function applyPatch(patch: Partial<AppState>) {
+  cache = { ...cache, ...patch } as AppState;
+  if (typeof window !== 'undefined') {
+    try { sessionStorage.setItem(STORAGE_KEY, JSON.stringify(cache)); } catch { /* sin espacio */ }
+  }
+  listeners.forEach(cb => { try { cb(patch); } catch (e) { console.error(e); } });
+}
+
+// Firestore rechaza undefined (y NaN/Infinity): los normaliza para no tumbar la escritura.
 function sanitizeForFirestore(value: any): any {
   if (value === undefined) return undefined;
   if (value === null) return null;
@@ -180,8 +171,15 @@ function sanitizeForFirestore(value: any): any {
   return value;
 }
 
-// Sincroniza un array espejo (productos / movimientos) con su colección raíz,
-// escribiendo por documento (merge) y eliminando solo los que ya no existen.
+// Une dos listas por id sin duplicados (mantiene los elementos locales aún no persistidos).
+function mergeById<T extends { id?: any }>(existing: T[] | undefined, incoming: T[]): T[] {
+  const map = new Map<string, T>();
+  (existing || []).forEach(x => { if (x && x.id !== undefined) map.set(String(x.id), x); });
+  incoming.forEach(x => { if (x && x.id !== undefined) map.set(String(x.id), x); });
+  return [...map.values()];
+}
+
+// Escribe SOLO los documentos que cambiaron/crearon/eliminaron en la colección.
 function syncArrayToCollection(name: string, prevArr: any[] | undefined, newArr: any[] | undefined): Promise<void> {
   if (!db) return Promise.resolve();
   const prevList = prevArr || [];
@@ -210,11 +208,8 @@ function syncArrayToCollection(name: string, prevArr: any[] | undefined, newArr:
   return batch.commit();
 }
 
-// Sincroniza productos con su colección raíz de forma ATOMICA para el stock:
-// calcula deltas por producto y los aplica con transacciones de Firestore para que
-// dos o más cajas no se pisen el inventario entre sí (sin last-write-wins con pérdida).
-// Devuelve el mapa { productId → stock final REAL en Firestore } para poder anclar
-// los números del kardex a la verdad (y no a la copia local de cada caja).
+// Stock atómico entre cajas (transacciones): calcula deltas por producto y los aplica contra el
+// stock REAL de Firestore para que dos cajas no se pisen el inventario.
 function syncProductosTransactional(prevArr: any[] | undefined, newArr: any[] | undefined): Promise<Map<string, number> | undefined> {
   if (!db) return Promise.resolve(undefined);
   const prevList = prevArr || [];
@@ -235,7 +230,7 @@ function syncProductosTransactional(prevArr: any[] | undefined, newArr: any[] | 
     const finalStocks = new Map<string, number>();
     for (const id of createdIds) {
       const prod = newById.get(id) || {};
-      tx.set(doc(db, PRODUCTOS_COLLECTION, id), sanitizeForFirestore(prod), { merge: true });
+      tx.set(doc(db, 'productos', id), sanitizeForFirestore(prod), { merge: true });
       finalStocks.set(id, typeof prod.stock === 'number' ? prod.stock : 0);
     }
     for (const id of changedIds) {
@@ -244,7 +239,7 @@ function syncProductosTransactional(prevArr: any[] | undefined, newArr: any[] | 
       const prevStock = typeof prevP.stock === 'number' ? prevP.stock : 0;
       const newStock = typeof newP.stock === 'number' ? newP.stock : 0;
       const delta = newStock - prevStock;
-      const ref = doc(db, PRODUCTOS_COLLECTION, id);
+      const ref = doc(db, 'productos', id);
       const snap = await tx.get(ref);
       const remote = snap.exists() ? snap.data() : null;
       const baseStock = remote && typeof remote.stock === 'number' ? remote.stock : (delta === 0 ? newStock : 0);
@@ -253,255 +248,256 @@ function syncProductosTransactional(prevArr: any[] | undefined, newArr: any[] | 
       finalStocks.set(id, finalStock);
     }
     for (const id of removedIds) {
-      tx.delete(doc(db, PRODUCTOS_COLLECTION, id));
+      tx.delete(doc(db, 'productos', id));
     }
     return finalStocks;
   }).catch(async (e) => {
     console.error("Error transaccional productos:", e);
-    await syncArrayToCollection(PRODUCTOS_COLLECTION, prevArr, newArr);
+    await syncArrayToCollection('productos', prevArr, newArr);
     return undefined;
   });
 }
 
-// Corrige los números de stock grabados en los movimientos NUEVOS de este lote,
-// anclándolos al stock REAL de Firestore leído en la transacción atómica.
-// Así el kardex encadena correctamente aunque dos cajas manejen el mismo
-// producto con copias locales distintas (cada caja graba su propio "antes/después").
-function correctMovimientosStocks(prevMovs: any[] | undefined, fullMovs: any[] | undefined, finalStocks: Map<string, number>): any[] | null {
-  if (!Array.isArray(fullMovs) || !Array.isArray(prevMovs)) return null;
-  const prevIds = new Set(prevMovs.map(m => m && m.id).filter(Boolean));
-  const newMovs = fullMovs.filter(m => m && m.id && !prevIds.has(m.id));
-  if (newMovs.length === 0) return null;
+// ============================================================
+// LECTURAS
+// ============================================================
+const loadedAll: Record<string, boolean> = {};
+const cursors: Record<string, QueryDocumentSnapshot<DocumentData> | null> = {};
 
-  const byProduct = new Map<string, any[]>();
-  newMovs.forEach(m => {
-    const arr = byProduct.get(m.productoId) || [];
-    arr.push(m);
-    byProduct.set(m.productoId, arr);
-  });
-
-  const corrections = new Map<string, any>();
-  byProduct.forEach((list, pid) => {
-    const final = finalStocks.get(pid);
-    if (final === undefined) return;
-    const totalDelta = list.reduce((s, m) => s + (Number(m.cantidad) || 0), 0);
-    let running = Math.round((final - totalDelta) * 100) / 100;
-    list.forEach(m => {
-      const delta = Number(m.cantidad) || 0;
-      const antes = running;
-      const despues = Math.round((running + delta) * 100) / 100;
-      corrections.set(m.id, { ...m, stockAntes: antes, stockDespues: despues });
-      running = despues;
-    });
-  });
-
-  if (corrections.size === 0) return null;
-  return fullMovs.map(m => (corrections.has(m.id) ? corrections.get(m.id) : m));
+async function loadCollection(name: string): Promise<any[]> {
+  if (!db) return [];
+  const snap = await getDocs(collection(db, name));
+  return snap.docs.map(d => sanitizeForFirestore(d.data())).filter(Boolean);
 }
 
-// Elimina del doc de state los campos legacy productos/movimientos.
-function cleanupLegacyStateDoc(): Promise<void> {
-  if (!db) return Promise.resolve();
-  const docRef = doc(db, COLLECTION, DOC_ID);
-  return setDoc(docRef, { productos: deleteField(), movimientos: deleteField() }, { merge: true })
-    .catch((e) => console.warn("Cleanup legacy state:", e));
+// Carga COMPLETA de una colección paginada de 500 (evita leer doc a doc en loops).
+async function loadAll(name: string): Promise<void> {
+  if (!db || loadedAll[name]) return;
+  loadedAll[name] = true;
+  const col = COLLECTIONS[name];
+  if (!col) return;
+  try {
+    const all: any[] = [];
+    let lastDoc: any = null;
+    do {
+      const q = lastDoc
+        ? query(collection(db, col), orderBy('fecha', 'desc'), startAfter(lastDoc), limit(500))
+        : query(collection(db, col), orderBy('fecha', 'desc'), limit(500));
+      const snap = await getDocs(q);
+      const items = snap.docs.map(d => sanitizeForFirestore(d.data())).filter(Boolean);
+      all.push(...items);
+      lastDoc = snap.docs.length > 0 ? snap.docs[snap.docs.length - 1] : null;
+      if (snap.docs.length < 500) break;
+    } while (lastDoc);
+    applyPatch({ [name]: mergeById((cache as any)[name], all) });
+  } catch (e) {
+    console.error("Error loadAll " + name + ":", e);
+    loadedAll[name] = false;
+  }
 }
 
-// Migración automática e idempotente: si la colección raíz está vacía pero hay
-// datos actuales (en caché o en el doc legacy), los copia sin perder información.
-function attemptMigration() {
-  if (migrationStarted) return;
-  const local = Store.get();
-  const srcProds = ((local.productos && local.productos.length ? local.productos : legacyProductos) || []);
-  const srcMovs = ((local.movimientos && local.movimientos.length ? local.movimientos : legacyMovimientos) || []);
-  const migrateProds = productosEmpty && srcProds.length > 0;
-  const migrateMovs = movimientosEmpty && srcMovs.length > 0;
-  if (!migrateProds && !migrateMovs) return;
-  migrationStarted = true;
-  writeChain = writeChain
-    .then(async () => {
-      if (migrateProds) await syncArrayToCollection(PRODUCTOS_COLLECTION, [], srcProds);
-      if (migrateMovs) await syncArrayToCollection(MOVIMIENTOS_COLLECTION, [], srcMovs);
-      await cleanupLegacyStateDoc();
-    })
-    .catch((e) => console.error("Migración de colecciones:", e));
+// Carga completa "bajo demanda" (para módulos que necesitan todo: reportes, kardex, contabilidad).
+async function ensureLoaded(name: string): Promise<void> {
+  if (loadedAll[name]) return;
+  if (!db) return;
+  loadedAll[name] = true;
+  try {
+    const items = await loadCollection(name);
+    applyPatch({ [name]: mergeById((cache as any)[name], items) });
+  } catch (e) {
+    console.error("Error cargando " + name + ":", e);
+    loadedAll[name] = false;
+  }
 }
 
+// Siguiente página (10) de una colección ordenada por fecha desc (listas históricas).
+async function loadMore(name: string, pageSize: number = PAGE_SIZE): Promise<number> {
+  const col = COLLECTIONS[name];
+  if (!col || !db) return 0;
+  try {
+    const last = cursors[name] || null;
+    const q = last
+      ? query(collection(db, col), orderBy('fecha', 'desc'), startAfter(last), limit(pageSize))
+      : query(collection(db, col), orderBy('fecha', 'desc'), limit(pageSize));
+    const snap = await getDocs(q);
+    const items = snap.docs.map(d => sanitizeForFirestore(d.data())).filter(Boolean);
+    cursors[name] = snap.docs.length > 0 ? snap.docs[snap.docs.length - 1] : null;
+    applyPatch({ [name]: mergeById((cache as any)[name], items) });
+    return items.length;
+  } catch (e) {
+    console.error("loadMore " + name + ":", e);
+    return 0;
+  }
+}
+
+// Kardex de un producto (where + orden). Si falta el índice compuesto, carga y filtra en memoria.
+async function kardex(productoId: string, max = 100): Promise<any[]> {
+  if (!db) return [];
+  try {
+    const snap = await getDocs(query(
+      collection(db, 'movimientos'),
+      where('productoId', '==', productoId),
+      orderBy('fecha', 'desc'),
+      limit(max)
+    ));
+    return snap.docs.map(d => sanitizeForFirestore(d.data())).filter(Boolean);
+  } catch (e: any) {
+    if (e?.code === 'failed-precondition' || /index/i.test(String(e?.message || ''))) {
+      await ensureLoaded('movimientos');
+      return (cache.movimientos || [])
+        .filter(m => m.productoId === productoId)
+        .sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)))
+        .slice(0, max);
+    }
+    throw e;
+  }
+}
+
+async function loadCatalogs() {
+  if (!db) return;
+  const patch: any = {};
+  for (const [field, catName] of Object.entries(CATALOG_FIELDS)) {
+    try {
+      const snap = await getDoc(doc(db, CATALOGOS_COLLECTION, catName));
+      if (snap.exists()) patch[field] = snap.data().lista || [];
+    } catch (e) {
+      console.warn("Catálogo " + catName + ":", e);
+    }
+  }
+  if (Object.keys(patch).length > 0) applyPatch(patch);
+}
+
+// ============================================================
+// INICIALIZACIÓN DE LISTENERS
+// ============================================================
+let started = false;
+let teardownFns: (() => void)[] = [];
+
+function cleanup() {
+  teardownFns.forEach(fn => { try { fn(); } catch (e) { console.error(e); } });
+  teardownFns = [];
+  started = false;
+  Object.keys(loadedAll).forEach(k => { loadedAll[k] = false; });
+  Object.keys(cursors).forEach(k => { cursors[k] = null; });
+}
+
+function init() {
+  if (started) return;
+  started = true;
+  if (!db || typeof window === 'undefined') return;
+
+  // 1) CONFIG (doc pequeño, en vivo)
+  teardownFns.push(onSnapshot(doc(db, CONFIG_COLLECTION, CONFIG_DOC_ID), (snap) => {
+    if (!snap.exists()) return;
+    const val = snap.data();
+    const patch: any = {};
+    for (const f of CONFIG_FIELDS) {
+      if (val[f] !== undefined) patch[f] = sanitizeForFirestore(val[f]);
+    }
+    if (Object.keys(patch).length > 0) applyPatch(patch);
+  }, (err) => { if (err.code !== 'permission-denied') console.warn("Sync config:", err); }));
+
+  // 2) PRODUCTOS (colección completa en vivo: necesaria para buscar cualquier producto en el POS)
+  teardownFns.push(onSnapshot(query(collection(db, COLLECTIONS.productos)), (snap) => {
+    const items = snap.docs.map(d => sanitizeForFirestore(d.data())).filter(Boolean);
+    applyPatch({ productos: items });
+  }, (err) => { if (err.code !== 'permission-denied') console.warn("Sync productos:", err); }));
+
+  // 3) LISTAS VIVAS ACOTADAS a las últimas 30 (tiempo real barato entre cajas)
+  for (const name of ['ventas', 'movimientos', 'cxc', 'cxp']) {
+    const col = COLLECTIONS[name];
+    teardownFns.push(onSnapshot(
+      query(collection(db, col), orderBy('fecha', 'desc'), limit(30)),
+      (snap) => {
+        const items = snap.docs.map(d => sanitizeForFirestore(d.data())).filter(Boolean);
+        applyPatch({ [name]: mergeById((cache as any)[name], items) });
+      },
+      (err) => { if (err.code !== 'permission-denied') console.warn("Sync " + name + ":", err); }
+    ));
+  }
+
+  // 4) CARGA INICIAL: listas pequeñas completas + ventas completas (necesarias para Z y agregados)
+  ['cxc', 'cxp', 'clientes', 'proveedores', 'terminales', 'devoluciones', 'anulaciones', 'libroDiario', 'reportesZ', 'caja'].forEach(ensureLoaded);
+  loadAll('ventas');
+
+  // 5) CATÁLOGOS
+  loadCatalogs();
+}
+
+// ============================================================
+// API PÚBLICA
+// ============================================================
 export const Store = {
-  subscribe(callback: (state: Partial<AppState>) => void) {
-    if (typeof window === 'undefined' || !db) return () => {};
-
-    const docRef = doc(db, COLLECTION, DOC_ID);
-    lastProductos = Store.get().productos || [];
-    lastMovimientos = Store.get().movimientos || [];
-
-    const unsubState = onSnapshot(docRef, (snapshot) => {
-      if (snapshot.exists()) {
-        const val = snapshot.data();
-        if (Array.isArray(val?.productos)) legacyProductos = val.productos;
-        if (Array.isArray(val?.movimientos)) legacyMovimientos = val.movimientos;
-
-        const remote = { ...initialState, ...val };
-        delete (remote as any).carrito;
-        delete (remote as any).productos;
-        delete (remote as any).movimientos;
-        remote.productos = lastProductos;
-        remote.movimientos = lastMovimientos;
-
-        const local = Store.get();
-        const localPersist = buildPersist(local);
-        const remotePersist = buildPersist(remote);
-
-        if (dirty && JSON.stringify(localPersist) !== JSON.stringify(remotePersist)) {
-          writeChain = writeChain
-            .then(() => setDoc(docRef, sanitizeForFirestore(localPersist), { merge: true }))
-            .then(() => { dirty = false; })
-            .catch((e) => console.error("Sync heal error:", e));
-          const dbUpdate = { ...remote, ...localPersist };
-          callback(dbUpdate);
-          sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ ...dbUpdate, carrito: local.carrito }));
-        } else {
-          dirty = false;
-          callback(remote);
-          sessionStorage.setItem(STORAGE_KEY, JSON.stringify({
-            ...remote,
-            carrito: local.carrito,
-            productos: lastProductos,
-            movimientos: lastMovimientos,
-          }));
-        }
-      } else {
-        const local = Store.get();
-        callback(local);
-
-        const { carrito, ...toPersist } = initialState;
-        if (db) setDoc(docRef, sanitizeForFirestore(toPersist), { merge: true }).catch(e => console.error("Error init firestore:", e));
-      }
-      attemptMigration();
-    }, (error) => {
-      if (error.code !== 'permission-denied') {
-        console.warn("Firestore Sync Warning:", error);
-      }
-      callback(Store.get());
-    });
-
-    const unsubProductos = onSnapshot(query(collection(db, PRODUCTOS_COLLECTION)), (snap) => {
-      const items = snap.docs.map(d => sanitizeForFirestore(d.data())).filter(Boolean);
-      productosEmpty = items.length === 0;
-
-      let result = items;
-      if (items.length === 0) {
-        const local = Store.get();
-        if ((local.productos || []).length > 0) {
-          result = local.productos; // local gana mientras no haya datos remotos (migración/offline)
-        }
-      }
-      lastProductos = result;
-      callback({ productos: result });
-      sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ ...Store.get(), productos: result, movimientos: lastMovimientos }));
-      attemptMigration();
-    }, (error) => {
-      if (error.code !== 'permission-denied') {
-        console.warn("Sync productos:", error);
-      }
-      callback({ productos: Store.get().productos || [] });
-    });
-
-    const unsubMovimientos = onSnapshot(query(collection(db, MOVIMIENTOS_COLLECTION)), (snap) => {
-      const items = snap.docs.map(d => sanitizeForFirestore(d.data())).filter(Boolean);
-      movimientosEmpty = items.length === 0;
-
-      let result = items;
-      if (items.length === 0) {
-        const local = Store.get();
-        if ((local.movimientos || []).length > 0) {
-          result = local.movimientos;
-        }
-      }
-      lastMovimientos = result;
-      callback({ movimientos: result });
-      sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ ...Store.get(), movimientos: result, productos: lastProductos }));
-      attemptMigration();
-    }, (error) => {
-      if (error.code !== 'permission-denied') {
-        console.warn("Sync movimientos:", error);
-      }
-      callback({ movimientos: Store.get().movimientos || [] });
-    });
-
+  subscribe(callback: (state: Partial<AppState>) => void): () => void {
+    listeners.add(callback);
+    init();
+    callback(Store.get());
     return () => {
-      unsubState();
-      unsubProductos();
-      unsubMovimientos();
+      listeners.delete(callback);
+      if (listeners.size === 0) cleanup();
     };
   },
 
   get(): AppState {
     if (typeof window === 'undefined') return initialState;
-    const d = sessionStorage.getItem(STORAGE_KEY);
-    if (!d) return initialState;
-    try {
-      const parsed = JSON.parse(d);
-      return { ...initialState, ...parsed };
-    } catch {
-      return initialState;
-    }
+    return { ...cache } as AppState;
   },
 
   async set(patch: Partial<AppState>) {
-    if (typeof window === 'undefined') return;
-
+    if (typeof window === 'undefined' || !db) return;
     const prev = Store.get();
-    const full = { ...initialState, ...prev, ...patch };
+    const full = { ...initialState, ...prev, ...patch } as AppState;
 
-    // 1) Productos / movimientos → sus propias colecciones raíz (por documento).
-    if (patch.productos !== undefined) {
-      writeChain = writeChain
-        .then(() => syncProductosTransactional(prev.productos, full.productos))
-        .then((finalStocks) => {
-          let movs = full.movimientos;
-          if (patch.movimientos !== undefined && finalStocks && finalStocks.size > 0) {
-            const corrected = correctMovimientosStocks(prev.movimientos, full.movimientos, finalStocks);
-            if (corrected) {
-              movs = corrected;
-              sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ ...Store.get(), movimientos: corrected }));
-            }
-          }
-          if (patch.movimientos !== undefined) {
-            return syncArrayToCollection(MOVIMIENTOS_COLLECTION, prev.movimientos, movs);
-          }
-        })
-        .catch((e) => console.error("Error persistiendo:", e));
-    } else if (patch.movimientos !== undefined) {
-      writeChain = writeChain
-        .then(() => syncArrayToCollection(MOVIMIENTOS_COLLECTION, prev.movimientos, full.movimientos))
-        .catch((e) => console.error("Error persistiendo movimientos:", e));
-    }
+    // Echo local inmediato (la UI ya muestra el cambio al instante)
+    applyPatch(patch);
 
-    // 2) El resto de campos → pos_system_data/state (solo los que cambiaron, merge).
-    const prevPersist = buildPersist(prev) as Record<string, any>;
-    const fullPersist = buildPersist(full) as Record<string, any>;
-    const toWrite: Record<string, any> = {};
-    for (const k of Object.keys(fullPersist)) {
-      if (JSON.stringify(prevPersist[k]) !== JSON.stringify(fullPersist[k])) {
-        const clean = sanitizeForFirestore(fullPersist[k]);
-        if (clean !== undefined) toWrite[k] = clean;
+    // 1) COLEECCIONES: escritura por documento (nunca el array completo en un doc)
+    const jobs: Promise<unknown>[] = [];
+    for (const key of Object.keys(COLLECTIONS)) {
+      const k = key as keyof AppState;
+      if ((patch as any)[k] === undefined) continue;
+      const prevArr = ((prev as any)[k] || []) as any[];
+      const newArr = ((patch as any)[k] || []) as any[];
+      if (k === 'productos') {
+        jobs.push(syncProductosTransactional(prevArr, newArr).catch(e => console.error("Error persistiendo productos:", e)));
+      } else {
+        jobs.push(syncArrayToCollection(COLLECTIONS[k], prevArr, newArr).catch(e => console.error("Error persistiendo " + k + ":", e)));
       }
     }
 
-    sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ ...full, ...fullPersist }));
-
-    if (Object.keys(toWrite).length === 0) return writeChain;
-    dirty = true;
-
-    if (db) {
-      const docRef = doc(db, COLLECTION, DOC_ID);
-      writeChain = writeChain
-        .then(() => setDoc(docRef, toWrite, { merge: true }))
-        .catch((e) => console.error("Error persistiendo:", e));
-      return writeChain;
+    // 2) CATÁLOGOS
+    for (const [field, catName] of Object.entries(CATALOG_FIELDS)) {
+      if ((patch as any)[field] === undefined) continue;
+      const newList = (patch as any)[field] || [];
+      const prevList = (prev as any)[field] || [];
+      if (JSON.stringify(prevList) !== JSON.stringify(newList)) {
+        jobs.push(setDoc(doc(db, CATALOGOS_COLLECTION, catName), { lista: sanitizeForFirestore(newList) })
+          .catch(e => console.error("Error persistiendo catálogo " + catName + ":", e)));
+      }
     }
+
+    // 3) CONFIG (config/general) — solo campos que cambiaron
+    const toWrite: Record<string, any> = {};
+    for (const f of CONFIG_FIELDS) {
+      const key = f as keyof AppState;
+      if ((patch as any)[f] === undefined) continue;
+      const clean = sanitizeForFirestore((patch as any)[f]);
+      if (clean === undefined) continue;
+      if (JSON.stringify(prev[key]) !== JSON.stringify((patch as any)[f])) {
+        toWrite[f] = clean;
+      }
+    }
+    if (Object.keys(toWrite).length > 0) {
+      jobs.push(setDoc(doc(db, CONFIG_COLLECTION, CONFIG_DOC_ID), toWrite, { merge: true })
+        .catch(e => console.error("Error persistiendo config:", e)));
+    }
+
+    await Promise.all(jobs);
   },
+
+  loadMore,
+  ensureLoaded,
+  kardex,
 
   uid(): string {
     return Date.now().toString(36) + Math.random().toString(36).substr(2, 6);
@@ -543,14 +539,14 @@ export const Utils = {
     return p[2] + '/' + p[1] + '/' + p[0];
   },
   metodoLabel: (m: string) => {
-    const map: Record<string, string> = { 
-      efectivo_usd: 'Efectivo USD', 
-      efectivo_bs: 'Efectivo Bs.', 
-      punto_venta: 'Punto de Venta', 
+    const map: Record<string, string> = {
+      efectivo_usd: 'Efectivo USD',
+      efectivo_bs: 'Efectivo Bs.',
+      punto_venta: 'Punto de Venta',
       biopago: 'Biopago',
       pagomovil: 'PagoMovil',
       zelle: 'Zelle',
-      credito: 'Crédito', 
+      credito: 'Crédito',
       mixto: 'Mixto',
       nota_credito: 'Vale / Nota Crédito',
       otros: 'Otros'

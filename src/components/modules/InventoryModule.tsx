@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { AppState, Product, Movimiento, KitItem, Supplier, Return } from '@/lib/types';
 import { Utils, Store } from '@/lib/db-store';
 import { 
@@ -55,6 +55,10 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
   const [deptFilter, setDeptFilter] = useState('');
   const [selectedKardexId, setSelectedKardexId] = useState<string | null>(null);
   const [selectedCPPId, setSelectedCPPId] = useState<string | null>(null);
+
+  useEffect(() => {
+    Store.ensureLoaded('movimientos');
+  }, []);
   
   const [showAjuste, setShowAjuste] = useState<string | null>(null);
   const [showProducto, setShowProducto] = useState<string | null | 'nuevo'>(null);

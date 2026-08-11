@@ -83,9 +83,11 @@ export function CreditModal({ isOpen, onClose, onConfirm, totalAmount }: CreditM
   const [newAddress, setNewAddress] = useState('');
 
   useEffect(() => {
+    if (!isOpen) return;
+    setStore(Store.get());
     const unsubscribe = Store.subscribe(setStore);
     return () => unsubscribe();
-  }, []);
+  }, [isOpen]);
 
   useEffect(() => {
     if (isOpen) {

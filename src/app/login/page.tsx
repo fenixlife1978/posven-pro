@@ -35,9 +35,9 @@ export default function LoginPage() {
     const checkSystemStatus = async () => {
       if (!db) return;
       try {
-        const stateDoc = await getDoc(doc(db, 'pos_system_data', 'state'));
-        if (stateDoc.exists()) {
-          const data = stateDoc.data();
+        const configDoc = await getDoc(doc(db, 'config', 'general'));
+        if (configDoc.exists()) {
+          const data = configDoc.data();
           setSystemEmpty(data.isInitialized === false);
         } else {
           setSystemEmpty(true);
@@ -116,8 +116,8 @@ export default function LoginPage() {
         await setDoc(userDocRef, newUserData);
 
         if (isRegistering) {
-          const stateRef = doc(db, 'pos_system_data', 'state');
-          await setDoc(stateRef, { isInitialized: true }, { merge: true });
+          const configRef = doc(db, 'config', 'general');
+          await setDoc(configRef, { isInitialized: true }, { merge: true });
           
           toast({ 
             title: "¡Configuración Exitosa!", 
