@@ -1,18 +1,20 @@
 'use client';
 
 import { AppState } from './types';
-import { db } from './firebase';
+import { db, rtdb } from './firebase';
 import {
   collection, doc, getDoc, getDocs, onSnapshot, orderBy, limit, query, setDoc, where,
   writeBatch, runTransaction, startAfter
 } from "firebase/firestore";
 import type { DocumentData, QueryDocumentSnapshot } from "firebase/firestore";
+import { onValue, ref, update, remove, get as rtdbGet } from "firebase/database";
 
 const STORAGE_KEY = 'posven_pro_session_data_cache';
 const PAGE_SIZE = 10;
 const CONFIG_COLLECTION = 'config';
 const CONFIG_DOC_ID = 'general';
 const CATALOGOS_COLLECTION = 'catalogos';
+const RTDB_PRODUCTS_PATH = 'productos';
 
 // ============================================================
 // UBICACIÓN EN FIRESTORE POR LISTA DEL ESTADO.
@@ -33,6 +35,7 @@ const COLLECTIONS: Record<string, string> = {
   libroDiario: 'libroDiario',
   reportesZ: 'reportesZ',
   cashHistory: 'caja',
+  compras: 'compras',
 };
 
 // Catálogos: viven como docs catalogos/{nombre} con { lista: [...] }
@@ -102,6 +105,7 @@ export const initialState: AppState = {
   marcas: ['Genérica'],
   presentaciones: ['750ml', '1L', 'Unidad', 'Caja'],
   proveedores: [],
+  compras: [],
 
   config: {
     exchangeRate: 36.50,
@@ -259,6 +263,61 @@ function syncProductosTransactional(prevArr: any[] | undefined, newArr: any[] | 
 }
 
 // ============================================================
+// ESPEJO EN TIEMPO REAL (RTDB) PARA PRODUCTOS.
+// El stock/precios viven en RTDB para sincronizar cajas sin re-leer
+// toda la colección de Firestore en cada cambio (gran ahorro de lecturas).
+// Firestore sigue siendo la fuente de verdad persistente.
+// ============================================================
+function syncProductosRTDB(prevArr: any[] | undefined, newArr: any[] | undefined): Promise<void> {
+  if (!rtdb) return Promise.resolve();
+  const prevById = new Map((prevArr || []).filter(x => x && x.id).map(x => [String(x.id), x]));
+  const newList = newArr || [];
+  const updates: Record<string, any> = {};
+  const removals: string[] = [];
+  newList.forEach(p => {
+    if (!p || !p.id) return;
+    const before = prevById.get(String(p.id));
+    const clean = sanitizeForFirestore(p);
+    if (!before || JSON.stringify(sanitizeForFirestore(before)) !== JSON.stringify(clean)) {
+      updates[String(p.id)] = clean;
+    }
+  });
+  prevById.forEach((_x, id) => {
+    if (!newList.some(p => p && String(p.id) === id)) removals.push(id);
+  });
+  if (Object.keys(updates).length === 0 && removals.length === 0) return Promise.resolve();
+  const rootRef = ref(rtdb, RTDB_PRODUCTS_PATH);
+  return Promise.resolve()
+    .then(() => Object.keys(updates).length > 0 ? update(rootRef, updates) : undefined)
+    .then(() => removals.length > 0
+      ? Promise.all(removals.map(id => remove(ref(rtdb, RTDB_PRODUCTS_PATH + '/' + id))).concat([]))
+      : undefined)
+    .catch(e => console.error('RTDB sync productos:', e));
+}
+
+// Si el espejo RTDB está vacío, lo siembra desde Firestore (1 sola lectura completa por sesión).
+async function bootstrapProductos(): Promise<void> {
+  if (!rtdb || !db) return;
+  try {
+    const snap = await rtdbGet(ref(rtdb, RTDB_PRODUCTS_PATH));
+    const val = snap.val();
+    if (val && Object.keys(val).length > 0) {
+      applyPatch({ productos: Object.values(val).filter(Boolean) });
+    } else {
+      const items = await loadCollection('productos');
+      if (items.length > 0) {
+        applyPatch({ productos: mergeById((cache as any).productos, items) });
+        const updates: Record<string, any> = {};
+        items.forEach(p => { updates[String(p.id)] = sanitizeForFirestore(p); });
+        await update(ref(rtdb, RTDB_PRODUCTS_PATH), updates);
+      }
+    }
+  } catch (e) {
+    console.error('bootstrapProductos:', e);
+  }
+}
+
+// ============================================================
 // LECTURAS
 // ============================================================
 const loadedAll: Record<string, boolean> = {};
@@ -397,11 +456,15 @@ function init() {
     if (Object.keys(patch).length > 0) applyPatch(patch);
   }, (err) => { if (err.code !== 'permission-denied') console.warn("Sync config:", err); }));
 
-  // 2) PRODUCTOS (colección completa en vivo: necesaria para buscar cualquier producto en el POS)
-  teardownFns.push(onSnapshot(query(collection(db, COLLECTIONS.productos)), (snap) => {
-    const items = snap.docs.map(d => sanitizeForFirestore(d.data())).filter(Boolean);
-    applyPatch({ productos: items });
-  }, (err) => { if (err.code !== 'permission-denied') console.warn("Sync productos:", err); }));
+  // 2) PRODUCTOS (tiempo real vía RTDB: el espejo evita re-leer la colección en cada venta).
+  bootstrapProductos();
+  if (rtdb) {
+    teardownFns.push(onValue(ref(rtdb, RTDB_PRODUCTS_PATH), (snap) => {
+      const val = snap.val() || {};
+      const items = Object.values(val).filter(Boolean);
+      applyPatch({ productos: mergeById((cache as any).productos, items) });
+    }, (err) => { if (err?.code !== 'permission-denied') console.warn("RTDB productos:", err); }));
+  }
 
   // 3) LISTAS VIVAS ACOTADAS a las últimas 30 (tiempo real barato entre cajas)
   for (const name of ['ventas', 'movimientos', 'cxc', 'cxp']) {
@@ -417,7 +480,7 @@ function init() {
   }
 
   // 4) CARGA INICIAL: listas pequeñas completas + ventas completas (necesarias para Z y agregados)
-  ['cxc', 'cxp', 'clientes', 'proveedores', 'terminales', 'devoluciones', 'anulaciones', 'libroDiario', 'reportesZ', 'caja'].forEach(ensureLoaded);
+  ['cxc', 'cxp', 'clientes', 'proveedores', 'terminales', 'devoluciones', 'anulaciones', 'libroDiario', 'reportesZ', 'caja', 'compras'].forEach(ensureLoaded);
   loadAll('ventas');
 
   // 5) CATÁLOGOS
@@ -459,7 +522,20 @@ export const Store = {
       const prevArr = ((prev as any)[k] || []) as any[];
       const newArr = ((patch as any)[k] || []) as any[];
       if (k === 'productos') {
-        jobs.push(syncProductosTransactional(prevArr, newArr).catch(e => console.error("Error persistiendo productos:", e)));
+        jobs.push(syncProductosTransactional(prevArr, newArr)
+          .then((stocks) => {
+            let toSync = newArr;
+            if (stocks && stocks.size > 0) {
+              const corrected = newArr.map((p: any) => {
+                const s = stocks.get(String(p.id));
+                return s !== undefined ? { ...p, stock: s } : p;
+              });
+              applyPatch({ productos: corrected });
+              toSync = corrected;
+            }
+            return syncProductosRTDB(prevArr, toSync);
+          })
+          .catch(e => console.error("Error persistiendo productos:", e)));
       } else {
         jobs.push(syncArrayToCollection(COLLECTIONS[k], prevArr, newArr).catch(e => console.error("Error persistiendo " + k + ":", e)));
       }

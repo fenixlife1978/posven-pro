@@ -72,6 +72,18 @@ export default function LicoreriaPOS() {
   useEffect(() => {
     setMounted(true);
 
+    const captureError = (e: ErrorEvent) => {
+      try {
+        localStorage.setItem('posven_last_error', JSON.stringify({ message: e?.message || 'error', stack: e?.error?.stack || '', time: new Date().toISOString() }));
+      } catch (err) {}
+    };
+    window.addEventListener('error', captureError);
+    window.addEventListener('unhandledrejection', (e) => {
+      try {
+        localStorage.setItem('posven_last_error', JSON.stringify({ message: 'Promise: ' + (e?.reason?.message || e?.reason || ''), stack: e?.reason?.stack || '', time: new Date().toISOString() }));
+      } catch (err) {}
+    });
+
     const timerSafety = setTimeout(() => {
       if (loading) {
         console.warn("Safety trigger: Acceso forzado tras tiempo de espera.");
@@ -172,6 +184,8 @@ export default function LicoreriaPOS() {
         unsubscribeStore();
         clearInterval(timerClock);
         clearTimeout(timerSafety);
+        window.removeEventListener('error', captureError);
+        window.removeEventListener('unhandledrejection', captureError);
         window.removeEventListener('online', hOnline);
         window.removeEventListener('offline', hOffline);
       };
@@ -184,6 +198,8 @@ export default function LicoreriaPOS() {
       unsubscribeStore();
       clearInterval(timerClock);
       clearTimeout(timerSafety);
+      window.removeEventListener('error', captureError);
+      window.removeEventListener('unhandledrejection', captureError);
     };
   }, [router]);
 

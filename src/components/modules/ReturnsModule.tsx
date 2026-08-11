@@ -3,6 +3,7 @@
 import React, { useState, useMemo } from 'react';
 import { AppState, Return, Sale, ReturnItem, Movimiento, Anulacion, LibroDiarioEntry } from '@/lib/types';
 import { Utils, Store } from '@/lib/db-store';
+import { DateRangeFilter, DateRange } from '@/components/ui/date-range-filter';
 import { 
   RotateCcw, 
   Search, 
@@ -29,6 +30,7 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
   const [refundMethod, setRefundMethod] = useState<'EFECTIVO' | 'MISMO_METODO' | 'CREDITO_TIENDA'>('EFECTIVO');
   const [reason, setMotivo] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [rango, setRango] = useState<DateRange>({ desde: Utils.hoy(), hasta: Utils.hoy() });
 
   const buscarVenta = () => {
     const sale = state.ventas.find(v => (v.id === saleSearch || v.id.endsWith(saleSearch)) && (!terminalId || v.terminalId === terminalId));
@@ -238,16 +240,17 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
   };
 
   const historialUnificado = useMemo(() => {
+    const enRango = (f: string) => f && f.slice(0, 10) >= rango.desde && f.slice(0, 10) <= rango.hasta;
     const devs = (state.devoluciones || [])
-      .filter(d => !terminalId || state.ventas.find(v => v.id === d.ventaId)?.terminalId === terminalId)
+      .filter(d => (!terminalId || state.ventas.find(v => v.id === d.ventaId)?.terminalId === terminalId) && enRango(d.fecha))
       .map(d => ({ ...d, tipoOperacion: 'DEVOLUCIÓN' }));
     
     const anus = (state.anulaciones || [])
-      .filter(a => !terminalId || state.ventas.find(v => v.id === a.ventaId)?.terminalId === terminalId)
+      .filter(a => (!terminalId || state.ventas.find(v => v.id === a.ventaId)?.terminalId === terminalId) && enRango(a.fecha))
       .map(a => ({ ...a, tipoOperacion: 'ANULACIÓN', items: a.items || [] }));
     
     return [...devs, ...anus].sort((a, b) => b.fecha.localeCompare(a.fecha));
-  }, [state.devoluciones, state.anulaciones, state.ventas, terminalId]);
+  }, [state.devoluciones, state.anulaciones, state.ventas, terminalId, rango]);
 
   return (
     <div className="space-y-6">
@@ -276,6 +279,10 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
             <h3 className="text-ink font-black text-xs uppercase tracking-widest flex items-center gap-2">
               <ClipboardList className="w-4 h-4 text-status-info" /> Historial de {terminalId ? `Terminal ${terminalId}` : 'Sistema'}
             </h3>
+          </div>
+          <div className="px-5 py-3 border-b border-line no-print">
+            <label className="text-[10px] font-black uppercase text-ink/40 block mb-2">CONSULTAR POR PERÍODO</label>
+            <DateRangeFilter value={rango} onChange={setRango} />
           </div>
           <div className="table-wrap">
             <table>

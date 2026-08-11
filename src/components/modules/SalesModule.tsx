@@ -401,7 +401,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   const saldoRestanteUSD = Math.max(0, subtotalUSD - totalPagadoUSD);
 
   const matches = search.trim().length > 0 
-    ? state.productos.filter(p => p.activo && (p.nombre.toLowerCase().includes(search.toLowerCase()) || p.codigo.toLowerCase().includes(search.toLowerCase()))).slice(0, 8)
+    ? state.productos.filter(p => p.activo && ((p.nombre || '').toLowerCase().includes(search.toLowerCase()) || (p.codigo || '').toLowerCase().includes(search.toLowerCase()))).slice(0, 8)
     : [];
 
   const filteredClients = useMemo(() => {

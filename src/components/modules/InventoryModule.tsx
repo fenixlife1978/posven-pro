@@ -48,6 +48,7 @@ import {
 } from '@/lib/pdf-generator';
 import { ProductFormModal } from '@/components/inventory/ProductFormModal';
 import { Pagination } from '@/components/ui/pagination';
+import { DateRangeFilter, DateRange } from '@/components/ui/date-range-filter';
 
 export function InventoryModule({ state, updateState }: { state: AppState, updateState: (s: Partial<AppState>) => void }) {
   const [activeTab, setActiveTab] = useState('productos');
@@ -86,7 +87,7 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
 
   const prods = (state.productos || []).filter(p => 
     p.activo && 
-    (p.nombre.toLowerCase().includes(search.toLowerCase()) || p.codigo.toLowerCase().includes(search.toLowerCase())) &&
+    ((p.nombre || '').toLowerCase().includes(search.toLowerCase()) || (p.codigo || '').toLowerCase().includes(search.toLowerCase())) &&
     (catFilter ? p.categoria === catFilter : true) &&
     (deptFilter ? p.departamento === deptFilter : true)
   );
@@ -659,11 +660,18 @@ function ReporteVentas({ state }: { state: AppState }) {
 
 function ReporteDevoluciones({ state }: { state: AppState }) {
   const [selectedDevolucion, setSelectedDevolucion] = useState<Return | null>(null);
-  const devoluciones = state.devoluciones || [];
+  const [rango, setRango] = useState<DateRange>({ desde: Utils.hoy(), hasta: Utils.hoy() });
+  const devoluciones = (state.devoluciones || []).filter(d =>
+    d.fecha && d.fecha.slice(0, 10) >= rango.desde && d.fecha.slice(0, 10) <= rango.hasta
+  );
   const totalUSD = devoluciones.reduce((acc, d) => acc + d.totalUSD, 0);
 
   return (
     <div className="space-y-4">
+      <Card className="p-5 bg-white border-line shadow-sm rounded-xl no-print">
+        <label className="text-[10px] font-black uppercase text-ink/40 block mb-2">CONSULTAR DEVOLUCIONES POR PERÍODO</label>
+        <DateRangeFilter value={rango} onChange={setRango} />
+      </Card>
       <Card className="shadow-lg border-line rounded-xl overflow-hidden bg-white">
         <div className="card-head bg-ink border-b border-white/10 px-6 py-4 flex justify-between items-center text-white">
           <h3 className="font-black text-xs uppercase italic tracking-tighter">HISTORIAL DE DEVOLUCIONES</h3>
@@ -762,9 +770,11 @@ function ReporteDevoluciones({ state }: { state: AppState }) {
 }
 
 function HistorialAjustes({ state }: { state: AppState }) {
+  const [rango, setRango] = useState<DateRange>({ desde: Utils.hoy(), hasta: Utils.hoy() });
   const ajustes = (state.movimientos || []).filter(m => 
     ['ajuste_entrada', 'ajuste_salida', 'consumo', 'colaboracion'].includes(m.tipo)
-  ).sort((a,b) => b.fecha.localeCompare(a.fecha));
+  ).filter(m => m.fecha && m.fecha.slice(0, 10) >= rango.desde && m.fecha.slice(0, 10) <= rango.hasta)
+  .sort((a,b) => b.fecha.localeCompare(a.fecha));
 
   const totalVariacionUSD = ajustes.reduce((acc, m) => {
     const p = state.productos.find(prod => prod.id === m.productoId);
@@ -787,6 +797,11 @@ function HistorialAjustes({ state }: { state: AppState }) {
           </div>
         </div>
       </div>
+
+      <Card className="p-5 bg-white border-line shadow-sm rounded-xl no-print">
+        <label className="text-[10px] font-black uppercase text-ink/40 block mb-2">CONSULTAR AJUSTES POR PERÍODO</label>
+        <DateRangeFilter value={rango} onChange={setRango} />
+      </Card>
 
       <Card className="shadow-lg border-line rounded-xl overflow-hidden bg-white">
         <div className="card-head bg-ink border-b border-white/10 px-6 py-4 flex justify-between items-center">
@@ -850,8 +865,10 @@ function HistorialAjustes({ state }: { state: AppState }) {
 }
 
 function ReporteConsumo({ state }: { state: AppState }) {
+  const [rango, setRango] = useState<DateRange>({ desde: Utils.hoy(), hasta: Utils.hoy() });
   const consumos = (state.movimientos || [])
     .filter(m => ['consumo', 'colaboracion'].includes(m.tipo))
+    .filter(m => m.fecha && m.fecha.slice(0, 10) >= rango.desde && m.fecha.slice(0, 10) <= rango.hasta)
     .sort((a,b) => b.fecha.localeCompare(a.fecha));
 
   const totalPerdida = consumos.reduce((acc, m) => {
@@ -870,6 +887,11 @@ function ReporteConsumo({ state }: { state: AppState }) {
           </div>
         </div>
       </div>
+
+      <Card className="p-5 bg-white border-line shadow-sm rounded-xl no-print">
+        <label className="text-[10px] font-black uppercase text-ink/40 block mb-2">CONSULTAR CONSUMO Y COLABORACIONES POR PERÍODO</label>
+        <DateRangeFilter value={rango} onChange={setRango} />
+      </Card>
 
       <Card className="shadow-lg border-line rounded-xl overflow-hidden bg-white">
         <div className="card-head bg-ink border-b border-white/10 px-6 py-4 text-white">
@@ -919,20 +941,22 @@ function ReporteConsumo({ state }: { state: AppState }) {
 
 function ReporteKardex({ state, selectedId, onSelect }: { state: AppState, selectedId: string | null, onSelect: (id: string) => void }) {
   const [search, setSearch] = useState('');
+  const [rango, setRango] = useState<DateRange>({ desde: Utils.hoy(), hasta: Utils.hoy() });
   const selectedProd = selectedId ? state.productos.find(p => p.id === selectedId) : null;
   
   const movs = useMemo(() => {
     if (!selectedId || !state.movimientos) return [];
     return state.movimientos
       .filter(m => m.productoId === selectedId)
+      .filter(m => m.fecha && m.fecha.slice(0, 10) >= rango.desde && m.fecha.slice(0, 10) <= rango.hasta)
       .sort((a, b) => b.fecha.localeCompare(a.fecha));
-  }, [selectedId, state.movimientos]);
+  }, [selectedId, state.movimientos, rango]);
 
   const matches = useMemo(() => {
     if (search.trim().length < 2) return [];
     return state.productos.filter(p => 
       p.activo && 
-      (p.nombre.toLowerCase().includes(search.toLowerCase()) || p.codigo.includes(search))
+      ((p.nombre || '').toLowerCase().includes(search.toLowerCase()) || (p.codigo || '').includes(search))
     ).slice(0, 5);
   }, [search, state.productos]);
 
@@ -963,6 +987,9 @@ function ReporteKardex({ state, selectedId, onSelect }: { state: AppState, selec
                <h3 className="font-black text-xs uppercase tracking-widest text-brand-gold">{selectedProd.nombre}</h3>
             </div>
             <button className="btn btn-secondary h-8 px-4 font-black uppercase text-[9px]" onClick={() => exportarPDFKardex(selectedProd, movs, state.empresa, state.terminales)}>Exportar Kardex</button>
+          </div>
+          <div className="px-6 py-3 bg-white border-b border-line no-print">
+            <DateRangeFilter value={rango} onChange={setRango} />
           </div>
           <div className="table-wrap">
              <Table>

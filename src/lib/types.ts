@@ -109,6 +109,28 @@ export interface SaleItem {
   subtotalUSD: number;
 }
 
+export interface PurchaseItem {
+  productoId: string;
+  nombre: string;
+  cantidad: number;
+  costoUnitarioUSD: number;
+  subtotalUSD: number;
+}
+
+export interface PurchaseRecord {
+  id: string;
+  fecha: string;
+  fechaHora?: string;
+  proveedor: string;
+  numeroFactura: string;
+  condicion: 'contado' | 'credito' | 'mixto';
+  montoUSD: number;
+  pagadoUSD: number;
+  saldoUSD: number;
+  items: PurchaseItem[];
+  terminalId?: string;
+}
+
 export interface PagoRealizado {
   metodo: PaymentMethod;
   montoUSD: number;
@@ -359,6 +381,7 @@ export interface AppState {
   marcas: string[];
   presentaciones: string[];
   proveedores: Supplier[];
+  compras: PurchaseRecord[];
   
   // ========== NUEVAS PROPIEDADES PARA ProductForm ==========
   config: Config;

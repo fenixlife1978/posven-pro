@@ -15,11 +15,27 @@ import {
   X,
   Trash,
   Boxes,
-  Loader2
+  Loader2,
+  History,
+  ChevronDown,
+  ChevronUp,
+  Receipt,
+  Truck
 } from 'lucide-react';
 import { Store, Utils } from '@/lib/db-store';
-import { AppState, Product, Movimiento, PaymentMethod, KitItem, Supplier, LibroDiarioEntry, Debt } from '@/lib/types';
+import { AppState, Product, Movimiento, PaymentMethod, KitItem, Supplier, LibroDiarioEntry, Debt, PurchaseRecord } from '@/lib/types';
 import { ProductFormModal } from '@/components/inventory/ProductFormModal';
+import { Card } from '@/components/ui/card';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Pagination } from '@/components/ui/pagination';
+import { DateRangeFilter, DateRange } from '@/components/ui/date-range-filter';
 
 interface PurchaseItemTemp {
   productoId: string;
@@ -56,6 +72,13 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
 
   const [showNewProductModal, setShowNewProductModal] = useState(false);
 
+  const [view, setView] = useState<'nueva' | 'historial'>('nueva');
+  const [rango, setRango] = useState<DateRange>({ desde: Utils.hoy(), hasta: Utils.hoy() });
+  const [proveedorFiltro, setProveedorFiltro] = useState('');
+  const [mesFiltro, setMesFiltro] = useState('');
+  const [expandedCompra, setExpandedCompra] = useState<string | null>(null);
+  const [histPage, setHistPage] = useState(1);
+
   const safeProveedores = useMemo(() => {
     return (state.proveedores || []).map(p => 
       typeof p === 'string' ? { id: p, nombre: p, rif: '', contacto: '', direccion: '', telefono: '' } : p
@@ -64,6 +87,111 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
 
   const totalUSD = loteTemporal.reduce((acc, item) => acc + item.subtotalUSD, 0);
   const tasaActual = parseFloat(tasaCompra.toString()) || 1;
+
+  // ===== HISTORIAL DE COMPRAS =====
+  // Compra legada (pre-F2): reconstruida desde movimientos tipo 'compra' + deudas CxP por factura.
+  const legacyCompras = useMemo(() => {
+    const map = new Map<string, any>();
+    const cxpPorFactura = new Map<string, Debt[]>();
+    (state.cxp || []).forEach((d: Debt) => {
+      if (!d.numeroFactura) return;
+      const arr = cxpPorFactura.get(d.numeroFactura) || [];
+      arr.push(d);
+      cxpPorFactura.set(d.numeroFactura, arr);
+    });
+
+    (state.movimientos || []).filter(m => m.tipo === 'compra').forEach(m => {
+      const ref = m.referencia || '';
+      const factMatch = ref.match(/FACT:\s*([^-]+)/i);
+      const provMatch = ref.match(/PROV:\s*(.+)/i);
+      const factura = (factMatch ? factMatch[1].trim() : ref.trim()) || 'S/N';
+      const proveedor = (provMatch ? provMatch[1].trim() : 'S/D') || 'S/D';
+      const fecha = m.fecha.slice(0, 10);
+      const key = `${fecha}|${factura}|${proveedor}`;
+
+      if (!map.has(key)) {
+        map.set(key, {
+          id: 'LEG-' + key.replace(/[^a-zA-Z0-9]/g, ''),
+          fecha,
+          fechaHora: m.fecha,
+          proveedor,
+          numeroFactura: factura,
+          condicion: 'contado' as const,
+          montoUSD: 0,
+          pagadoUSD: 0,
+          saldoUSD: 0,
+          items: [] as any[],
+        });
+      }
+      const rec = map.get(key);
+      const p = state.productos.find(prod => prod.id === m.productoId);
+      const costo = p?.costoUSD || 0;
+      rec.items.push({
+        productoId: m.productoId,
+        nombre: p?.nombre || 'ELIMINADO',
+        cantidad: m.cantidad,
+        costoUnitarioUSD: costo,
+        subtotalUSD: Math.round((m.cantidad * costo + Number.EPSILON) * 10000) / 10000,
+      });
+      rec.montoUSD = Math.round((rec.items.reduce((s: number, i: any) => s + i.subtotalUSD, 0) + Number.EPSILON) * 10000) / 10000;
+    });
+
+    map.forEach((rec: any) => {
+      const debts = (cxpPorFactura.get(rec.numeroFactura) || []).filter((d: Debt) => d.proveedor === rec.proveedor);
+      const debt = debts[0];
+      if (debt) {
+        rec.condicion = debt.estado === 'pendiente' ? 'credito' : 'mixto';
+        rec.montoUSD = debt.montoUSD || 0;
+        rec.pagadoUSD = (debt.montoUSD || 0) - (debt.saldoUSD || 0);
+        rec.saldoUSD = debt.saldoUSD || 0;
+        if (debt.items && debt.items.length > 0) {
+          rec.items = debt.items.map((i: any) => ({
+            productoId: i.productoId,
+            nombre: i.nombre,
+            cantidad: i.cantidad,
+            costoUnitarioUSD: i.costoUnitarioUSD || 0,
+            subtotalUSD: i.subtotalUSD || Math.round((i.cantidad * (i.costoUnitarioUSD || 0)) * 10000) / 10000,
+          }));
+          rec.montoUSD = debt.montoUSD || 0;
+        }
+      }
+    });
+
+    return Array.from(map.values());
+  }, [state.movimientos, state.cxp, state.productos]);
+
+  const todasCompras = useMemo<PurchaseRecord[]>(() => {
+    return [...legacyCompras, ...(state.compras || [])];
+  }, [legacyCompras, state.compras]);
+
+  const mesesDisponibles = useMemo(() => {
+    const set = new Set<string>();
+    todasCompras.forEach(c => set.add(c.fecha.slice(0, 7)));
+    return Array.from(set).sort().reverse();
+  }, [todasCompras]);
+
+  const proveedoresDisponibles = useMemo(() => {
+    const set = new Set<string>();
+    todasCompras.forEach(c => set.add(c.proveedor));
+    return Array.from(set).sort();
+  }, [todasCompras]);
+
+  const comprasFiltradas = useMemo(() => {
+    return todasCompras
+      .filter(c => c.fecha >= rango.desde && c.fecha <= rango.hasta)
+      .filter(c => !proveedorFiltro || c.proveedor === proveedorFiltro)
+      .filter(c => !mesFiltro || c.fecha.slice(0, 7) === mesFiltro)
+      .sort((a, b) => (b.fechaHora || b.fecha).localeCompare(a.fechaHora || a.fecha));
+  }, [todasCompras, rango, proveedorFiltro, mesFiltro]);
+
+  const totalComprasUSD = comprasFiltradas.reduce((s, c) => s + (c.montoUSD || 0), 0);
+  const totalPagadoUSD = comprasFiltradas.reduce((s, c) => s + (c.pagadoUSD || 0), 0);
+  const totalSaldoUSD = comprasFiltradas.reduce((s, c) => s + (c.saldoUSD || 0), 0);
+
+  const histPageSize = 10;
+  const histTotalPages = Math.max(1, Math.ceil(comprasFiltradas.length / histPageSize));
+  const histSafePage = Math.min(histPage, histTotalPages);
+  const histPageCompras = comprasFiltradas.slice((histSafePage - 1) * histPageSize, histSafePage * histPageSize);
 
   useEffect(() => {
     if (condicion === 'contado') {
@@ -215,11 +343,26 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
         nuevasCxP.push(nuevaDeuda);
       }
 
+      const nuevaCompra = {
+        id: 'COMP-' + Store.uid().toUpperCase().slice(0, 8),
+        fecha: fecha,
+        fechaHora: ahoraStr,
+        proveedor: proveedor,
+        numeroFactura: numeroFactura,
+        condicion: condicion,
+        montoUSD: totalUSD,
+        pagadoUSD: pMontoPagadoUSD,
+        saldoUSD: saldoPendienteUSD,
+        items: loteTemporal.map(i => ({ ...i })),
+        terminalId: 'ADMIN'
+      };
+
       await updateState({
         productos: nuevosProductos,
         movimientos: [...state.movimientos, ...nuevosMovimientos],
         libroDiario: [...nuevosAsientosDiario, ...(state.libroDiario || [])],
-        cxp: nuevasCxP
+        cxp: nuevasCxP,
+        compras: [nuevaCompra, ...(state.compras || [])]
       });
 
       alert('Compra registrada exitosamente.');
@@ -234,15 +377,24 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pb-20">
-      <div className="flex justify-between items-center">
+      <div className="flex justify-between items-center flex-wrap gap-4">
         <div>
           <h2 className="text-ink font-black uppercase italic tracking-tighter text-2xl flex items-center gap-2">
             <ShoppingBag className="text-brand-gold" /> REGISTRO DE ENTRADAS POR COMPRA
           </h2>
           <p className="text-[10px] text-ink font-bold uppercase tracking-widest opacity-60">Control de Abastecimiento y Costos CPP</p>
         </div>
+        <div className="flex gap-2">
+          <button onClick={() => { setView('nueva'); }} className={`btn ${view === 'nueva' ? 'btn-primary' : 'btn-secondary'} h-10 px-5 font-black uppercase text-[10px] flex items-center gap-2 shadow-sm`}>
+            <Plus className="w-4 h-4" /> Nueva Compra
+          </button>
+          <button onClick={() => { setView('historial'); setHistPage(1); }} className={`btn ${view === 'historial' ? 'btn-primary' : 'btn-secondary'} h-10 px-5 font-black uppercase text-[10px] flex items-center gap-2 shadow-sm`}>
+            <History className="w-4 h-4" /> Historial de Compras
+          </button>
+        </div>
       </div>
 
+      {view === 'nueva' && (
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="space-y-6">
           <div className="card shadow-lg border-line rounded-xl overflow-hidden bg-white">
@@ -443,6 +595,144 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
           </div>
         </div>
       </div>
+      )}
+
+      {view === 'historial' && (
+        <div className="space-y-6 animate-in fade-in duration-300">
+          <Card className="p-5 bg-white border-line shadow-sm rounded-xl no-print">
+            <div className="flex flex-wrap items-end gap-4">
+              <div className="min-w-[320px]">
+                <label className="text-[10px] font-black uppercase text-ink/40 block mb-2">CONSULTAR COMPRAS POR PERÍODO</label>
+                <DateRangeFilter value={rango} onChange={setRango} />
+              </div>
+              <div className="form-group mb-0">
+                <label className="text-ink text-[10px] font-black uppercase block mb-1.5 opacity-70">Proveedor</label>
+                <select className="form-select h-8 text-[10px] font-black uppercase bg-surface-soft border-line rounded-md" value={proveedorFiltro} onChange={e => setProveedorFiltro(e.target.value)}>
+                  <option value="">TODOS LOS PROVEEDORES</option>
+                  {proveedoresDisponibles.map(p => <option key={p} value={p}>{p.toUpperCase()}</option>)}
+                </select>
+              </div>
+              <div className="form-group mb-0">
+                <label className="text-ink text-[10px] font-black uppercase block mb-1.5 opacity-70">Mes</label>
+                <select className="form-select h-8 text-[10px] font-black uppercase bg-surface-soft border-line rounded-md" value={mesFiltro} onChange={e => setMesFiltro(e.target.value)}>
+                  <option value="">TODOS LOS MESES</option>
+                  {mesesDisponibles.map(m => <option key={m} value={m}>{m}</option>)}
+                </select>
+              </div>
+            </div>
+          </Card>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="kpi bg-white border-line p-5 rounded-2xl shadow-sm border-l-[6px] border-l-brand-gold flex items-center gap-3">
+              <div className="p-3 bg-brand-gold-soft rounded-xl"><Truck className="w-5 h-5 text-brand-gold-deep" /></div>
+              <div>
+                <p className="text-[9px] font-black uppercase text-ink/40">Compras</p>
+                <p className="text-xl font-black text-ink">{comprasFiltradas.length}</p>
+              </div>
+            </div>
+            <div className="kpi bg-white border-line p-5 rounded-2xl shadow-sm border-l-[6px] border-l-status-danger flex items-center gap-3">
+              <div className="p-3 bg-status-danger-soft rounded-xl"><Receipt className="w-5 h-5 text-status-danger" /></div>
+              <div>
+                <p className="text-[9px] font-black uppercase text-ink/40">Total Facturado</p>
+                <p className="text-xl font-black text-status-danger">{Utils.fmtUSD(totalComprasUSD)}</p>
+              </div>
+            </div>
+            <div className="kpi bg-white border-line p-5 rounded-2xl shadow-sm border-l-[6px] border-l-status-success flex items-center gap-3">
+              <div className="p-3 bg-status-success-soft rounded-xl"><CheckCircle className="w-5 h-5 text-status-success" /></div>
+              <div>
+                <p className="text-[9px] font-black uppercase text-ink/40">Pagado</p>
+                <p className="text-xl font-black text-status-success">{Utils.fmtUSD(totalPagadoUSD)}</p>
+              </div>
+            </div>
+            <div className="kpi bg-white border-line p-5 rounded-2xl shadow-sm border-l-[6px] border-l-status-info flex items-center gap-3">
+              <div className="p-3 bg-status-info-soft rounded-xl"><HandCoins className="w-5 h-5 text-status-info" /></div>
+              <div>
+                <p className="text-[9px] font-black uppercase text-ink/40">Saldo Pendiente</p>
+                <p className="text-xl font-black text-status-info">{Utils.fmtUSD(totalSaldoUSD)}</p>
+              </div>
+            </div>
+          </div>
+
+          <Card className="shadow-lg border-line rounded-xl overflow-hidden bg-white">
+            <div className="card-head bg-ink border-b border-white/10 px-6 py-4 flex justify-between items-center">
+              <h3 className="text-white font-black text-xs uppercase italic tracking-tighter flex items-center gap-2">
+                <History className="w-5 h-5 text-brand-gold" /> HISTORIAL DE COMPRAS DETALLADAS
+              </h3>
+            </div>
+            <div className="table-wrap">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-surface-soft">
+                    <TableHead className="text-[10px] font-black uppercase text-left">Fecha</TableHead>
+                    <TableHead className="text-[10px] font-black uppercase text-left">Factura</TableHead>
+                    <TableHead className="text-[10px] font-black uppercase text-left">Proveedor</TableHead>
+                    <TableHead className="text-[10px] font-black uppercase text-center">Condición</TableHead>
+                    <TableHead className="text-[10px] font-black uppercase text-center">Ítems</TableHead>
+                    <TableHead className="text-[10px] font-black uppercase text-right">Total USD</TableHead>
+                    <TableHead className="text-[10px] font-black uppercase text-right">Pagado</TableHead>
+                    <TableHead className="text-[10px] font-black uppercase text-right">Saldo</TableHead>
+                    <TableHead className="text-[10px] font-black uppercase text-center">Detalle</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {histPageCompras.length === 0 ? (
+                    <TableRow><TableCell colSpan={9} className="text-center py-20 text-ink/20 font-black italic uppercase">No se registran compras para la selección actual</TableCell></TableRow>
+                  ) : histPageCompras.map(c => (
+                    <React.Fragment key={c.id}>
+                      <TableRow className="border-b border-line/30 hover:bg-surface-warm/20 transition-colors cursor-pointer" onClick={() => setExpandedCompra(expandedCompra === c.id ? null : c.id)}>
+                        <TableCell className="text-xs font-bold text-ink">{Utils.fmtFecha(c.fecha)}</TableCell>
+                        <TableCell className="text-xs font-black mono text-ink">{c.numeroFactura}</TableCell>
+                        <TableCell className="text-xs font-black uppercase text-ink">{c.proveedor}</TableCell>
+                        <TableCell className="text-center">
+                          <span className={`badge ${c.condicion === 'contado' ? 'badge-ok' : (c.condicion === 'credito' ? 'badge-warn' : 'badge-info')} text-[9px] font-black uppercase`}>{c.condicion}</span>
+                        </TableCell>
+                        <TableCell className="text-center font-black text-ink">{c.items.length}</TableCell>
+                        <TableCell className="text-right font-black text-brand-gold-deep">{Utils.fmtUSD(c.montoUSD)}</TableCell>
+                        <TableCell className="text-right font-black text-status-success">{Utils.fmtUSD(c.pagadoUSD)}</TableCell>
+                        <TableCell className="text-right font-black text-status-danger">{Utils.fmtUSD(c.saldoUSD)}</TableCell>
+                        <TableCell className="text-center">
+                          <button onClick={e => { e.stopPropagation(); setExpandedCompra(expandedCompra === c.id ? null : c.id); }} className="btn-icon h-8 w-8 text-ink hover:text-brand-gold">
+                            {expandedCompra === c.id ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                          </button>
+                        </TableCell>
+                      </TableRow>
+                      {expandedCompra === c.id && (
+                        <TableRow className="bg-surface-soft/40">
+                          <TableCell colSpan={9} className="px-8 py-4">
+                            <div className="card border-line bg-white shadow-inner rounded-xl overflow-hidden">
+                              <table className="w-full">
+                                <thead className="bg-ink/5">
+                                  <tr>
+                                    <th className="text-[9px] font-black uppercase p-2 text-left">Producto</th>
+                                    <th className="text-[9px] font-black uppercase p-2 text-center">Cantidad</th>
+                                    <th className="text-[9px] font-black uppercase p-2 text-right">Costo Unit. USD</th>
+                                    <th className="text-[9px] font-black uppercase p-2 text-right">Subtotal USD</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {c.items.map((it, idx) => (
+                                    <tr key={idx} className="border-b border-line/20">
+                                      <td className="text-[10px] font-black uppercase p-2 text-ink">{it.nombre}</td>
+                                      <td className="text-[10px] font-black p-2 text-center">{it.cantidad}</td>
+                                      <td className="text-[10px] font-bold p-2 text-right mono">{fmt4(it.costoUnitarioUSD)}</td>
+                                      <td className="text-[10px] font-black p-2 text-right text-brand-gold-deep">{fmt4(it.subtotalUSD)}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </React.Fragment>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+            <Pagination page={histSafePage} totalPages={histTotalPages} total={comprasFiltradas.length} pageSize={histPageSize} onPageChange={setHistPage} />
+          </Card>
+        </div>
+      )}
 
       {showNewProductModal && (
         <ProductFormModal 
