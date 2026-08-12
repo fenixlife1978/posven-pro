@@ -33,6 +33,7 @@ import { Pagination } from '@/components/ui/pagination';
 
 export default function CxCModule({ state, updateState }: { state: AppState, updateState: (s: Partial<AppState>) => void }) {
   const { toast } = useToast();
+  useEffect(() => { Store.ensureLoaded('ventas'); }, []);
   const [showModal, setShowModal] = useState(false);
   const [showDetails, setShowDetails] = useState<any>(null);
   const [expandedClient, setExpandedClient] = useState<string | null>(null);

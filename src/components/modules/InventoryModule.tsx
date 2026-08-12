@@ -61,6 +61,7 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
 
   useEffect(() => {
     Store.ensureLoaded('movimientos');
+    Store.ensureLoaded('ventas');
   }, []);
 
   useEffect(() => {

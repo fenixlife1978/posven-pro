@@ -404,6 +404,27 @@ async function loadMore(name: string, pageSize: number = PAGE_SIZE): Promise<num
   }
 }
 
+// Carga SOLO los registros posteriores al último cierre Z (los módulos del POS
+// filtran por fecha > fechaUltimoZ, así que con eso basta). Evita re-leer el
+// histórico completo (miles de docs) en cada sesión. Se re-ejecuta cuando cambia
+// fechaUltimoZ (tras cada Reporte Z).
+const SINCE_STAMP: Record<string, string> = {};
+async function loadSinceLastZ(listName: string): Promise<void> {
+  const col = COLLECTIONS[listName];
+  if (!col || !db) return;
+  const desde = (cache as any).fechaUltimoZ || '';
+  if (SINCE_STAMP[listName] === desde) return;
+  SINCE_STAMP[listName] = desde;
+  try {
+    const q = query(collection(db, col), where('fecha', '>', desde), limit(500));
+    const snap = await getDocs(q);
+    const items = snap.docs.map(d => sanitizeForFirestore(d.data())).filter(Boolean);
+    applyPatch({ [listName]: mergeById((cache as any)[listName], items) });
+  } catch (e) {
+    console.error("loadSinceLastZ " + listName + ":", e);
+  }
+}
+
 // Kardex de un producto (where + orden). Si falta el índice compuesto, carga y filtra en memoria.
 async function kardex(productoId: string, max = 100): Promise<any[]> {
   if (!db) return [];
@@ -469,6 +490,10 @@ function init() {
       if (val[f] !== undefined) patch[f] = sanitizeForFirestore(val[f]);
     }
     if (Object.keys(patch).length > 0) applyPatch(patch);
+    if (patch.fechaUltimoZ !== undefined) {
+      loadSinceLastZ('ventas');
+      loadSinceLastZ('libroDiario');
+    }
   }, (err) => { if (err.code !== 'permission-denied') console.warn("Sync config:", err); }));
 
   // 2) PRODUCTOS (tiempo real vía RTDB: el espejo evita re-leer la colección en cada venta).
@@ -494,9 +519,12 @@ function init() {
     ));
   }
 
-  // 4) CARGA INICIAL: listas pequeñas completas + ventas completas (necesarias para Z y agregados)
-  ['cxc', 'cxp', 'clientes', 'proveedores', 'terminales', 'devoluciones', 'anulaciones', 'libroDiario', 'reportesZ', 'caja', 'compras'].forEach(ensureLoaded);
-  loadAll('ventas');
+  // 4) CARGA INICIAL: listas pequeñas completas + solo lo posterior al último Z
+  //    para ventas/libroDiario (los módulos del POS filtran por fecha > fechaUltimoZ).
+  //    El histórico completo se carga bajo demanda cuando se abre el módulo que lo necesita.
+  ['cxc', 'cxp', 'clientes', 'proveedores', 'terminales', 'devoluciones', 'anulaciones', 'reportesZ', 'caja', 'compras'].forEach(ensureLoaded);
+  loadSinceLastZ('ventas');
+  loadSinceLastZ('libroDiario');
 
   // 5) CATÁLOGOS
   loadCatalogs();

@@ -23,6 +23,7 @@ import {
 import { exportarPDFLibroDiario } from '@/lib/pdf-generator';
 
 export default function AccountingModule({ state, updateState }: { state: AppState, updateState: (s: Partial<AppState>) => void }) {
+  useEffect(() => { Store.ensureLoaded('libroDiario'); Store.ensureLoaded('ventas'); }, []);
   // Estados de Filtro
   const [filterType, setFilterType] = useState<'hoy' | 'ayer' | 'mes' | 'rango'>('hoy');
   const [desde, setDesde] = useState(Utils.hoy());

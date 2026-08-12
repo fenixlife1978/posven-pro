@@ -1,12 +1,13 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AppState } from '@/lib/types';
-import { Utils } from '@/lib/db-store';
+import { Utils, Store } from '@/lib/db-store';
 import { FileText, TrendingUp, Calendar, Printer, ArrowLeft, Monitor } from 'lucide-react';
 import { exportarPDFVentasDetallado } from '@/lib/pdf-generator';
 
 export default function ReportsModule({ state }: { state: AppState }) {
+  useEffect(() => { Store.ensureLoaded('ventas'); }, []);
   const [tab, setTab] = useState('ventas');
   const [desde, setDesde] = useState(Utils.hoy());
   const [hasta, setHasta] = useState(Utils.hoy());
