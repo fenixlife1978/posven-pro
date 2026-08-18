@@ -75,15 +75,29 @@
   "build": {
     "appId": "com.posven.pro",
     "productName": "PosVEN Pro",
+    "copyright": "Copyright © 2026 fenixlife1978",
     "directories": {
-      "output": "dist"
+      "output": "dist",
+      "buildResources": "public"
     },
     "files": [
       "main.js",
       "preload.js",
       "out/**/*",
       "public/**/*",
-      "package.json"
+      "package.json",
+      "!**/.next",
+      "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}",
+      "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}",
+      "!**/node_modules/*.d.ts",
+      "!**/node_modules/.bin"
+    ],
+    "asarUnpack": [
+      "**/node_modules/node-thermal-printer/**/*",
+      "**/node_modules/electron-pos-printer/**/*",
+      "**/node_modules/@serialport/**/*",
+      "**/node_modules/node-usb/**/*",
+      "**/node_modules/**/*.{node,dll}"
     ],
     "win": {
       "target": [
@@ -94,7 +108,10 @@
           ]
         }
       ],
-      "icon": "public/posven-logo.png"
+      "icon": "public/posven-logo.png",
+      "publisherName": "fenixlife1978",
+      "verifyUpdateCodeSignature": false,
+      "requestedExecutionLevel": "asInvoker"
     },
     "nsis": {
       "oneClick": false,
@@ -103,7 +120,19 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "runAfterFinish": true,
-      "shortcutName": "PosVEN Pro"
+      "shortcutName": "PosVEN Pro",
+      "deleteAppDataOnUninstall": false,
+      "displayLanguageSelector": false
+    },
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.business"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Office"
     },
     "publish": [
       {
