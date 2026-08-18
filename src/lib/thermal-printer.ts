@@ -238,6 +238,22 @@ export function generateReport(reportData: any, storeInfo: StoreInfo = {}, type:
   report.push(alignLeftRight("RECAUDACIÓN IGTF (3%):", formatCurrency(reportData.igtf || 0)));
   report.push(separator('-'));
 
+  // 5b. TOTAL VENTAS DEL DÍA (USD) — solicitado por el usuario.
+  //     Suma de v.totalUSD: las ventas en BS ya están convertidas internamente
+  //     a USD con la tasa del momento de la venta, y las ventas en USD se
+  //     contabilizan tal cual. La tasa BCV del día se muestra como referencia.
+  report.push(CMD.BOLD_ON + center("TOTAL VENTAS DEL DÍA (USD)") + CMD.BOLD_OFF);
+  report.push(separator('-'));
+  const totalVentasUSD = reportData.totalVentasUSD ?? reportData.brUSD ?? 0;
+  const ventasNetasUSD = reportData.netUSD ?? 0;
+  const tasaBCV = reportData.tasaBCV || 0;
+  report.push(CMD.BOLD_ON + alignLeftRight("VENTAS TOTALES USD:", `$ ${formatUsd(totalVentasUSD)}`) + CMD.BOLD_OFF);
+  report.push(CMD.BOLD_ON + alignLeftRight("VENTAS NETAS USD:", `$ ${formatUsd(ventasNetasUSD)}`) + CMD.BOLD_OFF);
+  if (tasaBCV > 0) {
+    report.push(center(`Tasa BCV: Bs. ${Number(tasaBCV).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`));
+  }
+  report.push(separator('-'));
+
   // 6. FORMAS DE PAGO (SIEMPRE presente)
   report.push(CMD.BOLD_ON + center("FORMAS DE PAGO") + CMD.BOLD_OFF);
   report.push(separator('-'));
