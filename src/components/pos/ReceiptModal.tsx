@@ -364,6 +364,26 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
                      <tr><td className="bold">VENTAS NETAS:</td><td className="text-right bold">{formatBs(data.netUSD * state.tasa)}</td></tr>
                    </tbody></table>
 
+                   {/* ===== TOTAL VENTAS DEL DÍA EN USD (solicitado por usuario) ===== */}
+                   <div className="separator-dashed"></div>
+                   <div className="text-center font-bold">TOTAL VENTAS DEL DÍA (USD)</div>
+                   <div className="separator-dashed"></div>
+                   <table><tbody>
+                     <tr className="bold">
+                       <td>VENTAS TOTALES USD:</td>
+                       <td className="text-right">$ {formatUsd(data.totalVentasUSD ?? data.brUSD ?? 0)}</td>
+                     </tr>
+                     <tr className="bold">
+                       <td>VENTAS NETAS USD:</td>
+                       <td className="text-right">$ {formatUsd(data.netUSD ?? 0)}</td>
+                     </tr>
+                     {data.tasaBCV > 0 && (
+                       <tr className="text-[10px]">
+                         <td colSpan={2} className="text-center">Tasa BCV: Bs. {Number(data.tasaBCV).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                       </tr>
+                     )}
+                   </tbody></table>
+
                    <div className="separator-dashed"></div>
                    <div className="text-center font-bold">DESGLOSE DE IMPUESTOS</div>
                    <div className="separator-dashed"></div>

@@ -152,14 +152,36 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       fondoAperturaBS: state.fondoCajaHoyBS || 0,
       desdeFactura, hastaFactura, desdeNC, hastaNC,
       stats: { facturas: vActivas.length, devoluciones: dHoy.length, anulaciones: vAnuladas.length, ticketPromedio: vActivas.length > 0 ? (netUSD / vActivas.length) : 0 },
-      fecha: Utils.ahora(), terminalName, terminalId: termId, numeroZ: state.ultimoZ + 1, acumuladoHistoricoUSD: state.acumuladoHistorico + netUSD
+      fecha: Utils.ahora(), terminalName, terminalId: termId, numeroZ: state.ultimoZ + 1, acumuladoHistoricoUSD: state.acumuladoHistorico + netUSD,
+      // Total explícito en USD del día (ventas brutas, antes de descuentos/devoluciones).
+      // Se calcula como suma de v.totalUSD: cada venta ya tiene su total en USD
+      // (los pagos en BS se convierten internamente con la tasa del momento).
+      // Esto es lo que el usuario pidió agregar a los Reportes X/Z.
+      totalVentasUSD: brUSD,
+      tasaBCV: state.tasa || 0
     };
   };
 
-  const handleOpenReport = (type: 'REPORT_X' | 'REPORT_Z') => {
-    const data = getFreshReportData();
-    setReportSnapshot(data);
-    setShowReportType(type);
+  const [reportLoading, setReportLoading] = useState(false);
+
+  const handleOpenReport = async (type: 'REPORT_X' | 'REPORT_Z') => {
+    // Si el reporte ya está abierto, no hacer nada.
+    if (showReportType) return;
+    setReportLoading(true);
+    try {
+      // Garantiza que ventas/devoluciones/libroDiario/etc. estén cargados
+      // desde Firestore antes de calcular. Evita el bug de "$0" tras reinicio
+      // o corte de luz, donde el cache aún no terminó de hidratarse.
+      await Store.ensureReportData();
+      const data = getFreshReportData();
+      setReportSnapshot(data);
+      setShowReportType(type);
+    } catch (e) {
+      console.error('Error abriendo reporte X/Z:', e);
+      toast({ variant: 'destructive', title: 'Error', description: 'No se pudieron cargar los datos del reporte. Reintenta.' });
+    } finally {
+      setReportLoading(false);
+    }
   };
 
   const ejecutarCierreZ = () => {
@@ -496,8 +518,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         <button onClick={() => setView('pos')} className={`btn btn-sm ${view === 'pos' ? 'btn-primary shadow-md' : 'bg-white text-ink font-bold border-line border'}`}><ShoppingCart className="w-3.5 h-3.5"/> Punto de Venta</button>
         <button onClick={() => setView('history')} className={`btn btn-sm ${view === 'history' ? 'btn-primary shadow-md' : 'bg-white text-ink font-bold border-line border'}`}><History className="w-3.5 h-3.5"/> Historial</button>
         <button onClick={() => setView('credits')} className={`btn btn-sm ${view === 'credits' ? 'btn-primary shadow-md' : 'bg-white text-ink font-bold border-line border'}`}><ClipboardList className="w-3.5 h-3.5"/> Consultar Créditos</button>
-        <button onClick={() => handleOpenReport('REPORT_X')} className="btn btn-sm bg-white text-ink font-bold border-line border"><FileText className="w-3.5 h-3.5"/> Reporte X</button>
-        <button onClick={() => handleOpenReport('REPORT_Z')} className="btn btn-sm bg-white text-ink font-bold border-line border"><Receipt className="w-3.5 h-3.5"/> Reporte Z</button>
+        <button onClick={() => handleOpenReport('REPORT_X')} disabled={reportLoading} className="btn btn-sm bg-white text-ink font-bold border-line border disabled:opacity-50"><FileText className="w-3.5 h-3.5"/> {reportLoading ? 'Cargando…' : 'Reporte X'}</button>
+        <button onClick={() => handleOpenReport('REPORT_Z')} disabled={reportLoading} className="btn btn-sm bg-white text-ink font-bold border-line border disabled:opacity-50"><Receipt className="w-3.5 h-3.5"/> {reportLoading ? 'Cargando…' : 'Reporte Z'}</button>
         <button onClick={() => setView('returns')} className={`btn btn-sm ${view === 'returns' ? 'btn-primary shadow-md' : 'bg-white text-ink font-bold border-line border'}`}><RotateCcw className="w-3.5 h-3.5"/> Devoluciones y Anulaciones</button>
         
         {view === 'pos' && (

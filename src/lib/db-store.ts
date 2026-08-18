@@ -131,13 +131,18 @@ export const initialState: AppState = {
 };
 
 // ============================================================
-// CACHE EN MEMORIA + sessionStorage (SOLO para mostrar UI rápido).
+// CACHE EN MEMORIA + localStorage (SOLO para mostrar UI rápido).
 // El cache NUNCA se sube a Firestore (no más sobrescritura de datos).
+//
+// ⚠️ localStorage (no sessionStorage): la sesión debe sobrevivir
+// cortes de luz / reinicios del PC. Si sessionStorage se usa, el cache
+// se borra al cerrar el navegador y los Reportes X/Z se generan vacíos
+// al volver a abrir el sistema (bug reportado por usuario).
 // ============================================================
 function readSession(): Partial<AppState> {
   if (typeof window === 'undefined') return {};
   try {
-    const d = sessionStorage.getItem(STORAGE_KEY);
+    const d = localStorage.getItem(STORAGE_KEY);
     return d ? (JSON.parse(d) as Partial<AppState>) : {};
   } catch { return {}; }
 }
@@ -145,10 +150,30 @@ function readSession(): Partial<AppState> {
 let cache: AppState = { ...initialState, ...readSession() } as AppState;
 const listeners = new Set<(s: Partial<AppState>) => void>();
 
+// Mide cuánto ocupa el cache serializado; si pasa de ~4MB deja de escribir
+// a localStorage para no tumbar la app (el cache en memoria sigue activo).
+const LOCALSTORAGE_SOFT_LIMIT = 4 * 1024 * 1024; // 4 MB
+
 function applyPatch(patch: Partial<AppState>) {
   cache = { ...cache, ...patch } as AppState;
   if (typeof window !== 'undefined') {
-    try { sessionStorage.setItem(STORAGE_KEY, JSON.stringify(cache)); } catch { /* sin espacio */ }
+    try {
+      const serialized = JSON.stringify(cache);
+      if (serialized.length <= LOCALSTORAGE_SOFT_LIMIT) {
+        localStorage.setItem(STORAGE_KEY, serialized);
+      } else {
+        // Excede el límite: no escribimos para evitar QuotaExceededError.
+        // La próxima vez que se llame a readSession() se seguirá usando lo
+        // último que cupo, pero el cache en memoria sigue 100% funcional.
+        console.warn(
+          '[db-store] Cache excede ' + (LOCALSTORAGE_SOFT_LIMIT / 1024 / 1024) +
+          'MB, se omite escritura a localStorage (cuota llena).'
+        );
+      }
+    } catch (e: any) {
+      // QuotaExceededError u otro: no tumbamos la app.
+      console.warn('[db-store] No se pudo persistir cache en localStorage:', e?.message || e);
+    }
   }
   listeners.forEach(cb => { try { cb(patch); } catch (e) { console.error(e); } });
 }
@@ -371,17 +396,45 @@ async function loadAll(name: string): Promise<void> {
 }
 
 // Carga completa "bajo demanda" (para módulos que necesitan todo: reportes, kardex, contabilidad).
+// Trackea la promesa en curso para que múltiples llamadas concurrentes
+// compartan la misma carga (evita que la segunda retorne "ya cargado"
+// cuando en realidad la primera aún no terminó — race condition que
+// causaba Reportes X/Z en $0 tras reinicio).
+const loadingPromises: Record<string, Promise<void>> = {};
 async function ensureLoaded(name: string): Promise<void> {
   if (loadedAll[name]) return;
   if (!db) return;
-  loadedAll[name] = true;
-  try {
-    const items = await loadCollection(name);
-    applyPatch({ [name]: mergeById((cache as any)[name], items) });
-  } catch (e) {
-    console.error("Error cargando " + name + ":", e);
-    loadedAll[name] = false;
-  }
+  if (loadingPromises[name]) return loadingPromises[name];
+  const p = (async () => {
+    loadedAll[name] = true;
+    try {
+      const items = await loadCollection(name);
+      applyPatch({ [name]: mergeById((cache as any)[name], items) });
+    } catch (e) {
+      console.error("Error cargando " + name + ":", e);
+      loadedAll[name] = false;
+    } finally {
+      delete loadingPromises[name];
+    }
+  })();
+  loadingPromises[name] = p;
+  return p;
+}
+
+// Garantiza que TODAS las colecciones necesarias para los Reportes X/Z
+// estén cargadas antes de generar el reporte. Evita la race condition
+// donde el usuario abre X/Z justo después de un reinicio y el cache
+// aún no terminó de hidratarse desde Firestore (resultados en $0).
+async function ensureReportData(): Promise<void> {
+  if (!db) return;
+  await Promise.all([
+    ensureLoaded('ventas'),
+    ensureLoaded('devoluciones'),
+    ensureLoaded('anulaciones'),
+    ensureLoaded('libroDiario'),
+    ensureLoaded('terminales'),
+    ensureLoaded('clientes'),
+  ]);
 }
 
 // Siguiente página (10) de una colección ordenada por fecha desc (listas históricas).
@@ -616,6 +669,7 @@ export const Store = {
 
   loadMore,
   ensureLoaded,
+  ensureReportData,
   kardex,
 
   uid(): string {
