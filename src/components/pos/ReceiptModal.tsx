@@ -447,42 +447,44 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
                      const fondoBs = data.fondoAperturaBS || data.fondoAperturaBs || 0;
                      const fondoUsd = data.fondoAperturaUSD || data.fondoAperturaUsd || 0;
                      
-                     // Calcular ventas en efectivo desde los métodos de pago
-                     let ventasEfectivoBs = 0;
-                     let ventasEfectivoUsd = 0;
-                     const paymentMethods = getPaymentMethods();
-                     
-                     if (Object.keys(paymentMethods).length > 0) {
-                       if (Array.isArray(paymentMethods)) {
-                         paymentMethods.forEach((p: any) => {
-                           const method = p.metodo || p.method || 'efectivo';
-                           const amountUSD = p.montoUSD || p.amountUSD || p.monto || p.amount || 0;
-                           const amountBS = p.montoBS || p.amountBS || (amountUSD * state.tasa) || 0;
-                           const isUsd = isUsdPayment(method);
-                           
-                           if (method === 'efectivo_bs' || (method === 'efectivo' && !isUsd)) {
-                             ventasEfectivoBs += amountBS;
-                           } else if (method === 'efectivo_usd' || isUsd) {
-                             ventasEfectivoUsd += amountUSD;
-                           }
-                         });
-                       } else {
-                         Object.entries(paymentMethods).forEach(([method, amount]) => {
-                           const amountNum = typeof amount === 'number' ? amount : 0;
-                           const amountUSD = amountNum;
-                           const amountBS = amountNum * state.tasa;
-                           const isUsd = isUsdPayment(method);
-                           
-                           if (method === 'efectivo_bs' || (method === 'efectivo' && !isUsd)) {
-                             ventasEfectivoBs += amountBS;
-                           } else if (method === 'efectivo_usd' || isUsd) {
-                             ventasEfectivoUsd += amountUSD;
-                           }
-                         });
-                       }
-                     }
-                     
-// ===== COBROS DE DEUDA (provistos por el reporte) =====
+// Calcular ventas por moneda desde TODOS los métodos de pago:
+                      // total USD = suma de métodos con moneda USD
+                      // total Bs  = suma de métodos con moneda Bs (convertidos a Bs)
+                      let ventasEfectivoBs = 0;
+                      let ventasEfectivoUsd = 0;
+                      const paymentMethods = getPaymentMethods();
+                      
+                      if (Object.keys(paymentMethods).length > 0) {
+                        if (Array.isArray(paymentMethods)) {
+                          paymentMethods.forEach((p: any) => {
+                            const method = p.metodo || p.method || 'efectivo';
+                            const amountUSD = p.montoUSD || p.amountUSD || p.monto || p.amount || 0;
+                            const amountBS = p.montoBS || p.amountBS || (amountUSD * state.tasa) || 0;
+                            const isUsd = isUsdPayment(method);
+                            
+                            if (isUsd) {
+                              ventasEfectivoUsd += amountUSD;
+                            } else {
+                              ventasEfectivoBs += amountBS;
+                            }
+                          });
+                        } else {
+                          Object.entries(paymentMethods).forEach(([method, amount]) => {
+                            const amountNum = typeof amount === 'number' ? amount : 0;
+                            const amountUSD = amountNum;
+                            const amountBS = amountNum * state.tasa;
+                            const isUsd = isUsdPayment(method);
+                            
+                            if (isUsd) {
+                              ventasEfectivoUsd += amountUSD;
+                            } else {
+                              ventasEfectivoBs += amountBS;
+                            }
+                          });
+                        }
+                      }
+                      
+ // ===== COBROS DE DEUDA (provistos por el reporte) =====
                       const cobrosDeudaBs = data.cobrosDeudaBS ?? data.cobrosDeudaBs ?? 0;
                       const cobrosDeudaUsd = data.cobrosDeudaUSD ?? data.cobrosDeudaUsd ?? 0;
 
@@ -492,11 +494,11 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
                       const salidasCajaBs = salidasCajaUsd * (state.tasa || 1);
                       const entradasCajaBs = entradasCajaUsd * (state.tasa || 1);
 
-                      // Sumar cobros de deuda a las ventas en efectivo
+                      // Sumar cobros de deuda a las ventas del período
                       const totalVentasEfectivoBs = ventasEfectivoBs + cobrosDeudaBs;
                       const totalVentasEfectivoUsd = ventasEfectivoUsd + cobrosDeudaUsd;
 
-                      // Total estimado = fondo + ventas efectivo + cobros + entradas extra − salidas
+                      // Total estimado = fondo + ventas + cobros + entradas extra − salidas
                       const totalEstimadoBs = fondoBs + totalVentasEfectivoBs + entradasCajaBs - salidasCajaBs;
                       const totalEstimadoUsd = fondoUsd + totalVentasEfectivoUsd + entradasCajaUsd - salidasCajaUsd;
 
@@ -504,8 +506,8 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
                         <table><tbody>
                           <tr><td>FONDO APERTURA Bs.:</td><td className="text-right">{formatBs(fondoBs)}</td></tr>
                           <tr><td>FONDO APERTURA USD:</td><td className="text-right">$ {formatUsd(fondoUsd)}</td></tr>
-                          <tr><td>VENTAS EFECTIVO Bs.:</td><td className="text-right">{formatBs(totalVentasEfectivoBs)}</td></tr>
-                          <tr><td>VENTAS EFECTIVO USD:</td><td className="text-right">$ {formatUsd(totalVentasEfectivoUsd)}</td></tr>
+                          <tr><td>TOTAL VENTAS MÉTODOS Bs.:</td><td className="text-right">{formatBs(totalVentasEfectivoBs)}</td></tr>
+                          <tr><td>TOTAL VENTAS MÉTODOS USD:</td><td className="text-right">$ {formatUsd(totalVentasEfectivoUsd)}</td></tr>
                           {cobrosDeudaBs > 0 && (
                             <tr className="text-[10px] text-gray-600">
                               <td>└ COBROS DE DEUDA Bs.:</td>
