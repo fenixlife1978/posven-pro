@@ -250,9 +250,16 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     const desdeNC = sortedDevs.length > 0 ? sortedDevs[0].id : 'N/A';
     const hastaNC = sortedDevs.length > 0 ? sortedDevs[sortedDevs.length - 1].id : 'N/A';
 
-    const relevantDiario = (state.libroDiario || []).filter(e => e.fecha > corteTimestamp && e.referencia.includes(termId));
+    // Movimientos de caja del periodo (ingresos/egresos). Se filtran SOLO por
+    // fecha: cada egreso/entrada extra se registra en la caja y debe reflejarse
+    // en X/Z aunque su "referencia" (MANUAL, nº deuda, factura...) no incluya
+    // el id del terminal.
+    const relevantDiario = (state.libroDiario || []).filter(e => e.fecha > corteTimestamp);
     const totalSalidasCaja = relevantDiario.filter(e => e.tipo === 'egreso').reduce((s, e) => s + e.montoUSD, 0);
     const totalEntradasCaja = relevantDiario.filter(e => e.tipo === 'ingreso' && e.categoria !== 'VENTA' && e.categoria !== 'COBRO_DEUDA').reduce((s, e) => s + e.montoUSD, 0);
+    // Cobros de deuda (ingresos de caja por cobros de créditos).
+    const cobrosDeudaUSD = relevantDiario.filter(e => e.tipo === 'ingreso' && e.categoria === 'COBRO_DEUDA').reduce((s, e) => s + e.montoUSD, 0);
+    const cobrosDeudaBS = relevantDiario.filter(e => e.tipo === 'ingreso' && e.categoria === 'COBRO_DEUDA').reduce((s, e) => s + e.montoBS, 0);
 
     const terminalName = currentTerminal ? currentTerminal.nombre : 'SISTEMA GLOBAL';
 
@@ -261,6 +268,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       paymentMethods: paymentMethodsMap,
       manualSalidas: totalSalidasCaja,
       manualEntradas: totalEntradasCaja,
+      cobrosDeudaUSD,
+      cobrosDeudaBS,
       fondoAperturaUSD: state.fondoCajaHoyUSD || 0,
       fondoAperturaBS: state.fondoCajaHoyBS || 0,
       desdeFactura, hastaFactura, desdeNC, hastaNC,

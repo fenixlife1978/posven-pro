@@ -482,36 +482,64 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
                        }
                      }
                      
-                     // ===== INCLUIR COBROS DE DEUDA EN EFECTIVO =====
-                     const cobrosDeudaBs = data.cobrosDeudaBs || data.cobrosDeudaBS || 0;
-                     const cobrosDeudaUsd = data.cobrosDeudaUsd || data.cobrosDeudaUSD || 0;
-                     
-                     // Sumar cobros de deuda a las ventas en efectivo
-                     const totalVentasEfectivoBs = ventasEfectivoBs + cobrosDeudaBs;
-                     const totalVentasEfectivoUsd = ventasEfectivoUsd + cobrosDeudaUsd;
-                     
-                     return (
-                       <table><tbody>
-                         <tr><td>FONDO APERTURA Bs.:</td><td className="text-right">{formatBs(fondoBs)}</td></tr>
-                         <tr><td>FONDO APERTURA USD:</td><td className="text-right">$ {formatUsd(fondoUsd)}</td></tr>
-                         <tr><td>VENTAS EFECTIVO Bs.:</td><td className="text-right">{formatBs(totalVentasEfectivoBs)}</td></tr>
-                         <tr><td>VENTAS EFECTIVO USD:</td><td className="text-right">$ {formatUsd(totalVentasEfectivoUsd)}</td></tr>
-                         {cobrosDeudaBs > 0 && (
-                           <tr className="text-[10px] text-gray-600">
-                             <td>└ COBROS DE DEUDA Bs.:</td>
-                             <td className="text-right">{formatBs(cobrosDeudaBs)}</td>
-                           </tr>
-                         )}
-                         {cobrosDeudaUsd > 0 && (
-                           <tr className="text-[10px] text-gray-600">
-                             <td>└ COBROS DE DEUDA USD:</td>
-                             <td className="text-right">$ {formatUsd(cobrosDeudaUsd)}</td>
-                           </tr>
-                         )}
-                         <tr className="bold"><td>TOTAL ESTIMADO Bs.:</td><td className="text-right">{formatBs(fondoBs + totalVentasEfectivoBs)}</td></tr>
-                         <tr className="bold"><td>TOTAL ESTIMADO USD:</td><td className="text-right">$ {formatUsd(fondoUsd + totalVentasEfectivoUsd)}</td></tr>
-                       </tbody></table>
-                     );
+// ===== COBROS DE DEUDA (provistos por el reporte) =====
+                      const cobrosDeudaBs = data.cobrosDeudaBS ?? data.cobrosDeudaBs ?? 0;
+                      const cobrosDeudaUsd = data.cobrosDeudaUSD ?? data.cobrosDeudaUsd ?? 0;
+
+                      // ===== SALIDAS / ENTRADAS EXTRA DE CAJA =====
+                      const salidasCajaUsd = data.manualSalidas ?? data.salidasCajaUSD ?? 0;
+                      const entradasCajaUsd = data.manualEntradas ?? data.entradasCajaUSD ?? 0;
+                      const salidasCajaBs = salidasCajaUsd * (state.tasa || 1);
+                      const entradasCajaBs = entradasCajaUsd * (state.tasa || 1);
+
+                      // Sumar cobros de deuda a las ventas en efectivo
+                      const totalVentasEfectivoBs = ventasEfectivoBs + cobrosDeudaBs;
+                      const totalVentasEfectivoUsd = ventasEfectivoUsd + cobrosDeudaUsd;
+
+                      // Total estimado = fondo + ventas efectivo + cobros + entradas extra − salidas
+                      const totalEstimadoBs = fondoBs + totalVentasEfectivoBs + entradasCajaBs - salidasCajaBs;
+                      const totalEstimadoUsd = fondoUsd + totalVentasEfectivoUsd + entradasCajaUsd - salidasCajaUsd;
+
+                      return (
+                        <table><tbody>
+                          <tr><td>FONDO APERTURA Bs.:</td><td className="text-right">{formatBs(fondoBs)}</td></tr>
+                          <tr><td>FONDO APERTURA USD:</td><td className="text-right">$ {formatUsd(fondoUsd)}</td></tr>
+                          <tr><td>VENTAS EFECTIVO Bs.:</td><td className="text-right">{formatBs(totalVentasEfectivoBs)}</td></tr>
+                          <tr><td>VENTAS EFECTIVO USD:</td><td className="text-right">$ {formatUsd(totalVentasEfectivoUsd)}</td></tr>
+                          {cobrosDeudaBs > 0 && (
+                            <tr className="text-[10px] text-gray-600">
+                              <td>└ COBROS DE DEUDA Bs.:</td>
+                              <td className="text-right">{formatBs(cobrosDeudaBs)}</td>
+                            </tr>
+                          )}
+                          {cobrosDeudaUsd > 0 && (
+                            <tr className="text-[10px] text-gray-600">
+                              <td>└ COBROS DE DEUDA USD:</td>
+                              <td className="text-right">$ {formatUsd(cobrosDeudaUsd)}</td>
+                            </tr>
+                          )}
+                          {entradasCajaUsd > 0 && (
+                            <tr className="text-[10px] text-green-700">
+                              <td>ENTRADAS EXTRA Bs.:</td>
+                              <td className="text-right">{formatBs(entradasCajaBs)}</td>
+                            </tr>
+                          )}
+                          {salidasCajaUsd > 0 && (
+                            <>
+                              <tr className="text-[10px] text-red-600">
+                                <td>SALIDAS DE CAJA Bs.:</td>
+                                <td className="text-right">({formatBs(salidasCajaBs)})</td>
+                              </tr>
+                              <tr className="text-[10px] text-red-600">
+                                <td>SALIDAS DE CAJA USD:</td>
+                                <td className="text-right">($ {formatUsd(salidasCajaUsd)})</td>
+                              </tr>
+                            </>
+                          )}
+                          <tr className="bold"><td>TOTAL ESTIMADO Bs.:</td><td className="text-right">{formatBs(totalEstimadoBs)}</td></tr>
+                          <tr className="bold"><td>TOTAL ESTIMADO USD:</td><td className="text-right">$ {formatUsd(totalEstimadoUsd)}</td></tr>
+                        </tbody></table>
+                      );
                    })()}
 
                    <div className="separator-dashed"></div>
