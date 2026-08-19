@@ -125,16 +125,6 @@
       "deleteAppDataOnUninstall": false,
       "displayLanguageSelector": false
     },
-    "mac": {
-      "target": "dmg",
-      "category": "public.app-category.business"
-    },
-    "linux": {
-      "target": [
-        "AppImage"
-      ],
-      "category": "Office"
-    },
     "publish": [
       {
         "provider": "github",
