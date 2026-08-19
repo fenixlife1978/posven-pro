@@ -41,12 +41,10 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
   const [vista, setVista] = useState<'grupo' | 'factura'>('grupo');
   const [grupoExpandido, setGrupoExpandido] = useState<string | null>(null);
   const [globalProvider, setGlobalProvider] = useState<any>(null);
+  const [histProveedor, setHistProveedor] = useState('');
+  const [histDesde, setHistDesde] = useState('');
+  const [histHasta, setHistHasta] = useState('');
 
-  const cxpList = state.cxp || [];
-  const cxpTotalPages = Math.max(1, Math.ceil(cxpList.length / pageSize));
-  const cxpSafePage = Math.min(page, cxpTotalPages);
-  const cxpPageData = cxpList.slice((cxpSafePage - 1) * pageSize, cxpSafePage * pageSize);
-  
   // Estado para el modal de Deuda Directa
   const [showDeudaDirectaModal, setShowDeudaDirectaModal] = useState(false);
   const [proveedorSearch, setProveedorSearch] = useState('');
@@ -74,6 +72,40 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
       .map(g => ({ ...g, pendientes: g.pendientes.sort((a, b) => a.fecha.localeCompare(b.fecha)) }))
       .sort((a, b) => a.proveedor.localeCompare(b.proveedor));
   }, [state.cxp]);
+
+  // HISTORIAL DE PAGOS: solo deudas con al menos un pago registrado, filtrables
+  // por proveedor y por rango de fechas de pago (desde - hasta).
+  const proveedoresHistorial: string[] = Array.from(new Set(
+    (state.cxp || []).map((x: Debt) => (x.proveedor || 'SIN PROVEEDOR').toUpperCase())
+  )).sort((a, b) => a.localeCompare(b));
+
+  const historialFiltrado = React.useMemo(() => {
+    const desde = histDesde ? histDesde.replace(/-/g, '') : '';
+    const hasta = histHasta ? histHasta.replace(/-/g, '') : '';
+    const prov = histProveedor.toUpperCase();
+    return (state.cxp || [])
+      .filter((x: Debt) => {
+        if (!x.historialPagos || x.historialPagos.length === 0) return false;
+        if (prov && (x.proveedor || 'SIN PROVEEDOR').toUpperCase() !== prov) return false;
+        // El rango de fechas aplica sobre los abonos realizados: si algún pago
+        // cae dentro de [desde, hasta], la factura se incluye.
+        const enRango = x.historialPagos.some((p: any) => {
+          const d = (p.fecha || '').slice(0, 10).replace(/-/g, '');
+          if (desde && d < desde) return false;
+          if (hasta && d > hasta) return false;
+          return true;
+        });
+        if (desde || hasta) return enRango;
+        return true;
+      })
+      .sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
+  }, [state.cxp, histProveedor, histDesde, histHasta]);
+
+  const histTotalPago = historialFiltrado.reduce(
+    (s: number, x: Debt) => s + (x.abonadoUSD || 0), 0);
+  const histTotalPages = Math.max(1, Math.ceil(historialFiltrado.length / pageSize));
+  const histSafePage = Math.min(page, histTotalPages);
+  const histPageData = historialFiltrado.slice((histSafePage - 1) * pageSize, histSafePage * pageSize);
 
   // Obtener proveedores únicos de las compras recibidas
   const proveedoresExistentes: string[] = state.proveedores && Array.isArray(state.proveedores)
@@ -366,7 +398,7 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
               onClick={() => setVista('factura')}
               className={`px-4 py-1.5 rounded-md font-black uppercase text-[9px] transition-colors flex items-center gap-1.5 ${vista === 'factura' ? 'bg-brand-gold text-ink shadow' : 'text-white/60 hover:text-white'}`}
             >
-              <FileText className="w-3.5 h-3.5" /> Por Factura
+              <FileText className="w-3.5 h-3.5" /> Historial Pagos
             </button>
           </div>
         </div>
@@ -459,50 +491,95 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
           </div>
         ) : (
           <>
+            {/* FILTROS DEL HISTORIAL */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 px-4 sm:px-6 pt-4">
+              <div className="form-group">
+                <label className="text-ink text-[9px] font-black uppercase block mb-1">Proveedor</label>
+                <select
+                  className="form-select h-10 text-xs font-black uppercase border-line bg-surface-soft/50 text-ink w-full"
+                  value={histProveedor}
+                  onChange={e => { setHistProveedor(e.target.value); setPage(1); }}
+                >
+                  <option value="">Todos los proveedores</option>
+                  {proveedoresHistorial.map(p => (
+                    <option key={p} value={p.toUpperCase()}>{p}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="text-ink text-[9px] font-black uppercase block mb-1">Desde</label>
+                <input
+                  type="date"
+                  className="form-input h-10 text-xs font-black text-ink w-full"
+                  value={histDesde}
+                  onChange={e => { setHistDesde(e.target.value); setPage(1); }}
+                />
+              </div>
+              <div className="form-group">
+                <label className="text-ink text-[9px] font-black uppercase block mb-1">Hasta</label>
+                <input
+                  type="date"
+                  className="form-input h-10 text-xs font-black text-ink w-full"
+                  value={histHasta}
+                  onChange={e => { setHistHasta(e.target.value); setPage(1); }}
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-wrap justify-between items-center gap-2 px-4 sm:px-6 pt-3">
+              <p className="text-[9px] font-black uppercase tracking-widest text-ink/50">
+                {historialFiltrado.length} factura(s) · Total pagado {Utils.fmtUSD(histTotalPago)}
+              </p>
+              {(histProveedor || histDesde || histHasta) && (
+                <button
+                  onClick={() => { setHistProveedor(''); setHistDesde(''); setHistHasta(''); setPage(1); }}
+                  className="text-[9px] font-black uppercase text-status-danger hover:underline"
+                >
+                  Limpiar filtros
+                </button>
+              )}
+            </div>
+
             <div className="table-wrap">
               <table className="w-full">
                 <thead>
                   <tr className="bg-surface-soft">
                     <th className="text-ink font-black text-[10px] uppercase py-4 px-6 border-b border-line">Fecha</th>
-                    <th className="text-ink font-black text-[10px] uppercase py-4 border-b border-line">Venc.</th>
                     <th className="text-ink font-black text-[10px] uppercase py-4 border-b border-line">Proveedor</th>
                     <th className="text-ink font-black text-[10px] uppercase py-4 border-b border-line">Factura</th>
                     <th className="text-ink font-black text-[10px] uppercase py-4 text-right border-b border-line">Monto USD</th>
-                    <th className="text-ink font-black text-[10px] uppercase py-4 text-right border-b border-line">Saldo</th>
+                    <th className="text-ink font-black text-[10px] uppercase py-4 text-right border-b border-line">Pagado</th>
+                    <th className="text-ink font-black text-[10px] uppercase py-4 text-center border-b border-line">Abonos</th>
                     <th className="text-ink font-black text-[10px] uppercase px-6 text-center border-b border-line">Acciones</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white">
-                  {state.cxp.length === 0 ? (
+                  {historialFiltrado.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="text-center py-24 text-ink font-black uppercase italic tracking-widest">
-                        No se registran cuentas por pagar actualmente
+                      <td colSpan={7} className="text-center py-16 text-ink font-black uppercase italic tracking-widest">
+                        No hay pagos registrados{histProveedor || histDesde || histHasta ? ' con los filtros aplicados' : ''}
                       </td>
                     </tr>
                   ) : (
-                    cxpPageData.map((x: Debt) => (
+                    histPageData.map((x: Debt) => (
                       <tr key={x.id} className="border-b border-line/40 hover:bg-surface-warm/20 transition-colors">
                         <td className="text-ink font-black text-xs py-4 px-6">{Utils.fmtFecha(x.fecha)}</td>
-                        <td className={`text-xs font-black py-4 ${x.fechaVencimiento < Utils.hoy() && x.estado !== 'pagada' ? 'text-status-danger' : 'text-ink'}`}>
-                          {Utils.fmtFecha(x.fechaVencimiento)}
-                        </td>
-                        <td className="text-ink font-black text-xs uppercase py-4">{x.proveedor}</td>
-                        <td className="text-ink font-black text-xs py-4 mono">{x.numeroFactura || '-'}</td>
+                        <td className="text-ink font-black text-xs uppercase py-4">{x.proveedor || 'SIN PROVEEDOR'}</td>
+                        <td className="text-ink font-black text-xs py-4 mono">{x.numeroFactura || x.id}</td>
                         <td className="text-ink font-black text-xs text-right py-4 mono">{Utils.fmtUSD(x.montoUSD)}</td>
-                        <td className="text-brand-gold-deep font-black text-sm text-right py-4 mono">{Utils.fmtUSD(x.saldoUSD)}</td>
+                        <td className="text-status-success font-black text-sm text-right py-4 mono">{Utils.fmtUSD(x.abonadoUSD || 0)}</td>
+                        <td className="py-4 text-center">
+                          <span className="inline-flex items-center justify-center min-w-[28px] h-7 px-2 rounded-full text-[10px] font-black text-ink bg-surface-soft border border-line">
+                            {x.historialPagos.length}
+                          </span>
+                        </td>
                         <td className="py-4 px-6 text-center">
-                           <div className="flex justify-center items-center gap-3">
-                              <button
-                                onClick={() => setShowDetails(x)}
-                                className="w-10 h-10 rounded-full flex items-center justify-center bg-white text-status-success border-2 border-status-success/20 hover:bg-status-success hover:text-white transition-all shadow-md"
-                                title="Ver Historial Detallado"
-                              >
-                                <Eye className="w-5 h-5"/>
-                              </button>
-                              {x.estado !== 'pagada' && (
-                                 <button onClick={() => handleOpenPayment(x)} className="btn btn-primary h-8 px-4 font-black text-[9px] uppercase shadow-sm">Pagar</button>
-                              )}
-                           </div>
+                          <button
+                            onClick={() => setShowDetails(x)}
+                            className="inline-flex items-center gap-1.5 h-8 px-4 font-black text-[9px] uppercase bg-white text-status-success border-2 border-status-success/20 hover:bg-status-success hover:text-white transition-all shadow-md rounded-lg"
+                          >
+                            <Eye className="w-4 h-4" /> Ver Cronología
+                          </button>
                         </td>
                       </tr>
                     ))
@@ -510,7 +587,7 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
                 </tbody>
               </table>
             </div>
-            <Pagination page={cxpSafePage} totalPages={cxpTotalPages} total={cxpList.length} pageSize={pageSize} onPageChange={setPage} />
+            <Pagination page={histSafePage} totalPages={histTotalPages} total={historialFiltrado.length} pageSize={pageSize} onPageChange={setPage} />
           </>
         )}
       </div>
