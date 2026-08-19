@@ -184,6 +184,8 @@ export interface Debt {
   saldoUSD: number;
   estado: 'pendiente' | 'parcial' | 'pagada';
   historialPagos: Array<{
+    id?: string;
+    asientoId?: string;
     fecha: string;
     montoUSD: number;
     montoBS: number;

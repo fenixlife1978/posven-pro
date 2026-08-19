@@ -20,7 +20,8 @@ import {
   Save,
   ChevronDown,
   ChevronRight,
-  Layers
+  Layers,
+  Trash2
 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { exportarPDFCxP } from '@/lib/pdf-generator';
@@ -119,13 +120,15 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
 
   const handleOpenPayment = (debt: any) => {
     setShowPaymentModal(debt);
-    setPaymentAmount(debt.saldoUSD.toString());
+    setPaymentAmount('');
     setPaymentMethod('efectivo_usd');
   };
 
   const handleProcessPayment = () => {
-    const amount = parseFloat(paymentAmount) || 0;
-    if (amount <= 0) {
+    // Determinar si el método es en Bs. (Efectivo Bs. o Pago Movil).
+    const esMetodoBS = paymentMethod === 'efectivo_bs' || paymentMethod === 'pagomovil';
+    const rawMonto = parseFloat(paymentAmount) || 0;
+    if (rawMonto <= 0) {
       toast({
         variant: "destructive",
         title: "Error",
@@ -133,6 +136,11 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
       });
       return;
     }
+
+    // Si el método es en Bs., el monto ingresado es Bs. y la equivalencia de abono
+    // se calcula a la tasa BCV del sistema (amount USD = bs / tasa).
+    const montoBS = esMetodoBS ? rawMonto : rawMonto * state.tasa;
+    const amount = esMetodoBS ? rawMonto / state.tasa : rawMonto;
 
     if (amount > (showPaymentModal.saldoUSD + 0.001)) {
       toast({
@@ -144,6 +152,7 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
     }
 
     const ahoraStr = Utils.ahora();
+    const asientoId = 'ACC-' + Store.uid().toUpperCase().slice(0, 5);
     
     // 1. Actualizar CxP
     const nuevasCxP = state.cxp.map((c: Debt) => {
@@ -156,9 +165,11 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
           saldoUSD: nuevoSaldo,
           estado: nuevoSaldo <= 0.001 ? 'pagada' : 'parcial',
           historialPagos: [...historialPagos, {
+            id: 'PAYS-' + Store.uid().toUpperCase().slice(0, 6),
+            asientoId,
             fecha: ahoraStr,
             montoUSD: amount,
-            montoBS: amount * state.tasa,
+            montoBS,
             metodo: paymentMethod,
             reciboId: `PAY-${Store.uid().toUpperCase().slice(0, 4)}`
           }]
@@ -169,13 +180,13 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
 
     // 2. Crear Asiento Contable (Egreso)
     const nuevoAsiento: LibroDiarioEntry = {
-      id: 'ACC-' + Store.uid().toUpperCase().slice(0, 5),
+      id: asientoId,
       fecha: ahoraStr,
       tipo: 'egreso',
       categoria: 'PAGO_PROVEEDOR' as any,
       concepto: `PAGO DEUDA A: ${showPaymentModal.proveedor.toUpperCase()} - REF FACT: ${showPaymentModal.numeroFactura || 'S/N'}`,
       montoUSD: amount,
-      montoBS: amount * state.tasa,
+      montoBS,
       metodo: paymentMethod,
       referencia: showPaymentModal.id
     };
@@ -187,7 +198,7 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
 
     toast({
       title: "Pago registrado",
-      description: `Se ha registrado el pago de ${Utils.fmtUSD(amount)}`
+      description: `Se abonó ${Utils.fmtUSD(amount)}${esMetodoBS ? ' (' + Utils.fmtBS(rawMonto) + ')' : ''} a ${showPaymentModal.proveedor.toUpperCase()}`
     });
     
     setShowPaymentModal(null);
@@ -200,17 +211,23 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
     const total = grupo.saldoTotal;
     if (total <= 0) return;
     setGlobalProvider({ proveedor: provider, total });
-    setPaymentAmount(total.toString());
+    setPaymentAmount('');
     setPaymentMethod('efectivo_usd');
   };
 
   const handleProcessGlobalPayment = () => {
     if (!globalProvider) return;
-    const amount = parseFloat(paymentAmount) || 0;
-    if (amount <= 0) {
+    // Determinar si el método es en Bs.
+    const esMetodoBS = paymentMethod === 'efectivo_bs' || paymentMethod === 'pagomovil';
+    const rawMonto = parseFloat(paymentAmount) || 0;
+    if (rawMonto <= 0) {
       toast({ variant: "destructive", title: "Error", description: "El monto debe ser mayor a cero." });
       return;
     }
+
+    // Si es Bs., el monto ingresado es en Bs. y el abono en USD = bs / tasa BCV.
+    const montoBS = esMetodoBS ? rawMonto : rawMonto * state.tasa;
+    const amount = esMetodoBS ? rawMonto / state.tasa : rawMonto;
 
     // Liquidar cronológicamente: de la deuda más antigua a la más reciente,
     // consumiendo el monto; si el monto no cubre una deuda por completo, se
@@ -220,6 +237,7 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
 
     const ahoraStr = Utils.ahora();
     const reciboBase = `PAY-${Store.uid().toUpperCase().slice(0, 4)}`;
+    const asientoId = 'ACC-' + Store.uid().toUpperCase().slice(0, 5);
     let remanente = amount;
     const aplicados: { id: string; monto: number }[] = [];
 
@@ -236,9 +254,11 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
         saldoUSD: nuevoSaldo,
         estado: nuevoSaldo <= 0.001 ? 'pagada' : 'parcial',
         historialPagos: [...(c.historialPagos || []), {
+          id: 'PAYS-' + Store.uid().toUpperCase().slice(0, 6),
+          asientoId,
           fecha: ahoraStr,
           montoUSD: pago,
-          montoBS: pago * state.tasa,
+          montoBS: esMetodoBS ? pago * state.tasa : pago * state.tasa,
           metodo: paymentMethod,
           reciboId: reciboBase
         }]
@@ -250,13 +270,13 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
 
     // 2. Asiento contable consolidado del pago global.
     const nuevoAsiento: LibroDiarioEntry = {
-      id: 'ACC-' + Store.uid().toUpperCase().slice(0, 5),
+      id: asientoId,
       fecha: ahoraStr,
       tipo: 'egreso',
       categoria: 'PAGO_PROVEEDOR' as any,
       concepto: `PAGO GLOBAL A: ${globalProvider.proveedor} - LIQUIDA ${aplicados.length} DEUDA(S)`,
       montoUSD: totalAplicado,
-      montoBS: totalAplicado * state.tasa,
+      montoBS: esMetodoBS ? totalAplicado * state.tasa : totalAplicado * state.tasa,
       metodo: paymentMethod,
       referencia: reciboBase
     };
@@ -268,12 +288,74 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
 
     toast({
       title: "Pago global registrado",
-      description: `Se liquidaron ${aplicados.length} deuda(s) de ${Utils.fmtUSD(totalAplicado)}${remanente > 0.001 ? ' (excedente sin aplicar)' : ''}`
+      description: `${Utils.fmtUSD(totalAplicado)}${Math.abs(rawMonto - totalAplicado) > 0.001 ? ' (' + Utils.fmtBS(rawMonto) + ')' : ''} aplicado a ${aplicados.length} deuda(s)${remanente > 0.001 ? ' (excedente sin aplicar)' : ''}`
     });
 
     setGlobalProvider(null);
     setPaymentAmount('');
     setGrupoExpandido(globalProvider.proveedor);
+  };
+
+  // Eliminar un abono/pago del historial: revierte TODOS los movimientos causados
+  // (restaura la deuda, quita el abono, y revierte el asiento contable del ingreso/egreso).
+  const handleEliminarPago = (deuda: any, idx: number) => {
+    const pago = (deuda.historialPagos || [])[idx];
+    if (!pago) return;
+
+    if (!confirm(`¿Seguro que desea eliminar el abono de ${Utils.fmtUSD(pago.montoUSD)} (${Utils.metodoLabel(pago.metodo || 'otros')})?\nSe revertirán la deuda y el asiento contable correspondiente.`)) return;
+
+    // Revertir la deuda: eliminar este abono del historial y recalcular saldo/abonado/estado.
+    const nuevasCxP = (state.cxp || []).map((c: Debt) => {
+      if (c.id !== deuda.id) return c;
+      const restantes = (c.historialPagos || []).filter((_: any, i: number) => i !== idx);
+      const nuevoAbonado = restantes.reduce((s: number, p: any) => s + (p.montoUSD || 0), 0);
+      const nuevoSaldo = Math.max(0, Math.round((c.montoUSD - nuevoAbonado + Number.EPSILON) * 100) / 100);
+      let nuevoEstado: 'pendiente' | 'parcial' | 'pagada' = 'pendiente';
+      if (nuevoSaldo <= 0.001) nuevoEstado = 'pagada';
+      else if (nuevoAbonado > 0) nuevoEstado = 'parcial';
+      return {
+        ...c,
+        abonadoUSD: nuevoAbonado,
+        saldoUSD: nuevoSaldo,
+        estado: nuevoEstado,
+        historialPagos: restantes
+      };
+    });
+
+    // Revertir el asiento contable: reducir/eliminar el asiento ligado a este abono.
+    let nuevoDiario = state.libroDiario || [];
+    if ((pago as any).asientoId) {
+      const asientoId = (pago as any).asientoId;
+      const asiento = nuevoDiario.find((e: LibroDiarioEntry) => e.id === asientoId);
+      if (asiento) {
+        const resto = Math.round((asiento.montoUSD - pago.montoUSD + Number.EPSILON) * 100) / 100;
+        const restoBS = Math.round((asiento.montoBS - pago.montoBS + Number.EPSILON) * 100) / 100;
+        if (resto <= 0.001) {
+          // Este asiento pertenecía exclusivamente a este abono → eliminarlo.
+          nuevoDiario = nuevoDiario.filter((e: LibroDiarioEntry) => e.id !== asientoId);
+        } else {
+          // Asiento consolidado (pago global) → reducirlo por el monto del abono.
+          nuevoDiario = nuevoDiario.map((e: LibroDiarioEntry) =>
+            e.id === asientoId
+              ? { ...e, montoUSD: resto, montoBS: Math.max(0, restoBS), concepto: `${e.concepto} (abono revertido)` }
+              : e
+          );
+        }
+      }
+    }
+
+    updateState({ cxp: nuevasCxP as Debt[], libroDiario: nuevoDiario });
+
+    toast({
+      title: "Abono eliminado",
+      description: `Se revirtió el abono de ${Utils.fmtUSD(pago.montoUSD)}. Deuda restaurada a ${Utils.fmtUSD(Math.max(0, (deuda.montoUSD || 0) - (nuevasCxP.find((c: Debt) => c.id === deuda.id)?.abonadoUSD || 0)))}`
+    });
+
+    // Refrescar el modal de detalles si está abierto para reflejar la reversión.
+    const deudaActualizada = nuevasCxP.find((c: Debt) => c.id === deuda.id);
+    if (showDetails && showDetails.id === deuda.id) {
+      setShowDetails(deudaActualizada);
+    }
   };
 
   const handleGuardarDeudaDirecta = () => {
@@ -661,14 +743,24 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
                       <div className="py-10 text-center text-ink font-black uppercase italic text-[10px]">No se han realizado pagos a esta factura aún</div>
                     ) : (
                       showDetails.historialPagos.map((p: any, idx: number) => (
-                        <div key={idx} className="flex justify-between items-center p-3 bg-surface-soft border border-line rounded-lg">
-                           <div className="space-y-0.5">
+                        <div key={idx} className="flex justify-between items-center gap-2 p-3 bg-surface-soft border border-line rounded-lg group">
+                           <div className="space-y-0.5 min-w-0">
                               <p className="text-[10px] font-black text-ink uppercase">{Utils.fmtFecha(p.fecha)} - {p.fecha.split('T')[1]?.slice(0,5)}</p>
                               <p className="text-[8px] font-black text-ink mono">ID PAGO: {p.reciboId}</p>
                            </div>
-                           <div className="text-right">
-                              <p className="text-xs font-black text-status-success">-{Utils.fmtUSD(p.montoUSD)}</p>
-                              <p className="text-[8px] font-black text-ink uppercase">{Utils.metodoLabel(p.metodo || 'otros')}</p>
+                           <div className="flex items-center gap-3 shrink-0">
+                              <div className="text-right">
+                                 <p className="text-xs font-black text-status-success">-{Utils.fmtUSD(p.montoUSD)}</p>
+                                 <p className="text-[8px] font-black text-ink uppercase">{Utils.metodoLabel(p.metodo || 'otros')}</p>
+                              </div>
+                              <button
+                                onClick={() => handleEliminarPago(showDetails, idx)}
+                                className="w-7 h-7 rounded-full flex items-center justify-center bg-white border border-status-danger/25 text-status-danger opacity-70 hover:opacity-100 hover:bg-status-danger hover:text-white transition-all shadow-sm"
+                                title="Eliminar este abono y revertir deuda + asiento"
+                                aria-label="Eliminar abono"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
                            </div>
                         </div>
                       ))
@@ -711,18 +803,34 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
                   </select>
                </div>
 
-               <div className="form-group">
-                 <label className="text-ink text-[10px] font-black uppercase block mb-1">MONTO A PAGAR (USD)</label>
-                 <div className="relative">
-                   <input 
-                     className="form-input h-12 text-xl font-black text-ink" 
-                     type="number" 
-                     value={paymentAmount} 
-                     onChange={e => setPaymentAmount(e.target.value)} 
-                   />
-                 </div>
-               </div>
-               <button onClick={handleProcessPayment} className="btn btn-primary w-full h-14 font-black uppercase text-xs shadow-xl">CONFIRMAR Y ASENTAR PAGO</button>
+               {(() => {
+                 const esBS = paymentMethod === 'efectivo_bs' || paymentMethod === 'pagomovil';
+                 const appliedUSD = (parseFloat(paymentAmount) || 0) > 0 ? (esBS ? (parseFloat(paymentAmount) || 0) / state.tasa : parseFloat(paymentAmount)) : 0;
+                 return (
+                 <>
+                  <div className="form-group">
+                    <label className="text-ink text-[10px] font-black uppercase block mb-1">MONTO A PAGAR ({esBS ? 'BS' : 'USD'})</label>
+                    <div className="relative">
+                      <input 
+                        className="form-input h-12 text-xl font-black text-ink" 
+                        type="number" 
+                        min="0"
+                        step="0.01"
+                        placeholder={esBS ? '0.00' : '0.00'}
+                        value={paymentAmount} 
+                        onChange={e => setPaymentAmount(e.target.value)} 
+                      />
+                    </div>
+                    {esBS && appliedUSD > 0 && (
+                      <p className="text-[9px] font-black text-ink/60 mt-1 uppercase">
+                        Equiv. {Utils.fmtUSD(appliedUSD)} · Tasa BCV {state.tasa.toFixed(2)}
+                      </p>
+                    )}
+                  </div>
+                  <button onClick={handleProcessPayment} className="btn btn-primary w-full h-14 font-black uppercase text-xs shadow-xl">CONFIRMAR Y ASENTAR PAGO</button>
+                 </>
+                 );
+               })()}
             </div>
           </div>
         </div>
@@ -759,22 +867,36 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
                   </select>
                </div>
 
-               <div className="form-group">
-                  <label className="text-ink text-[10px] font-black uppercase block mb-1">MONTO A PAGAR (USD)</label>
+               {(() => {
+                 const esBS = paymentMethod === 'efectivo_bs' || paymentMethod === 'pagomovil';
+                 const appliedUSD = (parseFloat(paymentAmount) || 0) > 0 ? (esBS ? (parseFloat(paymentAmount) || 0) / state.tasa : parseFloat(paymentAmount)) : 0;
+                 return (
+                 <>
+                <div className="form-group">
+                  <label className="text-ink text-[10px] font-black uppercase block mb-1">MONTO A PAGAR ({esBS ? 'BS' : 'USD'})</label>
                   <div className="relative">
                      <input
                         className="form-input h-12 text-xl font-black text-ink"
                         type="number"
                         min="0"
                         step="0.01"
+                        placeholder="0.00"
                         value={paymentAmount}
                         onChange={e => setPaymentAmount(e.target.value)}
                      />
                   </div>
-               </div>
-               <button onClick={handleProcessGlobalPayment} className="btn btn-primary w-full h-14 font-black uppercase text-xs shadow-xl">
-                 LIQUIDAR DEUDAS CRONOLÓGICAMENTE
-               </button>
+                  {esBS && appliedUSD > 0 && (
+                    <p className="text-[9px] font-black text-ink/60 mt-1 uppercase">
+                      Equiv. {Utils.fmtUSD(appliedUSD)} · Tasa BCV {state.tasa.toFixed(2)}
+                    </p>
+                  )}
+                </div>
+                <button onClick={handleProcessGlobalPayment} className="btn btn-primary w-full h-14 font-black uppercase text-xs shadow-xl">
+                  LIQUIDAR DEUDAS CRONOLÓGICAMENTE
+                </button>
+                 </>
+                 );
+               })()}
             </div>
           </div>
         </div>
