@@ -5,5 +5,4 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
 });
 
-// Log de que preload se cargó correctamente
 console.log('✅ Preload script cargado correctamente');

@@ -75,6 +75,7 @@
   "build": {
     "appId": "com.posven.pro",
     "productName": "PosVEN Pro",
+    "npmRebuild": false,
     "copyright": "Copyright © 2026 fenixlife1978",
     "directories": {
       "output": "dist",

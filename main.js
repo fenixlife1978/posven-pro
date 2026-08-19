@@ -1,42 +1,48 @@
-const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, protocol, net } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { pathToFileURL } = require('url');
 const { autoUpdater } = require('electron-updater');
 const { PosPrinter } = require('electron-pos-printer');
 
 let mainWindow = null;
 let splashWindow = null;
 
-// En producción, los archivos del renderer viven dentro del ASAR en la misma
-// carpeta que el main.js. Buscamos primero dentro del ASAR y, como fallback
-// defensivo, también en la carpeta descomprimida (asarUnpack) por si los
-// binarios de módulos nativos (ej. node-thermal-printer) fueron extraídos.
-function resolveOutIndexPath() {
+// ============================================================
+// PROTOCOLO SEGURO 'app' (VITAL PARA EL EXPORT ESTÁTICO)
+// ============================================================
+// El export de Next.js genera rutas ABSOLUTAS (/ _next/static/...) en el HTML.
+// Con loadFile() / file:// esas rutas apuntan a la raíz del disco y NO cargan,
+// produciendo pantalla en blanco. El protocolo 'app' sirve los archivos desde
+// la carpeta 'out' dentro del ASAR resolviendo esas rutas correctamente.
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true } }
+]);
+
+function resolveOutPath() {
+  // main.js vive en la raíz del ASAR (package.json "main": "main.js"), por lo
+  // que el bundle Next está en <raíz>/out. Probar variantes (asar, asar.unpacked,
+  // resourcesPath) por si electron-builder extrajo los assets.
   const candidates = [
-    path.join(__dirname, 'out', 'index.html'),
-    path.join(__dirname.replace(/app\.asar$/, 'app.asar.unpacked'), 'out', 'index.html'),
-    path.join(process.resourcesPath || '', 'app', 'out', 'index.html'),
+    path.join(__dirname, 'out'),
+    path.join(__dirname.replace(/app\.asar$/, 'app.asar.unpacked'), 'out'),
+    path.join(process.resourcesPath || '', 'app', 'out'),
   ];
   for (const p of candidates) {
     if (p && fs.existsSync(p)) return p;
   }
-  return candidates[0]; // devuelve la ruta "esperada" aunque no exista, para logging
+  return candidates[0];
 }
 
 function fatalError(title, detail) {
-  // Cuando algo crítico falla, mostramos un dialog nativo ANTES de cerrar
-  // la app. Evita la "pantalla en blanco" silenciosa.
   try {
     dialog.showErrorBox(title, detail);
   } catch (e) {
-    // Si ni siquiera el dialog funciona, lo dejamos en stderr.
     console.error('[FATAL]', title, detail);
   }
 }
 
 function showSplash() {
-  // Ventana ligera mientras la app pesada carga. Evita la sensación de
-  // "pantalla en blanco" en máquinas lentas.
   try {
     splashWindow = new BrowserWindow({
       width: 420,
@@ -78,7 +84,6 @@ function closeSplash() {
 }
 
 function createWindow() {
-  // Cierra splash si por alguna razón sigue abierto (defensivo)
   closeSplash();
 
   mainWindow = new BrowserWindow({
@@ -88,8 +93,8 @@ function createWindow() {
     minHeight: 768,
     icon: path.join(__dirname, 'public/posven-logo.png'),
     title: 'PosVEN Pro - Punto de Venta',
-    show: false,                            // No muestra hasta ready-to-show (evita flash blanco)
-    backgroundColor: '#E6E1D3',             // Color base mientras carga
+    show: false,
+    backgroundColor: '#E6E1D3',
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -97,35 +102,21 @@ function createWindow() {
       contextIsolation: true,
       webSecurity: true,
       spellcheck: false,
-      backgroundThrottling: false,          // POS no debe pausar en segundo plano
+      backgroundThrottling: false,
     },
   });
 
-  const isDev = process.env.NODE_ENV === 'development';
+  const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
   if (isDev) {
     mainWindow.loadURL('http://localhost:9002').catch((err) => {
       fatalError('Error cargando app (dev)', String(err));
     });
   } else {
-    const indexPath = resolveOutIndexPath();
-    if (!fs.existsSync(indexPath)) {
-      // ⚠️ ESTE es el escenario típico de "pantalla en blanco":
-      // el instalador se generó pero el bundle Next.js no se empaquetó.
-      fatalError(
-        'No se encontró el bundle de la app',
-        `Se esperaba:\n${indexPath}\n\nEsto suele pasar si el build de Next.js (npm run build) falló o no se ejecutó antes de electron-builder. Reinstala la aplicación.`
-      );
-      app.quit();
-      return;
-    }
-    mainWindow.loadFile(indexPath).catch((err) => {
-      fatalError('Error cargando la app', `No se pudo cargar ${indexPath}\n\n${String(err)}`);
-    });
+    // ✅ Cargar vía protocolo 'app' (como en el proyecto que funciona), no loadFile.
+    mainWindow.loadURL('app://-');
   }
 
-  // Si la página tarda demasiado en estar lista, mostramos splash
-  // como red de seguridad (caso de disco lento o primera ejecución).
   const readyTimeout = setTimeout(() => {
     if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) {
       showSplash();
@@ -139,8 +130,13 @@ function createWindow() {
     mainWindow.focus();
   });
 
-  // Si la página falla (render process crashed), intentamos recargar una vez
-  // y, si vuelve a fallar, mostramos un error visible.
+  mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
+    console.error('did-fail-load:', errorCode, errorDescription, validatedURL);
+    if (errorCode !== -3) {
+      fatalError('No se pudo cargar la app', `${errorDescription} (código ${errorCode})\nURL: ${validatedURL}`);
+    }
+  });
+
   mainWindow.webContents.on('render-process-gone', (_event, details) => {
     console.error('render-process-gone:', details);
     fatalError(
@@ -149,14 +145,10 @@ function createWindow() {
     );
   });
 
-  mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
-    console.error('did-fail-load:', errorCode, errorDescription, validatedURL);
-    if (errorCode !== -3) { // -3 = ABORTED, no es un error real
-      fatalError('No se pudo cargar la app', `${errorDescription} (código ${errorCode})\nURL: ${validatedURL}`);
-    }
+  mainWindow.webContents.on('console-message', (_event, level, message, line, sourceId) => {
+    console.log('🖥️ Renderizado:', message);
   });
 
-  // Links externos se abren en el navegador del sistema, no en la app.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith('http://') || url.startsWith('https://')) {
       shell.openExternal(url);
@@ -166,7 +158,6 @@ function createWindow() {
 
   if (!isDev) {
     mainWindow.setMenu(null);
-    // Auto-update: si falla, no tumbamos la app (solo logueamos).
     autoUpdater.checkForUpdatesAndNotify().catch(err => console.error('Update error:', err));
   }
 
@@ -175,23 +166,40 @@ function createWindow() {
   });
 }
 
-// Fallback único: usamos whenReady() (forma moderna) y mantenemos on('ready')
-// por si la versión de electron es vieja.
-if (typeof app.whenReady === 'function') {
-  app.whenReady().then(createWindow);
-} else {
-  app.on('ready', createWindow);
-}
+app.whenReady().then(() => {
+  // ✅ Manejador del protocolo 'app': sirve los archivos del out/ resolviendo
+  // las rutas absolutas del export estático de Next.js.
+  protocol.handle('app', (request) => {
+    const url = new URL(request.url);
+    let pathname = decodeURIComponent(url.pathname);
+
+    if (pathname === '/' || pathname === '') {
+      pathname = '/index.html';
+    } else if (!path.extname(pathname)) {
+      pathname = path.join(pathname, 'index.html');
+    }
+
+    const outDir = resolveOutPath();
+    const filePath = path.join(outDir, pathname);
+    if (!fs.existsSync(filePath)) {
+      console.error('📁 Archivo no encontrado:', filePath);
+      return new Response('Not Found', { status: 404, headers: { 'content-type': 'text/plain' } });
+    }
+    return net.fetch(pathToFileURL(filePath).toString());
+  });
+
+  createWindow();
+
+  app.on('activate', () => {
+    if (mainWindow === null || BrowserWindow.getAllWindows().length === 0) {
+      createWindow();
+    }
+  });
+});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
-  }
-});
-
-app.on('activate', () => {
-  if (mainWindow === null) {
-    createWindow();
   }
 });
 
