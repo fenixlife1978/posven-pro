@@ -17,7 +17,10 @@ import {
   User,
   DollarSign,
   FilePlus,
-  Save
+  Save,
+  ChevronDown,
+  ChevronRight,
+  Layers
 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { exportarPDFCxP } from '@/lib/pdf-generator';
@@ -35,6 +38,9 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('efectivo_usd');
   const [page, setPage] = useState(1);
   const pageSize = 10;
+  const [vista, setVista] = useState<'grupo' | 'factura'>('grupo');
+  const [grupoExpandido, setGrupoExpandido] = useState<string | null>(null);
+  const [globalProvider, setGlobalProvider] = useState<any>(null);
 
   const cxpList = state.cxp || [];
   const cxpTotalPages = Math.max(1, Math.ceil(cxpList.length / pageSize));
@@ -51,6 +57,23 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
 
   const pendientes = (state.cxp || []).filter((x: Debt) => x.estado !== 'pagada');
   const totalPendiente = pendientes.reduce((s: number, x: Debt) => s + x.saldoUSD, 0);
+
+  // Agrupar cuentas por pagar por proveedor (las pendientes primero, cronológicas).
+  const gruposProveedor = React.useMemo(() => {
+    const map = new Map<string, { proveedor: string; pendientes: Debt[]; saldoTotal: number }>();
+    (state.cxp || []).forEach((d: Debt) => {
+      const key = (d.proveedor || 'SIN PROVEEDOR').toUpperCase();
+      if (!map.has(key)) map.set(key, { proveedor: key, pendientes: [], saldoTotal: 0 });
+      const g = map.get(key)!;
+      if (d.estado !== 'pagada') {
+        g.pendientes.push(d);
+        g.saldoTotal += d.saldoUSD;
+      }
+    });
+    return Array.from(map.values())
+      .map(g => ({ ...g, pendientes: g.pendientes.sort((a, b) => a.fecha.localeCompare(b.fecha)) }))
+      .sort((a, b) => a.proveedor.localeCompare(b.proveedor));
+  }, [state.cxp]);
 
   // Obtener proveedores únicos de las compras recibidas
   const proveedoresExistentes: string[] = state.proveedores && Array.isArray(state.proveedores)
@@ -137,6 +160,88 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
     
     setShowPaymentModal(null);
     setPaymentAmount('');
+  };
+
+  const handleOpenGlobalPayment = (provider: string) => {
+    const grupo = gruposProveedor.find(g => g.proveedor === provider);
+    if (!grupo) return;
+    const total = grupo.saldoTotal;
+    if (total <= 0) return;
+    setGlobalProvider({ proveedor: provider, total });
+    setPaymentAmount(total.toString());
+    setPaymentMethod('efectivo_usd');
+  };
+
+  const handleProcessGlobalPayment = () => {
+    if (!globalProvider) return;
+    const amount = parseFloat(paymentAmount) || 0;
+    if (amount <= 0) {
+      toast({ variant: "destructive", title: "Error", description: "El monto debe ser mayor a cero." });
+      return;
+    }
+
+    // Liquidar cronológicamente: de la deuda más antigua a la más reciente,
+    // consumiendo el monto; si el monto no cubre una deuda por completo, se
+    // registra como ABONO a esa deuda (queda 'parcial').
+    const grupo = gruposProveedor.find(g => g.proveedor === globalProvider.proveedor);
+    if (!grupo || grupo.pendientes.length === 0) return;
+
+    const ahoraStr = Utils.ahora();
+    const reciboBase = `PAY-${Store.uid().toUpperCase().slice(0, 4)}`;
+    let remanente = amount;
+    const aplicados: { id: string; monto: number }[] = [];
+
+    const nuevasCxP = (state.cxp || []).map((c: Debt) => {
+      if (c.proveedor?.toUpperCase() !== globalProvider.proveedor || c.estado === 'pagada') return c;
+      if (remanente <= 0.001) return c;
+      const pago = Math.min(c.saldoUSD, remanente);
+      remanente -= pago;
+      aplicados.push({ id: c.id, monto: pago });
+      const nuevoSaldo = Math.max(0, c.saldoUSD - pago);
+      return {
+        ...c,
+        abonadoUSD: c.abonadoUSD + pago,
+        saldoUSD: nuevoSaldo,
+        estado: nuevoSaldo <= 0.001 ? 'pagada' : 'parcial',
+        historialPagos: [...(c.historialPagos || []), {
+          fecha: ahoraStr,
+          montoUSD: pago,
+          montoBS: pago * state.tasa,
+          metodo: paymentMethod,
+          reciboId: reciboBase
+        }]
+      };
+    });
+
+    // El remanente no asignado queda como excedente no aplicable (no hay más deudas que cubrir).
+    const totalAplicado = aplicados.reduce((s, a) => s + a.monto, 0);
+
+    // 2. Asiento contable consolidado del pago global.
+    const nuevoAsiento: LibroDiarioEntry = {
+      id: 'ACC-' + Store.uid().toUpperCase().slice(0, 5),
+      fecha: ahoraStr,
+      tipo: 'egreso',
+      categoria: 'PAGO_PROVEEDOR' as any,
+      concepto: `PAGO GLOBAL A: ${globalProvider.proveedor} - LIQUIDA ${aplicados.length} DEUDA(S)`,
+      montoUSD: totalAplicado,
+      montoBS: totalAplicado * state.tasa,
+      metodo: paymentMethod,
+      referencia: reciboBase
+    };
+
+    updateState({
+      cxp: nuevasCxP as Debt[],
+      libroDiario: [nuevoAsiento, ...(state.libroDiario || [])]
+    });
+
+    toast({
+      title: "Pago global registrado",
+      description: `Se liquidaron ${aplicados.length} deuda(s) de ${Utils.fmtUSD(totalAplicado)}${remanente > 0.001 ? ' (excedente sin aplicar)' : ''}`
+    });
+
+    setGlobalProvider(null);
+    setPaymentAmount('');
+    setGrupoExpandido(globalProvider.proveedor);
   };
 
   const handleGuardarDeudaDirecta = () => {
@@ -245,64 +350,169 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
         </div>
       </div>
 
-      <div className="card shadow-md border-line overflow-hidden bg-white rounded-xl">
-        <div className="card-head bg-ink border-b border-white/10 px-6 py-4">
+<div className="card shadow-md border-line overflow-hidden bg-white rounded-xl">
+        <div className="card-head bg-ink border-b border-white/10 px-6 py-4 flex flex-wrap items-center justify-between gap-3">
           <h3 className="text-white font-black text-xs uppercase italic tracking-tighter flex items-center gap-2">
             <Calculator className="w-5 h-5 text-brand-gold" /> CUENTAS POR PAGAR ACTIVAS
           </h3>
+          <div className="flex items-center gap-1 bg-black/20 rounded-lg p-1">
+            <button
+              onClick={() => setVista('grupo')}
+              className={`px-4 py-1.5 rounded-md font-black uppercase text-[9px] transition-colors flex items-center gap-1.5 ${vista === 'grupo' ? 'bg-brand-gold text-ink shadow' : 'text-white/60 hover:text-white'}`}
+            >
+              <Layers className="w-3.5 h-3.5" /> Por Proveedor
+            </button>
+            <button
+              onClick={() => setVista('factura')}
+              className={`px-4 py-1.5 rounded-md font-black uppercase text-[9px] transition-colors flex items-center gap-1.5 ${vista === 'factura' ? 'bg-brand-gold text-ink shadow' : 'text-white/60 hover:text-white'}`}
+            >
+              <FileText className="w-3.5 h-3.5" /> Por Factura
+            </button>
+          </div>
         </div>
-        <div className="table-wrap">
-          <table className="w-full">
-            <thead>
-              <tr className="bg-surface-soft">
-                <th className="text-ink font-black text-[10px] uppercase py-4 px-6 border-b border-line">Fecha</th>
-                <th className="text-ink font-black text-[10px] uppercase py-4 border-b border-line">Venc.</th>
-                <th className="text-ink font-black text-[10px] uppercase py-4 border-b border-line">Proveedor</th>
-                <th className="text-ink font-black text-[10px] uppercase py-4 border-b border-line">Factura</th>
-                <th className="text-ink font-black text-[10px] uppercase py-4 text-right border-b border-line">Monto USD</th>
-                <th className="text-ink font-black text-[10px] uppercase py-4 text-right border-b border-line">Saldo</th>
-                <th className="text-ink font-black text-[10px] uppercase px-6 text-center border-b border-line">Acciones</th>
-              </tr>
-            </thead>
-            <tbody className="bg-white">
-              {state.cxp.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="text-center py-24 text-ink font-black uppercase italic tracking-widest">
-                    No se registran cuentas por pagar actualmente
-                  </td>
-                </tr>
-              ) : (
-                cxpPageData.map((x: Debt) => (
-                  <tr key={x.id} className="border-b border-line/40 hover:bg-surface-warm/20 transition-colors">
-                    <td className="text-ink font-black text-xs py-4 px-6">{Utils.fmtFecha(x.fecha)}</td>
-                    <td className={`text-xs font-black py-4 ${x.fechaVencimiento < Utils.hoy() && x.estado !== 'pagada' ? 'text-status-danger' : 'text-ink'}`}>
-                      {Utils.fmtFecha(x.fechaVencimiento)}
-                    </td>
-                    <td className="text-ink font-black text-xs uppercase py-4">{x.proveedor}</td>
-                    <td className="text-ink font-black text-xs py-4 mono">{x.numeroFactura || '-'}</td>
-                    <td className="text-ink font-black text-xs text-right py-4 mono">{Utils.fmtUSD(x.montoUSD)}</td>
-                    <td className="text-brand-gold-deep font-black text-sm text-right py-4 mono">{Utils.fmtUSD(x.saldoUSD)}</td>
-                    <td className="py-4 px-6 text-center">
-                       <div className="flex justify-center items-center gap-3">
-                          <button 
-                            onClick={() => setShowDetails(x)} 
-                            className="w-10 h-10 rounded-full flex items-center justify-center bg-white text-status-success border-2 border-status-success/20 hover:bg-status-success hover:text-white transition-all shadow-md"
-                            title="Ver Historial Detallado"
-                          >
-                            <Eye className="w-5 h-5"/>
-                          </button>
-                          {x.estado !== 'pagada' && (
-                             <button onClick={() => handleOpenPayment(x)} className="btn btn-primary h-8 px-4 font-black text-[9px] uppercase shadow-sm">Pagar</button>
-                          )}
-                       </div>
-                    </td>
+
+        {vista === 'grupo' ? (
+          <div className="p-4 sm:p-6">
+            {gruposProveedor.length === 0 ? (
+              <div className="text-center py-24 text-ink font-black uppercase italic tracking-widest">
+                No se registran cuentas por pagar actualmente
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {gruposProveedor.map(g => (
+                  <div key={g.proveedor} className="border border-line rounded-xl overflow-hidden bg-white shadow-sm">
+                    <div className="flex items-center justify-between gap-3 px-4 sm:px-6 py-4 bg-surface-soft/60 border-b border-line">
+                      <button
+                        onClick={() => setGrupoExpandido(grupoExpandido === g.proveedor ? null : g.proveedor)}
+                        className="flex items-center gap-3 text-left flex-1 min-w-0"
+                      >
+                        {grupoExpandido === g.proveedor
+                          ? <ChevronDown className="w-5 h-5 text-brand-gold-deep shrink-0" />
+                          : <ChevronRight className="w-5 h-5 text-brand-gold-deep shrink-0" />}
+                        <div className="min-w-0">
+                          <p className="text-sm font-black uppercase text-ink truncate">{g.proveedor}</p>
+                          <p className="text-[9px] font-black uppercase text-ink/50 tracking-widest">
+                            {g.pendientes.length} factura(s) pendiente(s) · Tot. {Utils.fmtUSD(g.saldoTotal)}
+                          </p>
+                        </div>
+                      </button>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-sm font-black text-status-danger mono">{Utils.fmtUSD(g.saldoTotal)}</span>
+                        <button
+                          onClick={() => handleOpenGlobalPayment(g.proveedor)}
+                          disabled={g.saldoTotal <= 0}
+                          className="btn btn-primary h-8 px-4 font-black text-[9px] uppercase shadow-sm"
+                          title="Pago global: liquida deudas en orden cronológico"
+                        >
+                          Pago Global
+                        </button>
+                      </div>
+                    </div>
+
+                    {grupoExpandido === g.proveedor && (
+                      <div className="table-wrap">
+                        <table className="w-full">
+                          <thead>
+                            <tr className="bg-surface-soft">
+                              <th className="text-ink font-black text-[10px] uppercase py-3 px-6 border-b border-line">Fecha</th>
+                              <th className="text-ink font-black text-[10px] uppercase py-3 border-b border-line">Venc.</th>
+                              <th className="text-ink font-black text-[10px] uppercase py-3 border-b border-line">Factura</th>
+                              <th className="text-ink font-black text-[10px] uppercase py-3 text-right border-b border-line">Monto USD</th>
+                              <th className="text-ink font-black text-[10px] uppercase py-3 text-right border-b border-line">Saldo</th>
+                              <th className="text-ink font-black text-[10px] uppercase px-6 text-center border-b border-line">Acciones</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {g.pendientes.length === 0 ? (
+                              <tr><td colSpan={6} className="py-12 text-center text-ink font-black uppercase italic text-[10px]">Sin deudas pendientes</td></tr>
+                            ) : (
+                              g.pendientes.map((x: Debt) => (
+                                <tr key={x.id} className="border-b border-line/40 hover:bg-surface-warm/20 transition-colors">
+                                  <td className="text-ink font-black text-xs py-3 px-6">{Utils.fmtFecha(x.fecha)}</td>
+                                  <td className={`text-xs font-black py-3 ${x.fechaVencimiento < Utils.hoy() && x.estado !== 'pagada' ? 'text-status-danger' : 'text-ink'}`}>
+                                    {Utils.fmtFecha(x.fechaVencimiento)}
+                                  </td>
+                                  <td className="text-ink font-black text-xs py-3 mono">{x.numeroFactura || '-'}</td>
+                                  <td className="text-ink font-black text-xs text-right py-3 mono">{Utils.fmtUSD(x.montoUSD)}</td>
+                                  <td className="text-brand-gold-deep font-black text-sm text-right py-3 mono">{Utils.fmtUSD(x.saldoUSD)}</td>
+                                  <td className="py-3 px-6 text-center">
+                                    <div className="flex justify-center items-center gap-3">
+                                      <button onClick={() => setShowDetails(x)} className="w-9 h-9 rounded-full flex items-center justify-center bg-white text-status-success border-2 border-status-success/20 hover:bg-status-success hover:text-white transition-all shadow-md" title="Ver Historial Detallado">
+                                        <Eye className="w-4 h-4" />
+                                      </button>
+                                      {x.estado !== 'pagada' && (
+                                        <button onClick={() => handleOpenPayment(x)} className="btn btn-primary h-8 px-4 font-black text-[9px] uppercase shadow-sm">Pagar</button>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          <>
+            <div className="table-wrap">
+              <table className="w-full">
+                <thead>
+                  <tr className="bg-surface-soft">
+                    <th className="text-ink font-black text-[10px] uppercase py-4 px-6 border-b border-line">Fecha</th>
+                    <th className="text-ink font-black text-[10px] uppercase py-4 border-b border-line">Venc.</th>
+                    <th className="text-ink font-black text-[10px] uppercase py-4 border-b border-line">Proveedor</th>
+                    <th className="text-ink font-black text-[10px] uppercase py-4 border-b border-line">Factura</th>
+                    <th className="text-ink font-black text-[10px] uppercase py-4 text-right border-b border-line">Monto USD</th>
+                    <th className="text-ink font-black text-[10px] uppercase py-4 text-right border-b border-line">Saldo</th>
+                    <th className="text-ink font-black text-[10px] uppercase px-6 text-center border-b border-line">Acciones</th>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-        <Pagination page={cxpSafePage} totalPages={cxpTotalPages} total={cxpList.length} pageSize={pageSize} onPageChange={setPage} />
+                </thead>
+                <tbody className="bg-white">
+                  {state.cxp.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="text-center py-24 text-ink font-black uppercase italic tracking-widest">
+                        No se registran cuentas por pagar actualmente
+                      </td>
+                    </tr>
+                  ) : (
+                    cxpPageData.map((x: Debt) => (
+                      <tr key={x.id} className="border-b border-line/40 hover:bg-surface-warm/20 transition-colors">
+                        <td className="text-ink font-black text-xs py-4 px-6">{Utils.fmtFecha(x.fecha)}</td>
+                        <td className={`text-xs font-black py-4 ${x.fechaVencimiento < Utils.hoy() && x.estado !== 'pagada' ? 'text-status-danger' : 'text-ink'}`}>
+                          {Utils.fmtFecha(x.fechaVencimiento)}
+                        </td>
+                        <td className="text-ink font-black text-xs uppercase py-4">{x.proveedor}</td>
+                        <td className="text-ink font-black text-xs py-4 mono">{x.numeroFactura || '-'}</td>
+                        <td className="text-ink font-black text-xs text-right py-4 mono">{Utils.fmtUSD(x.montoUSD)}</td>
+                        <td className="text-brand-gold-deep font-black text-sm text-right py-4 mono">{Utils.fmtUSD(x.saldoUSD)}</td>
+                        <td className="py-4 px-6 text-center">
+                           <div className="flex justify-center items-center gap-3">
+                              <button
+                                onClick={() => setShowDetails(x)}
+                                className="w-10 h-10 rounded-full flex items-center justify-center bg-white text-status-success border-2 border-status-success/20 hover:bg-status-success hover:text-white transition-all shadow-md"
+                                title="Ver Historial Detallado"
+                              >
+                                <Eye className="w-5 h-5"/>
+                              </button>
+                              {x.estado !== 'pagada' && (
+                                 <button onClick={() => handleOpenPayment(x)} className="btn btn-primary h-8 px-4 font-black text-[9px] uppercase shadow-sm">Pagar</button>
+                              )}
+                           </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <Pagination page={cxpSafePage} totalPages={cxpTotalPages} total={cxpList.length} pageSize={pageSize} onPageChange={setPage} />
+          </>
+        )}
       </div>
 
       {/* MODAL DETALLES AVANZADOS (HISTORIAL) */}
@@ -441,7 +651,57 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
         </div>
       )}
 
-      {/* MODAL DE DEUDA DIRECTA A PROVEEDOR */}
+      {/* MODAL PAGO GLOBAL POR PROVEEDOR */}
+      {globalProvider && (
+        <div className="modal show"><div className="modal-bg" onClick={() => setGlobalProvider(null)}></div>
+          <div className="modal-box bg-white max-w-sm border-2 border-line rounded-2xl overflow-hidden shadow-2xl">
+            <div className="modal-head py-4 px-6 bg-ink border-b border-white/10 flex justify-between items-center text-white">
+              <h3 className="text-white font-black uppercase text-xs">PAGO GLOBAL A {globalProvider.proveedor}</h3>
+              <button onClick={() => setGlobalProvider(null)}><X className="w-5 h-5 text-white hover:text-brand-gold" /></button>
+            </div>
+            <div className="modal-body p-8 space-y-6 bg-white">
+               <div className="bg-surface-soft p-5 rounded-[20px] text-center border border-line shadow-inner">
+                  <p className="text-ink text-[9px] font-black uppercase tracking-[0.2em] mb-2">TOTAL PENDIENTE</p>
+                  <p className="text-3xl font-black text-status-danger">{Utils.fmtUSD(globalProvider.total)}</p>
+                  <p className="text-[9px] font-black text-ink mt-2 uppercase tracking-tight italic">
+                    Se liquidarán las deudas desde la más antigua; el excedente se aplica como abono.
+                  </p>
+               </div>
+
+               <div className="form-group">
+                  <label className="text-ink text-[10px] font-black uppercase block mb-1">METODO DE PAGO</label>
+                  <select
+                     className="form-select h-12 text-sm font-black uppercase border-line bg-surface-soft/50 text-ink"
+                     value={paymentMethod}
+                     onChange={e => setPaymentMethod(e.target.value as any)}
+                  >
+                     <option value="efectivo_usd">Efectivo USD</option>
+                     <option value="efectivo_bs">Efectivo BS</option>
+                     <option value="pagomovil">Pago Movil</option>
+                     <option value="zelle">Zelle</option>
+                  </select>
+               </div>
+
+               <div className="form-group">
+                  <label className="text-ink text-[10px] font-black uppercase block mb-1">MONTO A PAGAR (USD)</label>
+                  <div className="relative">
+                     <input
+                        className="form-input h-12 text-xl font-black text-ink"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={paymentAmount}
+                        onChange={e => setPaymentAmount(e.target.value)}
+                     />
+                  </div>
+               </div>
+               <button onClick={handleProcessGlobalPayment} className="btn btn-primary w-full h-14 font-black uppercase text-xs shadow-xl">
+                 LIQUIDAR DEUDAS CRONOLÓGICAMENTE
+               </button>
+            </div>
+          </div>
+        </div>
+      )}
       {showDeudaDirectaModal && (
         <div className="modal show">
           <div className="modal-bg" onClick={() => setShowDeudaDirectaModal(false)}></div>
