@@ -46,6 +46,11 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
   const [histDesde, setHistDesde] = useState('');
   const [histHasta, setHistHasta] = useState('');
 
+  // Estado para "Registrar Pago Atrasado" (pago global con fecha y tasa BCV pasadas).
+  const [pagoAtrasado, setPagoAtrasado] = useState(false);
+  const [pagoAtrasadoFecha, setPagoAtrasadoFecha] = useState(Utils.hoy());
+  const [pagoAtrasadoTasa, setPagoAtrasadoTasa] = useState('');
+
   // Estado para el modal de Deuda Directa
   const [showDeudaDirectaModal, setShowDeudaDirectaModal] = useState(false);
   const [proveedorSearch, setProveedorSearch] = useState('');
@@ -213,6 +218,9 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
     setGlobalProvider({ proveedor: provider, total });
     setPaymentAmount('');
     setPaymentMethod('efectivo_usd');
+    setPagoAtrasado(false);
+    setPagoAtrasadoFecha(Utils.hoy());
+    setPagoAtrasadoTasa('');
   };
 
   const handleProcessGlobalPayment = () => {
@@ -226,8 +234,14 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
     }
 
     // Si es Bs., el monto ingresado es en Bs. y el abono en USD = bs / tasa BCV.
-    const montoBS = esMetodoBS ? rawMonto : rawMonto * state.tasa;
-    const amount = esMetodoBS ? rawMonto / state.tasa : rawMonto;
+    // Si se marca "Pago Atrasado", se usa la tasa pasada indicada (para registrar
+    // con la tasa BCV del día en que realmente se hizo el pago).
+    const tasaAplicada = pagoAtrasado ? (parseFloat(pagoAtrasadoTasa) || state.tasa) : state.tasa;
+    const montoBS = esMetodoBS ? rawMonto : rawMonto * tasaAplicada;
+    const amount = esMetodoBS ? rawMonto / tasaAplicada : rawMonto;
+
+    // Fecha de registro: si es pago atrasado, se registra con la fecha pasada indicada.
+    const fechaPago = pagoAtrasado && pagoAtrasadoFecha ? pagoAtrasadoFecha + 'T' + Utils.ahora().split('T')[1] : Utils.ahora();
 
     // Liquidar cronológicamente: de la deuda más antigua a la más reciente,
     // consumiendo el monto; si el monto no cubre una deuda por completo, se
@@ -235,7 +249,7 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
     const grupo = gruposProveedor.find(g => g.proveedor === globalProvider.proveedor);
     if (!grupo || grupo.pendientes.length === 0) return;
 
-    const ahoraStr = Utils.ahora();
+    const ahoraStr = fechaPago;
     const reciboBase = `PAY-${Store.uid().toUpperCase().slice(0, 4)}`;
     const asientoId = 'ACC-' + Store.uid().toUpperCase().slice(0, 5);
     let remanente = amount;
@@ -258,7 +272,7 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
           asientoId,
           fecha: ahoraStr,
           montoUSD: pago,
-          montoBS: esMetodoBS ? pago * state.tasa : pago * state.tasa,
+          montoBS: pago * tasaAplicada,
           metodo: paymentMethod,
           reciboId: reciboBase
         }]
@@ -274,9 +288,9 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
       fecha: ahoraStr,
       tipo: 'egreso',
       categoria: 'PAGO_PROVEEDOR' as any,
-      concepto: `PAGO GLOBAL A: ${globalProvider.proveedor} - LIQUIDA ${aplicados.length} DEUDA(S)`,
+      concepto: `PAGO GLOBAL A: ${globalProvider.proveedor} - LIQUIDA ${aplicados.length} DEUDA(S)${pagoAtrasado ? ` - PAGO ATRASADO (TASA ${tasaAplicada.toFixed(2)})` : ''}`,
       montoUSD: totalAplicado,
-      montoBS: esMetodoBS ? totalAplicado * state.tasa : totalAplicado * state.tasa,
+      montoBS: totalAplicado * tasaAplicada,
       metodo: paymentMethod,
       referencia: reciboBase
     };
@@ -288,11 +302,14 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
 
     toast({
       title: "Pago global registrado",
-      description: `${Utils.fmtUSD(totalAplicado)}${Math.abs(rawMonto - totalAplicado) > 0.001 ? ' (' + Utils.fmtBS(rawMonto) + ')' : ''} aplicado a ${aplicados.length} deuda(s)${remanente > 0.001 ? ' (excedente sin aplicar)' : ''}`
+      description: `${Utils.fmtUSD(totalAplicado)}${Math.abs(rawMonto - totalAplicado) > 0.001 ? ' (' + Utils.fmtBS(rawMonto) + ')' : ''} aplicado a ${aplicados.length} deuda(s)${remanente > 0.001 ? ' (excedente sin aplicar)' : ''}${pagoAtrasado ? ' · Pago atrasado registrado' : ''}`
     });
 
     setGlobalProvider(null);
     setPaymentAmount('');
+    setPagoAtrasado(false);
+    setPagoAtrasadoFecha(Utils.hoy());
+    setPagoAtrasadoTasa('');
     setGrupoExpandido(globalProvider.proveedor);
   };
 
@@ -853,6 +870,52 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
                   </p>
                </div>
 
+               <div className="p-3 rounded-lg border border-line bg-surface-soft/40">
+                 <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                   <input
+                     type="checkbox"
+                     checked={pagoAtrasado}
+                     onChange={e => setPagoAtrasado(e.target.checked)}
+                     className="w-4 h-4 accent-brand-gold"
+                   />
+                   <span className="text-[10px] font-black uppercase text-ink tracking-wider">
+                     Registrar Pago Atrasado
+                   </span>
+                 </label>
+                 <p className="text-[8px] font-black text-ink/50 uppercase mt-1 ml-6 leading-snug">
+                   Útil si el pago se realizó en un día anterior y no se registró en ese momento.
+                 </p>
+
+                 {pagoAtrasado && (
+                   <div className="grid grid-cols-1 gap-3 mt-3 ml-6">
+                     <div>
+                       <label className="text-ink text-[9px] font-black uppercase block mb-1">Fecha del Pago Real</label>
+                       <input
+                         type="date"
+                         className="form-input h-10 text-xs font-black text-ink w-full"
+                         value={pagoAtrasadoFecha}
+                         onChange={e => setPagoAtrasadoFecha(e.target.value)}
+                       />
+                     </div>
+                     <div>
+                       <label className="text-ink text-[9px] font-black uppercase block mb-1">Tasa BCV a Aplicar</label>
+                       <input
+                         type="number"
+                         min="0"
+                         step="0.01"
+                         placeholder={state.tasa.toFixed(2)}
+                         className="form-input h-10 text-xs font-black mono text-ink w-full"
+                         value={pagoAtrasadoTasa}
+                         onChange={e => setPagoAtrasadoTasa(e.target.value.replace(/[^0-9.]/g, ''))}
+                       />
+                       <p className="text-[8px] font-black text-ink/50 uppercase mt-0.5">
+                         {pagoAtrasadoTasa ? `Tasa: ${parseFloat(pagoAtrasadoTasa).toFixed(2)} Bs/USD · Tasa actual: ${state.tasa.toFixed(2)}` : `Actual: ${state.tasa.toFixed(2)} · Si se deja en blanco se usa la actual`}
+                       </p>
+                     </div>
+                   </div>
+                 )}
+               </div>
+
                <div className="form-group">
                   <label className="text-ink text-[10px] font-black uppercase block mb-1">METODO DE PAGO</label>
                   <select
@@ -869,7 +932,8 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
 
                {(() => {
                  const esBS = paymentMethod === 'efectivo_bs' || paymentMethod === 'pagomovil';
-                 const appliedUSD = (parseFloat(paymentAmount) || 0) > 0 ? (esBS ? (parseFloat(paymentAmount) || 0) / state.tasa : parseFloat(paymentAmount)) : 0;
+                 const tasaPrev = pagoAtrasado ? (parseFloat(pagoAtrasadoTasa) || state.tasa) : state.tasa;
+                 const appliedUSD = (parseFloat(paymentAmount) || 0) > 0 ? (esBS ? (parseFloat(paymentAmount) || 0) / tasaPrev : parseFloat(paymentAmount)) : 0;
                  return (
                  <>
                 <div className="form-group">
@@ -887,7 +951,7 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
                   </div>
                   {esBS && appliedUSD > 0 && (
                     <p className="text-[9px] font-black text-ink/60 mt-1 uppercase">
-                      Equiv. {Utils.fmtUSD(appliedUSD)} · Tasa BCV {state.tasa.toFixed(2)}
+                      Equiv. {Utils.fmtUSD(appliedUSD)} · Tasa {pagoAtrasado && pagoAtrasadoTasa ? `aplicada ${tasaPrev.toFixed(2)}` : `BCV ${state.tasa.toFixed(2)}`}
                     </p>
                   )}
                 </div>
