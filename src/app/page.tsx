@@ -118,7 +118,14 @@ export default function LicoreriaPOS() {
 
               if (!moduleInitialized.current) {
                 const savedModule = sessionStorage.getItem('posven_active_module');
+                // ✅ FIX: Usar isCashOpen del Store como fuente de verdad, no solo el flag en localStorage.
+                // Esto evita el bug donde tras un corte de luz el sistema muestra "caja abierta" 
+                // pero los datos están inconsistentes.
+                const state = Store.get();
+                const cajaEstaAbierta = state.isCashOpen === true;
                 const aperturaConfirmada = localStorage.getItem('posven_apertura_done') === 'true';
+                // Mostrar apertura solo si NO está abierta en Firestore O si el flag de localStorage está ausente
+                const debeMostrarApertura = !cajaEstaAbierta || !aperturaConfirmada;
 
                 if (data.rol === 'cajero') {
                    getDocs(query(collection(db, 'terminales'), where('usuarioId', '==', currentUser.uid))).then(configSnap => {
@@ -135,7 +142,7 @@ export default function LicoreriaPOS() {
                       
                       const target = savedModule || 'ventas';
                       setActiveTab(target);
-                      setShowApertura(!aperturaConfirmada);
+                      setShowApertura(debeMostrarApertura);
                       setLoading(false);
                    }).catch(() => setLoading(false));
                 } else {

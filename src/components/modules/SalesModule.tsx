@@ -214,12 +214,19 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   };
 
   const getFreshReportData = () => {
-    const corteTimestamp = state.fechaUltimoZ || '';
+    // ✅ FIX: Obtener datos frescos del Store para evitar inconsistencias
+    const freshState = Store.get();
+    const corteTimestamp = freshState.fechaUltimoZ || '';
     const termId = currentTerminal?.id || 'GLOBAL';
     
-    const vActivas = (state.ventas || []).filter(v => v.fecha > corteTimestamp && v.estado !== 'anulada' && v.terminalId === termId);
-    const vAnuladas = (state.ventas || []).filter(v => v.fecha > corteTimestamp && v.estado === 'anulada' && v.terminalId === termId);
-    const dHoy = (state.devoluciones || []).filter(d => d.fecha > corteTimestamp && (state.ventas.find(v => v.id === d.ventaId)?.terminalId === termId));
+    // Usar datos frescos del Store en lugar del state del componente
+    const allVentas = freshState.ventas || [];
+    const allDevoluciones = freshState.devoluciones || [];
+    const allLibroDiario = freshState.libroDiario || [];
+    
+    const vActivas = allVentas.filter(v => v.fecha > corteTimestamp && v.estado !== 'anulada' && v.terminalId === termId);
+    const vAnuladas = allVentas.filter(v => v.fecha > corteTimestamp && v.estado === 'anulada' && v.terminalId === termId);
+    const dHoy = allDevoluciones.filter(d => d.fecha > corteTimestamp && (allVentas.find(v => v.id === d.ventaId)?.terminalId === termId));
     
     const brUSD = vActivas.reduce((s, v) => s + v.totalUSD, 0);
     const devUSD = dHoy.reduce((s, d) => s + d.totalUSD, 0);
@@ -254,7 +261,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     // fecha: cada egreso/entrada extra se registra en la caja y debe reflejarse
     // en X/Z aunque su "referencia" (MANUAL, nº deuda, factura...) no incluya
     // el id del terminal.
-    const relevantDiario = (state.libroDiario || []).filter(e => e.fecha > corteTimestamp);
+    const relevantDiario = allLibroDiario.filter(e => e.fecha > corteTimestamp);
     const totalSalidasCaja = relevantDiario.filter(e => e.tipo === 'egreso').reduce((s, e) => s + e.montoUSD, 0);
     const totalEntradasCaja = relevantDiario.filter(e => e.tipo === 'ingreso' && e.categoria !== 'VENTA' && e.categoria !== 'COBRO_DEUDA').reduce((s, e) => s + e.montoUSD, 0);
     // Cobros de deuda (ingresos de caja por cobros de créditos).
@@ -270,15 +277,15 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       manualEntradas: totalEntradasCaja,
       cobrosDeudaUSD,
       cobrosDeudaBS,
-      fondoAperturaUSD: state.fondoCajaHoyUSD || 0,
-      fondoAperturaBS: state.fondoCajaHoyBS || 0,
+      fondoAperturaUSD: freshState.fondoCajaHoyUSD || 0,
+      fondoAperturaBS: freshState.fondoCajaHoyBS || 0,
       desdeFactura, hastaFactura, desdeNC, hastaNC,
       stats: { facturas: vActivas.length, devoluciones: dHoy.length, anulaciones: vAnuladas.length, ticketPromedio: vActivas.length > 0 ? (netUSD / vActivas.length) : 0 },
-      fecha: Utils.ahora(), terminalName, terminalId: termId, numeroZ: state.ultimoZ + 1, acumuladoHistoricoUSD: state.acumuladoHistorico + netUSD,
+      fecha: Utils.ahora(), terminalName, terminalId: termId, numeroZ: freshState.ultimoZ + 1, acumuladoHistoricoUSD: freshState.acumuladoHistorico + netUSD,
       // Total explícito en USD del día (ventas brutas, antes de descuentos/devoluciones).
       // Suma de v.totalUSD: ya incluye conversión BS→USD por la tasa de la venta.
       totalVentasUSD: brUSD,
-      tasaBCV: state.tasa || 0
+      tasaBCV: freshState.tasa || 0
     };
   };
 
@@ -291,6 +298,20 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       // Garantiza que las colecciones necesarias estén cargadas desde Firestore
       // antes de calcular el reporte. Evita el bug de reporte en $0 tras reinicio.
       await Store.ensureReportData();
+      
+      // ✅ Verificar que los datos se cargaron correctamente
+      const state = Store.get();
+      const ventasDelDia = (state.ventas || []).filter(v => v.estado !== 'anulada');
+      
+      // Si no hay ventas pero isCashOpen es true, mostrar advertencia
+      if (ventasDelDia.length === 0 && state.isCashOpen) {
+        toast({ 
+          variant: 'default', 
+          title: 'Sin ventas registradas', 
+          description: 'Las ventas aún se están sincronizando. Si el problema persiste, recarga la página.' 
+        });
+      }
+      
       const data = getFreshReportData();
       setReportSnapshot(data);
       setShowReportType(type);

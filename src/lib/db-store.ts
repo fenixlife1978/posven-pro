@@ -425,6 +425,8 @@ async function ensureLoaded(name: string): Promise<void> {
 // estén cargadas antes de generar el reporte. Evita la race condition
 // donde el usuario abre X/Z justo después de un reinicio y el cache
 // aún no terminó de hidratarse desde Firestore (resultados en $0).
+// ✅ FIX: Agregar pequeño delay para asegurar que el listener de tiempo real
+// también termine de sincronizar los datos más recientes.
 async function ensureReportData(): Promise<void> {
   if (!db) return;
   await Promise.all([
@@ -434,7 +436,12 @@ async function ensureReportData(): Promise<void> {
     ensureLoaded('libroDiario'),
     ensureLoaded('terminales'),
     ensureLoaded('clientes'),
+    // ✅ Garantizar que ventas del día actual estén cargadas
+    loadSinceLastZ('ventas'),
+    loadSinceLastZ('libroDiario'),
   ]);
+  // ✅ Pequeño delay para asegurar que el listener en tiempo real también actualice
+  await new Promise(resolve => setTimeout(resolve, 500));
 }
 
 // Siguiente página (10) de una colección ordenada por fecha desc (listas históricas).
@@ -461,11 +468,19 @@ async function loadMore(name: string, pageSize: number = PAGE_SIZE): Promise<num
 // filtran por fecha > fechaUltimoZ, así que con eso basta). Evita re-leer el
 // histórico completo (miles de docs) en cada sesión. Se re-ejecuta cuando cambia
 // fechaUltimoZ (tras cada Reporte Z).
+// ✅ FIX: Si fechaUltimoZ está vacío, carga las ventas del día actual para
+// evitar el bug de reportes en $0 tras un corte de luz.
 const SINCE_STAMP: Record<string, string> = {};
 async function loadSinceLastZ(listName: string): Promise<void> {
   const col = COLLECTIONS[listName];
   if (!col || !db) return;
-  const desde = (cache as any).fechaUltimoZ || '';
+  let desde = (cache as any).fechaUltimoZ || '';
+  
+  // ✅ FIX: Si no hay último Z, usar fecha de hoy (evita carga vacía)
+  if (!desde) {
+    desde = new Date().toISOString().split('T')[0];
+  }
+  
   if (SINCE_STAMP[listName] === desde) return;
   SINCE_STAMP[listName] = desde;
   try {
@@ -475,6 +490,9 @@ async function loadSinceLastZ(listName: string): Promise<void> {
     applyPatch({ [listName]: mergeById((cache as any)[listName], items) });
   } catch (e) {
     console.error("loadSinceLastZ " + listName + ":", e);
+    // ✅ FALLBACK: Si falla la query (ej: índice no existe), cargar todo
+    console.warn("loadSinceLastZ fallback: cargando colección completa");
+    await ensureLoaded(listName);
   }
 }
 
