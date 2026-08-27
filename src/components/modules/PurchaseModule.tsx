@@ -36,6 +36,7 @@ import {
 } from "@/components/ui/table";
 import { Pagination } from '@/components/ui/pagination';
 import { DateRangeFilter, DateRange } from '@/components/ui/date-range-filter';
+import { toast } from '@/hooks/use-toast';
 
 interface PurchaseItemTemp {
   productoId: string;
@@ -357,23 +358,29 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
         terminalId: 'ADMIN'
       };
 
-      await updateState({
-        productos: nuevosProductos,
-        movimientos: [...state.movimientos, ...nuevosMovimientos],
-        libroDiario: [...nuevosAsientosDiario, ...(state.libroDiario || [])],
-        cxp: nuevasCxP,
-        compras: [nuevaCompra, ...(state.compras || [])]
-      });
+      try {
+        await updateState({
+          productos: nuevosProductos,
+          movimientos: [...state.movimientos, ...nuevosMovimientos],
+          libroDiario: [...nuevosAsientosDiario, ...(state.libroDiario || [])],
+          cxp: nuevasCxP,
+          compras: [nuevaCompra, ...(state.compras || [])]
+        });
 
-      alert('Compra registrada exitosamente.');
-      setProveedor('');
-      setNumeroFactura('');
-      setLoteTemporal([]);
-      setCondicion('contado');
-    } finally {
-      setIsProcessing(false);
-    }
-  };
+        toast({ title: "Compra Registrada ✅", description: `Factura ${numeroFactura} guardada en Firestore.` });
+        
+        setProveedor('');
+        setNumeroFactura('');
+        setLoteTemporal([]);
+        setCondicion('contado');
+      } catch (err: any) {
+        console.error('❌ Error guardando compra:', err);
+        toast({ title: "Error al guardar compra", description: err?.message || 'No se pudo persistir en Firestore', variant: "destructive", duration: 8000 });
+        // NO limpiar formulario: usuario puede reintentar
+      } finally {
+        setIsProcessing(false);
+      }
+    };
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pb-20">
@@ -764,6 +771,7 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
             } else {
               updateState({ productos: nuevosProds });
             }
+            toast({ title: "Producto creado ✅", description: `${nuevo.nombre} agregado al inventario.` });
             setShowNewProductModal(false);
           }}
         />
