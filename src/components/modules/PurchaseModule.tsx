@@ -371,6 +371,7 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
         
         setProveedor('');
         setNumeroFactura('');
+        setFecha(Utils.hoy());
         setLoteTemporal([]);
         setCondicion('contado');
       } catch (err: any) {
@@ -380,7 +381,11 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
       } finally {
         setIsProcessing(false);
       }
-    };
+    } catch (err: any) {
+      console.error('❌ Error procesando compra:', err);
+      setIsProcessing(false);
+    }
+  };
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pb-20">
@@ -419,6 +424,10 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
                     <option key={p.id} value={p.nombre}>{p.nombre?.toUpperCase() || 'S/N'}</option>
                   ))}
                 </select>
+              </div>
+              <div className="form-group">
+                <label className="text-ink text-[10px] font-black uppercase block mb-1">Fecha de la Factura</label>
+                <input type="date" className="form-input h-11 text-sm font-black" value={fecha} onChange={e => setFecha(e.target.value)} />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="form-group">
