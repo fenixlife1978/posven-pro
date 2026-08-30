@@ -266,6 +266,9 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
     setIsProcessing(true);
     try {
       const ahoraStr = Utils.ahora();
+      // Fecha del movimiento en el kardex = fecha de la compra (puede ser pasada),
+      // conservando la hora de registro para que el saldo se recalcule desde ahí.
+      const fechaMov = (fecha || Utils.hoy()) + (ahoraStr.includes('T') ? ahoraStr.slice(10) : 'T00:00:00');
       const pDias = parseInt(diasPlazo.toString()) || 0;
       const fechaVencimiento = condicion !== 'contado' ? 
         new Date(new Date(fecha).getTime() + (pDias * 24 * 60 * 60 * 1000)).toISOString().slice(0, 10) : 
@@ -296,10 +299,20 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
           cantidad: item.cantidad,
           stockAntes: p?.stock || 0,
           stockDespues: (p?.stock || 0) + item.cantidad,
-          fecha: ahoraStr,
+          fecha: fechaMov,
           referencia: `COMPRA FACT: ${numeroFactura} - PROV: ${proveedor}`,
           terminalId: 'ADMIN'
         };
+      });
+
+      // Al insertar movimientos con fecha pasada, se recalcula el saldo (stockAntes/
+      // stockDespues) de cada producto afectado desde esa fecha hasta el día de hoy,
+      // para que el kardex quede corrido y consistente.
+      let movimientosFinal: Movimiento[] = [...(state.movimientos || []), ...nuevosMovimientos];
+      const idsNuevos = new Set(nuevosMovimientos.map(m => m.id));
+      const idsAfectados = [...new Set(loteTemporal.map(i => i.productoId))];
+      idsAfectados.forEach(pid => {
+        movimientosFinal = Utils.recalcularSaldoProducto(movimientosFinal, pid, idsNuevos);
       });
 
       let nuevosAsientosDiario: LibroDiarioEntry[] = [];
@@ -361,7 +374,7 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
       try {
         await updateState({
           productos: nuevosProductos,
-          movimientos: [...state.movimientos, ...nuevosMovimientos],
+          movimientos: movimientosFinal,
           libroDiario: [...nuevosAsientosDiario, ...(state.libroDiario || [])],
           cxp: nuevasCxP,
           compras: [nuevaCompra, ...(state.compras || [])]

@@ -1,6 +1,6 @@
 'use client';
 
-import { AppState, Terminal } from './types';
+import { AppState, Terminal, Movimiento } from './types';
 import { db, rtdb } from './firebase';
 import {
   collection, doc, getDoc, getDocs, getCountFromServer, onSnapshot, orderBy, limit, query, setDoc, where,
@@ -777,5 +777,32 @@ export const Utils = {
   patchTerminal: (terminales: Terminal[], terminalId: string | undefined, patch: Partial<Terminal>): Terminal[] => {
     if (!terminalId) return terminales;
     return terminales.map(t => t.id === terminalId ? { ...t, ...patch } : t);
+  },
+
+  // Recalcula el saldo (stockAntes/stockDespues) de TODOS los movimientos de un
+  // producto en orden cronológico. Se usa al registrar una compra con fecha pasada:
+  // además de asentar el movimiento en esa fecha, los movimientos posteriores deben
+  // reflejar el nuevo saldo corrido hasta la fecha actual.
+  // `newIds` = ids de los movimientos recién insertados; la base (saldo de apertura)
+  // se toma del movimiento pre-existente más antiguo, para no perder el stock inicial.
+  recalcularSaldoProducto: (movimientos: Movimiento[], productoId: string, newIds?: Set<string>): Movimiento[] => {
+    const others = movimientos.filter(m => m.productoId !== productoId);
+    const productMovs = movimientos
+      .filter(m => m.productoId === productoId)
+      .slice()
+      .sort((a, b) => (a.fecha === b.fecha ? 0 : a.fecha < b.fecha ? -1 : 1));
+    // Saldo de apertura: stockAntes del primer movimiento pre-existente (0 si no hay).
+    let base = 0;
+    for (const m of productMovs) {
+      if (!newIds || !newIds.has(m.id)) { base = m.stockAntes || 0; break; }
+    }
+    let balance = base;
+    const updated = productMovs.map(m => {
+      const stockAntes = balance;
+      const stockDespues = stockAntes + (m.cantidad || 0);
+      balance = stockDespues;
+      return { ...m, stockAntes, stockDespues };
+    });
+    return [...others, ...updated];
   }
 };
