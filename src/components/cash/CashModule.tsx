@@ -7,7 +7,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import { Store } from '@/lib/db-store';
+import { Store, Utils } from '@/lib/db-store';
+import { auth } from '@/lib/firebase';
 import { toast } from '@/hooks/use-toast';
 import {
   Table,
@@ -18,26 +19,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-
-// Definir CashSession localmente
-interface CashSession {
-  openDate: string;
-  openAmount: number;
-  openAmountBs: number;
-  openAmountUsd: number;
-  openNotes?: string;
-  closeDate: string | null;
-  closeAmount: number | null;
-  closeAmountBs: number | null;
-  closeAmountUsd: number | null;
-  closeNotes?: string | null;
-  totalSales: number;
-  totalSalesBs: number;
-  totalSalesUsd: number;
-  totalCollections: number;
-  saleCount: number;
-  difference?: number;
-}
+import { Terminal, CashSession } from '@/lib/types';
 
 export function CashModule({ onStatusChange }: { onStatusChange: (s: boolean) => void }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -52,18 +34,24 @@ export function CashModule({ onStatusChange }: { onStatusChange: (s: boolean) =>
   const [closeAmount, setCloseAmount] = useState('');
   const [closeNotes, setCloseNotes] = useState('');
 
-  useEffect(() => {
+  const currentTerminal = () => {
+    if (!auth?.currentUser) return undefined;
     const state = Store.get();
-    setIsOpen(state.isCashOpen || false);
-    setCurrentSession(state.cashData || null);
-    setHistory(state.cashHistory || []);
+    return state.terminales.find(t => t.usuarioId === auth.currentUser!.uid);
+  };
+
+  useEffect(() => {
+    const tc = Utils.getTerminalCash(currentTerminal());
+    setIsOpen(tc.isCashOpen);
+    setCurrentSession(tc.cashData || null);
+    setHistory(tc.cashHistory || []);
     
     // Cargar montos actuales si existen
-    if (state.fondoCajaHoyBS !== undefined && state.fondoCajaHoyBS > 0) {
-      setOpenAmountBs(state.fondoCajaHoyBS.toString());
+    if (tc.fondoCajaHoyBS > 0) {
+      setOpenAmountBs(tc.fondoCajaHoyBS.toString());
     }
-    if (state.fondoCajaHoyUSD !== undefined && state.fondoCajaHoyUSD > 0) {
-      setOpenAmountUsd(state.fondoCajaHoyUSD.toString());
+    if (tc.fondoCajaHoyUSD > 0) {
+      setOpenAmountUsd(tc.fondoCajaHoyUSD.toString());
     }
   }, []);
 
@@ -80,8 +68,13 @@ export function CashModule({ onStatusChange }: { onStatusChange: (s: boolean) =>
       });
       return;
     }
+
+    const terminal = currentTerminal();
+    const state = Store.get();
     
     const session: CashSession = {
+      terminalId: terminal?.id,
+      terminalName: terminal?.nombre,
       openDate: new Date().toISOString(),
       openAmount: amountBs,
       openAmountBs: amountBs,
@@ -99,13 +92,13 @@ export function CashModule({ onStatusChange }: { onStatusChange: (s: boolean) =>
       saleCount: 0
     };
     
-    // ✅ ACTUALIZAR CORRECTAMENTE EL ESTADO GLOBAL (merge para no pisar otros datos)
-    Store.set({
-      fondoCajaHoyBS: amountBs,      // ✅ GUARDA EL MONTO EN BS
-      fondoCajaHoyUSD: amountUsd,    // ✅ GUARDA EL MONTO EN USD
+    // ✅ ACTUALIZAR EL ESTADO DE CAJA DE ESTE TERMINAL (por caja)
+    Store.set({ terminales: Utils.patchTerminal(state.terminales, terminal?.id, {
+      fondoCajaHoyBS: amountBs,
+      fondoCajaHoyUSD: amountUsd,
       isCashOpen: true,
       cashData: session
-    });
+    }) });
     
     setIsOpen(true);
     setCurrentSession(session);
@@ -120,6 +113,8 @@ export function CashModule({ onStatusChange }: { onStatusChange: (s: boolean) =>
   const handleClose = () => {
     if (!currentSession) return;
     const amount = parseFloat(closeAmount) || 0;
+    const terminal = currentTerminal();
+    const state = Store.get();
     
     const closed: CashSession = {
       ...currentSession,
@@ -131,17 +126,16 @@ export function CashModule({ onStatusChange }: { onStatusChange: (s: boolean) =>
       difference: amount - (currentSession.openAmount + currentSession.totalSales + currentSession.totalCollections)
     };
 
-    const currentState = Store.get();
-    const newHistory = [closed, ...(currentState.cashHistory || [])];
+    const newHistory = [closed, ...(state.terminales.find(t => t.id === terminal?.id)?.cashHistory || [])];
     
-    // ✅ LIMPIAR LOS FONDOS AL CERRAR (merge para no pisar otros datos)
-    Store.set({
+    // ✅ LIMPIAR LOS FONDOS DE ESTE TERMINAL AL CERRAR
+    Store.set({ terminales: Utils.patchTerminal(state.terminales, terminal?.id, {
       fondoCajaHoyBS: 0,
       fondoCajaHoyUSD: 0,
       isCashOpen: false,
       cashData: null,
       cashHistory: newHistory
-    });
+    }) });
     
     setIsOpen(false);
     setCurrentSession(null);

@@ -207,6 +207,8 @@ export interface LibroDiarioEntry {
   montoBS: number;
   metodo: string;
   referencia: string;
+  terminalId?: string;
+  terminalName?: string;
 }
 
 export interface Terminal {
@@ -215,6 +217,21 @@ export interface Terminal {
   usuarioId: string | null;
   activo: boolean;
   proximoRecibo: number;
+
+  // ========== ESTADO DE CAJA POR TERMINAL (por caja independiente) ==========
+  // Cada caja lleva su PROPIA apertura/cierre, fondos, corte Z e historial,
+  // de modo que abrir/cerrar o hacer un corte Z en una caja NUNCA afecta a otra.
+  prefijoCaja?: string;                 // Prefijo para numeración de facturas (ej: C1-, C2-)
+  isCashOpen?: boolean;
+  cashData?: CashSession | null;
+  cashHistory?: CashSession[];
+  fondoCajaHoyUSD?: number;
+  fondoCajaHoyBS?: number;
+  ultimoZ?: number;
+  fechaUltimoZ?: string;
+  acumuladoHistorico?: number;
+  proximaDevolucion?: number;
+  proximaAnulacion?: number;
 }
 
 export interface Supplier {
@@ -242,6 +259,7 @@ export interface Return {
   totalUSD: number;
   metodoReembolso: string;
   motivo: string;
+  terminalId?: string;
 }
 
 export interface Anulacion {
@@ -251,12 +269,14 @@ export interface Anulacion {
   totalUSD: number;
   motivo: string;
   items: any[];
+  terminalId?: string;
 }
 
 export interface ReportZ {
   id: string;
   fecha: string;
   numeroZ: number;
+  terminalId?: string;
   terminalName: string;
   desdeFactura: string;
   hastaFactura: string;
@@ -321,6 +341,8 @@ export interface Config {
 
 // ========== CASH SESSION ==========
 export interface CashSession {
+  terminalId?: string;
+  terminalName?: string;
   openDate: string;
   openAmount: number;
   openAmountBs: number;

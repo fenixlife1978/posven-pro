@@ -1,6 +1,6 @@
 'use client';
 
-import { AppState } from './types';
+import { AppState, Terminal } from './types';
 import { db, rtdb } from './firebase';
 import {
   collection, doc, getDoc, getDocs, getCountFromServer, onSnapshot, orderBy, limit, query, setDoc, where,
@@ -55,12 +55,14 @@ const CATALOG_FIELDS: Record<string, string> = {
   suppliers: 'suppliers',
 };
 
-// Campos de configuración que se guardan en config/general (nunca en state)
+// Campos de configuración que se guardan en config/general (nunca en state).
+// NOTA: El estado de caja (isCashOpen, cashData, fondos, ultimoZ, fechaUltimoZ,
+// acumuladoHistorico, cashHistory) NO vive aquí: es POR TERMINAL (por caja),
+// y se guarda en cada documento de la colección `terminales`. Eso evita que dos
+// cajas compartan apertura/corte Z y se pisen la información entre sí.
 const CONFIG_FIELDS = [
   'tasa', 'pinDevolucion', 'isInitialized', 'empresa',
-  'proximoRecibo', 'proximaDevolucion', 'proximaAnulacion',
-  'ultimoZ', 'fechaUltimoZ', 'acumuladoHistorico',
-  'fondoCajaHoyUSD', 'fondoCajaHoyBS', 'isCashOpen', 'cashData', 'config',
+  'proximoRecibo', 'proximaDevolucion', 'proximaAnulacion', 'config',
 ];
 
 export const initialState: AppState = {
@@ -425,8 +427,9 @@ async function ensureLoaded(name: string): Promise<void> {
 // estén cargadas antes de generar el reporte. Evita la race condition
 // donde el usuario abre X/Z justo después de un reinicio y el cache
 // aún no terminó de hidratarse desde Firestore (resultados en $0).
-// ✅ FIX: Agregar pequeño delay para asegurar que el listener de tiempo real
-// también termine de sincronizar los datos más recientes.
+// Como cada caja filtra por SU PROPIO `fechaUltimoZ` (per-terminal), ventas y
+// libroDiario se cargan COMPLETOS: una caja nunca debe perder datos porque
+// otra hizo su corte Z.
 async function ensureReportData(): Promise<void> {
   if (!db) return;
   await Promise.all([
@@ -436,9 +439,6 @@ async function ensureReportData(): Promise<void> {
     ensureLoaded('libroDiario'),
     ensureLoaded('terminales'),
     ensureLoaded('clientes'),
-    // ✅ Garantizar que ventas del día actual estén cargadas
-    loadSinceLastZ('ventas'),
-    loadSinceLastZ('libroDiario'),
   ]);
   // ✅ Pequeño delay para asegurar que el listener en tiempo real también actualice
   await new Promise(resolve => setTimeout(resolve, 500));
@@ -561,10 +561,6 @@ function init() {
       if (val[f] !== undefined) patch[f] = sanitizeForFirestore(val[f]);
     }
     if (Object.keys(patch).length > 0) applyPatch(patch);
-    if (patch.fechaUltimoZ !== undefined) {
-      loadSinceLastZ('ventas');
-      loadSinceLastZ('libroDiario');
-    }
   }, (err) => { if (err.code !== 'permission-denied') console.warn("Sync config:", err); }));
 
   // 2) PRODUCTOS (tiempo real vía RTDB: el espejo evita re-leer la colección en cada venta).
@@ -590,12 +586,13 @@ function init() {
     ));
   }
 
-  // 4) CARGA INICIAL: listas pequeñas completas + solo lo posterior al último Z
-  //    para ventas/libroDiario (los módulos del POS filtran por fecha > fechaUltimoZ).
-  //    El histórico completo se carga bajo demanda cuando se abre el módulo que lo necesita.
+  // 4) CARGA INICIAL: listas pequeñas completas + ventas/libroDiario COMPLETOS
+  //    (cada caja filtra por su propio corte Z, así que ninguna puede perder datos
+  //    porque otra caja cierre el suyo). El resto del histórico se carga bajo
+  //    demanda cuando se abre el módulo que lo necesita.
   ['cxc', 'cxp', 'clientes', 'proveedores', 'terminales', 'devoluciones', 'anulaciones', 'reportesZ', 'caja', 'compras'].forEach(ensureLoaded);
-  loadSinceLastZ('ventas');
-  loadSinceLastZ('libroDiario');
+  ensureLoaded('ventas');
+  ensureLoaded('libroDiario');
 
   // 5) CATÁLOGOS
   loadCatalogs();
@@ -743,5 +740,42 @@ export const Utils = {
       otros: 'Otros'
     };
     return map[m] || m;
+  },
+
+  // Prefijo de caja para la numeración de facturas. Cada caja lleva una serie
+  // propia (C1-, C2-, ...) de modo que dos cajas puedan tener el mismo correlativo
+  // pero queden diferenciadas en facturas, reportes y asientos.
+  prefijoCaja: (t?: Terminal | null, terminals?: Terminal[]): string => {
+    if (t?.prefijoCaja) return t.prefijoCaja;
+    if (t?.id) {
+      const idx = (terminals || []).findIndex(x => x.id === t.id);
+      return 'C' + (idx >= 0 ? idx + 1 : 1);
+    }
+    return 'G';
+  },
+
+  // Lee el estado de caja de UN terminal concreto (apertura, fondos, corte Z,
+  // historial). Fuente de verdad: el documento del terminal.
+  getTerminalCash: (t?: Terminal | null) => {
+    return {
+      isCashOpen: !!t?.isCashOpen,
+      cashData: t?.cashData ?? null,
+      fondoCajaHoyUSD: t?.fondoCajaHoyUSD ?? 0,
+      fondoCajaHoyBS: t?.fondoCajaHoyBS ?? 0,
+      ultimoZ: t?.ultimoZ ?? 0,
+      fechaUltimoZ: t?.fechaUltimoZ ?? '',
+      acumuladoHistorico: t?.acumuladoHistorico ?? 0,
+      cashHistory: t?.cashHistory ?? [],
+      proximoRecibo: t?.proximoRecibo ?? 0,
+      proximaDevolucion: t?.proximaDevolucion ?? 0,
+      proximaAnulacion: t?.proximaAnulacion ?? 0,
+    };
+  },
+
+  // Actualiza el estado de caja de un terminal dentro del array de terminales.
+  // Devuelve el nuevo array listo para pasar a updateState({ terminales: ... }).
+  patchTerminal: (terminales: Terminal[], terminalId: string | undefined, patch: Partial<Terminal>): Terminal[] => {
+    if (!terminalId) return terminales;
+    return terminales.map(t => t.id === terminalId ? { ...t, ...patch } : t);
   }
 };

@@ -80,7 +80,9 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
     setIsProcessing(true);
     try {
       const totalDevuelto = returnItems.reduce((s, i) => s + (i.cantidad * i.precioUnitUSD), 0);
-      const idDev = 'DEV-' + String(state.proximaDevolucion || 1).padStart(6, '0');
+      const terminal = state.terminales.find(t => t.id === terminalId);
+      const prefijo = Utils.prefijoCaja(terminal, state.terminales);
+      const idDev = 'DEV-' + prefijo + '-' + String(state.proximaDevolucion || 1).padStart(6, '0');
       const ahoraStr = Utils.ahora();
 
       const nuevaDevolucion: Return = {
@@ -90,7 +92,8 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
         items: [...returnItems],
         totalUSD: totalDevuelto,
         metodoReembolso: refundMethod,
-        motivo: reason
+        motivo: reason,
+        terminalId: terminalId || 'GLOBAL'
       };
 
       const nuevosProductos = [...state.productos];
@@ -136,7 +139,9 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
         montoUSD: totalDevuelto,
         montoBS: totalDevuelto * state.tasa,
         metodo: refundMethod === 'EFECTIVO' ? 'efectivo_usd' : (refundMethod === 'MISMO_METODO' ? 'otros' : 'nota_credito'),
-        referencia: idDev
+        referencia: idDev,
+        terminalId: terminalId || 'GLOBAL',
+        terminalName: terminal?.nombre || 'SISTEMA GLOBAL'
       };
 
       updateState({
@@ -198,14 +203,17 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
         v.id === selectedSale.id ? { ...v, estado: 'anulada' } : v
       );
 
-      const idAnu = 'ANU-' + String(state.proximaAnulacion || 1).padStart(5, '0');
+      const terminal = state.terminales.find(t => t.id === terminalId);
+      const prefijo = Utils.prefijoCaja(terminal, state.terminales);
+      const idAnu = 'ANU-' + prefijo + '-' + String(state.proximaAnulacion || 1).padStart(5, '0');
       const nuevaAnulacion: Anulacion = {
         id: idAnu,
         ventaId: selectedSale.id,
         fecha: ahoraStr,
         totalUSD: selectedSale.totalUSD,
         motivo: 'ANULACIÓN TOTAL DE FACTURA POR OPERADOR',
-        items: [...selectedSale.items]
+        items: [...selectedSale.items],
+        terminalId: terminalId || 'GLOBAL'
       };
 
       let nuevosAsientosDiario: LibroDiarioEntry[] = [];
@@ -219,7 +227,9 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
           montoUSD: selectedSale.totalUSD,
           montoBS: selectedSale.totalBS,
           metodo: selectedSale.metodoPago || 'otros',
-          referencia: idAnu
+          referencia: idAnu,
+          terminalId: terminalId || 'GLOBAL',
+          terminalName: terminal?.nombre || 'SISTEMA GLOBAL'
         });
       }
 

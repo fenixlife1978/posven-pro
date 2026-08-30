@@ -178,10 +178,11 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   }, [state.terminales]);
 
   const histVentas = useMemo(() => {
+    const tc = Utils.getTerminalCash(currentTerminal);
     return (state.ventas || [])
-      .filter(v => v.terminalId === currentTerminal?.id && v.fecha > (state.fechaUltimoZ || ''))
+      .filter(v => v.terminalId === currentTerminal?.id && v.fecha > (tc.fechaUltimoZ || ''))
       .sort((a, b) => b.fecha.localeCompare(a.fecha));
-  }, [state.ventas, state.fechaUltimoZ, currentTerminal?.id]);
+  }, [state.ventas, currentTerminal?.id]);
 
   const histPageSize = 10;
   const histTotalPages = Math.max(1, Math.ceil(histVentas.length / histPageSize));
@@ -216,7 +217,9 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   const getFreshReportData = () => {
     // ✅ FIX: Obtener datos frescos del Store para evitar inconsistencias
     const freshState = Store.get();
-    const corteTimestamp = freshState.fechaUltimoZ || '';
+    // Cada caja usa SU PROPIO corte Z / fondo de apertura / correlativo Z.
+    const tc = Utils.getTerminalCash(currentTerminal);
+    const corteTimestamp = tc.fechaUltimoZ || '';
     const termId = currentTerminal?.id || 'GLOBAL';
     
     // Usar datos frescos del Store en lugar del state del componente
@@ -257,11 +260,11 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     const desdeNC = sortedDevs.length > 0 ? sortedDevs[0].id : 'N/A';
     const hastaNC = sortedDevs.length > 0 ? sortedDevs[sortedDevs.length - 1].id : 'N/A';
 
-    // Movimientos de caja del periodo (ingresos/egresos). Se filtran SOLO por
-    // fecha: cada egreso/entrada extra se registra en la caja y debe reflejarse
-    // en X/Z aunque su "referencia" (MANUAL, nº deuda, factura...) no incluya
-    // el id del terminal.
-    const relevantDiario = allLibroDiario.filter(e => e.fecha > corteTimestamp);
+    // Movimientos de caja del periodo SOLO de ESTA caja. Cada asiento generado
+    // por el POS lleva su terminalId, así ninguna caja ve las entradas/salidas
+    // de otra. Los asientos manuales (contabilidad) se registran por terminal si
+    // el operador tiene uno asignado; si no, quedan como globales.
+    const relevantDiario = allLibroDiario.filter(e => e.fecha > corteTimestamp && e.terminalId === termId);
     const totalSalidasCaja = relevantDiario.filter(e => e.tipo === 'egreso').reduce((s, e) => s + e.montoUSD, 0);
     const totalEntradasCaja = relevantDiario.filter(e => e.tipo === 'ingreso' && e.categoria !== 'VENTA' && e.categoria !== 'COBRO_DEUDA').reduce((s, e) => s + e.montoUSD, 0);
     // Cobros de deuda (ingresos de caja por cobros de créditos).
@@ -277,11 +280,11 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       manualEntradas: totalEntradasCaja,
       cobrosDeudaUSD,
       cobrosDeudaBS,
-      fondoAperturaUSD: freshState.fondoCajaHoyUSD || 0,
-      fondoAperturaBS: freshState.fondoCajaHoyBS || 0,
+      fondoAperturaUSD: tc.fondoCajaHoyUSD || 0,
+      fondoAperturaBS: tc.fondoCajaHoyBS || 0,
       desdeFactura, hastaFactura, desdeNC, hastaNC,
       stats: { facturas: vActivas.length, devoluciones: dHoy.length, anulaciones: vAnuladas.length, ticketPromedio: vActivas.length > 0 ? (netUSD / vActivas.length) : 0 },
-      fecha: Utils.ahora(), terminalName, terminalId: termId, numeroZ: freshState.ultimoZ + 1, acumuladoHistoricoUSD: freshState.acumuladoHistorico + netUSD,
+      fecha: Utils.ahora(), terminalName, terminalId: termId, numeroZ: tc.ultimoZ + 1, acumuladoHistoricoUSD: tc.acumuladoHistorico + netUSD,
       // Total explícito en USD del día (ventas brutas, antes de descuentos/devoluciones).
       // Suma de v.totalUSD: ya incluye conversión BS→USD por la tasa de la venta.
       totalVentasUSD: brUSD,
@@ -301,10 +304,11 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       
       // ✅ Verificar que los datos se cargaron correctamente
       const state = Store.get();
-      const ventasDelDia = (state.ventas || []).filter(v => v.estado !== 'anulada');
+      const termId = currentTerminal?.id || 'GLOBAL';
+      const ventasDelDia = (state.ventas || []).filter(v => v.estado !== 'anulada' && v.terminalId === termId);
       
-      // Si no hay ventas pero isCashOpen es true, mostrar advertencia
-      if (ventasDelDia.length === 0 && state.isCashOpen) {
+      // Si no hay ventas pero la caja (de ESTE terminal) está abierta, mostrar advertencia
+      if (ventasDelDia.length === 0 && Utils.getTerminalCash(currentTerminal).isCashOpen) {
         toast({ 
           variant: 'default', 
           title: 'Sin ventas registradas', 
@@ -327,9 +331,12 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     const data = reportSnapshot;
     if (!data) return;
     const ahora = Utils.ahora();
-    const numeroZ = state.ultimoZ + 1;
+    // Correlativo Z de ESTA caja (cada caja lleva su propia secuencia).
+    const tc = Utils.getTerminalCash(currentTerminal);
+    const numeroZ = tc.ultimoZ + 1;
+    const termId = currentTerminal?.id || 'GLOBAL';
     const nuevoZ: ReportZ = {
-      id: 'Z-' + String(numeroZ).padStart(6, '0'), fecha: ahora, numeroZ, terminalName: data.terminalName,
+      id: 'Z-' + String(numeroZ).padStart(6, '0'), fecha: ahora, numeroZ, terminalId: termId, terminalName: data.terminalName,
       desdeFactura: data.desdeFactura, hastaFactura: data.hastaFactura, desdeNotaCredito: data.desdeNC, hastaNotaCredito: data.hastaNC,
       cantidadAnuladas: data.stats.anulaciones, ventaBrutaUSD: data.brUSD, descuentoUSD: data.descUSD, devolucionesUSD: data.devUSD,
       ventaNetaUSD: data.netUSD, baseImponibleUSD: data.baseImponibleUSD, ivaUSD: data.ivaUSD, exentoUSD: data.exentoUSD,
@@ -339,7 +346,17 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     
     if (typeof localStorage !== 'undefined') localStorage.removeItem('posven_apertura_done');
     
-    updateState({ reportesZ: [...(state.reportesZ || []), nuevoZ], ultimoZ: numeroZ, fechaUltimoZ: ahora, acumuladoHistorico: data.acumuladoHistoricoUSD, fondoCajaHoyBS: 0, fondoCajaHoyUSD: 0 });
+    // El corte Z solo resetea la ventana/caja de ESTE terminal, nunca de las demás.
+    updateState({
+      reportesZ: [...(state.reportesZ || []), nuevoZ],
+      terminales: Utils.patchTerminal(state.terminales, termId, {
+        ultimoZ: numeroZ,
+        fechaUltimoZ: ahora,
+        acumuladoHistorico: data.acumuladoHistoricoUSD,
+        fondoCajaHoyBS: 0,
+        fondoCajaHoyUSD: 0,
+      })
+    });
     toast({ title: `Cierre Fiscal Z #${numeroZ} Exitoso` });
     setShowReportType(null);
   };
@@ -483,7 +500,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       const totalPagadoRecibido = listadoPagos.reduce((s, p) => s + p.montoUSD, 0);
       const terminal = getCurrentTerminal();
       const nextNum = terminal?.proximoRecibo || state.proximoRecibo;
-      const reciboId = String(nextNum).padStart(9, '0');
+      const prefijo = Utils.prefijoCaja(terminal, state.terminales);
+      const reciboId = prefijo + '-' + String(nextNum).padStart(9, '0');
       const ahoraStr = Utils.ahora();
       
       let vExento = 0, vBase = 0, vIVA = 0;
@@ -549,7 +567,9 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         montoUSD: p.montoUSD, 
         montoBS: p.montoBS, 
         metodo: p.metodo, 
-        referencia: reciboId + '-' + (terminal?.id || 'GLOBAL') 
+        referencia: reciboId + '-' + (terminal?.id || 'GLOBAL'),
+        terminalId: terminal?.id || 'GLOBAL',
+        terminalName: terminal?.nombre || 'SISTEMA GLOBAL'
       }));
       
       await updateState({ 
@@ -578,7 +598,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     try {
       const totalAbonado = pagosAbono.reduce((s, p) => s + p.montoUSD, 0);
       if (totalAbonado <= 0) return;
-      const ahoraStr = Utils.ahora(), terminal = getCurrentTerminal(), nextNum = terminal?.proximoRecibo || state.proximoRecibo, reciboId = 'PAY-' + String(nextNum).padStart(6, '0');
+      const ahoraStr = Utils.ahora(), terminal = getCurrentTerminal(), nextNum = terminal?.proximoRecibo || state.proximoRecibo, prefijo = Utils.prefijoCaja(terminal, state.terminales), reciboId = 'PAY-' + prefijo + '-' + String(nextNum).padStart(6, '0');
       const nuevasDeudas: Debt[] = state.cxc.map(d => {
         if (d.id === showAbonoModal.id) {
           const nuevoSaldo = Math.max(0, d.saldoUSD - totalAbonado);
@@ -602,7 +622,9 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         montoUSD: p.montoUSD, 
         montoBS: p.montoBS, 
         metodo: p.metodo, 
-        referencia: reciboId + '-' + (terminal?.id || 'GLOBAL') 
+        referencia: reciboId + '-' + (terminal?.id || 'GLOBAL'),
+        terminalId: terminal?.id || 'GLOBAL',
+        terminalName: terminal?.nombre || 'SISTEMA GLOBAL'
       }));
       
       const saleAbono: Sale = { 
@@ -648,7 +670,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     try {
       const terminal = getCurrentTerminal();
       const nextNum = terminal?.proximoRecibo || state.proximoRecibo;
-      const reciboId = String(nextNum).padStart(9, '0');
+      const prefijo = Utils.prefijoCaja(terminal, state.terminales);
+      const reciboId = prefijo + '-' + String(nextNum).padStart(9, '0');
       const ahoraStr = Utils.ahora();
       
       let vExento = 0, vBase = 0, vIVA = 0;

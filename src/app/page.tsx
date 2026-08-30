@@ -118,14 +118,10 @@ export default function LicoreriaPOS() {
 
               if (!moduleInitialized.current) {
                 const savedModule = sessionStorage.getItem('posven_active_module');
-                // ✅ FIX: Usar isCashOpen del Store como fuente de verdad, no solo el flag en localStorage.
-                // Esto evita el bug donde tras un corte de luz el sistema muestra "caja abierta" 
-                // pero los datos están inconsistentes.
-                const state = Store.get();
-                const cajaEstaAbierta = state.isCashOpen === true;
+                // ✅ FIX: Usar el estado de caja de ESTE terminal (no un estado global).
+                // Así, abrir la caja 2 no muestra la interfaz de la caja 1, y el corte Z
+                // de una caja no borra la información de la otra.
                 const aperturaConfirmada = localStorage.getItem('posven_apertura_done') === 'true';
-                // Mostrar apertura solo si NO está abierta en Firestore O si el flag de localStorage está ausente
-                const debeMostrarApertura = !cajaEstaAbierta || !aperturaConfirmada;
 
                 if (data.rol === 'cajero') {
                    getDocs(query(collection(db, 'terminales'), where('usuarioId', '==', currentUser.uid))).then(configSnap => {
@@ -139,6 +135,12 @@ export default function LicoreriaPOS() {
                          });
                          return;
                       }
+                      
+                      const myTerm = terminals.find((t: Terminal) => t.usuarioId === currentUser.uid);
+                      const cajaEstaAbierta = !!myTerm?.isCashOpen;
+                      // Mostrar apertura solo si la caja de ESTE terminal no está abierta
+                      // O si el flag de localStorage está ausente
+                      const debeMostrarApertura = !cajaEstaAbierta || !aperturaConfirmada;
                       
                       const target = savedModule || 'ventas';
                       setActiveTab(target);
@@ -375,6 +377,7 @@ export default function LicoreriaPOS() {
 
     const terminalActual = state.terminales.find(t => t.usuarioId === user?.uid);
     const nextRecibo = terminalActual?.proximoRecibo || state.proximoRecibo;
+    const prefijoRecibo = Utils.prefijoCaja(terminalActual, state.terminales);
 
     return (
       <div className="min-h-screen bg-surface-warm flex items-center justify-center p-6 font-sans no-print">
@@ -400,7 +403,7 @@ export default function LicoreriaPOS() {
                 </div>
                 <div className="p-3 bg-surface-soft rounded-xl border border-line">
                   <label className="text-[8px] font-black uppercase text-ink/50 block mb-1">Recibo Inicio</label>
-                  <p className="text-[10px] font-black text-ink"># {String(nextRecibo).padStart(9, '0')}</p>
+                  <p className="text-[10px] font-black text-ink"># {prefijoRecibo}-{String(nextRecibo).padStart(9, '0')}</p>
                 </div>
               </div>
 
@@ -432,16 +435,38 @@ export default function LicoreriaPOS() {
                   const bsValue = parseFloat(aperturaData.bs) || 0;
                   const usdValue = parseFloat(aperturaData.usd) || 0;
                   
-                  // ✅ GUARDAR CORRECTAMENTE EN EL ESTADO GLOBAL
-                  // Actualizar el estado local y persistir en Store
+                  // ✅ GUARDAR LA APERTURA EN EL TERMINAL (caja) DE ESTE OPERADOR,
+                  // no en un estado global. Cada caja abre/cierra su propia jornada.
                   const currentState = Store.get();
+                  const termId = (currentState.terminales || []).find(t => t.usuarioId === user?.uid)?.id;
+                  const terminalActual = (currentState.terminales || []).find(t => t.id === termId);
+                  const session: any = {
+                    terminalId: termId,
+                    terminalName: terminalActual?.nombre || 'S/T',
+                    openDate: new Date().toISOString(),
+                    openAmount: bsValue,
+                    openAmountBs: bsValue,
+                    openAmountUsd: usdValue,
+                    openNotes: 'Apertura de jornada',
+                    closeDate: null,
+                    closeAmount: null,
+                    closeAmountBs: null,
+                    closeAmountUsd: null,
+                    closeNotes: null,
+                    totalSales: 0,
+                    totalSalesBs: 0,
+                    totalSalesUsd: 0,
+                    totalCollections: 0,
+                    saleCount: 0
+                  };
+                  const updatedTerminals = (currentState.terminales || []).map(t =>
+                    t.id === termId ? { ...t, fondoCajaHoyBS: bsValue, fondoCajaHoyUSD: usdValue, isCashOpen: true, cashData: session } : t
+                  );
                   const newState: AppState = {
                     ...currentState,
-                    fondoCajaHoyBS: bsValue,
-                    fondoCajaHoyUSD: usdValue,
-                    isCashOpen: true
+                    terminales: updatedTerminals
                   };
-                  Store.set(newState);
+                  Store.set({ terminales: updatedTerminals });
                   setState(newState);
                   
                   localStorage.setItem('posven_apertura_done', 'true'); 
