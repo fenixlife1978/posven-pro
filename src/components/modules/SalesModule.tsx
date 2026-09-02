@@ -148,6 +148,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   const [showAbonoModal, setShowAbonoModal] = useState<Debt | null>(null);
   
   const [showDetails, setShowDetails] = useState<any | null>(null);
+  const [showSaleDetail, setShowSaleDetail] = useState<any | null>(null);
   const [lastProcessedSale, setLastProcessedSale] = useState<any | null>(null);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [selectedProductDisplay, setSelectedProductDisplay] = useState<Product | null>(null);
@@ -937,12 +938,12 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
           <div className="card-head px-6 py-4 bg-ink border-b border-white/10 flex justify-between items-center"><h3 className="text-white font-black uppercase italic tracking-tighter flex items-center gap-2 text-xs"><History className="w-5 h-5 text-brand-gold" /> HISTORIAL TERMINAL: {currentTerminal?.nombre || 'S/T'}</h3><button onClick={() => setView('pos')} className="btn btn-sm bg-white text-ink hover:bg-surface-soft flex items-center gap-2 font-black uppercase text-[10px] rounded-lg border-none px-4"><ArrowLeft className="w-3.5 h-3.5"/> Volver al POS</button></div>
           <div className="table-wrap flex-1 overflow-y-auto">
             <table>
-              <thead><tr><th>Recibo</th><th>Hora</th><th>Terminal</th><th>Cliente</th><th>Tipo</th><th className="text-right">Monto USD</th><th>Método</th><th className="text-center">Estado</th></tr></thead>
+              <thead><tr><th>Recibo</th><th>Hora</th><th>Terminal</th><th>Cliente</th><th>Tipo</th><th className="text-right">Monto USD</th><th>Método</th><th className="text-center">Estado</th><th className="text-center">Acciones</th></tr></thead>
               <tbody>
                 {histPageVentas.length === 0 ? (
-                  <tr><td colSpan={8} className="text-center py-20 text-ink/20 font-black italic uppercase">Sin ventas registradas en esta terminal</td></tr>
+                  <tr><td colSpan={9} className="text-center py-20 text-ink/20 font-black italic uppercase">Sin ventas registradas en esta terminal</td></tr>
                 ) : histPageVentas.map(v => (
-                  <tr key={v.id} className="border-b border-line/40 hover:bg-surface-warm/20"><td className="text-ink font-black text-xs mono">{v.id}</td><td className="text-ink font-bold text-xs">{v.fecha.split('T')[1]?.slice(0, 5)}</td><td className="text-ink font-black text-[10px] uppercase">{v.terminalName || state.terminales.find(t => t.id === v.terminalId)?.nombre || '-'}</td><td className="text-ink font-black text-xs uppercase truncate max-w-[150px]">{v.cliente}</td><td className="text-ink font-black text-[9px] uppercase"><span className={`badge ${v.type === 'COBRO DEUDA' ? 'badge-info' : 'badge-neutral'}`}>{v.type || 'VENTA'}</span></td><td className="text-brand-gold-deep font-black text-xs text-right">{Utils.fmtUSD(v.totalUSD)}</td><td className="text-ink font-bold text-[10px] uppercase">{Utils.metodoLabel(v.metodoPago)}</td><td className="text-center"><span className={`badge ${v.estado === 'pendiente' ? 'badge-warn' : (v.estado === 'anulada' ? 'badge-err' : 'badge-ok')} font-black text-[9px] uppercase`}>{v.estado}</span></td></tr>
+                  <tr key={v.id} className="border-b border-line/40 hover:bg-surface-warm/20"><td className="text-ink font-black text-xs mono">{v.id}</td><td className="text-ink font-bold text-xs">{v.fecha.split('T')[1]?.slice(0, 5)}</td><td className="text-ink font-black text-[10px] uppercase">{v.terminalName || state.terminales.find(t => t.id === v.terminalId)?.nombre || '-'}</td><td className="text-ink font-black text-xs uppercase truncate max-w-[150px]">{v.cliente}</td><td className="text-ink font-black text-[9px] uppercase"><span className={`badge ${v.type === 'COBRO DEUDA' ? 'badge-info' : 'badge-neutral'}`}>{v.type || 'VENTA'}</span></td><td className="text-brand-gold-deep font-black text-xs text-right">{Utils.fmtUSD(v.totalUSD)}</td><td className="text-ink font-bold text-[10px] uppercase">{Utils.metodoLabel(v.metodoPago)}</td><td className="text-center"><span className={`badge ${v.estado === 'pendiente' ? 'badge-warn' : (v.estado === 'anulada' ? 'badge-err' : 'badge-ok')} font-black text-[9px] uppercase`}>{v.estado}</span></td><td className="text-center"><button onClick={() => setShowSaleDetail(v)} className="w-7 h-7 rounded-full flex items-center justify-center text-status-success hover:bg-status-success/10 transition-colors" title="Ver ítems y detalle de venta"><Eye className="w-4 h-4" /></button></td></tr>
                 ))}
               </tbody>
             </table>
@@ -1103,6 +1104,84 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
             }))); 
           }} 
         />
+      )}
+
+      {showSaleDetail && (
+        <div className="modal show" style={{ zIndex: 115 }}><div className="modal-bg" onClick={() => setShowSaleDetail(null)}></div>
+          <div className="modal-box max-w-[620px] bg-white border-2 border-line rounded-xl overflow-hidden shadow-2xl">
+            <div className="modal-head py-4 px-6 border-b border-line bg-ink flex justify-between items-center text-white">
+              <h3 className="font-black text-xs uppercase italic tracking-tighter flex items-center gap-2">
+                <Receipt className="w-5 h-5 text-brand-gold" /> AUDITORÍA DE VENTA: {showSaleDetail.id}
+              </h3>
+              <button onClick={() => setShowSaleDetail(null)} className="text-white hover:text-brand-gold"><X className="w-5 h-5"/></button>
+            </div>
+            <div className="modal-body p-6 space-y-5 max-h-[75vh] overflow-y-auto bg-white">
+              <div className="grid grid-cols-3 gap-3">
+                <div className="p-3 bg-surface-soft rounded-lg border border-line">
+                  <label className="text-[8px] font-black uppercase text-ink block mb-1">Fecha</label>
+                  <p className="text-sm font-black text-ink">{Utils.fmtFecha(showSaleDetail.fecha)}</p>
+                </div>
+                <div className="p-3 bg-surface-soft rounded-lg border border-line">
+                  <label className="text-[8px] font-black uppercase text-ink block mb-1">Cliente</label>
+                  <p className="text-sm font-black text-ink uppercase truncate">{showSaleDetail.cliente || 'Consumidor final'}</p>
+                </div>
+                <div className="p-3 bg-brand-gold-soft border border-brand-gold/20 rounded-lg">
+                  <label className="text-[8px] font-black uppercase text-brand-gold-deep block mb-1">Total USD</label>
+                  <p className="text-lg font-black text-brand-gold-deep">{Utils.fmtUSD(showSaleDetail.totalUSD)}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div className="p-3 bg-surface-soft rounded-lg border border-line">
+                  <label className="text-[8px] font-black uppercase text-ink block mb-1">Tipo</label>
+                  <p className="text-[10px] font-black text-ink uppercase">{showSaleDetail.type || 'VENTA'}</p>
+                </div>
+                <div className="p-3 bg-surface-soft rounded-lg border border-line">
+                  <label className="text-[8px] font-black uppercase text-ink block mb-1">Método</label>
+                  <p className="text-[10px] font-black text-ink uppercase">{Utils.metodoLabel(showSaleDetail.metodoPago)}</p>
+                </div>
+                <div className="p-3 bg-surface-soft rounded-lg border border-line">
+                  <label className="text-[8px] font-black uppercase text-ink block mb-1">Estado</label>
+                  <p className="text-[10px] font-black uppercase"><span className={`badge ${showSaleDetail.estado === 'pendiente' ? 'badge-warn' : (showSaleDetail.estado === 'anulada' ? 'badge-err' : 'badge-ok')} font-black text-[9px] uppercase`}>{showSaleDetail.estado}</span></p>
+                </div>
+              </div>
+
+              <div className="space-y-3 animate-in slide-in-from-top-2 duration-300">
+                <div className="flex justify-between items-center border-b border-line pb-2">
+                  <h4 className="text-[10px] font-black uppercase text-ink tracking-[0.2em]">DESGLOSE DE ÍTEMS</h4>
+                  <span className="text-[9px] font-black text-ink uppercase">{showSaleDetail.items?.length || 0} ítems</span>
+                </div>
+                <div className="bg-surface-soft/50 rounded-lg overflow-hidden border border-line/30">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="bg-ink/5">
+                        <th className="text-[8px] font-black uppercase p-2 text-left">Cant</th>
+                        <th className="text-[8px] font-black uppercase p-2 text-left">Descripción</th>
+                        <th className="text-[8px] font-black uppercase p-2 text-right">P. Unit</th>
+                        <th className="text-[8px] font-black uppercase p-2 text-right">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(!showSaleDetail.items || showSaleDetail.items.length === 0) ? (
+                        <tr><td colSpan={4} className="text-center py-10 text-ink font-black uppercase italic text-[10px]">Sin desglose de ítems disponible para esta referencia</td></tr>
+                      ) : showSaleDetail.items.map((it: any, idx: number) => (
+                        <tr key={idx} className="border-b border-line/20">
+                          <td className="text-[9px] font-black p-2">{it.cantidad}</td>
+                          <td className="text-[9px] font-black uppercase p-2 truncate max-w-[220px]">{it.nombre}</td>
+                          <td className="text-[9px] font-black p-2 text-right">{Utils.fmtUSD(it.precioUnitUSD)}</td>
+                          <td className="text-[9px] font-black p-2 text-right text-brand-gold-deep">{Utils.fmtUSD(it.subtotalUSD)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div className="modal-foot p-4 bg-surface-soft border-t border-line text-right">
+              <button onClick={() => setShowSaleDetail(null)} className="btn btn-primary px-8 font-black uppercase text-[10px] rounded-lg shadow-md">Cerrar</button>
+            </div>
+          </div>
+        </div>
       )}
 
       {showDetails && (
