@@ -83,8 +83,16 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
   // Todas las deudas (incluyendo pagadas)
   const todasLasDeudas = state.cxc || [];
   
-  // Deudas pendientes (no pagadas) para el total
-  const pendientes = todasLasDeudas.filter((x: any) => x.estado !== 'pagada');
+  // Una cuenta SOLO es deuda activa (por cobrar) cuando tiene monto real y saldo
+  // real pendiente. Monto o saldo $0.00 (despreciable/negativo) es NEUTRO o PAGADO:
+  // no cuenta como cartera activa por cobrar.
+  const esDeudaActiva = (x: any) =>
+    (x.montoUSD || 0) > 0.001 &&
+    (x.saldoUSD || 0) > 0.001 &&
+    x.estado !== 'pagada';
+
+  // Deudas activas por cobrar para el total
+  const pendientes = todasLasDeudas.filter(esDeudaActiva);
   const totalPendiente = pendientes.reduce((s: number, x: any) => s + x.saldoUSD, 0);
 
   // Agrupar SOLO clientes que existen en state.clientes
@@ -114,8 +122,8 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
       
       if (customerKey) {
         groups[customerKey].debts.push(debt);
-        // Solo sumar al total si la deuda no está pagada
-        if (debt.estado !== 'pagada') {
+        // Solo sumar al total si la deuda está realmente activa (tiene saldo pendiente)
+        if (esDeudaActiva(debt)) {
           groups[customerKey].totalUSD += debt.saldoUSD;
         }
       }
@@ -138,7 +146,7 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
           filteredGroups[name] = {
             ...group,
             debts: filteredDebts,
-            totalUSD: filteredDebts.reduce((s: number, d: Debt) => s + (d.estado !== 'pagada' ? d.saldoUSD : 0), 0)
+            totalUSD: filteredDebts.reduce((s: number, d: Debt) => s + (esDeudaActiva(d) ? d.saldoUSD : 0), 0)
           };
         }
         // Los clientes sin deudas no se muestran cuando hay filtro activo

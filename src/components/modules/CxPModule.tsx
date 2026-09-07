@@ -59,24 +59,29 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
   const [deudaMotivo, setDeudaMotivo] = useState('');
   const [fechaDeuda, setFechaDeuda] = useState(Utils.hoy());
 
-  // Una cuenta se considera PAGADA si su estado lo indica o si su saldo es $0.00
-  // (o despreciable), aunque por algún residuo/redondeo no haya quedado marcada.
-  const esPagada = (x: Debt) => x.estado === 'pagada' || (x.saldoUSD || 0) <= 0.001;
+  // Una cuenta SOLO representa deuda activa cuando tiene monto real y saldo real
+  // pendiente. Un monto $0.00 (o menor/despreciable) es NEUTRO: no es deuda por
+  // pagar. Un saldo $0.00 (o despreciable) la convierte en PAGADA, aunque por un
+  // residuo/redondeo no haya quedado marcada como 'pagada'.
+  const esDeudaActiva = (x: Debt) =>
+    (x.montoUSD || 0) > 0.001 &&
+    (x.saldoUSD || 0) > 0.001 &&
+    x.estado !== 'pagada';
 
-  const pendientes = (state.cxp || []).filter((x: Debt) => !esPagada(x));
+  const pendientes = (state.cxp || []).filter(esDeudaActiva);
   const totalPendiente = pendientes.reduce((s: number, x: Debt) => s + x.saldoUSD, 0);
 
-  // Agrupar cuentas por pagar por proveedor (las pendientes primero, cronológicas).
+  // Agrupar cuentas por pagar por proveedor (SOLO las que tienen deuda real activa,
+  // excluyendo pagadas/neutrales de $0.00, en orden cronológico).
   const gruposProveedor = React.useMemo(() => {
     const map = new Map<string, { proveedor: string; pendientes: Debt[]; saldoTotal: number }>();
     (state.cxp || []).forEach((d: Debt) => {
+      if (!esDeudaActiva(d)) return;
       const key = (d.proveedor || 'SIN PROVEEDOR').toUpperCase();
       if (!map.has(key)) map.set(key, { proveedor: key, pendientes: [], saldoTotal: 0 });
       const g = map.get(key)!;
-      if (!esPagada(d)) {
-        g.pendientes.push(d);
-        g.saldoTotal += d.saldoUSD;
-      }
+      g.pendientes.push(d);
+      g.saldoTotal += d.saldoUSD;
     });
     return Array.from(map.values())
       .map(g => ({ ...g, pendientes: g.pendientes.sort((a, b) => a.fecha.localeCompare(b.fecha)) }))
@@ -260,7 +265,7 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
     const aplicados: { id: string; monto: number }[] = [];
 
     const nuevasCxP = (state.cxp || []).map((c: Debt) => {
-      if (c.proveedor?.toUpperCase() !== globalProvider.proveedor || c.estado === 'pagada') return c;
+      if (c.proveedor?.toUpperCase() !== globalProvider.proveedor || !esDeudaActiva(c)) return c;
       if (remanente <= 0.001) return c;
       const pago = Math.min(c.saldoUSD, remanente);
       remanente -= pago;
