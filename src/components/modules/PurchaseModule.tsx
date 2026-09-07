@@ -72,6 +72,7 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
   const [isProcessing, setIsProcessing] = useState(false);
 
   const [showNewProductModal, setShowNewProductModal] = useState(false);
+  const [confirmProcesar, setConfirmProcesar] = useState(false);
 
   const [view, setView] = useState<'nueva' | 'historial'>('nueva');
   const [rango, setRango] = useState<DateRange>({ desde: Utils.hoy(), hasta: Utils.hoy() });
@@ -400,6 +401,130 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
     }
   };
 
+  // Reduce o elimina un asiento contable al revertir un abono/compra. Devuelve el
+  // libro diario actualizado: si el asiento queda en 0 se elimina por completo,
+  // de lo contrario (asiento consolidado) se reduce por el monto revertido.
+  const revertirAsiento = (diario: LibroDiarioEntry[], asientoId: string, montoUSD: number, montoBS: number): LibroDiarioEntry[] => {
+    const asiento = diario.find(e => e.id === asientoId);
+    if (!asiento) return diario;
+    const resto = Math.round((asiento.montoUSD - montoUSD + Number.EPSILON) * 100) / 100;
+    const restoBS = Math.round((asiento.montoBS - montoBS + Number.EPSILON) * 100) / 100;
+    if (resto <= 0.001) return diario.filter(e => e.id !== asientoId);
+    return diario.map(e => e.id === asientoId ? { ...e, montoUSD: resto, montoBS: Math.max(0, restoBS) } : e);
+  };
+
+  // Elimina (revierte) una compra del historial: quita sus movimientos de kardex y
+  // recompone stock + costo CPP, revierte los asientos contables (COMPRA y pagos de
+  // la CxP asociada) y elimina la compra y su(s) cuenta(s) por pagar generadas.
+  const handleEliminarCompra = (compra: PurchaseRecord) => {
+    const normFact = String(compra.numeroFactura || '').trim().toLowerCase();
+    const normProv = String(compra.proveedor || '').trim().toLowerCase();
+    if (!normFact && !normProv) return alert('No se pudo identificar la compra para eliminar.');
+
+    // Movimientos 'compra' generados por esta factura/proveedor (origen: kardex).
+    const movsDeEsta = (state.movimientos || []).filter(m => m.tipo === 'compra' &&
+      ((m.referencia || '').toLowerCase().includes(`fact: ${normFact}`)) &&
+      ((m.referencia || '').toLowerCase().includes(`prov: ${normProv}`)));
+
+    // Cuentas por pagar generadas por esta compra.
+    const fechaCompra = String(compra.fecha || '').slice(0, 10);
+    const deudasVinculadas = (state.cxp || []).filter(d =>
+      String(d.numeroFactura || '') === String(compra.numeroFactura || '') &&
+      String(d.proveedor || '') === String(compra.proveedor || '') &&
+      String(d.fecha || '').slice(0, 10) === fechaCompra);
+
+    const txtDeudas = deudasVinculadas.length > 0
+      ? `${deudasVinculadas.length} cuenta(s) por pagar y sus abonos` : 'ninguna cuenta por pagar';
+
+    if (!confirm(`¿SEGURO QUE DESEA ELIMINAR LA COMPRA?\n\nFactura #${compra.numeroFactura} · ${compra.proveedor}\nCondición: ${String(compra.condicion || '').toUpperCase()} · Total: ${Utils.fmtUSD(compra.montoUSD || 0)}\n\nSe revertirán:\n• ${movsDeEsta.length} movimiento(s) de inventario\n• Stock y costo CPP de los productos afectados\n• Asientos contables de compra\n• ${txtDeudas}\n\nEsta acción es IRREVERSIBLE.`)) return;
+
+    const idsMovs = new Set(movsDeEsta.map(m => m.id));
+    const idsAfectados = [...new Set(movsDeEsta.map(m => m.productoId))];
+
+    // Base real de cada producto: el stockAntes de su primer movimiento histórico.
+    const basePorProducto = new Map<string, number>();
+    idsAfectados.forEach(pid => {
+      const ms = (state.movimientos || []).filter(m => m.productoId === pid)
+        .sort((a, b) => (a.fecha === b.fecha ? 0 : a.fecha < b.fecha ? -1 : 1));
+      basePorProducto.set(pid, ms.length ? (ms[0].stockAntes || 0) : 0);
+    });
+
+    // 1) Quitar movimientos y recomponer el saldo corrido de cada producto.
+    let nuevosMovimientos = (state.movimientos || []).filter(m => !idsMovs.has(m.id));
+    const stockFinal = new Map<string, number>();
+    const costoFinal = new Map<string, number>();
+
+    idsAfectados.forEach(pid => {
+      const others = nuevosMovimientos.filter(m => m.productoId !== pid);
+      const prods = nuevosMovimientos.filter(m => m.productoId === pid)
+        .slice().sort((a, b) => (a.fecha === b.fecha ? 0 : a.fecha < b.fecha ? -1 : 1));
+      const base = basePorProducto.get(pid) || 0;
+      let bal = base;
+      const upd = prods.map(m => {
+        const stockAntes = bal;
+        const stockDespues = stockAntes + (m.cantidad || 0);
+        bal = stockDespues;
+        return { ...m, stockAntes, stockDespues };
+      });
+      nuevosMovimientos = [...others, ...upd];
+      stockFinal.set(pid, bal);
+
+      const pActual = state.productos.find(p => p.id === pid);
+      let costo = pActual ? (pActual.costoUSD || 0) : 0;
+      if (pActual) {
+        const delMov = movsDeEsta.find(m => m.productoId === pid);
+        const itemDel = (compra.items || []).find(i => i.productoId === pid);
+        const q = Math.abs(delMov ? delMov.cantidad : (itemDel ? itemDel.cantidad : 0)) || 0;
+        const cq = itemDel ? (itemDel.costoUnitarioUSD || 0) : costo;
+        const delFecha = delMov ? delMov.fecha : '';
+        const stockTrasCompra = delMov ? (delMov.stockDespues || (base + q)) : (base + q);
+        const hayOperacionPosterior = nuevosMovimientos.some(m => m.productoId === pid &&
+          (m.tipo === 'compra' || m.tipo === 'ajuste_entrada' || m.tipo === 'inicial') &&
+          delFecha !== '' && m.fecha > delFecha);
+        if (!hayOperacionPosterior && q > 0 && (stockTrasCompra - q) > 0) {
+          const num = (stockTrasCompra * costo) - (q * cq);
+          const den = stockTrasCompra - q;
+          costo = Math.max(0, Math.round((num / den + Number.EPSILON) * 10000) / 10000);
+        }
+      }
+      costoFinal.set(pid, costo);
+    });
+
+    // 2) Revertir asientos contables de la compra y de los pagos de sus CxP.
+    let nuevoDiario = state.libroDiario || [];
+    nuevoDiario = nuevoDiario.filter(e => !(e.categoria === 'COMPRA' && e.referencia === String(compra.numeroFactura || '')));
+    deudasVinculadas.forEach(d => {
+      (d.historialPagos || []).forEach(p => {
+        if ((p as any).asientoId) {
+          nuevoDiario = revertirAsiento(nuevoDiario, (p as any).asientoId, p.montoUSD || 0, p.montoBS || 0);
+        }
+      });
+    });
+
+    // 3) Actualizar productos, quitar deudas, asientos y la compra del historial.
+    const idsDeudas = new Set(deudasVinculadas.map(d => d.id));
+    const nuevosProductos = state.productos.map(p => {
+      if (stockFinal.has(p.id) || costoFinal.has(p.id)) {
+        const patch: any = {};
+        if (stockFinal.has(p.id)) patch.stock = stockFinal.get(p.id);
+        if (costoFinal.has(p.id)) patch.costoUSD = costoFinal.get(p.id);
+        return { ...p, ...patch };
+      }
+      return p;
+    });
+
+    updateState({
+      productos: nuevosProductos,
+      movimientos: nuevosMovimientos,
+      libroDiario: nuevoDiario,
+      cxp: (state.cxp || []).filter(d => !idsDeudas.has(d.id)),
+      compras: (state.compras || []).filter(c => c.id !== compra.id)
+    });
+
+    toast({ title: "Compra eliminada", description: `Se revirtió la compra FACT #${compra.numeroFactura} y todos sus movimientos asociados.` });
+    setExpandedCompra(null);
+  };
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pb-20">
       <div className="flex justify-between items-center flex-wrap gap-4">
@@ -613,7 +738,7 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
                 </div>
               </div>
               <button 
-                onClick={handleProcessPurchase} 
+                onClick={() => setConfirmProcesar(true)} 
                 disabled={loteTemporal.length === 0 || isProcessing} 
                 className="btn btn-primary h-14 px-10 font-black uppercase text-xs shadow-xl disabled:opacity-20 transition-all flex items-center gap-3"
               >
@@ -700,7 +825,7 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
                     <TableHead className="text-[10px] font-black uppercase text-right">Total USD</TableHead>
                     <TableHead className="text-[10px] font-black uppercase text-right">Pagado</TableHead>
                     <TableHead className="text-[10px] font-black uppercase text-right">Saldo</TableHead>
-                    <TableHead className="text-[10px] font-black uppercase text-center">Detalle</TableHead>
+                    <TableHead className="text-[10px] font-black uppercase text-center">Acciones</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -720,9 +845,14 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
                         <TableCell className="text-right font-black text-status-success">{Utils.fmtUSD(c.pagadoUSD)}</TableCell>
                         <TableCell className="text-right font-black text-status-danger">{Utils.fmtUSD(c.saldoUSD)}</TableCell>
                         <TableCell className="text-center">
-                          <button onClick={e => { e.stopPropagation(); setExpandedCompra(expandedCompra === c.id ? null : c.id); }} className="btn-icon h-8 w-8 text-ink hover:text-brand-gold">
-                            {expandedCompra === c.id ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                          </button>
+                          <div className="flex items-center justify-center gap-1">
+                            <button onClick={e => { e.stopPropagation(); handleEliminarCompra(c); }} className="btn-icon h-8 w-8 text-status-danger hover:bg-status-danger/10" title="Eliminar compra y revertir todos sus movimientos">
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                            <button onClick={e => { e.stopPropagation(); setExpandedCompra(expandedCompra === c.id ? null : c.id); }} className="btn-icon h-8 w-8 text-ink hover:text-brand-gold">
+                              {expandedCompra === c.id ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                            </button>
+                          </div>
                         </TableCell>
                       </TableRow>
                       {expandedCompra === c.id && (
@@ -760,6 +890,71 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
             </div>
             <Pagination page={histSafePage} totalPages={histTotalPages} total={comprasFiltradas.length} pageSize={histPageSize} onPageChange={setHistPage} />
           </Card>
+        </div>
+      )}
+
+      {confirmProcesar && (
+        <div className="modal show"><div className="modal-bg" onClick={() => setConfirmProcesar(false)}></div>
+          <div className="modal-box bg-white max-w-md border-2 border-line rounded-2xl overflow-hidden shadow-2xl">
+            <div className="modal-head py-4 px-6 bg-ink border-b border-white/10 flex justify-between items-center text-white">
+              <h3 className="text-white font-black uppercase text-xs flex items-center gap-2">
+                <CheckCircle className="w-5 h-5 text-brand-gold" /> CONFIRMAR REGISTRO DE COMPRA
+              </h3>
+              <button onClick={() => setConfirmProcesar(false)} className="text-white hover:text-brand-gold transition-colors"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="modal-body p-6 space-y-5 bg-white">
+              <div className="p-3 rounded-xl bg-surface-soft border border-line text-center">
+                <p className="text-[9px] font-black uppercase tracking-widest text-ink/50 mb-1">ESTA COMPRA SE REGISTRARÁ COMO</p>
+                <p className="text-2xl font-black uppercase italic text-brand-gold-deep">{condicion}</p>
+                <p className="text-[9px] font-black uppercase text-ink/50 mt-1">
+                  {condicion === 'contado' ? 'Pago total al contado · No genera cuenta por pagar'
+                    : condicion === 'credito' ? `Sin pago inicial · Crédito a ${diasPlazo || 0} días · Genera cuenta por pagar`
+                    : 'Pago parcial hoy · El saldo genera cuenta por pagar'}
+                </p>
+              </div>
+
+              <div className="space-y-2 border-t border-line pt-4">
+                <div className="flex justify-between items-center text-[10px] font-black uppercase">
+                  <span className="text-ink opacity-50">Proveedor</span>
+                  <span className="text-ink">{proveedor}</span>
+                </div>
+                <div className="flex justify-between items-center text-[10px] font-black uppercase">
+                  <span className="text-ink opacity-50">Factura</span>
+                  <span className="text-ink mono">{numeroFactura}</span>
+                </div>
+                <div className="flex justify-between items-center text-[10px] font-black uppercase">
+                  <span className="text-ink opacity-50">TOTAL FACTURA</span>
+                  <span className="text-ink text-sm">{fmt4(totalUSD)}</span>
+                </div>
+                <div className="flex justify-between items-center text-[10px] font-black uppercase">
+                  <span className="text-ink opacity-50">PAGADO HOY</span>
+                  <span className="text-status-success text-sm">{fmt4(pMontoPagadoUSD)}</span>
+                </div>
+                <div className="flex justify-between items-center text-[10px] font-black uppercase border-t border-line pt-2">
+                  <span className="text-ink opacity-50">SALDO A CRÉDITO</span>
+                  <span className="text-status-danger text-sm">{fmt4(saldoPendienteUSD)}</span>
+                </div>
+              </div>
+
+              <p className="text-[10px] font-black text-ink/60 leading-relaxed">
+                ¿Confirma que desea finalizar el proceso? Al confirmar se importará el inventario,
+                se recalcularán los costos CPP y {saldoPendienteUSD > 0.0001 ? 'se generará la cuenta por pagar' : 'no se generará saldo pendiente'}.
+              </p>
+
+              <div className="flex gap-3 pt-1">
+                <button onClick={() => setConfirmProcesar(false)} className="btn btn-secondary flex-1 h-12 font-black uppercase text-[10px]">
+                  <X className="w-4 h-4" /> Revisar
+                </button>
+                <button
+                  onClick={() => { setConfirmProcesar(false); handleProcessPurchase(); }}
+                  disabled={isProcessing}
+                  className="btn btn-primary flex-1 h-12 font-black uppercase text-[10px] disabled:opacity-30"
+                >
+                  {isProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />} Confirmar y Registrar
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

@@ -59,7 +59,11 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
   const [deudaMotivo, setDeudaMotivo] = useState('');
   const [fechaDeuda, setFechaDeuda] = useState(Utils.hoy());
 
-  const pendientes = (state.cxp || []).filter((x: Debt) => x.estado !== 'pagada');
+  // Una cuenta se considera PAGADA si su estado lo indica o si su saldo es $0.00
+  // (o despreciable), aunque por algún residuo/redondeo no haya quedado marcada.
+  const esPagada = (x: Debt) => x.estado === 'pagada' || (x.saldoUSD || 0) <= 0.001;
+
+  const pendientes = (state.cxp || []).filter((x: Debt) => !esPagada(x));
   const totalPendiente = pendientes.reduce((s: number, x: Debt) => s + x.saldoUSD, 0);
 
   // Agrupar cuentas por pagar por proveedor (las pendientes primero, cronológicas).
@@ -69,7 +73,7 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
       const key = (d.proveedor || 'SIN PROVEEDOR').toUpperCase();
       if (!map.has(key)) map.set(key, { proveedor: key, pendientes: [], saldoTotal: 0 });
       const g = map.get(key)!;
-      if (d.estado !== 'pagada') {
+      if (!esPagada(d)) {
         g.pendientes.push(d);
         g.saldoTotal += d.saldoUSD;
       }
