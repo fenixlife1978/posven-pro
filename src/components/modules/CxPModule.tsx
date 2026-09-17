@@ -77,7 +77,7 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
     const map = new Map<string, { proveedor: string; pendientes: Debt[]; saldoTotal: number }>();
     (state.cxp || []).forEach((d: Debt) => {
       if (!esDeudaActiva(d)) return;
-      const key = (d.proveedor || 'SIN PROVEEDOR').toUpperCase();
+      const key = (d.proveedor || 'SIN PROVEEDOR').trim().toUpperCase();
       if (!map.has(key)) map.set(key, { proveedor: key, pendientes: [], saldoTotal: 0 });
       const g = map.get(key)!;
       g.pendientes.push(d);
@@ -91,7 +91,7 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
   // HISTORIAL DE PAGOS: solo deudas con al menos un pago registrado, filtrables
   // por proveedor y por rango de fechas de pago (desde - hasta).
   const proveedoresHistorial: string[] = Array.from(new Set(
-    (state.cxp || []).map((x: Debt) => (x.proveedor || 'SIN PROVEEDOR').toUpperCase())
+    (state.cxp || []).map((x: Debt) => (x.proveedor || 'SIN PROVEEDOR').trim().toUpperCase())
   )).sort((a, b) => a.localeCompare(b));
 
   const historialFiltrado = React.useMemo(() => {

@@ -140,18 +140,21 @@ export function CreditModal({ isOpen, onClose, onConfirm, totalAmount }: CreditM
     };
 
     // 1. Clientes registrados que coinciden (cédula exacta ignorando formato, o nombre parcial).
-    const clientesMatch = customers.filter(c =>
-      isName
-        ? normalizeText(c.name).includes(normalizeText(q))
-        : getRawCedula(c.cedula) === raw
-    );
+    const clientesMatch = customers.filter(c => {
+      if (isName) return normalizeText(c.name).includes(normalizeText(q));
+      if (!raw || raw.length === 0) return false;
+      const cRaw = getRawCedula(c.cedula);
+      return cRaw.length > 0 && cRaw === raw;
+    });
 
     // 2. Deudas CxC que coinciden, para calcular el saldo y reconstruir clientes sin ficha.
     const deudasMatch = deudas.filter(d => {
       if (!d.cliente) return false;
       const { nombre, cedula } = parseDebt(d.cliente);
       if (isName) return normalizeText(nombre).includes(normalizeText(q));
-      return getRawCedula(cedula) === raw;
+      if (!raw || raw.length === 0) return false;
+      const dRaw = getRawCedula(cedula);
+      return dRaw.length > 0 && dRaw === raw;
     });
 
     const deudaPorCedula = new Map<string, number>();

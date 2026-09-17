@@ -94,6 +94,7 @@ function normalizeCedula(cedula: string, docType?: string): string {
  * Obtiene solo el número de cédula sin puntos ni tipo
  */
 function getRawCedula(cedula: string): string {
+  if (!cedula) return '';
   return cedula.replace(/[^0-9]/g, '');
 }
 
@@ -102,7 +103,11 @@ function getRawCedula(cedula: string): string {
  */
 function findCustomerByCedula(customers: any[], cedula: string): any | null {
   const raw = getRawCedula(cedula);
-  return customers.find(c => getRawCedula(c.cedula) === raw) || null;
+  if (!raw || raw.length === 0) return null;
+  return customers.find(c => {
+    const cRaw = getRawCedula(c?.cedula || '');
+    return cRaw.length > 0 && cRaw === raw;
+  }) || null;
 }
 
 /**
@@ -110,11 +115,13 @@ function findCustomerByCedula(customers: any[], cedula: string): any | null {
  */
 function findDebtsByCedula(deudas: any[], cedula: string): any[] {
   const raw = getRawCedula(cedula);
+  if (!raw || raw.length === 0) return [];
   return deudas.filter(d => {
     if (!d.cliente) return false;
     const match = d.cliente.match(/^(.*?)\s*\[(.*?)\]$/);
-    if (match) {
-      return getRawCedula(match[2]) === raw;
+    if (match && match[2]) {
+      const dRaw = getRawCedula(match[2]);
+      return dRaw.length > 0 && dRaw === raw;
     }
     return false;
   });
@@ -364,7 +371,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
 
   const groupedCredits = useMemo(() => {
     const groups: Record<string, { totalUSD: number; debts: Debt[] }> = {};
-    (state.cxc || []).filter(x => x.estado !== 'pagada').forEach(debt => {
+    (state.cxc || []).filter(x => x.estado !== 'pagada' && (x.saldoUSD || 0) > 0.001).forEach(debt => {
       const name = debt.cliente || 'DESCONOCIDO';
       if (!groups[name]) groups[name] = { totalUSD: 0, debts: [] };
       groups[name].totalUSD += debt.saldoUSD;
@@ -582,6 +589,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         proximoRecibo: state.proximoRecibo + 1, 
         terminales: state.terminales.map(t => t.id === terminal?.id ? { ...t, proximoRecibo: t.proximoRecibo + 1 } : t) 
       });
+      if (typeof window !== 'undefined') sessionStorage.removeItem('posven_current_cart');
       
       setLastProcessedSale(nuevaVenta); 
       setShowReceiptModal(true); 
@@ -768,6 +776,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         terminales: state.terminales.map(t => t.id === terminal?.id ? { ...t, proximoRecibo: t.proximoRecibo + 1 } : t), 
         carrito: [] 
       });
+      if (typeof window !== 'undefined') sessionStorage.removeItem('posven_current_cart');
       
       setLastProcessedSale(nuevaVenta); 
       setShowReceiptModal(true); 
@@ -780,23 +789,18 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
 
   // ===== HANDLER PARA EL CREDIT MODAL =====
   const handleCreditModalConfirm = (customer: Customer, amount: number) => {
-    // Verificar si el cliente tiene una cédula normalizada
-    if (customer.cedula && !customer.cedula.includes('.')) {
-      // Si la cédula no tiene formato, normalizarla
-      const tipo = extractDocType(customer.cedula);
-      const cedulaNormalizada = normalizeCedula(customer.cedula, tipo);
-      // Actualizar el cliente antes de proceder
+    if (!customer) return;
+    const rawCed = getRawCedula(customer.cedula || '');
+    if (rawCed.length > 0) {
       const customers = state.clientes || [];
-      const exists = findCustomerByCedula(customers, cedulaNormalizada);
+      const exists = findCustomerByCedula(customers, customer.cedula);
       if (exists) {
-        // Usar el cliente existente
         setSelectedClient(exists);
         setIsCreditModalOpen(false);
         setTimeout(() => ejecutarVentaACredito(exists), 100);
         return;
       }
-      // Actualizar el cliente con la cédula normalizada
-      customer.cedula = cedulaNormalizada;
+      customer.cedula = normalizeCedula(customer.cedula, extractDocType(customer.cedula));
     }
     setSelectedClient(customer);
     setIsCreditModalOpen(false);
@@ -987,7 +991,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                               <div className="card border-line bg-white shadow-inner rounded-xl overflow-hidden">
                                  <table className="w-full">
                                     <thead className="bg-ink/5"><tr><th className="text-[9px] font-black uppercase p-2 text-left">Emisión</th><th className="text-[9px] font-black uppercase p-2 text-left">Vencimiento</th><th className="text-[9px] font-black uppercase p-2 text-right">Saldo USD</th><th className="text-[9px] font-black uppercase p-2 text-center">Acciones</th></tr></thead>
-                                    <tbody>{group.debts.map(d => (<tr key={d.id} className="border-b border-line/20"><td className="text-[10px] font-black p-2">{Utils.fmtFecha(d.fecha)}</td><td className={`text-[10px] font-black p-2 ${d.fechaVencimiento < Utils.hoy() ? 'text-status-danger' : 'text-ink'}`}>{d.fechaVencimiento === '2099-12-31' ? 'ABIERTA' : Utils.fmtFecha(d.fechaVencimiento)}</td><td className="text-[10px] font-black p-2 text-right text-brand-gold-deep">{Utils.fmtUSD(d.saldoUSD)}</td><td className="p-2 text-center"><div className="flex justify-center gap-2"><button onClick={() => setShowDetails(d)} className="w-8 h-8 rounded-full flex items-center justify-center text-status-success hover:bg-status-success/10"><Eye className="w-4 h-4"/></button><button onClick={() => { setShowAbonoModal(d); }} className="btn btn-sm btn-primary h-7 px-3 text-[8px] uppercase">Abonar</button></div></td></tr>))}</tbody>
+                                    <tbody>{group.debts.map(d => (<tr key={d.id} className="border-b border-line/20"><td className="text-[10px] font-black p-2">{Utils.fmtFecha(d.fecha)}</td><td className={`text-[10px] font-black p-2 ${d.saldoUSD > 0.001 && d.fechaVencimiento < Utils.hoy() ? 'text-status-danger' : 'text-ink'}`}>{d.fechaVencimiento === '2099-12-31' ? 'ABIERTA' : Utils.fmtFecha(d.fechaVencimiento)}</td><td className="text-[10px] font-black p-2 text-right text-brand-gold-deep">{Utils.fmtUSD(d.saldoUSD)}</td><td className="p-2 text-center"><div className="flex justify-center gap-2"><button onClick={() => setShowDetails(d)} className="w-8 h-8 rounded-full flex items-center justify-center text-status-success hover:bg-status-success/10"><Eye className="w-4 h-4"/></button><button onClick={() => { setShowAbonoModal(d); }} className="btn btn-sm btn-primary h-7 px-3 text-[8px] uppercase">Abonar</button></div></td></tr>))}</tbody>
                                  </table>
                               </div>
                            </td>

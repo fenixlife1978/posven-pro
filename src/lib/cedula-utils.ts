@@ -46,21 +46,26 @@ export function normalizeCedula(cedula: string, docType?: string): string {
    * Obtiene solo el número de cédula sin puntos ni tipo
    */
   export function getRawCedula(cedula: string): string {
+    if (!cedula) return '';
     return cedula.replace(/[^0-9]/g, '');
   }
   
   /**
    * Compara dos cédulas ignorando formato y tipo
-   * Retorna true si el número (sin tipo) coincide
+   * Retorna true si el número (sin tipo) coincide y tiene dígitos
    */
   export function sameCedula(cedula1: string, cedula2: string): boolean {
-    return getRawCedula(cedula1) === getRawCedula(cedula2);
+    const raw1 = getRawCedula(cedula1);
+    const raw2 = getRawCedula(cedula2);
+    if (!raw1 || !raw2) return false;
+    return raw1 === raw2;
   }
   
   /**
    * Extrae el tipo de documento (V-, J-, etc.) de una cédula
    */
   export function extractDocType(cedula: string): string {
+    if (!cedula) return 'V-';
     const match = cedula.match(/^([A-Z]-?)/);
     return match ? match[1].replace('-', '').trim() + '-' : 'V-';
   }
@@ -70,7 +75,11 @@ export function normalizeCedula(cedula: string, docType?: string): string {
    */
   export function findCustomerByCedula(customers: any[], cedula: string): any | null {
     const raw = getRawCedula(cedula);
-    return customers.find(c => getRawCedula(c.cedula) === raw) || null;
+    if (!raw || raw.length === 0) return null;
+    return customers.find(c => {
+      const cRaw = getRawCedula(c?.cedula || '');
+      return cRaw.length > 0 && cRaw === raw;
+    }) || null;
   }
   
   /**
@@ -78,11 +87,13 @@ export function normalizeCedula(cedula: string, docType?: string): string {
    */
   export function findDebtsByCedula(deudas: any[], cedula: string): any[] {
     const raw = getRawCedula(cedula);
+    if (!raw || raw.length === 0) return [];
     return deudas.filter(d => {
       if (!d.cliente) return false;
       const match = d.cliente.match(/^(.*?)\s*\[(.*?)\]$/);
-      if (match) {
-        return getRawCedula(match[2]) === raw;
+      if (match && match[2]) {
+        const dRaw = getRawCedula(match[2]);
+        return dRaw.length > 0 && dRaw === raw;
       }
       return false;
     });

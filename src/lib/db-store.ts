@@ -145,7 +145,10 @@ function readSession(): Partial<AppState> {
   if (typeof window === 'undefined') return {};
   try {
     const d = localStorage.getItem(STORAGE_KEY);
-    return d ? (JSON.parse(d) as Partial<AppState>) : {};
+    if (!d) return {};
+    const parsed = JSON.parse(d) as Partial<AppState>;
+    delete (parsed as any).carrito;
+    return parsed;
   } catch { return {}; }
 }
 
@@ -160,7 +163,9 @@ function applyPatch(patch: Partial<AppState>) {
   cache = { ...cache, ...patch } as AppState;
   if (typeof window !== 'undefined') {
     try {
-      const serialized = JSON.stringify(cache);
+      const cacheToSave = { ...cache };
+      delete (cacheToSave as any).carrito;
+      const serialized = JSON.stringify(cacheToSave);
       if (serialized.length <= LOCALSTORAGE_SOFT_LIMIT) {
         localStorage.setItem(STORAGE_KEY, serialized);
       } else {
@@ -411,7 +416,7 @@ async function ensureLoaded(name: string): Promise<void> {
     loadedAll[name] = true;
     try {
       const items = await loadCollection(name);
-      applyPatch({ [name]: mergeById((cache as any)[name], items) });
+      applyPatch({ [name]: items });
     } catch (e) {
       console.error("Error cargando " + name + ":", e);
       loadedAll[name] = false;
@@ -573,14 +578,24 @@ function init() {
     }, (err) => { if (err?.code !== 'permission-denied') console.warn("RTDB productos:", err); }));
   }
 
-  // 3) LISTAS VIVAS ACOTADAS a las últimas 30 (tiempo real barato entre cajas)
+  // 3) LISTAS VIVAS ACOTADAS a las últimas 50 (tiempo real entre cajas)
   for (const name of ['ventas', 'movimientos', 'cxc', 'cxp']) {
     const col = COLLECTIONS[name];
     teardownFns.push(onSnapshot(
-      query(collection(db, col), orderBy('fecha', 'desc'), limit(30)),
+      query(collection(db, col), orderBy('fecha', 'desc'), limit(50)),
       (snap) => {
-        const items = snap.docs.map(d => sanitizeForFirestore(d.data())).filter(Boolean);
-        applyPatch({ [name]: mergeById((cache as any)[name], items) });
+        const currentArr = [...((cache as any)[name] || [])];
+        const map = new Map<string, any>(currentArr.map(x => [String(x.id), x]));
+        snap.docChanges().forEach(change => {
+          const item = sanitizeForFirestore(change.doc.data());
+          if (!item || !item.id) return;
+          if (change.type === 'removed') {
+            map.delete(String(item.id));
+          } else {
+            map.set(String(item.id), item);
+          }
+        });
+        applyPatch({ [name]: [...map.values()] });
       },
       (err) => { if (err.code !== 'permission-denied') console.warn("Sync " + name + ":", err); }
     ));

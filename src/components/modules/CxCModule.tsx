@@ -141,7 +141,7 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
       const filteredGroups: Record<string, any> = {};
       Object.keys(sortedGroups).forEach(name => {
         const group = sortedGroups[name];
-        const filteredDebts = group.debts.filter((d: Debt) => d.estado === filterEstado);
+        const filteredDebts = group.debts.filter((d: Debt) => filterEstado === 'pendiente' ? esDeudaActiva(d) : (d.estado === 'pagada' || !esDeudaActiva(d)));
         if (filteredDebts.length > 0) {
           filteredGroups[name] = {
             ...group,

@@ -222,7 +222,7 @@ export default function LicoreriaPOS() {
       limitDate.setHours(limitDate.getHours() + 72); // 72 horas desde ahora
 
       const pending = state.cxp.filter(d => {
-        if (d.estado === 'pagada') return false;
+        if (d.estado === 'pagada' || (d.saldoUSD || 0) <= 0.001) return false;
         const dueDate = new Date(d.fechaVencimiento + 'T23:59:59');
         return dueDate <= limitDate;
       });
