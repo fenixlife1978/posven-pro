@@ -84,7 +84,7 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
       const totalDevuelto = returnItems.reduce((s, i) => s + (i.cantidad * i.precioUnitUSD), 0);
       const terminal = state.terminales.find(t => t.id === terminalId);
       const prefijo = Utils.prefijoCaja(terminal, state.terminales);
-      const idDev = 'DEV-' + prefijo + '-' + String(state.proximaDevolucion || 1).padStart(6, '0');
+      const idDev = 'DEV-OP-' + Store.uid().toUpperCase().slice(0, 10);
       const ahoraStr = Utils.ahora();
 
       const nuevaDevolucion: Return = {
@@ -149,10 +149,13 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
       const resultadoDev = await Store.processReturnOrCancellationTransaction({ operationId: idDev, operationType: 'DEVOLUCION', saleId: selectedSale.id, operationDoc: nuevaDevolucion, movements: nuevosMovimientos, journal: nuevoAsiento, refundItems: returnItems });
       if (resultadoDev?.queuedOffline) { toast({ title: 'Devolución guardada sin conexión', description: 'Quedó pendiente de sincronización automática.' }); setView('list'); setSelectedSale(null); setReturnItems([]); return; }
 
+      const devolucionFinal = resultadoDev?.operationDoc || nuevaDevolucion;
       updateState({
-        devoluciones: [nuevaDevolucion, ...(state.devoluciones || [])],
+        devoluciones: [devolucionFinal, ...(state.devoluciones || [])],
         ventas: nuevasVentas,
-        proximaDevolucion: (state.proximaDevolucion || 1) + 1,
+        terminales: resultadoDev?.terminal?.id
+          ? Utils.patchTerminal(state.terminales, resultadoDev.terminal.id, resultadoDev.terminal)
+          : state.terminales,
         libroDiario: [nuevoAsiento, ...(state.libroDiario || [])]
       });
 
@@ -210,7 +213,7 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
 
       const terminal = state.terminales.find(t => t.id === terminalId);
       const prefijo = Utils.prefijoCaja(terminal, state.terminales);
-      const idAnu = 'ANU-' + prefijo + '-' + String(state.proximaAnulacion || 1).padStart(5, '0');
+      const idAnu = 'ANU-OP-' + Store.uid().toUpperCase().slice(0, 10);
       const nuevaAnulacion: Anulacion = {
         id: idAnu,
         ventaId: selectedSale.id,
@@ -241,11 +244,14 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
       const resultadoAnu = await Store.processReturnOrCancellationTransaction({ operationId: idAnu, operationType: 'ANULACION', saleId: selectedSale.id, operationDoc: nuevaAnulacion, movements: nuevosMovimientos, journal: nuevosAsientosDiario[0], fullCancellation: true });
       if (resultadoAnu?.queuedOffline) { toast({ title: 'Anulación guardada sin conexión', description: 'Quedó pendiente de sincronización automática.' }); setView('list'); setSelectedSale(null); return; }
 
+      const anulacionFinal = resultadoAnu?.operationDoc || nuevaAnulacion;
       updateState({
         ventas: nuevasVentas,
-        anulaciones: [nuevaAnulacion, ...(state.anulaciones || [])],
-        libroDiario: representaEgreso ? [...nuevosAsientosDiario, ...(state.libroDiario || [])] : state.libroDiario,
-        proximaAnulacion: (state.proximaAnulacion || 1) + 1
+        anulaciones: [anulacionFinal, ...(state.anulaciones || [])],
+        terminales: resultadoAnu?.terminal?.id
+          ? Utils.patchTerminal(state.terminales, resultadoAnu.terminal.id, resultadoAnu.terminal)
+          : state.terminales,
+        libroDiario: representaEgreso ? [...nuevosAsientosDiario, ...(state.libroDiario || [])] : state.libroDiario
       });
 
       toast({ title: "Factura Anulada", description: `El documento ${selectedSale.id} ha sido invalidado bajo el registro ${idAnu}.` });
