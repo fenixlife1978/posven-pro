@@ -137,11 +137,30 @@ export default function LoginPage() {
 
       router.push('/');
     } catch (err: any) {
-      console.error('Error de Auth:', err);
+      const code = typeof err?.code === 'string' ? err.code : '';
+      console.error('Error de Auth:', { code, message: err?.message });
+
       let mensaje = "Credenciales inválidas o fallo de conexión.";
-      if (err.code === 'auth/email-already-in-use') mensaje = "El correo ya está registrado.";
-      if (err.code === 'auth/weak-password') mensaje = "La contraseña es muy débil.";
-      
+      if (code === 'auth/invalid-credential' || code === 'auth/wrong-password' || code === 'auth/user-not-found') {
+        mensaje = "Correo o contraseña incorrectos.";
+      } else if (code === 'auth/invalid-api-key') {
+        mensaje = "Configuración de Firebase inválida: API Key incorrecta o ausente.";
+      } else if (code === 'auth/unauthorized-domain') {
+        mensaje = "Este dominio no está autorizado en Firebase Authentication.";
+      } else if (code === 'auth/operation-not-allowed') {
+        mensaje = "El inicio de sesión por correo y contraseña no está habilitado en Firebase.";
+      } else if (code === 'auth/network-request-failed') {
+        mensaje = "Firebase no pudo conectarse. Verifique la configuración de red y del proyecto.";
+      } else if (code === 'auth/too-many-requests') {
+        mensaje = "Demasiados intentos. Espere unos minutos e inténtelo nuevamente.";
+      } else if (code === 'auth/email-already-in-use') {
+        mensaje = "El correo ya está registrado.";
+      } else if (code === 'auth/weak-password') {
+        mensaje = "La contraseña es muy débil.";
+      } else if (code) {
+        mensaje = `Firebase rechazó el acceso (${code.replace('auth/', '')}).`;
+      }
+
       toast({ variant: "destructive", title: "Error de Acceso", description: mensaje });
     } finally {
       setLoading(false);
