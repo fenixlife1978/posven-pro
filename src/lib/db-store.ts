@@ -762,6 +762,7 @@ function init() {
 // ============================================================
 export const Store = {
   applyInventoryMovementsTransaction,
+  processReturnOrCancellationTransaction,
   subscribe(callback: (state: Partial<AppState>) => void): () => void {
     listeners.add(callback);
     init();
@@ -782,6 +783,48 @@ export const Store = {
    * La deuda y sus efectos contables se escriben en una sola transacción,
    * evitando que dos cajas trabajen sobre el mismo saldo antiguo.
    */
+  async processReturnOrCancellationTransaction(params: { operationId: string; operationType: 'DEVOLUCION' | 'ANULACION'; saleId: string; operationDoc: any; movements: any[]; journal?: any; refundItems?: any[]; fullCancellation?: boolean; }): Promise<any> {
+    if (!db) return null;
+    const { operationId, operationType, saleId, operationDoc, movements, journal, refundItems = [], fullCancellation = false } = params;
+    if (!fromOfflineQueueSafe() && typeof window !== 'undefined' && navigator.onLine === false) {
+      enqueueOfflineOperation(operationType, { ...params }, operationId);
+      return { queuedOffline: true, operationId };
+    }
+    let result: any = null;
+    await runTransaction(db, async tx => {
+      const operationRef = await claimOperation(tx, operationType, operationId);
+      const saleRef = doc(db, 'ventas', String(saleId));
+      const saleSnap = await tx.get(saleRef);
+      if (!saleSnap.exists()) throw new Error('La venta ya no existe en Firestore.');
+      const sale = { ...sanitizeForFirestore(saleSnap.data()), id: String(saleId) } as any;
+      if (operationType === 'ANULACION' && String(sale.estado || '') === 'anulada') throw new Error('La factura ya fue anulada.');
+      const productIds = [...new Set((movements || []).map((m:any) => String(m.productoId || '')).filter(Boolean))];
+      const products = new Map<string, any>();
+      for (const pid of productIds) { const s = await tx.get(doc(db,'productos',pid)); if (!s.exists()) throw new Error('Un producto de la operación ya no existe en Firestore.'); products.set(pid,{...sanitizeForFirestore(s.data()),id:pid}); }
+      const journalRef = journal ? doc(db,'libroDiario',String(journal.id)) : null;
+      if (journalRef) { const js = await tx.get(journalRef); if (js.exists()) throw new Error('El asiento contable de esta operación ya existe.'); }
+      const existingRef = doc(db, operationType === 'DEVOLUCION' ? 'devoluciones' : 'anulaciones', String(operationDoc.id));
+      const existingOp = await tx.get(existingRef); if (existingOp.exists()) throw new Error('Esta operación ya fue registrada.');
+      if ((movements?.length || 0) + productIds.length + 6 > 450) throw new Error('La operación contiene demasiados movimientos.');
+      for (const m of movements || []) {
+        const pid = String(m.productoId); const p = products.get(pid); const before = Number(p.stock)||0; const after = before + (Number(m.cantidad)||0);
+        const mr = doc(db,'movimientos',String(m.id || Store.uid()));
+        tx.set(mr,sanitizeForFirestore({...m,productoId:pid,stockAntes:before,stockDespues:after,id:mr.id}),{merge:false});
+        products.set(pid,{...p,stock:after});
+      }
+      for (const [pid,p] of products) tx.set(doc(db,'productos',pid),sanitizeForFirestore(p),{merge:true});
+      tx.set(existingRef,sanitizeForFirestore(operationDoc),{merge:false});
+      tx.set(saleRef,sanitizeForFirestore({...sale,estado: operationType === 'ANULACION' ? 'anulada' : 'parcialmente_devuelta'}),{merge:true});
+      if (journalRef && journal) tx.set(journalRef,sanitizeForFirestore(journal),{merge:false});
+      const terminalId = String(operationDoc.terminalId || '');
+      if (terminalId) { const tr=doc(db,'terminales',terminalId); const ts=await tx.get(tr); if(ts.exists()) { const t=sanitizeForFirestore(ts.data()) as any; const field=operationType==='DEVOLUCION'?'proximaDevolucion':'proximaAnulacion'; const current=Number(t[field])||1; tx.set(tr,{[field]:current+1},{merge:true}); } }
+      tx.set(operationRef,{tipo:operationType,operationId,fecha:String(operationDoc.fecha||Utils.ahora()),referencia:String(operationDoc.id||operationId)},{merge:false});
+      result={operationId,operationType,products:[...products.values()]};
+    });
+    if (result?.products?.length) await syncProductosRTDB([],result.products);
+    return result;
+  },
+
   async applyGlobalProviderPaymentTransaction(params: {
     operationId?: string;
     provider: string;
@@ -1984,6 +2027,7 @@ registerOfflineProcessor(async (operation) => {
   if (operation.type === 'ELIMINAR-CXC') { await Store.deleteCustomerDebtTransaction({ ...(operation.payload || {}), operationId: operation.operationId }); return; }
   if (operation.type === 'DEUDA-CXC') { await Store.createCustomerDebtTransaction({ ...(operation.payload || {}), operationId: operation.operationId }); return; }
   if (operation.type === 'DEUDA-CXP') { await Store.createSupplierDebtTransaction({ ...(operation.payload || {}), operationId: operation.operationId }); return; }
+  if (operation.type === 'DEVOLUCION' || operation.type === 'ANULACION') { await Store.processReturnOrCancellationTransaction({ ...(operation.payload || {}), operationId: operation.operationId }); return; }
   throw new Error('Tipo de operación offline no soportado: ' + operation.type);
 });
 
