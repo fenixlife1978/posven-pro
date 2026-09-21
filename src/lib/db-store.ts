@@ -1295,7 +1295,7 @@ export const Store = {
         }), { merge: true });
       }
 
-      result = { sale, debt, journals, products: [...productUpdates.values()], nextNumber: nextNumber + 1, terminal: { ...(terminalRemote || {}), proximoRecibo: nextNumber + 1 } };
+      result = { sale, debt, journals, products: [...productUpdates.values()], nextNumber: nextNumber + 1, terminal: { ...(terminalRemote || {}), id: terminalId, proximoRecibo: nextNumber + 1 } };
     });
 
     // Las colecciones autoritativas se actualizan por sus snapshots. Solo
