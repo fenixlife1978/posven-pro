@@ -414,19 +414,22 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         ? (state.clientes || []).find(c => c.cedula === cedulaDeuda || c.cedula.replace(/[^0-9A-Za-z]/g, '') === cedulaDeuda.replace(/[^0-9A-Za-z]/g, ''))
         : undefined;
       const nombreClienteCanonico = clienteActual?.name || (cedulaMatch ? clienteRaw.replace(/\s*\[[^\]]+\]\s*$/, '').trim() : clienteRaw) || 'CLIENTE';
-      const ahoraStr = Utils.ahora(), terminal = getCurrentTerminal(), nextNum = terminal?.proximoRecibo || state.proximoRecibo, reciboId = 'PAY-' + String(nextNum).padStart(6, '0');
+      const ahoraStr = Utils.ahora(), terminal = getCurrentTerminal();
+      // El correlativo de COBRO DE DEUDA lo asigna Firestore dentro de la
+      // transacción, usando la secuencia exclusiva de esta caja.
+      const reciboProvisional = 'PEND-CXC-' + Store.uid().toUpperCase().slice(0, 8);
       const pagoAtomic = {
         fecha: ahoraStr,
         montoUSD: totalAbonado,
         montoBS: totalAbonado * state.tasa,
         metodo: pagosAbono.length > 1 ? 'mixto' : pagosAbono[0].metodo,
-        reciboId
+        reciboId: reciboProvisional
       };
 
-      const nuevasEntradasDiario: LibroDiarioEntry[] = pagosAbono.map(p => ({ id: 'ACC-' + Store.uid().toUpperCase().slice(0, 5), fecha: ahoraStr, tipo: 'ingreso', categoria: 'COBRO_DEUDA', concepto: `ABONO DEUDA #${showAbonoModal.id} - CLIENTE: ${nombreClienteCanonico.toUpperCase()}`, montoUSD: p.montoUSD, montoBS: p.montoBS, metodo: p.metodo, referencia: reciboId + '-' + (terminal?.id || 'GLOBAL') }));
+      const nuevasEntradasDiario: LibroDiarioEntry[] = pagosAbono.map(p => ({ id: 'ACC-' + Store.uid().toUpperCase().slice(0, 5), fecha: ahoraStr, tipo: 'ingreso', categoria: 'COBRO_DEUDA', concepto: `ABONO DEUDA #${showAbonoModal.id} - CLIENTE: ${nombreClienteCanonico.toUpperCase()}`, montoUSD: p.montoUSD, montoBS: p.montoBS, metodo: p.metodo, referencia: reciboProvisional, terminalId: terminal?.id, terminalName: terminal?.nombre }));
 
       const saleAbono: Sale = {
-        id: reciboId, fecha: ahoraStr, cliente: nombreClienteCanonico,
+        id: reciboProvisional, fecha: ahoraStr, cliente: nombreClienteCanonico,
         items: [{ productoId: 'ABONO', nombre: `ABONO A FACTURA #${showAbonoModal.id}`, cantidad: 1, precioUnitUSD: totalAbonado, subtotalUSD: totalAbonado }],
         subtotalUSD: totalAbonado, descuentoUSD: 0, totalUSD: totalAbonado, totalBS: totalAbonado * state.tasa,
         metodoPago: pagosAbono.length > 1 ? 'mixto' : pagosAbono[0].metodo,
@@ -442,15 +445,15 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         payment: pagoAtomic,
         journal: nuevasEntradasDiario,
         sale: saleAbono,
-        customerCedula: clienteCedula
+        customerCedula: clienteCedula,
+        terminalId: terminal?.id
       });
       if (!resultadoPago) throw new Error('No se pudo registrar el abono.');
       const appliedUSD = Number(resultadoPago.appliedUSD) || totalAbonado;
       if (Math.abs(appliedUSD - totalAbonado) > 0.001) throw new Error('El saldo cambió mientras se registraba el abono. La operación fue limitada al saldo real.');
 
-      // El correlativo de caja sigue siendo local al terminal.
-      await updateState({ proximoRecibo: state.proximoRecibo + 1, terminales: state.terminales.map(t => t.id === terminal?.id ? { ...t, proximoRecibo: t.proximoRecibo + 1 } : t) });
-      setLastProcessedSale(saleAbono); setShowReceiptModal(true); setShowAbonoModal(null);
+      const saleFinal = resultadoPago.sale || { ...saleAbono, id: resultadoPago.receiptId || saleAbono.id };
+      setLastProcessedSale(saleFinal); setShowReceiptModal(true); setShowAbonoModal(null);
     } finally {
       processingRef.current = false;
       setIsProcessing(false);
