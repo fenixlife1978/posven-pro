@@ -40,6 +40,7 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
   const [showClientHistory, setShowClientHistory] = useState<string | null>(null);
   const [filterEstado, setFilterEstado] = useState<'todos' | 'pendiente' | 'pagada' | 'parcial'>('todos');
   const [page, setPage] = useState(1);
+  const [isProcessing, setIsProcessing] = useState(false);
   const pageSize = 10;
 
   useEffect(() => {
@@ -165,6 +166,7 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
 
   // ===== ELIMINAR CLIENTE COMPLETO =====
   const eliminarCliente = async (clientName: string) => {
+    if (isProcessing) return;
     // Verificar si el cliente tiene deudas pendientes
     const tieneDeudasPendientes = todasLasDeudas.some(
       (d: Debt) => {
@@ -203,6 +205,7 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
     const cliente = allCustomers.find((c: Customer) => c.name === clientName);
     if (!cliente) return;
 
+    setIsProcessing(true);
     try {
       await Store.deleteCustomerAndDebtsTransaction({
         customerId: cliente.id,
@@ -219,10 +222,13 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
         title: "No se pudo eliminar el cliente",
         description: e?.message || 'La información cambió en otra caja. Actualice y vuelva a intentar.'
       });
+    } finally {
+      setIsProcessing(false);
     }
   };
 
   const guardarDeudaDirecta = async () => {
+    if (isProcessing) return;
     if (!nuevaDeuda.cliente || !nuevaDeuda.cedula || nuevaDeuda.montoUSD <= 0) {
       alert('Por favor ingrese el cliente, su cédula y un monto válido.');
       return;
@@ -501,7 +507,7 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
                                                 <div className="flex justify-center gap-1">
                                                   <button onClick={() => setShowDetails(d)} className="text-ink hover:text-brand-gold p-1 transition-colors"><Eye className="w-3.5 h-3.5"/></button>
                                                   {d.estado !== 'pagada' && (
-                                                    <button onClick={() => eliminarDeuda(d)} className="text-ink hover:text-status-danger p-1"><Trash2 className="w-3.5 h-3.5" /></button>
+                                                    <button onClick={() => eliminarDeuda(d)} disabled={isProcessing} className="text-ink hover:text-status-danger p-1"><Trash2 className="w-3.5 h-3.5" /></button>
                                                   )}
                                                 </div>
                                              </td>
@@ -756,7 +762,7 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
                   <input type="date" className="form-input text-xs font-black" value={nuevaDeuda.vencimiento} onChange={e => setNuevaDeuda({...nuevaDeuda, vencimiento: e.target.value})} />
                 </div>
               </div>
-              <button onClick={guardarDeudaDirecta} className="btn btn-primary w-full h-14 font-black uppercase text-xs mt-4 shadow-xl tracking-widest">
+              <button onClick={guardarDeudaDirecta} disabled={isProcessing} className="btn btn-primary w-full h-14 font-black uppercase text-xs mt-4 shadow-xl tracking-widest">
                 <Save className="w-4 h-4 mr-2" /> Confirmar e Ingresar a Cartera
               </button>
             </div>
