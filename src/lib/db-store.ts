@@ -940,6 +940,10 @@ export const Store = {
         nextResult.appliedUSD += pago;
       }
 
+      if (nextResult.appliedUSD <= 0.001) {
+        throw new Error('No hay saldo pendiente del proveedor para registrar este pago.');
+      }
+
       if (journal?.id) {
         tx.set(
           doc(db, 'libroDiario', journal.id),
