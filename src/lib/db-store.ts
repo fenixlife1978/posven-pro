@@ -637,6 +637,52 @@ export const Store = {
    * La deuda y sus efectos contables se escriben en una sola transacción,
    * evitando que dos cajas trabajen sobre el mismo saldo antiguo.
    */
+  async applyGlobalProviderPaymentTransaction(params: {
+    provider: string;
+    amountUSD: number;
+    payment: any;
+    journal?: any;
+  }): Promise<{ appliedUSD: number; debts: any[] }> {
+    if (typeof window === 'undefined' || !db) return { appliedUSD: 0, debts: [] };
+    const { provider, amountUSD, payment, journal } = params;
+    if (!(amountUSD > 0)) return { appliedUSD: 0, debts: [] };
+    const q = query(collection(db, 'cxp'), where('proveedor', '==', provider));
+    let result = { appliedUSD: 0, debts: [] as any[] };
+    await runTransaction(db, async tx => {
+      const snap = await tx.get(q);
+      const docs = snap.docs
+        .map(d => ({ ref: d.ref, data: sanitizeForFirestore(d.data()) as any }))
+        .filter(x => (Number(x.data.saldoUSD) || 0) > 0.001 && x.data.estado !== 'pagada')
+        .sort((a, b) => String(a.data.fecha || '').localeCompare(String(b.data.fecha || '')));
+      let remanente = amountUSD;
+      for (const item of docs) {
+        if (remanente <= 0.001) break;
+        const saldo = Number(item.data.saldoUSD) || 0;
+        const pago = Math.min(saldo, remanente);
+        remanente -= pago;
+        const historial = Array.isArray(item.data.historialPagos) ? [...item.data.historialPagos] : [];
+        historial.push(sanitizeForFirestore({ ...payment, montoUSD: pago, montoBS: pago * (Number(payment.tasaAplicada) || 1) }));
+        const nuevoSaldo = Math.max(0, saldo - pago);
+        const updated = {
+          ...item.data,
+          abonadoUSD: (Number(item.data.abonadoUSD) || 0) + pago,
+          saldoUSD: nuevoSaldo,
+          estado: nuevoSaldo <= 0.001 ? 'pagada' : 'parcial',
+          historialPagos: historial
+        };
+        tx.set(item.ref, sanitizeForFirestore(updated), { merge: true });
+        result.debts.push({ ...updated, appliedUSD: pago });
+        result.appliedUSD += pago;
+      }
+      if (journal?.id) tx.set(doc(db, 'libroDiario', journal.id), sanitizeForFirestore({ ...journal, montoUSD: result.appliedUSD }), { merge: true });
+    });
+    applyPatch({
+      cxp: mergeById(cache.cxp, result.debts),
+      ...(journal?.id ? { libroDiario: mergeById(cache.libroDiario, [{ ...journal, montoUSD: result.appliedUSD }]) } : {})
+    });
+    return result;
+  },
+
   async applyDebtPaymentTransaction(params: {
     collection: 'cxc' | 'cxp';
     debtId: string;
