@@ -642,7 +642,7 @@ export const Store = {
     debtId: string;
     amountUSD: number;
     payment: any;
-    journal?: any;
+    journal?: any | any[];
     sale?: any;
     customerCedula?: string;
   }): Promise<any | null> {
@@ -684,13 +684,16 @@ export const Store = {
       }
       tx.set(debtRef, sanitizeForFirestore(updated), { merge: true });
       if (customerRef) tx.set(customerRef, { debt: Math.max(0, (customerDebt || 0) - applied) }, { merge: true });
-      if (journal?.id) tx.set(doc(db, 'libroDiario', journal.id), sanitizeForFirestore(journal), { merge: true });
+      const journalItems = Array.isArray(journal) ? journal : (journal ? [journal] : []);
+      journalItems.forEach((entry: any) => {
+        if (entry?.id) tx.set(doc(db, 'libroDiario', entry.id), sanitizeForFirestore(entry), { merge: true });
+      });
       if (sale?.id) tx.set(doc(db, 'ventas', sale.id), sanitizeForFirestore(sale), { merge: true });
       result = { ...updated, appliedUSD: applied };
     });
     applyPatch({
       [collectionName]: mergeById((cache as any)[collectionName], [result]),
-      ...(journal?.id ? { libroDiario: mergeById(cache.libroDiario, [journal]) } : {}),
+      ...(journal ? { libroDiario: mergeById(cache.libroDiario, Array.isArray(journal) ? journal : [journal]) } : {}),
       ...(sale?.id ? { ventas: mergeById(cache.ventas, [sale]) } : {})
     } as Partial<AppState>);
     return result;
