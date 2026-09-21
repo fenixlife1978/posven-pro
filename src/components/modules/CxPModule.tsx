@@ -199,7 +199,7 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
 
   const handleProcessGlobalPayment = async () => {
     if (!globalProvider) return;
-    // Determinar si el método es en Bs.
+
     const esMetodoBS = paymentMethod === 'efectivo_bs' || paymentMethod === 'pagomovil';
     const rawMonto = parseFloat(paymentAmount) || 0;
     if (rawMonto <= 0) {
@@ -207,70 +207,83 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
       return;
     }
 
-    // Si es Bs., el monto ingresado es en Bs. y el abono en USD = bs / tasa BCV.
-    // Si se marca "Pago Atrasado", se usa la tasa pasada indicada (para registrar
-    // con la tasa BCV del día en que realmente se hizo el pago).
     const tasaAplicada = pagoAtrasado ? (parseFloat(pagoAtrasadoTasa) || state.tasa) : state.tasa;
+    if (!(tasaAplicada > 0)) {
+      toast({ variant: "destructive", title: "Error", description: "La tasa BCV debe ser mayor que cero." });
+      return;
+    }
+
     const montoBS = esMetodoBS ? rawMonto : rawMonto * tasaAplicada;
     const amount = esMetodoBS ? rawMonto / tasaAplicada : rawMonto;
+    const fechaPago = pagoAtrasado && pagoAtrasadoFecha
+      ? pagoAtrasadoFecha + 'T' + Utils.ahora().split('T')[1]
+      : Utils.ahora();
 
-    // Fecha de registro: si es pago atrasado, se registra con la fecha pasada indicada.
-    const fechaPago = pagoAtrasado && pagoAtrasadoFecha ? pagoAtrasadoFecha + 'T' + Utils.ahora().split('T')[1] : Utils.ahora();
-
-    // Liquidar cronológicamente: de la deuda más antigua a la más reciente,
-    // consumiendo el monto; si el monto no cubre una deuda por completo, se
-    // registra como ABONO a esa deuda (queda 'parcial').
     const grupo = gruposProveedor.find(g => g.proveedor === globalProvider.proveedor);
-    if (!grupo || grupo.pendientes.length === 0) return;
+    if (!grupo || grupo.pendientes.length === 0) {
+      toast({ variant: "destructive", title: "Sin deuda pendiente", description: "Las deudas de este proveedor ya fueron actualizadas por otra caja." });
+      return;
+    }
 
-    const ahoraStr = fechaPago;
     const reciboBase = `PAY-${Store.uid().toUpperCase().slice(0, 4)}`;
     const asientoId = 'ACC-' + Store.uid().toUpperCase().slice(0, 5);
-
     const pagoBase = {
       id: 'PAYS-' + Store.uid().toUpperCase().slice(0, 6),
       asientoId,
-      fecha: ahoraStr,
+      fecha: fechaPago,
       montoUSD: amount,
-      montoBS: 0,
+      montoBS: montoBS,
       metodo: paymentMethod,
       reciboId: reciboBase,
       tasaAplicada
     };
     const nuevoAsiento: LibroDiarioEntry = {
       id: asientoId,
-      fecha: ahoraStr,
+      fecha: fechaPago,
       tipo: 'egreso',
       categoria: 'PAGO_PROVEEDOR' as any,
       concepto: `PAGO GLOBAL A: ${globalProvider.proveedor} - LIQUIDACIÓN POR ORDEN DE ANTIGÜEDAD${pagoAtrasado ? ` - PAGO ATRASADO (TASA ${tasaAplicada.toFixed(2)})` : ''}`,
       montoUSD: amount,
-      montoBS: amount * tasaAplicada,
+      montoBS: montoBS,
       metodo: paymentMethod,
       referencia: reciboBase
     };
 
-    const resultadoPago = await Store.applyGlobalProviderPaymentTransaction({
-      provider: globalProvider.proveedor,
-      amountUSD: amount,
-      payment: pagoBase,
-      journal: nuevoAsiento
-    });
-    const totalAplicado = resultadoPago.appliedUSD;
-    const remanente = Math.max(0, amount - totalAplicado);
-    const aplicados = resultadoPago.debts;
-    if (totalAplicado <= 0.001) throw new Error('El saldo del proveedor cambió en otra caja. Actualice y vuelva a intentar.');
+    try {
+      const resultadoPago = await Store.applyGlobalProviderPaymentTransaction({
+        provider: globalProvider.proveedor,
+        amountUSD: amount,
+        payment: pagoBase,
+        journal: nuevoAsiento
+      });
 
-    toast({
-      title: "Pago global registrado",
-      description: `${Utils.fmtUSD(totalAplicado)}${Math.abs(rawMonto - totalAplicado) > 0.001 ? ' (' + Utils.fmtBS(rawMonto) + ')' : ''} aplicado a ${aplicados.length} deuda(s)${remanente > 0.001 ? ' (excedente sin aplicar)' : ''}${pagoAtrasado ? ' · Pago atrasado registrado' : ''}`
-    });
+      const totalAplicado = resultadoPago.appliedUSD;
+      if (totalAplicado <= 0.001) {
+        throw new Error('El saldo del proveedor cambió en otra caja. Actualice la pantalla y vuelva a intentar.');
+      }
 
-    setGlobalProvider(null);
-    setPaymentAmount('');
-    setPagoAtrasado(false);
-    setPagoAtrasadoFecha(Utils.hoy());
-    setPagoAtrasadoTasa('');
-    setGrupoExpandido(globalProvider.proveedor);
+      const remanente = Math.max(0, amount - totalAplicado);
+      const aplicados = resultadoPago.debts;
+      const aplicadoBS = totalAplicado * tasaAplicada;
+
+      toast({
+        title: "Pago global registrado",
+        description: `${Utils.fmtUSD(totalAplicado)}${esMetodoBS ? ' (' + Utils.fmtBS(aplicadoBS) + ')' : ''} aplicado a ${aplicados.length} deuda(s)${remanente > 0.001 ? ' (excedente sin aplicar)' : ''}${pagoAtrasado ? ' · Pago atrasado registrado' : ''}`
+      });
+
+      setGlobalProvider(null);
+      setPaymentAmount('');
+      setPagoAtrasado(false);
+      setPagoAtrasadoFecha(Utils.hoy());
+      setPagoAtrasadoTasa('');
+      setGrupoExpandido(globalProvider.proveedor);
+    } catch (e: any) {
+      toast({
+        variant: "destructive",
+        title: "No se pudo registrar el pago global",
+        description: e?.message || 'Las deudas cambiaron en otra caja. Actualice y vuelva a intentar.'
+      });
+    }
   };
 
   // Eliminar un abono/pago del historial: revierte TODOS los movimientos causados
