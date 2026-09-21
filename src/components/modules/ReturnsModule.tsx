@@ -146,10 +146,14 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
         terminalName: terminal?.nombre || 'SISTEMA GLOBAL'
       };
 
+      await Store.applyInventoryMovementsTransaction({
+        operationId: idDev,
+        operationType: 'DEVOLUCION',
+        movements: nuevosMovimientos
+      });
+
       updateState({
-        productos: nuevosProductos,
         devoluciones: [nuevaDevolucion, ...(state.devoluciones || [])],
-        movimientos: [...state.movimientos, ...nuevosMovimientos],
         ventas: nuevasVentas,
         proximaDevolucion: (state.proximaDevolucion || 1) + 1,
         libroDiario: [nuevoAsiento, ...(state.libroDiario || [])]
