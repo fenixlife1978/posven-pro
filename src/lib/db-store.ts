@@ -632,6 +632,68 @@ export const Store = {
     return { ...cache } as AppState;
   },
 
+  /**
+   * Aplica un abono sobre la deuda REAL de Firestore.
+   * La deuda y sus efectos contables se escriben en una sola transacción,
+   * evitando que dos cajas trabajen sobre el mismo saldo antiguo.
+   */
+  async applyDebtPaymentTransaction(params: {
+    collection: 'cxc' | 'cxp';
+    debtId: string;
+    amountUSD: number;
+    payment: any;
+    journal?: any;
+    sale?: any;
+    customerCedula?: string;
+  }): Promise<any | null> {
+    if (typeof window === 'undefined' || !db) return null;
+    const { collection: collectionName, debtId, amountUSD, payment, journal, sale, customerCedula } = params;
+    if (!(amountUSD > 0)) return null;
+    const debtRef = doc(db, collectionName, debtId);
+    let result: any = null;
+    await runTransaction(db, async tx => {
+      const debtSnap = await tx.get(debtRef);
+      if (!debtSnap.exists()) throw new Error('La deuda ya no existe o fue eliminada en otra caja.');
+      const remote = sanitizeForFirestore(debtSnap.data()) as any;
+      const saldoActual = Number(remote.saldoUSD) || 0;
+      if (saldoActual <= 0.001) throw new Error('La deuda ya está pagada en otra caja.');
+      if (amountUSD > saldoActual + 0.001) throw new Error('El saldo cambió en otra caja. Actualice y vuelva a intentar.');
+      const applied = Math.min(amountUSD, saldoActual);
+      const nuevoSaldo = Math.max(0, saldoActual - applied);
+      const nuevoAbonado = (Number(remote.abonadoUSD) || 0) + applied;
+      const historial = Array.isArray(remote.historialPagos) ? [...remote.historialPagos] : [];
+      const pago = sanitizeForFirestore({ ...payment, montoUSD: applied });
+      historial.push(pago);
+      const updated = {
+        ...remote,
+        ...(collectionName === 'cxc' && customerCedula ? {} : {}),
+        abonadoUSD: nuevoAbonado,
+        saldoUSD: nuevoSaldo,
+        estado: nuevoSaldo <= 0.001 ? 'pagada' : 'parcial',
+        historialPagos: historial
+      };
+      tx.set(debtRef, sanitizeForFirestore(updated), { merge: true });
+
+      if (collectionName === 'cxc' && customerCedula) {
+        const customersSnap = await tx.get(query(collection(db, 'clientes'), where('cedula', '==', customerCedula), limit(1)));
+        if (!customersSnap.empty) {
+          const customerRef = customersSnap.docs[0].ref;
+          const customer = customersSnap.docs[0].data() as any;
+          tx.set(customerRef, { debt: Math.max(0, (Number(customer.debt) || 0) - applied) }, { merge: true });
+        }
+      }
+      if (journal?.id) tx.set(doc(db, 'libroDiario', journal.id), sanitizeForFirestore(journal), { merge: true });
+      if (sale?.id) tx.set(doc(db, 'ventas', sale.id), sanitizeForFirestore(sale), { merge: true });
+      result = { ...updated, appliedUSD: applied };
+    });
+    applyPatch({
+      [collectionName]: mergeById((cache as any)[collectionName], [result]),
+      ...(journal?.id ? { libroDiario: mergeById(cache.libroDiario, [journal]) } : {}),
+      ...(sale?.id ? { ventas: mergeById(cache.ventas, [sale]) } : {})
+    } as Partial<AppState>);
+    return result;
+  },
+
   async set(patch: Partial<AppState>) {
     if (typeof window === 'undefined' || !db) return;
     const prev = Store.get();
