@@ -167,48 +167,27 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
 
     const ahoraStr = Utils.ahora();
     const asientoId = 'ACC-' + Store.uid().toUpperCase().slice(0, 5);
-    
-    // 1. Actualizar CxP
-    const nuevasCxP = state.cxp.map((c: Debt) => {
-      if (c.id === showPaymentModal.id) {
-        const nuevoSaldo = Math.max(0, c.saldoUSD - amount);
-        const historialPagos = c.historialPagos || [];
-        return {
-          ...c,
-          abonadoUSD: c.abonadoUSD + amount,
-          saldoUSD: nuevoSaldo,
-          estado: nuevoSaldo <= 0.001 ? 'pagada' : 'parcial',
-          historialPagos: [...historialPagos, {
-            id: 'PAYS-' + Store.uid().toUpperCase().slice(0, 6),
-            asientoId,
-            fecha: ahoraStr,
-            montoUSD: amount,
-            montoBS,
-            metodo: paymentMethod,
-            reciboId: `PAY-${Store.uid().toUpperCase().slice(0, 4)}`
-          }]
-        };
-      }
-      return c;
-    });
-
-    // 2. Crear Asiento Contable (Egreso)
+    const reciboId = `PAY-${Store.uid().toUpperCase().slice(0, 4)}`;
+    const pago = {
+      id: 'PAYS-' + Store.uid().toUpperCase().slice(0, 6),
+      asientoId, fecha: ahoraStr, montoUSD: amount, montoBS,
+      metodo: paymentMethod, reciboId
+    };
     const nuevoAsiento: LibroDiarioEntry = {
-      id: asientoId,
-      fecha: ahoraStr,
-      tipo: 'egreso',
+      id: asientoId, fecha: ahoraStr, tipo: 'egreso',
       categoria: 'PAGO_PROVEEDOR' as any,
       concepto: `PAGO DEUDA A: ${showPaymentModal.proveedor.toUpperCase()} - REF FACT: ${showPaymentModal.numeroFactura || 'S/N'}`,
-      montoUSD: amount,
-      montoBS,
-      metodo: paymentMethod,
-      referencia: showPaymentModal.id
+      montoUSD: amount, montoBS, metodo: paymentMethod, referencia: showPaymentModal.id
     };
 
-    updateState({ 
-      cxp: nuevasCxP as Debt[], 
-      libroDiario: [nuevoAsiento, ...(state.libroDiario || [])] 
+    const resultadoPago = await Store.applyDebtPaymentTransaction({
+      collection: 'cxp',
+      debtId: showPaymentModal.id,
+      amountUSD: amount,
+      payment: pago,
+      journal: nuevoAsiento
     });
+    if (!resultadoPago) throw new Error('No se pudo registrar el pago al proveedor.');
 
     toast({
       title: "Pago registrado",
