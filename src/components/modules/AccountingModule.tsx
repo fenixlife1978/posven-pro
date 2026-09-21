@@ -322,8 +322,8 @@ export default function AccountingModule({ state, updateState }: { state: AppSta
                 const ref = selectedEntry.referencia;
                 if (ref === 'MANUAL') return null;
 
-                const cleanRef = ref.split('-')[0];
-                const sale = state.ventas.find(v => v.id === cleanRef);
+                const cleanRef = ref;
+                const sale = state.ventas.find(v => v.id === cleanRef || v.id === ref.split('-').slice(-1)[0]);
                 const cxp = state.cxp.find(c => c.id === ref || c.numeroFactura === ref);
                 const dev = state.devoluciones.find(d => d.id === ref);
                 const anu = state.anulaciones.find(a => a.id === ref);
