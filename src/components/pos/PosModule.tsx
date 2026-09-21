@@ -344,67 +344,36 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       const listadoPagos = pagosFinales || pagos;
       const totalPagadoRecibido = listadoPagos.reduce((s, p) => s + p.montoUSD, 0);
       const terminal = getCurrentTerminal();
-      const nextNum = terminal?.proximoRecibo || state.proximoRecibo;
-      const reciboId = String(nextNum).padStart(9, '0');
       const ahoraStr = Utils.ahora();
-      
-      let vExento = 0, vBase = 0, vIVA = 0;
-      let prodsActualizados = [...state.productos], nuevosMovimientos: Movimiento[] = [];
 
-      state.carrito.forEach(item => {
-        const pIdx = prodsActualizados.findIndex(x => x.id === item.productoId);
-        if (pIdx === -1) return;
-        const p = { ...prodsActualizados[pIdx] };
-        if (p.aplicaIVA) { const base = item.subtotalUSD / 1.16; vBase += base; vIVA += (item.subtotalUSD - base); } else { vExento += item.subtotalUSD; }
-        if (p.isKit && p.kitType === 'stock_componentes' && p.kitItems) {
-          p.kitItems.forEach(ki => {
-            const cpIdx = prodsActualizados.findIndex(cp => cp.id === ki.productoId);
-            if (cpIdx !== -1) {
-              const cp = { ...prodsActualizados[cpIdx] };
-              const qty = item.cantidad * ki.cantidad, stockAntes = cp.stock;
-              cp.stock -= qty;
-              nuevosMovimientos.push({ id: Store.uid(), productoId: cp.id, tipo: 'venta', cantidad: -qty, stockAntes, stockDespues: cp.stock, fecha: ahoraStr, referencia: `KIT: ${p.nombre} - VENTA ${reciboId}`, terminalId: terminal?.id || 'GLOBAL' });
-              prodsActualizados[cpIdx] = cp;
-            }
-          });
-        } else {
-          const stockAntes = p.stock;
-          p.stock -= item.cantidad;
-          nuevosMovimientos.push({ id: Store.uid(), productoId: item.productoId, tipo: 'venta', cantidad: -item.cantidad, stockAntes, stockDespues: p.stock, fecha: ahoraStr, referencia: `VENTA ${reciboId}`, terminalId: terminal?.id || 'GLOBAL' });
-          prodsActualizados[pIdx] = p;
-        }
+      const resultado = await Store.createSaleTransaction({
+        cart: state.carrito,
+        payments: listadoPagos,
+        clientName: cliente,
+        terminalId: terminal?.id,
+        fallbackReceiptNumber: terminal?.proximoRecibo || state.proximoRecibo,
+        now: ahoraStr,
+        tasa: state.tasa,
+        saleType: 'VENTA',
+        cajeroId: auth?.currentUser?.uid
       });
 
-      const vIgtf = listadoPagos.filter(p => p.metodo === 'efectivo_usd' || p.metodo === 'zelle').reduce((acc, p) => acc + (p.montoUSD * 0.03), 0);
-      
-      const nuevaVenta: Sale = { 
-        id: reciboId, 
-        fecha: ahoraStr, 
-        cliente, 
-        items: [...state.carrito], 
-        subtotalUSD, 
-        descuentoUSD: 0, 
-        totalUSD: subtotalUSD, 
-        totalBS, 
-        metodoPago: listadoPagos.length > 1 ? 'mixto' : (listadoPagos[0]?.metodo || 'efectivo_usd'), 
-        estado: 'completada', 
-        type: 'VENTA', 
-        received: totalPagadoRecibido, 
-        change: Math.max(0, totalPagadoRecibido - subtotalUSD), 
-        payments: [...listadoPagos], 
-        terminalId: terminal?.id, 
-        terminalName: terminal?.nombre || 'SISTEMA GLOBAL', 
-        cajeroId: auth?.currentUser?.uid, 
-        baseImponibleUSD: Utils.round(vBase), 
-        ivaUSD: Utils.round(vIVA), 
-        exentoUSD: Utils.round(vExento), 
-        igtfUSD: Utils.round(vIgtf),
-        tasa: state.tasa
-      };
-      
-      const nuevasEntradasDiario: LibroDiarioEntry[] = listadoPagos.map(p => ({ id: 'ACC-' + Store.uid().toUpperCase().slice(0, 5), fecha: ahoraStr, tipo: 'ingreso', categoria: 'VENTA', concepto: `VENTA #${reciboId} - CLIENTE: ${cliente.toUpperCase()}`, montoUSD: p.montoUSD, montoBS: p.montoBS, metodo: p.metodo, referencia: reciboId + '-' + (terminal?.id || 'GLOBAL') }));
-      await updateState({ productos: prodsActualizados, ventas: [...state.ventas, nuevaVenta], movimientos: [...state.movimientos, ...nuevosMovimientos], libroDiario: [...nuevasEntradasDiario, ...(state.libroDiario || [])], carrito: [], proximoRecibo: state.proximoRecibo + 1, terminales: state.terminales.map(t => t.id === terminal?.id ? { ...t, proximoRecibo: t.proximoRecibo + 1 } : t) });
-      setLastProcessedSale(nuevaVenta); setShowReceiptModal(true); setPagos([]); setCliente('Consumidor final'); setSelectedProductDisplay(null);
+      if (!resultado?.sale) throw new Error('No se pudo registrar la venta.');
+
+      // El correlativo, inventario y movimientos ya fueron confirmados en Firestore.
+      // Aquí solo limpiamos el carrito local; los datos autoritativos llegan por snapshots.
+      updateState({ carrito: [] });
+      setLastProcessedSale(resultado.sale);
+      setShowReceiptModal(true);
+      setPagos([]);
+      setCliente('Consumidor final');
+      setSelectedProductDisplay(null);
+    } catch (err: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Venta no registrada',
+        description: err?.message || 'La operación fue rechazada para proteger el inventario.'
+      });
     } finally {
       setIsProcessing(false);
     }
@@ -471,78 +440,66 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
 
   const ejecutarVentaACredito = async () => {
     if (state.carrito.length === 0 || isProcessing) return;
+
     let targetClient: Customer | null = selectedClient;
+    let createNewClient = false;
+
     if (showNewClientForm) {
       if (!newClient.name || !newClient.cedula) return alert("Datos incompletos.");
       const fullId = `${newClient.tipoDoc}-${newClient.cedula}`;
-      targetClient = { id: Store.uid(), name: newClient.name.toUpperCase(), cedula: fullId, phone: newClient.phone, address: newClient.address, debt: 0 };
+      targetClient = {
+        id: Store.uid(),
+        name: newClient.name.toUpperCase(),
+        cedula: fullId,
+        phone: newClient.phone,
+        address: newClient.address,
+        debt: 0
+      };
+      createNewClient = true;
     }
+
     if (!targetClient) return alert("Seleccione un cliente.");
-    
+
     setIsProcessing(true);
     try {
-      const terminal = getCurrentTerminal(), nextNum = terminal?.proximoRecibo || state.proximoRecibo, reciboId = String(nextNum).padStart(9, '0'), ahoraStr = Utils.ahora();
-      let vExento = 0, vBase = 0, vIVA = 0, prodsActualizados = [...state.productos], nuevosMovimientos: Movimiento[] = [];
-      state.carrito.forEach(item => {
-        const pIdx = prodsActualizados.findIndex(x => x.id === item.productoId);
-        if (pIdx === -1) return;
-        const p = { ...prodsActualizados[pIdx] };
-        if (p.aplicaIVA) { const base = item.subtotalUSD / 1.16; vBase += base; vIVA += (item.subtotalUSD - base); } else { vExento += item.subtotalUSD; }
-        if (p.isKit && p.kitType === 'stock_componentes' && p.kitItems) {
-          p.kitItems.forEach(ki => {
-            const cpIdx = prodsActualizados.findIndex(cp => cp.id === ki.productoId);
-            if (cpIdx !== -1) {
-              const cp = { ...prodsActualizados[cpIdx] };
-              const qty = item.cantidad * ki.cantidad, stockAntes = cp.stock;
-              cp.stock -= qty;
-              nuevosMovimientos.push({ id: Store.uid(), productoId: cp.id, tipo: 'venta', cantidad: -qty, stockAntes, stockDespues: cp.stock, fecha: ahoraStr, referencia: `KIT: ${p.nombre} - CRÉDITO ${reciboId}`, terminalId: terminal?.id || 'GLOBAL' });
-              prodsActualizados[cpIdx] = cp;
-            }
-          });
-        } else {
-          const stockAntes = p.stock;
-          p.stock -= item.cantidad;
-          nuevosMovimientos.push({ id: Store.uid(), productoId: item.productoId, tipo: 'venta', cantidad: -item.cantidad, stockAntes, stockDespues: p.stock, fecha: ahoraStr, referencia: `CRÉDITO ${reciboId}`, terminalId: terminal?.id || 'GLOBAL' });
-          prodsActualizados[pIdx] = p;
+      const terminal = getCurrentTerminal();
+      const ahoraStr = Utils.ahora();
+      const fallbackNumber = terminal?.proximoRecibo || state.proximoRecibo;
+      const debtId = 'CRD-' + String(fallbackNumber).padStart(9, '0');
+
+      const resultado = await Store.createSaleTransaction({
+        cart: state.carrito,
+        payments: [],
+        clientName: targetClient.name,
+        terminalId: terminal?.id,
+        fallbackReceiptNumber: fallbackNumber,
+        now: ahoraStr,
+        tasa: state.tasa,
+        saleType: 'VENTA CRÉDITO',
+        cajeroId: auth?.currentUser?.uid,
+        credit: {
+          customer: targetClient,
+          debtId
         }
       });
-      
-      const nuevaVenta: Sale = { 
-        id: reciboId, 
-        fecha: ahoraStr, 
-        cliente: targetClient.name, 
-        items: [...state.carrito], 
-        subtotalUSD, 
-        descuentoUSD: 0, 
-        totalUSD: subtotalUSD, 
-        totalBS, 
-        metodoPago: 'credito', 
-        estado: 'completada', 
-        type: 'VENTA CRÉDITO', 
-        received: 0, 
-        change: 0, 
-        terminalId: terminal?.id, 
-        terminalName: terminal?.nombre || 'SISTEMA GLOBAL', 
-        cajeroId: auth?.currentUser?.uid, 
-        baseImponibleUSD: Utils.round(vBase), 
-        ivaUSD: Utils.round(vIVA), 
-        exentoUSD: Utils.round(vExento), 
-        igtfUSD: 0,
-        tasa: state.tasa
-      };
-      
-      const nuevaDeuda: Debt = { id: 'CRD-' + reciboId.slice(-6), fecha: ahoraStr.slice(0, 10), fechaVencimiento: '2099-12-31', cliente: `${targetClient.name} [${targetClient.cedula}]`, montoUSD: subtotalUSD, abonadoUSD: 0, saldoUSD: subtotalUSD, estado: 'pendiente' as 'pendiente', historialPagos: [], ventaId: reciboId };
-      await updateState({ 
-        productos: prodsActualizados, 
-        ventas: [...state.ventas, nuevaVenta], 
-        movimientos: [...state.movimientos, ...nuevosMovimientos], 
-        cxc: [...state.cxc, nuevaDeuda], 
-        clientes: showNewClientForm ? [...(state.clientes || []), { ...targetClient, debt: subtotalUSD }] : (state.clientes || []).map(c => c.id === targetClient!.id ? { ...c, debt: (c.debt || 0) + subtotalUSD } : c), 
-        proximoRecibo: state.proximoRecibo + 1, 
-        terminales: state.terminales.map(t => t.id === terminal?.id ? { ...t, proximoRecibo: t.proximoRecibo + 1 } : t), 
-        carrito: [] 
+
+      if (!resultado?.sale || !resultado?.debt) throw new Error('No se pudo registrar la venta a crédito.');
+
+      updateState({ carrito: [] });
+      setLastProcessedSale(resultado.sale);
+      setShowReceiptModal(true);
+      setIsCreditView(false);
+      setSelectedClient(null);
+      if (createNewClient) {
+        setShowNewClientForm(false);
+        setNewClient({ name: '', tipoDoc: 'V', cedula: '', phone: '', address: '' });
+      }
+    } catch (err: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Crédito no registrado',
+        description: err?.message || 'La operación fue rechazada para proteger inventario y cuenta por cobrar.'
       });
-      setLastProcessedSale(nuevaVenta); setShowReceiptModal(true); setIsCreditView(false); setSelectedClient(null);
     } finally {
       setIsProcessing(false);
     }
