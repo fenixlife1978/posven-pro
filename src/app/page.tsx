@@ -354,7 +354,7 @@ export default function LicoreriaPOS() {
       case 'proveedores': return <SuppliersModule state={state} updateState={updateState} />;
       case 'contabilidad': return <AccountingModule state={state} updateState={updateState} />;
       case 'cxc': return <CxCModule state={state} updateState={updateState} />;
-      case 'cxp': return <CxPModule state={state} updateState={updateState} />;
+      case 'cxp': return <CxPModule state={state} updateState={updateState} terminalId={state.terminales.find(t => t.usuarioId === user?.uid)?.id} />;
       case 'reportes': return <ReportsModule state={state} />;
       case 'config': return <ConfigModule state={state} updateState={updateState} />;
       case 'usuarios': return <UsersModule />;
