@@ -276,7 +276,7 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
 
   const eliminarDeuda = async (deuda: any) => {
     if (!confirm(`¿Seguro que desea eliminar el registro ${deuda.id}? Esta acción no se puede deshacer.`)) return;
-    const cedulaMatch = String(deuda.cliente || '').match(/\\[([^\\]]+)\\]$/);
+    const cedulaMatch = String(deuda.cliente || '').match(/\[([^\]]+)\]$/);
     const customerCedula = cedulaMatch?.[1] || undefined;
     try {
       const resultado = await Store.deleteCustomerDebtTransaction({
