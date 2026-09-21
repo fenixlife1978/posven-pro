@@ -68,6 +68,7 @@ export default function LicoreriaPOS() {
   
   const moduleInitialized = useRef(false);
   const profileUnsubRef = useRef<(() => void) | null>(null);
+  const criticalClickRef = useRef<{ target: Element | null; time: number }>({ target: null, time: 0 });
 
   useEffect(() => {
     setMounted(true);
@@ -77,6 +78,26 @@ export default function LicoreriaPOS() {
         localStorage.setItem('posven_last_error', JSON.stringify({ message: e?.message || 'error', stack: e?.error?.stack || '', time: new Date().toISOString() }));
       } catch (err) {}
     };
+    // Barrera global contra doble click en acciones que confirman cambios.
+    // Se ejecuta en captura, antes de los handlers React, para cubrir todos los módulos
+    // incluso cuando el segundo click ocurre antes del siguiente render.
+    const preventCriticalDoubleClick = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      const button = target?.closest('button');
+      if (!button) return;
+      const label = String(button.innerText || button.getAttribute('aria-label') || '').toUpperCase();
+      const critical = /REGISTR|GUARDAR|PROCESAR|CONFIRMAR|ASENTAR|PAGAR|PAGO|LIQUIDAR|ANULAR|ELIMINAR|DEVOLVER|DEVOLUCIÓN|CARGAR A CARTERA|GUARDAR Y CARGAR|TERMINAR/.test(label);
+      if (!critical) return;
+      const now = Date.now();
+      if (criticalClickRef.current.target === button && now - criticalClickRef.current.time < 700) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+      criticalClickRef.current = { target: button, time: now };
+    };
+    document.addEventListener('click', preventCriticalDoubleClick, true);
+
     window.addEventListener('error', captureError);
     window.addEventListener('unhandledrejection', (e) => {
       try {
@@ -193,7 +214,8 @@ export default function LicoreriaPOS() {
         unsubscribeStore();
         clearInterval(timerClock);
         clearTimeout(timerSafety);
-        window.removeEventListener('error', captureError);
+        document.removeEventListener('click', preventCriticalDoubleClick, true);
+    window.removeEventListener('error', captureError);
         window.removeEventListener('unhandledrejection', captureError);
         window.removeEventListener('online', hOnline);
         window.removeEventListener('offline', hOffline);
