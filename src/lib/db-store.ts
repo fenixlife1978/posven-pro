@@ -333,6 +333,75 @@ function syncProductosTransactional(prevArr: any[] | undefined, newArr: any[] | 
   });
 }
 
+// Movimiento de inventario atómico: toma el stock REAL de Firestore y registra
+// el movimiento con stockAntes/stockDespues calculados dentro de la transacción.
+async function applyInventoryMovementsTransaction(params: {
+  operationId: string;
+  operationType: string;
+  movements: any[];
+  productPatches?: Record<string, any>;
+}): Promise<any> {
+  if (!db) return null;
+  const { operationId, operationType, movements, productPatches = {} } = params;
+  if (!movements?.length) throw new Error('No hay movimientos de inventario para registrar.');
+
+  const productIds = [...new Set(movements.map(m => String(m.productoId || '')).filter(Boolean))];
+  let result: any = null;
+  await runTransaction(db, async tx => {
+    const operationRef = await claimOperation(tx, operationType, operationId);
+    const remoteProducts = new Map<string, any>();
+    for (const pid of productIds) {
+      const snap = await tx.get(doc(db, 'productos', pid));
+      if (!snap.exists()) throw new Error('El producto ' + pid + ' ya no existe en Firestore.');
+      remoteProducts.set(pid, { ...sanitizeForFirestore(snap.data()), id: pid });
+    }
+
+    if (movements.length + productIds.length + 1 > 450) {
+      throw new Error('La operación contiene demasiados movimientos para una sola transacción.');
+    }
+
+    const byProduct = new Map<string, any[]>();
+    movements.forEach(m => {
+      const pid = String(m.productoId);
+      const list = byProduct.get(pid) || [];
+      list.push(m);
+      byProduct.set(pid, list);
+    });
+
+    const persisted: any[] = [];
+    for (const pid of productIds) {
+      const product = remoteProducts.get(pid);
+      let running = Number(product.stock) || 0;
+      for (const movement of byProduct.get(pid) || []) {
+        const delta = Number(movement.cantidad) || 0;
+        const before = running;
+        running = before + delta;
+        const persistedMovement = {
+          ...movement,
+          productoId: pid,
+          stockAntes: before,
+          stockDespues: running,
+          id: String(movement.id || Store.uid())
+        };
+        tx.set(doc(db, 'movimientos', persistedMovement.id), sanitizeForFirestore(persistedMovement), { merge: false });
+        persisted.push(persistedMovement);
+      }
+
+      const patch = productPatches[pid] || {};
+      tx.set(doc(db, 'productos', pid), sanitizeForFirestore({ ...product, ...patch, stock: running }), { merge: true });
+    }
+
+    tx.set(operationRef, {
+      tipo: operationType,
+      operationId,
+      fecha: String(movements[0]?.fecha || Utils.ahora()),
+      referencia: String(movements[0]?.referencia || operationId)
+    }, { merge: false });
+    result = { movements: persisted, productIds };
+  });
+  return result;
+}
+
 // ============================================================
 // ESPEJO EN TIEMPO REAL (RTDB) PARA PRODUCTOS.
 // El stock/precios viven en RTDB para sincronizar cajas sin re-leer
@@ -672,6 +741,8 @@ function init() {
 // ============================================================
 // API PÚBLICA
 // ============================================================
+export const applyInventoryMovementsTransaction = applyInventoryMovementsTransaction;
+
 export const Store = {
   subscribe(callback: (state: Partial<AppState>) => void): () => void {
     listeners.add(callback);
