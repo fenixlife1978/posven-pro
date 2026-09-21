@@ -694,19 +694,21 @@ export const Store = {
    * evitando que dos cajas trabajen sobre el mismo saldo antiguo.
    */
   async applyGlobalProviderPaymentTransaction(params: {
+    operationId?: string;
     provider: string;
     amountUSD: number;
     payment: any;
     journal?: any;
   }): Promise<{ appliedUSD: number; debts: any[] }> {
     if (typeof window === 'undefined' || !db) return { appliedUSD: 0, debts: [] };
-    const { provider, amountUSD, payment, journal } = params;
+    const { operationId, provider, amountUSD, payment, journal } = params;
     if (!(amountUSD > 0)) return { appliedUSD: 0, debts: [] };
 
     const q = query(collection(db, 'cxp'), where('proveedor', '==', provider));
     let result = { appliedUSD: 0, debts: [] as any[] };
-
+    const opId = String(operationId || payment?.id || (provider + '|' + amountUSD + '|' + payment?.fecha + '|' + payment?.metodo));
     await runTransaction(db, async tx => {
+      const operationRef = await claimOperation(tx, 'PAGO-CXP-GLOBAL', opId);
       // IMPORTANTE: Firestore puede reintentar esta función completa si detecta
       // concurrencia. Todo el resultado se reconstruye en cada intento para no
       // duplicar appliedUSD/debts en memoria.
@@ -764,6 +766,7 @@ export const Store = {
         );
       }
 
+      tx.set(operationRef, { tipo: 'PAGO-CXP-GLOBAL', operationId: opId, fecha: payment?.fecha || new Date().toISOString(), referencia: provider }, { merge: false });
       result = nextResult;
     });
 
@@ -774,6 +777,7 @@ export const Store = {
   },
 
   async applyDebtPaymentTransaction(params: {
+    operationId?: string;
     collection: 'cxc' | 'cxp';
     debtId: string;
     amountUSD: number;
@@ -783,11 +787,13 @@ export const Store = {
     customerCedula?: string;
   }): Promise<any | null> {
     if (typeof window === 'undefined' || !db) return null;
-    const { collection: collectionName, debtId, amountUSD, payment, journal, sale, customerCedula } = params;
+    const { operationId, collection: collectionName, debtId, amountUSD, payment, journal, sale, customerCedula } = params;
     if (!(amountUSD > 0)) return null;
     const debtRef = doc(db, collectionName, debtId);
     let result: any = null;
+    const opId = String(operationId || payment?.id || (collectionName + '|' + debtId + '|' + amountUSD + '|' + payment?.metodo + '|' + payment?.fecha));
     await runTransaction(db, async tx => {
+      const operationRef = await claimOperation(tx, 'PAGO-DEUDA', opId);
       const debtSnap = await tx.get(debtRef);
       if (!debtSnap.exists()) throw new Error('La deuda ya no existe o fue eliminada en otra caja.');
       const remote = sanitizeForFirestore(debtSnap.data()) as any;
@@ -825,6 +831,7 @@ export const Store = {
         if (entry?.id) tx.set(doc(db, 'libroDiario', entry.id), sanitizeForFirestore(entry), { merge: true });
       });
       if (sale?.id) tx.set(doc(db, 'ventas', sale.id), sanitizeForFirestore(sale), { merge: true });
+      tx.set(operationRef, { tipo: 'PAGO-DEUDA', operationId: opId, fecha: payment?.fecha || new Date().toISOString(), referencia: debtId }, { merge: false });
       result = { ...updated, appliedUSD: applied };
     });
     // CxC/CxP se actualizan exclusivamente por sus snapshots completos autoritativos.
@@ -841,18 +848,22 @@ export const Store = {
   },
 
   async createSupplierDebtTransaction(params: {
+    operationId?: string;
     debt: any;
     journal?: any;
   }): Promise<any> {
     if (typeof window === 'undefined' || !db) return null;
-    const { debt, journal } = params;
+    const { operationId, debt, journal } = params;
     const debtRef = doc(db, 'cxp', debt.id);
     let result: any = null;
+    const opId = String(operationId || debt.id);
     await runTransaction(db, async tx => {
+      const operationRef = await claimOperation(tx, 'DEUDA-CXP', opId);
       const existing = await tx.get(debtRef);
       if (existing.exists()) throw new Error('La deuda de proveedor ya existe en otra caja. Actualice y vuelva a intentar.');
       tx.set(debtRef, sanitizeForFirestore(debt), { merge: false });
       if (journal?.id) tx.set(doc(db, 'libroDiario', journal.id), sanitizeForFirestore(journal), { merge: false });
+      tx.set(operationRef, { tipo: 'DEUDA-CXP', operationId: opId, fecha: debt.fecha, referencia: debt.id }, { merge: false });
       result = debt;
     });
     // CxP se actualiza exclusivamente por el snapshot completo autoritativo.
@@ -892,8 +903,9 @@ export const Store = {
 
     let result: any = null;
     let journalResult: any = null;
-
+    const opId = String(operationId || (collectionName + '|' + debtId + '|' + paymentId + '|REVERSE'));
     await runTransaction(db, async tx => {
+      const operationRef = await claimOperation(tx, 'REVERSAR-PAGO', opId);
       const operationRef = await claimOperation(tx, 'COMPRA', opId);
       // TODAS las lecturas van antes de cualquier escritura.
       const purchaseSnap = await tx.get(purchaseRef);
@@ -951,7 +963,7 @@ export const Store = {
         .reduce((n, docs) => n + docs.length, 0);
       const writesForDebt = debt?.id ? 1 : 0;
       const writesForJournal = journal?.id ? 1 : 0;
-      const writesPlanned = 1 + writesForProducts + writesForNewMovements +
+      const writesPlanned = 2 + writesForProducts + writesForNewMovements +
         writesForHistoricalMovements + writesForDebt + writesForJournal;
 
       // Dejamos margen respecto al límite duro de 500 escrituras.
@@ -1391,6 +1403,7 @@ export const Store = {
   },
 
   async deletePurchaseTransaction(params: {
+    operationId?: string;
     purchaseId?: string;
     invoiceNumber: string;
     supplier: string;
@@ -1398,6 +1411,7 @@ export const Store = {
   }): Promise<any> {
     if (typeof window === 'undefined' || !db) return null;
 
+    const operationId = String(params.operationId || '');
     const invoiceNumber = String(params.invoiceNumber || '').trim();
     const supplier = String(params.supplier || '').trim();
     const purchaseDate = String(params.purchaseDate || '').slice(0, 10);
@@ -1405,8 +1419,9 @@ export const Store = {
 
     let result: any = null;
     let journalPatch: LibroDiarioEntry[] = [];
-
+    const opId = operationId || (invoiceNumber + '|' + supplier + '|' + purchaseDate + '|DELETE');
     await runTransaction(db, async tx => {
+      const operationRef = await claimOperation(tx, 'ELIMINAR-COMPRA', opId);
       const purchaseRef = params.purchaseId ? doc(db, 'compras', params.purchaseId) : null;
       const purchaseSnap = purchaseRef ? await tx.get(purchaseRef) : null;
 
@@ -1560,6 +1575,7 @@ export const Store = {
         .filter(Boolean)
         .concat(paymentJournalSnaps.filter(x => x.snap.exists()).map(x => x.snap.data() as LibroDiarioEntry));
 
+      tx.set(operationRef, { tipo: 'ELIMINAR-COMPRA', operationId: opId, fecha: new Date().toISOString(), referencia: invoiceNumber }, { merge: false });
       result = {
         deletedMovements: movementMatches.length,
         deletedDebts: linkedDebts.length,
@@ -1577,15 +1593,18 @@ export const Store = {
   },
 
   async deleteCustomerAndDebtsTransaction(params: {
+    operationId?: string;
     customerId: string;
     customerName?: string;
     customerCedula?: string;
   }): Promise<any> {
     if (typeof window === 'undefined' || !db) return null;
-    const { customerId, customerName, customerCedula } = params;
+    const { operationId, customerId, customerName, customerCedula } = params;
     const customerRef = doc(db, 'clientes', customerId);
     let result: any = null;
+    const opId = String(operationId || customerId);
     await runTransaction(db, async tx => {
+      const operationRef = await claimOperation(tx, 'ELIMINAR-CLIENTE', opId);
       const customerSnap = await tx.get(customerRef);
       if (!customerSnap.exists()) throw new Error('El cliente ya no existe o fue eliminado en otra caja.');
       const customer = sanitizeForFirestore(customerSnap.data()) as any;
@@ -1603,21 +1622,25 @@ export const Store = {
       if (active) throw new Error('El cliente tiene una deuda pendiente en otra caja. Actualice y vuelva a intentar.');
       debts.forEach(d => tx.delete(d.ref));
       tx.delete(customerRef);
+      tx.set(operationRef, { tipo: 'ELIMINAR-CLIENTE', operationId: opId, fecha: new Date().toISOString(), referencia: customerId }, { merge: false });
       result = { customer, deletedDebts: debts.length };
     });
     return result;
   },
 
   async deleteCustomerDebtTransaction(params: {
+    operationId?: string;
     debtId: string;
     customerCedula?: string;
     customerId?: string;
   }): Promise<any> {
     if (typeof window === 'undefined' || !db) return null;
-    const { debtId, customerCedula, customerId } = params;
+    const { operationId, debtId, customerCedula, customerId } = params;
     const debtRef = doc(db, 'cxc', debtId);
     let result: any = null;
+    const opId = String(operationId || debtId);
     await runTransaction(db, async tx => {
+      const operationRef = await claimOperation(tx, 'ELIMINAR-CXC', opId);
       const debtSnap = await tx.get(debtRef);
       if (!debtSnap.exists()) throw new Error('La deuda ya no existe o fue eliminada en otra caja.');
       const debt = sanitizeForFirestore(debtSnap.data()) as any;
@@ -1646,6 +1669,7 @@ export const Store = {
   },
 
   async createCustomerDebtTransaction(params: {
+    operationId?: string;
     debt: any;
     customer?: any;
     customerId?: string;
@@ -1653,10 +1677,12 @@ export const Store = {
     journal?: any;
   }): Promise<any> {
     if (typeof window === 'undefined' || !db) return null;
-    const { debt, customer, customerId, customerCedula, journal } = params;
+    const { operationId, debt, customer, customerId, customerCedula, journal } = params;
     const debtRef = doc(db, 'cxc', debt.id);
     let result: any = null;
+    const opId = String(operationId || debt.id);
     await runTransaction(db, async tx => {
+      const operationRef = await claimOperation(tx, 'DEUDA-CXC', opId);
       const existing = await tx.get(debtRef);
       if (existing.exists()) throw new Error('La deuda ya existe en otra caja. Actualice y vuelva a intentar.');
       let customerRef: any = null;
@@ -1689,6 +1715,7 @@ export const Store = {
       if (customerRef && mergedCustomer) tx.set(customerRef, sanitizeForFirestore(mergedCustomer), { merge: true });
       tx.set(debtRef, sanitizeForFirestore(debt), { merge: false });
       if (journal?.id) tx.set(doc(db, 'libroDiario', journal.id), sanitizeForFirestore(journal), { merge: false });
+      tx.set(operationRef, { tipo: 'DEUDA-CXC', operationId: opId, fecha: debt.fecha, referencia: debt.id }, { merge: false });
       result = { debt, customer: mergedCustomer };
     });
     // CxC/clientes se actualizan exclusivamente por snapshots completos autoritativos.
@@ -1697,13 +1724,14 @@ export const Store = {
   },
 
   async reverseDebtPaymentTransaction(params: {
+    operationId?: string;
     collection: 'cxc' | 'cxp';
     debtId: string;
     paymentId: string;
     journalId?: string;
   }): Promise<any | null> {
     if (typeof window === 'undefined' || !db) return null;
-    const { collection: collectionName, debtId, paymentId, journalId } = params;
+    const { operationId, collection: collectionName, debtId, paymentId, journalId } = params;
     const debtRef = doc(db, collectionName, debtId);
     let result: any = null;
     let journalResult: any = null;
@@ -1771,6 +1799,7 @@ export const Store = {
         }
       }
 
+      tx.set(operationRef, { tipo: 'REVERSAR-PAGO', operationId: opId, fecha: new Date().toISOString(), referencia: paymentId }, { merge: false });
       nextResult = { ...updated, reversedPayment: pago };
       result = nextResult;
       journalResult = nextJournalResult;
