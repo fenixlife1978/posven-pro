@@ -416,113 +416,50 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
   // Elimina (revierte) una compra del historial: quita sus movimientos de kardex y
   // recompone stock + costo CPP, revierte los asientos contables (COMPRA y pagos de
   // la CxP asociada) y elimina la compra y su(s) cuenta(s) por pagar generadas.
-  const handleEliminarCompra = (compra: PurchaseRecord) => {
-    const normFact = String(compra.numeroFactura || '').trim().toLowerCase();
-    const normProv = String(compra.proveedor || '').trim().toLowerCase();
-    if (!normFact && !normProv) return alert('No se pudo identificar la compra para eliminar.');
+  const handleEliminarCompra = async (compra: PurchaseRecord) => {
+    const normFact = String(compra.numeroFactura || '').trim();
+    const normProv = String(compra.proveedor || '').trim();
+    if (!normFact || !normProv) {
+      return alert('No se pudo identificar la compra para eliminar.');
+    }
 
-    // Movimientos 'compra' generados por esta factura/proveedor (origen: kardex).
-    const movsDeEsta = (state.movimientos || []).filter(m => m.tipo === 'compra' &&
-      ((m.referencia || '').toLowerCase().includes(`fact: ${normFact}`)) &&
-      ((m.referencia || '').toLowerCase().includes(`prov: ${normProv}`)));
-
-    // Cuentas por pagar generadas por esta compra.
-    const fechaCompra = String(compra.fecha || '').slice(0, 10);
     const deudasVinculadas = (state.cxp || []).filter(d =>
-      String(d.numeroFactura || '') === String(compra.numeroFactura || '') &&
-      String(d.proveedor || '') === String(compra.proveedor || '') &&
-      String(d.fecha || '').slice(0, 10) === fechaCompra);
+      String(d.numeroFactura || '') === normFact &&
+      String(d.proveedor || '') === normProv &&
+      String(d.fecha || '').slice(0, 10) === String(compra.fecha || '').slice(0, 10)
+    );
 
     const txtDeudas = deudasVinculadas.length > 0
-      ? `${deudasVinculadas.length} cuenta(s) por pagar y sus abonos` : 'ninguna cuenta por pagar';
+      ? `${deudasVinculadas.length} cuenta(s) por pagar y sus abonos`
+      : 'ninguna cuenta por pagar';
 
-    if (!confirm(`¿SEGURO QUE DESEA ELIMINAR LA COMPRA?\n\nFactura #${compra.numeroFactura} · ${compra.proveedor}\nCondición: ${String(compra.condicion || '').toUpperCase()} · Total: ${Utils.fmtUSD(compra.montoUSD || 0)}\n\nSe revertirán:\n• ${movsDeEsta.length} movimiento(s) de inventario\n• Stock y costo CPP de los productos afectados\n• Asientos contables de compra\n• ${txtDeudas}\n\nEsta acción es IRREVERSIBLE.`)) return;
+    if (!confirm(`¿SEGURO QUE DESEA ELIMINAR LA COMPRA?\\n\\nFactura #${normFact} · ${normProv}\\nCondición: ${String(compra.condicion || '').toUpperCase()} · Total: ${Utils.fmtUSD(compra.montoUSD || 0)}\\n\\nSe revertirán en una operación protegida contra cambios de otras cajas:\\n• Movimientos de inventario de esta factura\\n• Stock y costo CPP afectados\\n• Asientos contables de compra y sus abonos\\n• ${txtDeudas}\\n\\nEsta acción es IRREVERSIBLE.`)) return;
 
-    const idsMovs = new Set(movsDeEsta.map(m => m.id));
-    const idsAfectados = [...new Set(movsDeEsta.map(m => m.productoId))];
-
-    // Base real de cada producto: el stockAntes de su primer movimiento histórico.
-    const basePorProducto = new Map<string, number>();
-    idsAfectados.forEach(pid => {
-      const ms = (state.movimientos || []).filter(m => m.productoId === pid)
-        .sort((a, b) => (a.fecha === b.fecha ? 0 : a.fecha < b.fecha ? -1 : 1));
-      basePorProducto.set(pid, ms.length ? (ms[0].stockAntes || 0) : 0);
-    });
-
-    // 1) Quitar movimientos y recomponer el saldo corrido de cada producto.
-    let nuevosMovimientos = (state.movimientos || []).filter(m => !idsMovs.has(m.id));
-    const stockFinal = new Map<string, number>();
-    const costoFinal = new Map<string, number>();
-
-    idsAfectados.forEach(pid => {
-      const others = nuevosMovimientos.filter(m => m.productoId !== pid);
-      const prods = nuevosMovimientos.filter(m => m.productoId === pid)
-        .slice().sort((a, b) => (a.fecha === b.fecha ? 0 : a.fecha < b.fecha ? -1 : 1));
-      const base = basePorProducto.get(pid) || 0;
-      let bal = base;
-      const upd = prods.map(m => {
-        const stockAntes = bal;
-        const stockDespues = stockAntes + (m.cantidad || 0);
-        bal = stockDespues;
-        return { ...m, stockAntes, stockDespues };
+    setIsProcessing(true);
+    try {
+      const result = await Store.deletePurchaseTransaction({
+        purchaseId: compra.id,
+        invoiceNumber: normFact,
+        supplier: normProv,
+        purchaseDate: compra.fecha
       });
-      nuevosMovimientos = [...others, ...upd];
-      stockFinal.set(pid, bal);
 
-      const pActual = state.productos.find(p => p.id === pid);
-      let costo = pActual ? (pActual.costoUSD || 0) : 0;
-      if (pActual) {
-        const delMov = movsDeEsta.find(m => m.productoId === pid);
-        const itemDel = (compra.items || []).find(i => i.productoId === pid);
-        const q = Math.abs(delMov ? delMov.cantidad : (itemDel ? itemDel.cantidad : 0)) || 0;
-        const cq = itemDel ? (itemDel.costoUnitarioUSD || 0) : costo;
-        const delFecha = delMov ? delMov.fecha : '';
-        const stockTrasCompra = delMov ? (delMov.stockDespues || (base + q)) : (base + q);
-        const hayOperacionPosterior = nuevosMovimientos.some(m => m.productoId === pid &&
-          (m.tipo === 'compra' || m.tipo === 'ajuste_entrada' || m.tipo === 'inicial') &&
-          delFecha !== '' && m.fecha > delFecha);
-        if (!hayOperacionPosterior && q > 0 && (stockTrasCompra - q) > 0) {
-          const num = (stockTrasCompra * costo) - (q * cq);
-          const den = stockTrasCompra - q;
-          costo = Math.max(0, Math.round((num / den + Number.EPSILON) * 10000) / 10000);
-        }
-      }
-      costoFinal.set(pid, costo);
-    });
-
-    // 2) Revertir asientos contables de la compra y de los pagos de sus CxP.
-    let nuevoDiario = state.libroDiario || [];
-    nuevoDiario = nuevoDiario.filter(e => !(e.categoria === 'COMPRA' && e.referencia === String(compra.numeroFactura || '')));
-    deudasVinculadas.forEach(d => {
-      (d.historialPagos || []).forEach(p => {
-        if ((p as any).asientoId) {
-          nuevoDiario = revertirAsiento(nuevoDiario, (p as any).asientoId, p.montoUSD || 0, p.montoBS || 0);
-        }
+      toast({
+        title: "Compra eliminada",
+        description: `Factura #${normFact} revertida de forma segura (${result?.deletedMovements || 0} movimientos, ${result?.deletedDebts || 0} CxP).`
       });
-    });
-
-    // 3) Actualizar productos, quitar deudas, asientos y la compra del historial.
-    const idsDeudas = new Set(deudasVinculadas.map(d => d.id));
-    const nuevosProductos = state.productos.map(p => {
-      if (stockFinal.has(p.id) || costoFinal.has(p.id)) {
-        const patch: any = {};
-        if (stockFinal.has(p.id)) patch.stock = stockFinal.get(p.id);
-        if (costoFinal.has(p.id)) patch.costoUSD = costoFinal.get(p.id);
-        return { ...p, ...patch };
-      }
-      return p;
-    });
-
-    updateState({
-      productos: nuevosProductos,
-      movimientos: nuevosMovimientos,
-      libroDiario: nuevoDiario,
-      cxp: (state.cxp || []).filter(d => !idsDeudas.has(d.id)),
-      compras: (state.compras || []).filter(c => c.id !== compra.id)
-    });
-
-    toast({ title: "Compra eliminada", description: `Se revirtió la compra FACT #${compra.numeroFactura} y todos sus movimientos asociados.` });
-    setExpandedCompra(null);
+      setExpandedCompra(null);
+    } catch (err: any) {
+      console.error('❌ Error revirtiendo compra:', err);
+      toast({
+        title: "No se pudo eliminar la compra",
+        description: err?.message || 'La compra cambió en otra caja. Actualice el historial e inténtelo nuevamente.',
+        variant: "destructive",
+        duration: 8000
+      });
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   return (
