@@ -428,42 +428,41 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         : undefined;
       const nombreClienteCanonico = clienteActual?.name || (cedulaMatch ? clienteRaw.replace(/\s*\[[^\]]+\]\s*$/, '').trim() : clienteRaw) || 'CLIENTE';
       const ahoraStr = Utils.ahora(), terminal = getCurrentTerminal(), nextNum = terminal?.proximoRecibo || state.proximoRecibo, reciboId = 'PAY-' + String(nextNum).padStart(6, '0');
-      const nuevasDeudas: Debt[] = state.cxc.map(d => {
-        if (d.id === showAbonoModal.id) {
-          const nuevoSaldo = Math.max(0, d.saldoUSD - totalAbonado);
-          const updated: Debt = { 
-            ...d,
-            ...(nombreClienteCanonico ? { cliente: `${nombreClienteCanonico}${cedulaDeuda ? ` [${cedulaDeuda}]` : ''}` } : {}), 
-            abonadoUSD: d.abonadoUSD + totalAbonado, 
-            saldoUSD: nuevoSaldo, 
-            estado: (nuevoSaldo <= 0.001 ? 'pagada' : 'parcial') as 'pagada' | 'parcial', 
-            historialPagos: [...(d.historialPagos || []), { fecha: ahoraStr, montoUSD: totalAbonado, montoBS: totalAbonado * state.tasa, metodo: pagosAbono.length > 1 ? 'mixto' : pagosAbono[0].metodo, reciboId }] 
-          };
-          return updated;
-        }
-        return d;
-      });
-      const nuevosAsientos: LibroDiarioEntry[] = pagosAbono.map(p => ({ id: 'ACC-' + Store.uid().toUpperCase().slice(0, 5), fecha: ahoraStr, tipo: 'ingreso', categoria: 'COBRO_DEUDA', concepto: `ABONO DEUDA #${showAbonoModal.id} - CLIENTE: ${nombreClienteCanonico.toUpperCase()}`, montoUSD: p.montoUSD, montoBS: p.montoBS, metodo: p.metodo, referencia: reciboId + '-' + (terminal?.id || 'GLOBAL') }));
-      
-      const saleAbono: Sale = { 
-        id: reciboId, 
-        fecha: ahoraStr, 
-        cliente: nombreClienteCanonico, 
-        items: [{ productoId: 'ABONO', nombre: `ABONO A FACTURA #${showAbonoModal.id}`, cantidad: 1, precioUnitUSD: totalAbonado, subtotalUSD: totalAbonado }], 
-        subtotalUSD: totalAbonado, 
-        descuentoUSD: 0, 
-        totalUSD: totalAbonado, 
-        totalBS: totalAbonado * state.tasa, 
-        metodoPago: pagosAbono.length > 1 ? 'mixto' : pagosAbono[0].metodo, 
-        estado: 'completada', 
-        type: 'COBRO DEUDA', 
-        payments: [...pagosAbono], 
-        terminalId: terminal?.id, 
-        terminalName: terminal?.nombre || 'SISTEMA GLOBAL',
-        tasa: state.tasa
+      const pagoAtomic = {
+        fecha: ahoraStr,
+        montoUSD: totalAbonado,
+        montoBS: totalAbonado * state.tasa,
+        metodo: pagosAbono.length > 1 ? 'mixto' : pagosAbono[0].metodo,
+        reciboId
       };
-      
-      await updateState({ cxc: nuevasDeudas, libroDiario: [...nuevosAsientos, ...(state.libroDiario || [])], proximoRecibo: state.proximoRecibo + 1, ventas: [...state.ventas, saleAbono], terminales: state.terminales.map(t => t.id === terminal?.id ? { ...t, proximoRecibo: t.proximoRecibo + 1 } : t) });
+
+      const nuevasEntradasDiario: LibroDiarioEntry[] = pagosAbono.map(p => ({ id: 'ACC-' + Store.uid().toUpperCase().slice(0, 5), fecha: ahoraStr, tipo: 'ingreso', categoria: 'COBRO_DEUDA', concepto: `ABONO DEUDA #${showAbonoModal.id} - CLIENTE: ${nombreClienteCanonico.toUpperCase()}`, montoUSD: p.montoUSD, montoBS: p.montoBS, metodo: p.metodo, referencia: reciboId + '-' + (terminal?.id || 'GLOBAL') }));
+
+      const saleAbono: Sale = {
+        id: reciboId, fecha: ahoraStr, cliente: nombreClienteCanonico,
+        items: [{ productoId: 'ABONO', nombre: `ABONO A FACTURA #${showAbonoModal.id}`, cantidad: 1, precioUnitUSD: totalAbonado, subtotalUSD: totalAbonado }],
+        subtotalUSD: totalAbonado, descuentoUSD: 0, totalUSD: totalAbonado, totalBS: totalAbonado * state.tasa,
+        metodoPago: pagosAbono.length > 1 ? 'mixto' : pagosAbono[0].metodo,
+        estado: 'completada', type: 'COBRO DEUDA', payments: [...pagosAbono],
+        terminalId: terminal?.id, terminalName: terminal?.nombre || 'SISTEMA GLOBAL', tasa: state.tasa
+      };
+
+      const clienteCedula = cedulaDeuda;
+      const resultadoPago = await Store.applyDebtPaymentTransaction({
+        collection: 'cxc',
+        debtId: showAbonoModal.id,
+        amountUSD: totalAbonado,
+        payment: pagoAtomic,
+        journal: nuevasEntradasDiario[0],
+        sale: saleAbono,
+        customerCedula: clienteCedula
+      });
+      if (!resultadoPago) throw new Error('No se pudo registrar el abono.');
+      const appliedUSD = Number(resultadoPago.appliedUSD) || totalAbonado;
+      if (Math.abs(appliedUSD - totalAbonado) > 0.001) throw new Error('El saldo cambió mientras se registraba el abono. La operación fue limitada al saldo real.');
+
+      // El correlativo de caja sigue siendo local al terminal.
+      await updateState({ proximoRecibo: state.proximoRecibo + 1, terminales: state.terminales.map(t => t.id === terminal?.id ? { ...t, proximoRecibo: t.proximoRecibo + 1 } : t) });
       setLastProcessedSale(saleAbono); setShowReceiptModal(true); setShowAbonoModal(null);
     } finally {
       setIsProcessing(false);
