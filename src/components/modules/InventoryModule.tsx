@@ -374,7 +374,6 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
             }
           }}
         />
-        />
       )}
     </div>
   );
