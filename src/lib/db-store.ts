@@ -1240,51 +1240,6 @@ export const Store = {
       for (const item of cart) {
         if ((Number(item.cantidad) || 0) <= 0) throw new Error('La venta contiene una cantidad inválida.');
       }
-        const p = remoteProducts.get(String(item.productoId));
-        if (!p) throw new Error('Producto no encontrado.');
-        const qty = Number(item.cantidad) || 0;
-        if (qty <= 0) throw new Error('La venta contiene una cantidad inválida.');
-
-        if (p.isKit && p.kitType === 'stock_componentes' && Array.isArray(p.kitItems)) {
-          for (const ki of p.kitItems) {
-            const cp = remoteProducts.get(String(ki.productoId));
-            const required = qty * (Number(ki.cantidad) || 0);
-            const stock = Number(cp?.stock) || 0;
-            if (!cp || stock < required) {
-              throw new Error('Stock insuficiente para el kit: ' + (p.nombre || item.nombre || item.productoId));
-            }
-            const updated = { ...cp, stock: stock - required };
-            productUpdates.set(String(cp.id), updated);
-            movements.push({
-              id: Store.uid(),
-              productoId: cp.id,
-              tipo: 'venta',
-              cantidad: -required,
-              stockAntes: stock,
-              stockDespues: updated.stock,
-              fecha: now,
-              referencia: `KIT: ${p.nombre} - ${saleType} ${reciboId}`,
-              terminalId: terminalId || 'GLOBAL'
-            });
-          }
-        } else {
-          const stock = Number(p.stock) || 0;
-          if (stock < qty) throw new Error('Stock insuficiente para: ' + (p.nombre || item.nombre || item.productoId));
-          const updated = { ...p, stock: stock - qty };
-          productUpdates.set(String(p.id), updated);
-          movements.push({
-            id: Store.uid(),
-            productoId: p.id,
-            tipo: 'venta',
-            cantidad: -qty,
-            stockAntes: stock,
-            stockDespues: updated.stock,
-            fecha: now,
-            referencia: `${saleType} ${reciboId}`,
-            terminalId: terminalId || 'GLOBAL'
-          });
-        }
-      }
 
       const vIgtf = payments
         .filter((p: any) => p.metodo === 'efectivo_usd' || p.metodo === 'zelle')
