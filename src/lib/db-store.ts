@@ -1,6 +1,7 @@
 'use client';
 
 import { AppState, Terminal, Movimiento } from './types';
+import { enqueueOfflineOperation, registerOfflineProcessor } from './offline-queue';
 import { db, rtdb } from './firebase';
 import {
   collection, doc, getDoc, getDocs, getCountFromServer, onSnapshot, orderBy, limit, query, setDoc, where,
@@ -1170,14 +1171,43 @@ export const Store = {
     saleType?: string;
     credit?: { customer: any; debtId: string };
     cajeroId?: string;
+    fromOfflineQueue?: boolean;
   }): Promise<any> {
     if (typeof window === 'undefined' || !db) return null;
-    const { operationId, cart, payments, clientName, terminalId, fallbackReceiptNumber, now, tasa, saleType = 'VENTA', credit, cajeroId } = params;
+    const { operationId, cart, payments, clientName, terminalId, fallbackReceiptNumber, now, tasa, saleType = 'VENTA', credit, cajeroId, fromOfflineQueue } = params;
     if (!cart?.length) throw new Error('La venta no contiene productos.');
     if (!(Number(tasa) > 0)) throw new Error('La tasa de la venta no es válida.');
 
-    let result: any = null;
     const opId = String(operationId || (terminalId || 'GLOBAL') + '|' + saleType + '|' + JSON.stringify({ cart, payments, client: clientName, credit: credit ? { customerId: credit.customer?.id, cedula: credit.customer?.cedula } : null }));
+
+    // Las transacciones Firestore no funcionan completamente offline. En ese caso
+    // persistimos la INTENCIÓN de venta en una cola local que sobrevive al reinicio.
+    // Al volver la conexión, el procesador la ejecuta contra el Firestore real.
+    if (!fromOfflineQueue && typeof window !== 'undefined' && navigator.onLine === false) {
+      const queued = enqueueOfflineOperation('VENTA', { ...params, operationId: opId, fromOfflineQueue: true }, opId);
+      const total = cart.reduce((s: number, i: any) => s + (Number(i.subtotalUSD) || 0), 0);
+      const paid = (payments || []).reduce((s: number, p: any) => s + (Number(p.montoUSD) || 0), 0);
+      const provisionalId = 'PEND-' + opId.replace(/[^a-zA-Z0-9]/g, '').slice(-18);
+      const provisionalSale: any = {
+        id: provisionalId, fecha: now, cliente: clientName, items: cart.map((x: any) => ({ ...x })),
+        subtotalUSD: total, descuentoUSD: 0, totalUSD: total, totalBS: total * tasa,
+        metodoPago: credit ? 'credito' : ((payments || []).length > 1 ? 'mixto' : ((payments || [])[0]?.metodo || 'efectivo_usd')),
+        estado: 'pendiente', type: saleType, received: paid, change: Math.max(0, paid - total),
+        payments: (payments || []).map((x: any) => ({ ...x })), terminalId, terminalName: 'PENDIENTE OFFLINE', cajeroId, tasa,
+        offlinePending: true, operationId: opId
+      };
+      let provisionalDebt: any = null;
+      if (credit?.customer) {
+        provisionalDebt = {
+          id: credit.debtId || ('PEND-CRD-' + provisionalId), fecha: now.slice(0,10), fechaVencimiento: '2099-12-31',
+          cliente: credit.customer.name + ' [' + credit.customer.cedula + ']', montoUSD: total, abonadoUSD: 0, saldoUSD: total,
+          estado: 'pendiente', historialPagos: [], ventaId: provisionalId, offlinePending: true, operationId: opId
+        };
+      }
+      return { queuedOffline: true, operationId: opId, sale: provisionalSale, debt: provisionalDebt, nextNumber: fallbackReceiptNumber };
+    }
+
+    let result: any = null;
     await runTransaction(db, async tx => {
       const operationRef = await claimOperation(tx, 'VENTA', opId);
       // Lecturas completas antes de cualquier escritura.
@@ -1922,6 +1952,14 @@ export const Store = {
     return Date.now().toString(36) + Math.random().toString(36).substr(2, 6);
   }
 };
+
+registerOfflineProcessor(async (operation) => {
+  if (operation.type === 'VENTA') {
+    await Store.createSaleTransaction({ ...(operation.payload || {}), fromOfflineQueue: true, operationId: operation.operationId });
+    return;
+  }
+  throw new Error('Tipo de operación offline no soportado todavía: ' + operation.type);
+});
 
 export const Utils = {
   getVzlaDate: () => {
