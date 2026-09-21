@@ -502,12 +502,6 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
                       const totalEstimadoBs = fondoBs + totalVentasEfectivoBs + entradasCajaBs - salidasCajaBs;
                       const totalEstimadoUsd = fondoUsd + totalVentasEfectivoUsd + entradasCajaUsd - salidasCajaUsd;
 
-                      // Total General de Ventas en USD: convierte las ventas Bs a USD
-                      // y las suma a las ventas USD.
-                      const tasa = state.tasa || 1;
-                      const ventasBsAUsd = totalVentasEfectivoBs / tasa;
-                      const totalGeneralVentasUsd = ventasBsAUsd + totalVentasEfectivoUsd;
-
                       return (
                         <>
                         <table><tbody>
@@ -549,21 +543,6 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
                           <tr className="bold"><td>TOTAL ESTIMADO USD:</td><td className="text-right">$ {formatUsd(totalEstimadoUsd)}</td></tr>
                         </tbody></table>
 
-                        <div className="separator-dashed"></div>
-                        {/* ===== TOTAL GENERAL DE VENTAS EN USD ===== */}
-                        <div className="text-center font-bold">TOTAL GENERAL DE VENTAS EN USD</div>
-                        <div className="separator-dashed"></div>
-                        <table><tbody>
-                          <tr className="text-[10px] text-gray-600">
-                            <td>└ VENTAS Bs. → USD:</td>
-                            <td className="text-right">$ {formatUsd(ventasBsAUsd)}</td>
-                          </tr>
-                          <tr className="text-[10px] text-gray-600">
-                            <td>└ VENTAS USD:</td>
-                            <td className="text-right">$ {formatUsd(totalVentasEfectivoUsd)}</td>
-                          </tr>
-                          <tr className="bold"><td>TOTAL GENERAL VENTAS USD:</td><td className="text-right">$ {formatUsd(totalGeneralVentasUsd)}</td></tr>
-                        </tbody></table>
                         </>
                       );
                    })()}
