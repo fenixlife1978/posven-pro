@@ -244,25 +244,12 @@ export default function LicoreriaPOS() {
     return () => clearInterval(interval);
   }, [state.cxp, userRole]);
 
+  // El carrito es estrictamente local a la jornada/pantalla.
+  // No se restaura desde sessionStorage al recargar: evita que productos de una
+  // sesión anterior aparezcan automáticamente al abrir/refrescar una caja.
   useEffect(() => {
-    if (mounted) {
-      const savedCart = sessionStorage.getItem('posven_current_cart');
-      if (savedCart) {
-        try {
-          const items = JSON.parse(savedCart);
-          if (items.length > 0) {
-            setState(prev => ({ ...prev, carrito: items }) as AppState);
-          }
-        } catch (e) {}
-      }
-    }
+    if (mounted) sessionStorage.removeItem('posven_current_cart');
   }, [mounted]);
-
-  useEffect(() => {
-    if (mounted && state.carrito) {
-      sessionStorage.setItem('posven_current_cart', JSON.stringify(state.carrito));
-    }
-  }, [state.carrito, mounted]);
 
   useEffect(() => {
     if (mounted && activeModule) {
