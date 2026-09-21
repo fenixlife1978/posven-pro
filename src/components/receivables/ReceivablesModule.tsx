@@ -114,7 +114,7 @@ export function ReceivablesModule() {
     const customerCedula = match?.[1]?.trim();
 
     try {
-      await Store.applyDebtPaymentTransaction({
+      const resultadoPago = await Store.applyDebtPaymentTransaction({
         collection: 'cxc',
         debtId: r.id,
         amountUSD: amount,
@@ -128,6 +128,7 @@ export function ReceivablesModule() {
         customerCedula
       });
 
+      if (resultadoPago?.queuedOffline) { toast({ title: 'Pago guardado sin conexión', description: 'Quedó pendiente y se sincronizará automáticamente.' }); return; }
       toast({
         title: "Pago registrado exitosamente",
         description: `Se cobró ${amount.toFixed(2)} USD de ${r.cliente}`
