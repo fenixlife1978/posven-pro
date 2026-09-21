@@ -445,10 +445,16 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   };
 
   // Ajuste manual de stock desde el POS (respaldado en la colección de productos)
-  const guardarStockManual = () => {
+  const guardarStockManual = async () => {
     if (!stockEdit) return;
     const nuevoStock = Math.max(0, parseFloat(stockEditValue) || 0);
     const delta = Utils.round(nuevoStock - (stockEdit.stock || 0));
+    if (Math.abs(delta) < 0.000001) {
+      setStockEdit(null);
+      return;
+    }
+
+    const operationId = 'AJUSTE-MANUAL-POS-' + Store.uid();
     const mov: Movimiento = {
       id: Store.uid(),
       productoId: stockEdit.id,
@@ -460,14 +466,25 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       referencia: 'AJUSTE MANUAL POS',
       terminalId: getCurrentTerminal()?.id || 'GLOBAL'
     };
-    updateState({
-      productos: state.productos.map(p => p.id === stockEdit.id ? { ...p, stock: nuevoStock } : p),
-      movimientos: [...state.movimientos, mov]
-    });
-    setStockEdit(null);
-    toast({ title: "Stock Actualizado", description: `${stockEdit.nombre}: ${nuevoStock} Und.` });
-  };
 
+    try {
+      await Store.applyInventoryMovementsTransaction({
+        operationId,
+        operationType: 'AJUSTE-INVENTARIO-POS',
+        movements: [mov]
+      });
+      // No actualizamos productos/movimientos desde el estado local:
+      // Firestore/RTDB emite el estado autoritativo a todas las cajas.
+      setStockEdit(null);
+      toast({ title: "Stock Actualizado", description: stockEdit.nombre + ": ajuste de " + (delta > 0 ? "+" : "") + delta + " Und." });
+    } catch (e: any) {
+      toast({
+        variant: "destructive",
+        title: "No se pudo actualizar el stock",
+        description: e?.message || "Otro terminal modificó el producto. Actualice e intente nuevamente."
+      });
+    }
+  };
   const subtotalUSD = state.carrito.reduce((s, i) => s + i.subtotalUSD, 0);
   const totalBS = subtotalUSD * state.tasa;
   const totalPagadoUSD = pagos.reduce((s, p) => s + p.montoUSD, 0);
