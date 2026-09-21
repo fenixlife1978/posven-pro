@@ -58,6 +58,7 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
   const [deudaMonto, setDeudaMonto] = useState('');
   const [deudaMotivo, setDeudaMotivo] = useState('');
   const [fechaDeuda, setFechaDeuda] = useState(Utils.hoy());
+  const [isProcessing, setIsProcessing] = useState(false);
 
   // Una cuenta SOLO representa deuda activa cuando tiene monto real y saldo real
   // pendiente. Un monto $0.00 (o menor/despreciable) es NEUTRO: no es deuda por
@@ -152,6 +153,9 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
       return;
     }
 
+    if (isProcessing) return;
+    setIsProcessing(true);
+
     const ahoraStr = Utils.ahora();
     const asientoId = 'ACC-' + Store.uid().toUpperCase().slice(0, 5);
     const reciboId = `PAY-${Store.uid().toUpperCase().slice(0, 4)}`;
@@ -181,6 +185,8 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
       setPaymentAmount('');
     } catch (e: any) {
       toast({ variant: "destructive", title: "No se pudo registrar el pago", description: e?.message || 'La deuda cambió en otra caja. Actualice y vuelva a intentar.' });
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -198,7 +204,8 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
   };
 
   const handleProcessGlobalPayment = async () => {
-    if (!globalProvider) return;
+    if (!globalProvider || isProcessing) return;
+    setIsProcessing(true);
 
     const esMetodoBS = paymentMethod === 'efectivo_bs' || paymentMethod === 'pagomovil';
     const rawMonto = parseFloat(paymentAmount) || 0;
@@ -283,16 +290,20 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
         title: "No se pudo registrar el pago global",
         description: e?.message || 'Las deudas cambiaron en otra caja. Actualice y vuelva a intentar.'
       });
+    } finally {
+      setIsProcessing(false);
     }
   };
 
   // Eliminar un abono/pago del historial: revierte TODOS los movimientos causados
   // (restaura la deuda, quita el abono, y revierte el asiento contable del ingreso/egreso).
   const handleEliminarPago = async (deuda: any, idx: number) => {
+    if (isProcessing) return;
     const pago = (deuda.historialPagos || [])[idx];
     if (!pago) return;
     if (!confirm(`¿Seguro que desea eliminar el abono de ${Utils.fmtUSD(pago.montoUSD)} (${Utils.metodoLabel(pago.metodo || 'otros')})?\\nSe revertirán la deuda y el asiento contable correspondiente.`)) return;
 
+    setIsProcessing(true);
     try {
       const resultado = await Store.reverseDebtPaymentTransaction({
         collection: 'cxp',
@@ -312,10 +323,13 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
         title: "No se pudo eliminar el abono",
         description: e?.message || 'La deuda cambió en otra caja. Actualice y vuelva a intentar.'
       });
+    } finally {
+      setIsProcessing(false);
     }
   };
 
   const handleGuardarDeudaDirecta = async () => {
+    if (isProcessing) return;
     if (!selectedProveedor) {
       toast({ variant: "destructive", title: "Error", description: "Debe seleccionar un proveedor." });
       return;
@@ -356,6 +370,7 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
       referencia: nuevaDeuda.id
     };
 
+    setIsProcessing(true);
     try {
       await Store.createSupplierDebtTransaction({ debt: nuevaDeuda, journal: nuevoAsiento });
       toast({ title: "Deuda registrada", description: `Se ha registrado la deuda de ${Utils.fmtUSD(monto)} a ${selectedProveedor}` });
@@ -761,7 +776,7 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
                       </p>
                     )}
                   </div>
-                  <button onClick={handleProcessPayment} className="btn btn-primary w-full h-14 font-black uppercase text-xs shadow-xl">CONFIRMAR Y ASENTAR PAGO</button>
+                  <button onClick={handleProcessPayment} disabled={isProcessing} className="btn btn-primary w-full h-14 font-black uppercase text-xs shadow-xl">CONFIRMAR Y ASENTAR PAGO</button>
                  </>
                  );
                })()}
@@ -872,7 +887,7 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
                     </p>
                   )}
                 </div>
-                <button onClick={handleProcessGlobalPayment} className="btn btn-primary w-full h-14 font-black uppercase text-xs shadow-xl">
+                <button onClick={handleProcessGlobalPayment} disabled={isProcessing} className="btn btn-primary w-full h-14 font-black uppercase text-xs shadow-xl">
                   LIQUIDAR DEUDAS CRONOLÓGICAMENTE
                 </button>
                  </>
@@ -984,6 +999,7 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
 
                   <button 
                     onClick={handleGuardarDeudaDirecta} 
+                    disabled={isProcessing}
                     className="btn btn-primary w-full h-14 font-black uppercase text-xs mt-4 shadow-xl tracking-widest"
                   >
                     <Save className="w-4 h-4 mr-2" /> Registrar Deuda Directa
