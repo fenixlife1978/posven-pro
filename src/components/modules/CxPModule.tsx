@@ -316,32 +316,18 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
     }
   };
 
-  const handleGuardarDeudaDirecta = () => {
+  const handleGuardarDeudaDirecta = async () => {
     if (!selectedProveedor) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Debe seleccionar un proveedor."
-      });
+      toast({ variant: "destructive", title: "Error", description: "Debe seleccionar un proveedor." });
       return;
     }
-
     const monto = parseFloat(deudaMonto) || 0;
     if (monto <= 0) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "El monto debe ser mayor a cero."
-      });
+      toast({ variant: "destructive", title: "Error", description: "El monto debe ser mayor a cero." });
       return;
     }
-
     if (!deudaMotivo.trim()) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Debe ingresar un motivo para la deuda."
-      });
+      toast({ variant: "destructive", title: "Error", description: "Debe ingresar un motivo para la deuda." });
       return;
     }
 
@@ -359,10 +345,6 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
       items: [],
       historialPagos: []
     };
-
-    const nuevasCxP = [...(state.cxp || []), nuevaDeuda];
-
-    // Crear asiento contable por la deuda
     const nuevoAsiento: LibroDiarioEntry = {
       id: 'ACC-' + Store.uid().toUpperCase().slice(0, 5),
       fecha: Utils.ahora(),
@@ -375,23 +357,18 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
       referencia: nuevaDeuda.id
     };
 
-    updateState({ 
-      cxp: nuevasCxP as Debt[],
-      libroDiario: [nuevoAsiento, ...(state.libroDiario || [])]
-    });
-
-    toast({
-      title: "Deuda registrada",
-      description: `Se ha registrado la deuda de ${Utils.fmtUSD(monto)} a ${selectedProveedor}`
-    });
-
-    // Resetear formulario
-    setShowDeudaDirectaModal(false);
-    setSelectedProveedor('');
-    setDeudaMonto('');
-    setDeudaMotivo('');
-    setProveedorSearch('');
-    setFechaDeuda(Utils.hoy());
+    try {
+      await Store.createSupplierDebtTransaction({ debt: nuevaDeuda, journal: nuevoAsiento });
+      toast({ title: "Deuda registrada", description: `Se ha registrado la deuda de ${Utils.fmtUSD(monto)} a ${selectedProveedor}` });
+      setShowDeudaDirectaModal(false);
+      setSelectedProveedor('');
+      setDeudaMonto('');
+      setDeudaMotivo('');
+      setProveedorSearch('');
+      setFechaDeuda(Utils.hoy());
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "No se pudo registrar la deuda", description: e?.message || 'La información cambió en otra caja. Actualice y vuelva a intentar.' });
+    }
   };
 
   return (
