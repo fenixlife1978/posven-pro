@@ -1660,6 +1660,7 @@ export const Store = {
       if (customerRef && customer) {
         tx.set(customerRef, { debt: Math.max(0, (Number(customer.debt) || 0) - saldo) }, { merge: true });
       }
+      tx.set(operationRef, { tipo: 'ELIMINAR-CXC', operationId: opId, fecha: new Date().toISOString(), referencia: debtId }, { merge: false });
       result = { debt, customer: customer ? { ...customer, debt: Math.max(0, (Number(customer.debt) || 0) - saldo) } : null };
     });
     // CxC/clientes se actualizan exclusivamente por snapshots completos autoritativos.
