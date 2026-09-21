@@ -322,62 +322,58 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
         <ModalAjuste 
           producto={state.productos.find(p => p.id === showAjuste)!} 
           onClose={() => setShowAjuste(null)}
-          onSave={(mov, nuevoCosto) => {
+          onSave={async (mov, nuevoCosto) => {
             const productoOriginal = state.productos.find(p => p.id === mov.productoId);
             if (!productoOriginal) return;
 
-            let prodsActualizados = [...state.productos];
-            let nuevosMovimientos = [...state.movimientos];
+            const ahora = mov.fecha || Utils.ahora();
+            const operationId = 'AJUSTE-' + Store.uid();
+            const movimientos: Movimiento[] = [];
+            const productPatches: Record<string, any> = {};
 
             if (productoOriginal.isKit && productoOriginal.kitType === 'stock_componentes' && productoOriginal.kitItems) {
               productoOriginal.kitItems.forEach(ki => {
-                const cpIdx = prodsActualizados.findIndex(cp => cp.id === ki.productoId);
-                if (cpIdx !== -1) {
-                  const cp = { ...prodsActualizados[cpIdx] };
-                  const cantidadImpacto = mov.cantidad * ki.cantidad;
-                  const stockAntes = cp.stock;
-                  cp.stock += cantidadImpacto; 
-                  
-                  nuevosMovimientos.push({
-                    id: Store.uid(),
-                    productoId: cp.id,
-                    tipo: mov.tipo,
-                    cantidad: cantidadImpacto,
-                    stockAntes,
-                    stockDespues: cp.stock,
-                    fecha: mov.fecha,
-                    referencia: `${mov.tipo.replace('_', ' ').toUpperCase()} KIT: ${productoOriginal.nombre} - REF: ${mov.referencia}`,
-                    terminalId: 'ADMIN'
-                  });
-                  prodsActualizados[cpIdx] = cp;
-                }
+                const cantidadImpacto = mov.cantidad * ki.cantidad;
+                movimientos.push({
+                  ...mov,
+                  id: Store.uid(),
+                  productoId: ki.productoId,
+                  cantidad: cantidadImpacto,
+                  stockAntes: 0,
+                  stockDespues: 0,
+                  fecha: ahora,
+                  referencia: `${mov.tipo.replace('_', ' ').toUpperCase()} KIT: ${productoOriginal.nombre} - REF: ${mov.referencia}`,
+                  terminalId: 'ADMIN'
+                });
               });
             } else {
-              prodsActualizados = prodsActualizados.map(p => {
-                if (p.id === mov.productoId) {
-                  let finalCosto = p.costoUSD;
-                  if (mov.tipo === 'ajuste_entrada' || mov.tipo === 'compra') {
-                    const stockActual = p.stock;
-                    const cantidadNueva = Math.abs(mov.cantidad);
-                    const costoNuevo = nuevoCosto || p.costoUSD;
-                    const stockTotal = stockActual + cantidadNueva;
-                    if (stockTotal > 0) {
-                      finalCosto = Utils.round(((stockActual * p.costoUSD) + (cantidadNueva * costoNuevo)) / stockTotal);
-                    }
-                  }
-                  return { ...p, stock: mov.stockDespues, costoUSD: finalCosto };
-                }
-                return p;
-              });
-              nuevosMovimientos.push(mov);
+              const patch: any = {};
+              if (mov.tipo === 'ajuste_entrada' && Number(nuevoCosto) > 0) {
+                const cantidadNueva = Math.abs(Number(mov.cantidad) || 0);
+                const stockActual = Number(productoOriginal.stock) || 0;
+                const costoActual = Number(productoOriginal.costoUSD) || 0;
+                const stockTotal = stockActual + cantidadNueva;
+                patch.costoUSD = stockTotal > 0
+                  ? Utils.round(((stockActual * costoActual) + (cantidadNueva * Number(nuevoCosto))) / stockTotal)
+                  : Number(nuevoCosto);
+              }
+              productPatches[mov.productoId] = patch;
+              movimientos.push({ ...mov, id: Store.uid(), stockAntes: 0, stockDespues: 0, fecha: ahora });
             }
 
-            updateState({ 
-              productos: prodsActualizados, 
-              movimientos: nuevosMovimientos 
-            });
-            setShowAjuste(null);
+            try {
+              await Store.applyInventoryMovementsTransaction({
+                operationId,
+                operationType: 'AJUSTE_INVENTARIO',
+                movements: movimientos,
+                productPatches
+              });
+              setShowAjuste(null);
+            } catch (e: any) {
+              alert(e?.message || 'No fue posible registrar el ajuste. La operación no fue aplicada.');
+            }
           }}
+        />
         />
       )}
     </div>
