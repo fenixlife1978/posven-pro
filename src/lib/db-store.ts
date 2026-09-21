@@ -770,6 +770,7 @@ function init() {
 // ============================================================
 export const Store = {
   applyInventoryMovementsTransaction,
+  processOfflineInventoryOperation,
   subscribe(callback: (state: Partial<AppState>) => void): () => void {
     listeners.add(callback);
     init();
