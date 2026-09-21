@@ -39,6 +39,25 @@ const COLLECTIONS: Record<string, string> = {
 };
 
 // Catálogos: viven como docs catalogos/{nombre} con { lista: [...] }
+const OPERATIONS_COLLECTION = 'operaciones';
+
+function operationDocId(prefix: string, operationId: string): string {
+  const input = prefix + '|' + operationId;
+  let h = 2166136261;
+  for (let i = 0; i < input.length; i++) {
+    h ^= input.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return prefix.slice(0, 20) + '-' + (h >>> 0).toString(36);
+}
+
+async function claimOperation(tx: any, prefix: string, operationId: string): Promise<any> {
+  const ref = doc(db, OPERATIONS_COLLECTION, operationDocId(prefix, operationId));
+  const snap = await tx.get(ref);
+  if (snap.exists()) throw new Error('Esta operación ya fue procesada. No se registrará nuevamente.');
+  return ref;
+}
+
 const CATALOG_FIELDS: Record<string, string> = {
   categorias: 'categorias',
   departamentos: 'departamentos',
@@ -842,6 +861,7 @@ export const Store = {
   },
 
   async createPurchaseTransaction(params: {
+    operationId?: string;
     purchase: any;
     items: any[];
     purchaseDate: string;
@@ -858,7 +878,7 @@ export const Store = {
     if (typeof window === 'undefined' || !db) return null;
 
     const {
-      purchase, items, purchaseDate, purchaseDateTime, supplier, invoiceNumber,
+      operationId, purchase, items, purchaseDate, purchaseDateTime, supplier, invoiceNumber,
       condition, exchangeRate, paidUSD, dueDate, journal, debt
     } = params;
 
@@ -867,12 +887,14 @@ export const Store = {
     if (!(Number(exchangeRate) > 0)) throw new Error('La tasa de la compra no es válida.');
 
     const purchaseRef = doc(db, 'compras', purchase.id);
+    const opId = String(operationId || purchase.id || (invoiceNumber + '|' + supplier + '|' + purchaseDate));
     const productIds = [...new Set(items.map((i: any) => String(i.productoId || '')).filter(Boolean))];
 
     let result: any = null;
     let journalResult: any = null;
 
     await runTransaction(db, async tx => {
+      const operationRef = await claimOperation(tx, 'COMPRA', opId);
       // TODAS las lecturas van antes de cualquier escritura.
       const purchaseSnap = await tx.get(purchaseRef);
       if (purchaseSnap.exists()) {
@@ -1029,6 +1051,7 @@ export const Store = {
         tx.set(doc(db, 'libroDiario', journal.id), sanitizeForFirestore(journal), { merge: false });
         journalResult = journal;
       }
+      tx.set(operationRef, { tipo: 'COMPRA', operationId: opId, fecha: purchaseDateTime, referencia: invoiceNumber }, { merge: false });
 
       result = {
         purchase,
@@ -1047,6 +1070,7 @@ export const Store = {
   },
 
   async createSaleTransaction(params: {
+    operationId?: string;
     cart: any[];
     payments: any[];
     clientName: string;
@@ -1059,12 +1083,14 @@ export const Store = {
     cajeroId?: string;
   }): Promise<any> {
     if (typeof window === 'undefined' || !db) return null;
-    const { cart, payments, clientName, terminalId, fallbackReceiptNumber, now, tasa, saleType = 'VENTA', credit, cajeroId } = params;
+    const { operationId, cart, payments, clientName, terminalId, fallbackReceiptNumber, now, tasa, saleType = 'VENTA', credit, cajeroId } = params;
     if (!cart?.length) throw new Error('La venta no contiene productos.');
     if (!(Number(tasa) > 0)) throw new Error('La tasa de la venta no es válida.');
 
     let result: any = null;
+    const opId = String(operationId || (terminalId || 'GLOBAL') + '|' + saleType + '|' + JSON.stringify({ cart, payments, client: clientName, credit: credit ? { customerId: credit.customer?.id, cedula: credit.customer?.cedula } : null }));
     await runTransaction(db, async tx => {
+      const operationRef = await claimOperation(tx, 'VENTA', opId);
       // Lecturas completas antes de cualquier escritura.
       const terminalRef = terminalId ? doc(db, 'terminales', terminalId) : null;
       const terminalSnap = terminalRef ? await tx.get(terminalRef) : null;
@@ -1154,8 +1180,56 @@ export const Store = {
 
       const movements: any[] = [];
       const productUpdates = new Map<string, any>();
+      const deductions = new Map<string, { qty: number; references: string[] }>();
 
+      // Agregamos primero todas las salidas por producto. Así dos kits que
+      // comparten un componente descuentan una sola vez sobre el stock remoto.
       for (const item of cart) {
+        const p = remoteProducts.get(String(item.productoId));
+        if (!p) throw new Error('Producto no encontrado.');
+        const qty = Number(item.cantidad) || 0;
+        if (qty <= 0) throw new Error('La venta contiene una cantidad inválida.');
+        if (p.isKit && p.kitType === 'stock_componentes' && Array.isArray(p.kitItems)) {
+          for (const ki of p.kitItems) {
+            const componentId = String(ki.productoId);
+            const required = qty * (Number(ki.cantidad) || 0);
+            const d = deductions.get(componentId) || { qty: 0, references: [] };
+            d.qty += required;
+            d.references.push(String(p.nombre || item.nombre || item.productoId));
+            deductions.set(componentId, d);
+          }
+        } else {
+          const productId = String(p.id);
+          const d = deductions.get(productId) || { qty: 0, references: [] };
+          d.qty += qty;
+          d.references.push(String(p.nombre || item.nombre || item.productoId));
+          deductions.set(productId, d);
+        }
+      }
+
+      for (const [pid, deduction] of deductions) {
+        const p = remoteProducts.get(pid);
+        const stock = Number(p?.stock) || 0;
+        if (!p || stock < deduction.qty) throw new Error('Stock insuficiente para: ' + (p?.nombre || pid));
+        const updated = { ...p, stock: stock - deduction.qty };
+        productUpdates.set(pid, updated);
+        movements.push({
+          id: Store.uid(),
+          productoId: pid,
+          tipo: 'venta',
+          cantidad: -deduction.qty,
+          stockAntes: stock,
+          stockDespues: updated.stock,
+          fecha: now,
+          referencia: saleType + ' ' + reciboId + (deduction.references.length > 1 ? ' - SALIDA AGRUPADA' : ''),
+          terminalId: terminalId || 'GLOBAL'
+        });
+      }
+
+      // Validación final de cantidades; las deducciones reales ya fueron agregadas arriba.
+      for (const item of cart) {
+        if ((Number(item.cantidad) || 0) <= 0) throw new Error('La venta contiene una cantidad inválida.');
+      }
         const p = remoteProducts.get(String(item.productoId));
         if (!p) throw new Error('Producto no encontrado.');
         const qty = Number(item.cantidad) || 0;
@@ -1265,7 +1339,7 @@ export const Store = {
         };
       }
 
-      const writesPlanned = 1 + productUpdates.size + movements.length + journals.length +
+      const writesPlanned = 2 + productUpdates.size + movements.length + journals.length +
         (terminalRef ? 1 : 0) + (debt ? 1 : 0) + (customerRef ? 1 : 0);
       if (writesPlanned > 450) {
         throw new Error('La venta tiene demasiados movimientos para procesarse en una sola transacción.');
@@ -1294,6 +1368,8 @@ export const Store = {
           proximoRecibo: nextNumber + 1
         }), { merge: true });
       }
+
+      tx.set(operationRef, { tipo: 'VENTA', operationId: opId, fecha: now, referencia: reciboId, terminalId: terminalId || 'GLOBAL' }, { merge: false });
 
       result = { sale, debt, journals, products: [...productUpdates.values()], nextNumber: nextNumber + 1, terminal: { ...(terminalRemote || {}), id: terminalId, proximoRecibo: nextNumber + 1 } };
     });
