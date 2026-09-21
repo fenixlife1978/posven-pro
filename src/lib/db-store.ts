@@ -369,6 +369,7 @@ async function applyInventoryMovementsTransaction(params: {
     });
 
     const persisted: any[] = [];
+    const persistedProducts: any[] = [];
     for (const pid of productIds) {
       const product = remoteProducts.get(pid);
       let running = Number(product.stock) || 0;
@@ -388,7 +389,9 @@ async function applyInventoryMovementsTransaction(params: {
       }
 
       const patch = productPatches[pid] || {};
-      tx.set(doc(db, 'productos', pid), sanitizeForFirestore({ ...product, ...patch, stock: running }), { merge: true });
+      const persistedProduct = { ...product, ...patch, stock: running };
+      tx.set(doc(db, 'productos', pid), sanitizeForFirestore(persistedProduct), { merge: true });
+      persistedProducts.push(persistedProduct);
     }
 
     tx.set(operationRef, {
@@ -397,8 +400,11 @@ async function applyInventoryMovementsTransaction(params: {
       fecha: String(movements[0]?.fecha || Utils.ahora()),
       referencia: String(movements[0]?.referencia || operationId)
     }, { merge: false });
-    result = { movements: persisted, productIds };
+    result = { movements: persisted, productIds, products: persistedProducts };
   });
+  if (result?.products?.length) {
+    await syncProductosRTDB([], result.products);
+  }
   return result;
 }
 
