@@ -578,8 +578,28 @@ function init() {
     }, (err) => { if (err?.code !== 'permission-denied') console.warn("RTDB productos:", err); }));
   }
 
-  // 3) LISTAS VIVAS ACOTADAS a las últimas 50 (tiempo real entre cajas)
-  for (const name of ['ventas', 'movimientos', 'cxc', 'cxp']) {
+  // 3) LISTAS VIVAS ENTRE CAJAS.
+  // CxC/CxP y los maestros de clientes/proveedores son datos financieros
+  // compartidos: una deuda puede quedar fuera de las últimas 50 y aun así
+  // cambiar desde otra caja. Para ellos el snapshot completo es la fuente
+  // autoritativa y reemplaza el cache local cuando llega.
+  for (const name of ['cxc', 'cxp', 'clientes', 'proveedores']) {
+    const col = COLLECTIONS[name];
+    teardownFns.push(onSnapshot(
+      collection(db, col),
+      (snap) => {
+        const items = snap.docs
+          .map(d => sanitizeForFirestore(d.data()))
+          .filter(Boolean);
+        applyPatch({ [name]: items });
+      },
+      (err) => { if (err.code !== 'permission-denied') console.warn("Sync " + name + ":", err); }
+    ));
+  }
+
+  // Históricos operativos: mantenemos la ventana de últimas 50 para no
+  // convertir cada movimiento de una caja en una lectura completa.
+  for (const name of ['ventas', 'movimientos']) {
     const col = COLLECTIONS[name];
     teardownFns.push(onSnapshot(
       query(collection(db, col), orderBy('fecha', 'desc'), limit(50)),
@@ -589,11 +609,8 @@ function init() {
         snap.docChanges().forEach(change => {
           const item = sanitizeForFirestore(change.doc.data());
           if (!item || !item.id) return;
-          if (change.type === 'removed') {
-            map.delete(String(item.id));
-          } else {
-            map.set(String(item.id), item);
-          }
+          if (change.type === 'removed') map.delete(String(item.id));
+          else map.set(String(item.id), item);
         });
         applyPatch({ [name]: [...map.values()] });
       },
