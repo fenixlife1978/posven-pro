@@ -7,7 +7,7 @@ import { FileText, TrendingUp, Calendar, Printer, ArrowLeft, Monitor } from 'luc
 import { exportarPDFVentasDetallado } from '@/lib/pdf-generator';
 
 export default function ReportsModule({ state }: { state: AppState }) {
-  useEffect(() => { Store.ensureLoaded('ventas'); }, []);
+  useEffect(() => { Store.ensureLoaded('ventas'); Store.ensureLoaded('reportesZ'); }, []);
   const [tab, setTab] = useState('ventas');
   const [desde, setDesde] = useState(Utils.hoy());
   const [hasta, setHasta] = useState(Utils.hoy());
@@ -31,6 +31,15 @@ export default function ReportsModule({ state }: { state: AppState }) {
     }, 0);
   }, 0);
   const gananciaNeta = totalVentasUSD - totalCostoVentas;
+
+  const reportesZFiltrados = (state.reportesZ || [])
+    .filter(z => {
+      const fechaZ = z.fecha ? z.fecha.split('T')[0] : '';
+      const matchesFecha = fechaZ >= desde && fechaZ <= hasta;
+      const matchesTerminal = terminalFilter === 'all' ? true : z.terminalId === terminalFilter;
+      return matchesFecha && matchesTerminal;
+    })
+    .sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
 
   const handleExportPDF = () => {
     const totalVendidos = ventasFiltradas.reduce((acc, v) => acc + v.items.reduce((sum, item) => sum + item.cantidad, 0), 0);
@@ -57,6 +66,9 @@ export default function ReportsModule({ state }: { state: AppState }) {
           className={`px-6 py-3 text-sm font-black uppercase tracking-widest border-b-2 transition-all ${tab === 'rentabilidad' ? 'border-brand-gold text-brand-gold' : 'border-transparent text-ink hover:text-brand-gold'}`}
         >
           <div className="flex items-center gap-2"><TrendingUp className="w-4 h-4"/> Análisis de Rentabilidad</div>
+        </button>
+        <button onClick={() => setTab('z')} className="px-6 py-3 text-sm font-black uppercase tracking-widest border-b-2 border-transparent text-ink hover:text-brand-gold">
+          <div className="flex items-center gap-2"><Monitor className="w-4 h-4"/> Historial de Cortes Z</div>
         </button>
       </div>
 
@@ -176,6 +188,67 @@ export default function ReportsModule({ state }: { state: AppState }) {
                       </td>
                     </tr>
                   )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Historial de Cortes Z por caja */}
+      {tab === 'z' && (
+        <div className="space-y-6 animate-in fade-in duration-300">
+          <div className="card p-5 bg-white border-line flex flex-wrap gap-6 items-end shadow-sm">
+            <div className="form-group mb-0">
+              <label className="text-ink text-[10px] font-black uppercase block mb-1.5 opacity-70">Caja / Terminal</label>
+              <div className="relative">
+                <Monitor className="absolute left-3 top-2.5 w-4 h-4 text-brand-gold opacity-50" />
+                <select className="form-select pl-10 h-10 bg-surface-soft border-line text-ink font-bold text-sm rounded-lg" value={terminalFilter} onChange={e => setTerminalFilter(e.target.value)}>
+                  <option value="all">TODAS LAS CAJAS (GLOBAL)</option>
+                  {state.terminales?.map(t => <option key={t.id} value={t.id}>{t.nombre.toUpperCase()} · {t.prefijoCaja || ''}</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="form-group mb-0">
+              <label className="text-ink text-[10px] font-black uppercase block mb-1.5 opacity-70">Desde</label>
+              <input type="date" className="form-input h-10 bg-surface-soft border-line text-ink font-bold text-sm rounded-lg" value={desde} onChange={e => setDesde(e.target.value)} />
+            </div>
+            <div className="form-group mb-0">
+              <label className="text-ink text-[10px] font-black uppercase block mb-1.5 opacity-70">Hasta</label>
+              <input type="date" className="form-input h-10 bg-surface-soft border-line text-ink font-bold text-sm rounded-lg" value={hasta} onChange={e => setHasta(e.target.value)} />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
+            <div className="kpi bg-white border-line p-7 rounded-2xl shadow-sm border-l-[6px] border-l-brand-gold"><div className="text-ink text-[10px] font-black uppercase mb-2">Cortes Z encontrados</div><div className="text-4xl font-black text-brand-gold-deep">{reportesZFiltrados.length}</div></div>
+            <div className="kpi bg-white border-line p-7 rounded-2xl shadow-sm border-l-[6px] border-l-status-info"><div className="text-ink text-[10px] font-black uppercase mb-2">Ventas netas acumuladas</div><div className="text-3xl font-black text-ink">{Utils.fmtUSD(reportesZFiltrados.reduce((s,z) => s + (z.ventaNetaUSD || 0), 0))}</div></div>
+            <div className="kpi bg-white border-line p-7 rounded-2xl shadow-sm border-l-[6px] border-l-status-success"><div className="text-ink text-[10px] font-black uppercase mb-2">Cajas representadas</div><div className="text-4xl font-black text-ink">{new Set(reportesZFiltrados.map(z => z.terminalId).filter(Boolean)).size}</div></div>
+          </div>
+
+          <div className="card bg-white border-line shadow-md overflow-hidden rounded-xl">
+            <div className="card-head px-6 py-4 bg-ink border-b border-white/10"><h3 className="text-white font-black text-xs uppercase italic tracking-tighter">HISTORIAL SEPARADO DE CORTES Z</h3></div>
+            <div className="table-wrap">
+              <table className="w-full">
+                <thead><tr className="bg-surface-soft">
+                  <th className="text-ink font-black text-[10px] uppercase py-4 px-6">Corte Z</th>
+                  <th className="text-ink font-black text-[10px] uppercase py-4">Caja</th>
+                  <th className="text-ink font-black text-[10px] uppercase py-4">Fecha</th>
+                  <th className="text-ink font-black text-[10px] uppercase py-4 text-right">Ventas netas</th>
+                  <th className="text-ink font-black text-[10px] uppercase py-4 text-right">Facturas</th>
+                  <th className="text-ink font-black text-[10px] uppercase py-4 px-6 text-right">Anulaciones</th>
+                </tr></thead>
+                <tbody>
+                  {reportesZFiltrados.map(z => (
+                    <tr key={z.id} className="border-b border-line/40 hover:bg-surface-warm/20">
+                      <td className="text-ink font-black text-xs mono py-4 px-6">{z.id}</td>
+                      <td className="text-ink font-black text-xs uppercase py-4">{z.terminalName || 'S/T'} {z.terminalId ? '· ' + (state.terminales?.find(t => t.id === z.terminalId)?.prefijoCaja || '') : ''}</td>
+                      <td className="text-ink font-bold text-xs py-4">{Utils.fmtFecha(z.fecha)}</td>
+                      <td className="text-brand-gold-deep font-black text-sm text-right py-4">{Utils.fmtUSD(z.ventaNetaUSD || 0)}</td>
+                      <td className="text-ink font-black text-xs text-right py-4">{z.stats?.facturas || 0}</td>
+                      <td className="text-ink font-black text-xs text-right py-4 px-6">{z.stats?.anulaciones || 0}</td>
+                    </tr>
+                  ))}
+                  {reportesZFiltrados.length === 0 && <tr><td colSpan={6} className="text-center py-24 text-ink/20 font-black uppercase italic tracking-widest">No hay cortes Z para los filtros seleccionados</td></tr>}
                 </tbody>
               </table>
             </div>
