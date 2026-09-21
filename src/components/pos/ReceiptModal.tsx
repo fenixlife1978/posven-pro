@@ -571,12 +571,6 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
                    <div className="separator-dashed"></div>
                    {type === 'REPORT_Z' && (
                      <>
-                        <div className="text-center font-bold">TOTALES HISTÓRICOS</div>
-                        <div className="text-center text-[10px]">(ACUMULADO NO REINICIABLE)</div>
-                        <table><tbody>
-                          <tr><td>GRAN TOTAL VENTAS:</td><td className="text-right">{formatBs(data.acumuladoHistoricoUSD * state.tasa)}</td></tr>
-                        </tbody></table>
-                        <div className="separator-solid"></div>
                         <div className="text-center font-bold">CIERRE DE JORNADA EXITOSO</div>
                      </>
                    )}
