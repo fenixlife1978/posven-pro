@@ -146,11 +146,8 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
         terminalName: terminal?.nombre || 'SISTEMA GLOBAL'
       };
 
-      await Store.applyInventoryMovementsTransaction({
-        operationId: idDev,
-        operationType: 'DEVOLUCION',
-        movements: nuevosMovimientos
-      });
+      const resultadoDev = await Store.processOfflineInventoryOperation({ operationId: idDev, operationType: 'DEVOLUCION', movements: nuevosMovimientos });
+      if (resultadoDev?.queuedOffline) { toast({ title: 'Devolución guardada sin conexión', description: 'Quedó pendiente de sincronización automática.' }); return; }
 
       updateState({
         devoluciones: [nuevaDevolucion, ...(state.devoluciones || [])],
@@ -241,11 +238,8 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
         });
       }
 
-      await Store.applyInventoryMovementsTransaction({
-        operationId: idAnu,
-        operationType: 'ANULACION',
-        movements: nuevosMovimientos
-      });
+      const resultadoAnu = await Store.processOfflineInventoryOperation({ operationId: idAnu, operationType: 'ANULACION', movements: nuevosMovimientos });
+      if (resultadoAnu?.queuedOffline) { toast({ title: 'Anulación guardada sin conexión', description: 'Quedó pendiente de sincronización automática.' }); return; }
 
       updateState({
         ventas: nuevasVentas,
