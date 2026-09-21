@@ -947,9 +947,16 @@ export const Store = {
     const debtRef = doc(db, collectionName, debtId);
     let result: any = null;
     let journalResult: any = null;
+
     await runTransaction(db, async tx => {
+      // Cada reintento debe reconstruir completamente el resultado a partir
+      // del estado remoto para evitar residuos de un intento anterior.
+      let nextResult: any = null;
+      let nextJournalResult: any = null;
+
       const debtSnap = await tx.get(debtRef);
       if (!debtSnap.exists()) throw new Error('La deuda ya no existe.');
+
       const journalRef = journalId ? doc(db, 'libroDiario', journalId) : null;
       const journalSnap = journalRef ? await tx.get(journalRef) : null;
 
@@ -957,34 +964,64 @@ export const Store = {
       const historial = Array.isArray(remote.historialPagos) ? [...remote.historialPagos] : [];
       const idx = historial.findIndex((p: any) => String(p?.id || '') === String(paymentId));
       if (idx < 0) throw new Error('El abono ya fue eliminado o no existe en la deuda remota.');
+
       const pago = historial[idx];
       const monto = Number(pago?.montoUSD) || 0;
       const restantes = historial.filter((_: any, i: number) => i !== idx);
-      const abonado = Math.max(0, restantes.reduce((s: number, p: any) => s + (Number(p?.montoUSD) || 0), 0));
-      const saldo = Math.max(0, Math.round(((Number(remote.montoUSD) || 0) - abonado + Number.EPSILON) * 100) / 100);
+      const abonado = Math.max(
+        0,
+        Math.round((restantes.reduce((sum: number, p: any) => sum + (Number(p?.montoUSD) || 0), 0) + Number.EPSILON) * 100) / 100
+      );
+      const saldo = Math.max(
+        0,
+        Math.round(((Number(remote.montoUSD) || 0) - abonado + Number.EPSILON) * 100) / 100
+      );
       const estado = saldo <= 0.001 ? 'pagada' : abonado > 0 ? 'parcial' : 'pendiente';
-      const updated = { ...remote, abonadoUSD: abonado, saldoUSD: saldo, estado, historialPagos: restantes };
+      const updated = {
+        ...remote,
+        abonadoUSD: abonado,
+        saldoUSD: saldo,
+        estado,
+        historialPagos: restantes
+      };
+
       tx.set(debtRef, sanitizeForFirestore(updated), { merge: true });
 
       if (journalRef && journalSnap?.exists()) {
         const journal = sanitizeForFirestore(journalSnap.data()) as any;
-        const nuevoMonto = Math.max(0, Math.round(((Number(journal.montoUSD) || 0) - monto + Number.EPSILON) * 100) / 100);
-        const nuevoBS = Math.max(0, Math.round(((Number(journal.montoBS) || 0) - (Number(pago?.montoBS) || 0) + Number.EPSILON) * 100) / 100);
+        const nuevoMonto = Math.max(
+          0,
+          Math.round(((Number(journal.montoUSD) || 0) - monto + Number.EPSILON) * 100) / 100
+        );
+        const nuevoBS = Math.max(
+          0,
+          Math.round(((Number(journal.montoBS) || 0) - (Number(pago?.montoBS) || 0) + Number.EPSILON) * 100) / 100
+        );
+
         if (nuevoMonto <= 0.001) {
           tx.delete(journalRef);
-          journalResult = null;
         } else {
-          journalResult = { ...journal, montoUSD: nuevoMonto, montoBS: nuevoBS, concepto: `${journal.concepto || ''} (abono revertido)` };
-          tx.set(journalRef, sanitizeForFirestore(journalResult), { merge: true });
+          nextJournalResult = {
+            ...journal,
+            montoUSD: nuevoMonto,
+            montoBS: nuevoBS,
+            concepto: String(journal.concepto || '').replace(/ \\(abono revertido\\)$/i, '') + ' (abono revertido)'
+          };
+          tx.set(journalRef, sanitizeForFirestore(nextJournalResult), { merge: true });
         }
       }
-      result = { ...updated, reversedPayment: pago };
+
+      nextResult = { ...updated, reversedPayment: pago };
+      result = nextResult;
+      journalResult = nextJournalResult;
     });
+
     const currentJournal = (cache.libroDiario || []).filter((e: any) => e.id !== journalId);
     applyPatch({
       [collectionName]: mergeById((cache as any)[collectionName], [result]),
       libroDiario: journalResult ? [...currentJournal, journalResult] : currentJournal
     } as Partial<AppState>);
+
     return result;
   },
 
