@@ -164,7 +164,7 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
   const pageCreditEntries = creditEntries.slice((creditSafePage - 1) * pageSize, creditSafePage * pageSize);
 
   // ===== ELIMINAR CLIENTE COMPLETO =====
-  const eliminarCliente = (clientName: string) => {
+  const eliminarCliente = async (clientName: string) => {
     // Verificar si el cliente tiene deudas pendientes
     const tieneDeudasPendientes = todasLasDeudas.some(
       (d: Debt) => {
@@ -200,24 +200,26 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
       return;
     }
 
-    // Eliminar cliente de la lista de clientes
-    const clientesActualizados = allCustomers.filter((c: Customer) => c.name !== clientName);
-    
-    // Eliminar todas las deudas del cliente
-    const deudasActualizadas = todasLasDeudas.filter((d: Debt) => {
-      const nombreCliente = d.cliente ? d.cliente.split(' [')[0] : '';
-      return nombreCliente !== clientName;
-    });
-    
-    updateState({ 
-      clientes: clientesActualizados, 
-      cxc: deudasActualizadas 
-    });
-    
-    toast({ 
-      title: "Cliente eliminado", 
-      description: `El cliente "${clientName}" ha sido eliminado permanentemente.` 
-    });
+    const cliente = allCustomers.find((c: Customer) => c.name === clientName);
+    if (!cliente) return;
+
+    try {
+      await Store.deleteCustomerAndDebtsTransaction({
+        customerId: cliente.id,
+        customerName: cliente.name,
+        customerCedula: cliente.cedula
+      });
+      toast({
+        title: "Cliente eliminado",
+        description: `El cliente "${clientName}" y su historial fueron eliminados de forma segura.`
+      });
+    } catch (e: any) {
+      toast({
+        variant: "destructive",
+        title: "No se pudo eliminar el cliente",
+        description: e?.message || 'La información cambió en otra caja. Actualice y vuelva a intentar.'
+      });
+    }
   };
 
   const guardarDeudaDirecta = async () => {
