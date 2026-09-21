@@ -241,10 +241,14 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
         });
       }
 
+      await Store.applyInventoryMovementsTransaction({
+        operationId: idAnu,
+        operationType: 'ANULACION',
+        movements: nuevosMovimientos
+      });
+
       updateState({
-        productos: nuevosProductos,
         ventas: nuevasVentas,
-        movimientos: [...state.movimientos, ...nuevosMovimientos],
         anulaciones: [nuevaAnulacion, ...(state.anulaciones || [])],
         libroDiario: representaEgreso ? [...nuevosAsientosDiario, ...(state.libroDiario || [])] : state.libroDiario,
         proximaAnulacion: (state.proximaAnulacion || 1) + 1
