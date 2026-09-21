@@ -854,7 +854,7 @@ export const Store = {
       for (const [pid,p] of products) tx.set(doc(db,'productos',pid),sanitizeForFirestore(p),{merge:true});
       tx.set(existingRef, canonicalOperationDoc, {merge:false});
       tx.set(saleRef,sanitizeForFirestore({...sale,estado: operationType === 'ANULACION' ? 'anulada' : 'parcialmente_devuelta'}),{merge:true});
-      if (journalRef && journal) tx.set(journalRef,sanitizeForFirestore(journal),{merge:false});
+      if (journalRef && journal) tx.set(journalRef,sanitizeForFirestore({ ...journal, referencia: canonicalId, terminalId: terminalId || journal.terminalId, terminalName: terminalRemote?.nombre || journal.terminalName }),{merge:false});
       if (terminalRef && terminalRemote) tx.set(terminalRef, {[counterField]: nextCounter + 1}, {merge:true});
       tx.set(operationRef,{tipo:operationType,operationId,fecha:String(canonicalOperationDoc.fecha||Utils.ahora()),referencia:String(canonicalId),terminalId:terminalId||'GLOBAL'},{merge:false});
       result={operationId,operationType,receiptId:canonicalId,operationDoc:canonicalOperationDoc,products:[...products.values()],terminal: terminalRef ? {...terminalRemote,id:terminalId,[counterField]:nextCounter+1} : null};
