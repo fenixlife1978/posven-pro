@@ -903,9 +903,7 @@ export const Store = {
 
     let result: any = null;
     let journalResult: any = null;
-    const opId = String(operationId || (collectionName + '|' + debtId + '|' + paymentId + '|REVERSE'));
     await runTransaction(db, async tx => {
-      const operationRef = await claimOperation(tx, 'REVERSAR-PAGO', opId);
       const operationRef = await claimOperation(tx, 'COMPRA', opId);
       // TODAS las lecturas van antes de cualquier escritura.
       const purchaseSnap = await tx.get(purchaseRef);
@@ -1735,8 +1733,10 @@ export const Store = {
     const debtRef = doc(db, collectionName, debtId);
     let result: any = null;
     let journalResult: any = null;
+    const opId = String(operationId || (collectionName + '|' + debtId + '|' + paymentId + '|REVERSE'));
 
     await runTransaction(db, async tx => {
+      const operationRef = await claimOperation(tx, 'REVERSAR-PAGO', opId);
       // Cada reintento debe reconstruir completamente el resultado a partir
       // del estado remoto para evitar residuos de un intento anterior.
       let nextResult: any = null;
