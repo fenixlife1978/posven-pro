@@ -607,12 +607,24 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     try {
       const totalAbonado = pagosAbono.reduce((s, p) => s + p.montoUSD, 0);
       if (totalAbonado <= 0) return;
+
+      // La deuda histórica puede conservar un nombre antiguo. La identidad
+      // operativa se resuelve por la cédula embebida en "cliente" y se contrasta
+      // con el catálogo actual de clientes antes de generar el cobro.
+      const clienteRaw = showAbonoModal.cliente || '';
+      const cedulaMatch = clienteRaw.match(/\[([^\]]+)\]\s*$/);
+      const cedulaDeuda = cedulaMatch?.[1]?.trim();
+      const clienteActual = cedulaDeuda
+        ? (state.clientes || []).find(c => c.cedula === cedulaDeuda || c.cedula.replace(/[^0-9A-Za-z]/g, '') === cedulaDeuda.replace(/[^0-9A-Za-z]/g, ''))
+        : undefined;
+      const nombreClienteCanonico = clienteActual?.name || (cedulaMatch ? clienteRaw.replace(/\s*\[[^\]]+\]\s*$/, '').trim() : clienteRaw) || 'CLIENTE';
       const ahoraStr = Utils.ahora(), terminal = getCurrentTerminal(), nextNum = terminal?.proximoRecibo || state.proximoRecibo, prefijo = Utils.prefijoCaja(terminal, state.terminales), reciboId = 'PAY-' + prefijo + '-' + String(nextNum).padStart(6, '0');
       const nuevasDeudas: Debt[] = state.cxc.map(d => {
         if (d.id === showAbonoModal.id) {
           const nuevoSaldo = Math.max(0, d.saldoUSD - totalAbonado);
           const updated: Debt = { 
-            ...d, 
+            ...d,
+            ...(nombreClienteCanonico ? { cliente: `${nombreClienteCanonico}${cedulaDeuda ? ` [${cedulaDeuda}]` : ''}` } : {}), 
             abonadoUSD: d.abonadoUSD + totalAbonado, 
             saldoUSD: nuevoSaldo, 
             estado: (nuevoSaldo <= 0.001 ? 'pagada' : 'parcial') as 'pagada' | 'parcial', 
@@ -627,7 +639,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         fecha: ahoraStr, 
         tipo: 'ingreso', 
         categoria: 'COBRO_DEUDA', 
-        concepto: `ABONO DEUDA #${showAbonoModal.id} - CLIENTE: ${showAbonoModal.cliente?.toUpperCase()}`, 
+        concepto: `ABONO DEUDA #${showAbonoModal.id} - CLIENTE: ${nombreClienteCanonico.toUpperCase()}`, 
         montoUSD: p.montoUSD, 
         montoBS: p.montoBS, 
         metodo: p.metodo, 
@@ -639,7 +651,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       const saleAbono: Sale = { 
         id: reciboId, 
         fecha: ahoraStr, 
-        cliente: showAbonoModal.cliente || 'CLIENTE', 
+        cliente: nombreClienteCanonico, 
         items: [{ productoId: 'ABONO', nombre: `ABONO A FACTURA #${showAbonoModal.id}`, cantidad: 1, precioUnitUSD: totalAbonado, subtotalUSD: totalAbonado }], 
         subtotalUSD: totalAbonado, 
         descuentoUSD: 0, 
