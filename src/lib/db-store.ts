@@ -748,12 +748,8 @@ export const Store = {
       result = nextResult;
     });
 
-    applyPatch({
-      cxp: mergeById(cache.cxp, result.debts),
-      ...(journal?.id
-        ? { libroDiario: mergeById(cache.libroDiario, [{ ...journal, montoUSD: result.appliedUSD }]) }
-        : {})
-    });
+    // CxP se actualiza exclusivamente por el snapshot completo autoritativo.
+    if (journal?.id) applyPatch({ libroDiario: mergeById(cache.libroDiario, [{ ...journal, montoUSD: result.appliedUSD }]) });
 
     return result;
   },
@@ -835,10 +831,8 @@ export const Store = {
       if (journal?.id) tx.set(doc(db, 'libroDiario', journal.id), sanitizeForFirestore(journal), { merge: false });
       result = debt;
     });
-    applyPatch({
-      cxp: mergeById(cache.cxp, [result]),
-      ...(journal?.id ? { libroDiario: mergeById(cache.libroDiario, [journal]) } : {})
-    } as Partial<AppState>);
+    // CxP se actualiza exclusivamente por el snapshot completo autoritativo.
+    if (journal?.id) applyPatch({ libroDiario: mergeById(cache.libroDiario, [journal]) });
     return result;
   },
 
@@ -875,10 +869,7 @@ export const Store = {
       }
       result = { debt, customer: customer ? { ...customer, debt: Math.max(0, (Number(customer.debt) || 0) - saldo) } : null };
     });
-    applyPatch({
-      cxc: (cache.cxc || []).filter((d: any) => d.id !== debtId),
-      ...(result.customer ? { clientes: mergeById(cache.clientes, [result.customer]) } : {})
-    } as Partial<AppState>);
+    // CxC/clientes se actualizan exclusivamente por snapshots completos autoritativos.
     return result;
   },
 
@@ -928,11 +919,8 @@ export const Store = {
       if (journal?.id) tx.set(doc(db, 'libroDiario', journal.id), sanitizeForFirestore(journal), { merge: false });
       result = { debt, customer: mergedCustomer };
     });
-    applyPatch({
-      cxc: mergeById(cache.cxc, [result.debt]),
-      ...(result.customer ? { clientes: mergeById(cache.clientes, [result.customer]) } : {}),
-      ...(journal?.id ? { libroDiario: mergeById(cache.libroDiario, [journal]) } : {})
-    } as Partial<AppState>);
+    // CxC/clientes se actualizan exclusivamente por snapshots completos autoritativos.
+    if (journal?.id) applyPatch({ libroDiario: mergeById(cache.libroDiario, [journal]) });
     return result;
   },
 
@@ -1017,10 +1005,9 @@ export const Store = {
     });
 
     const currentJournal = (cache.libroDiario || []).filter((e: any) => e.id !== journalId);
-    applyPatch({
-      [collectionName]: mergeById((cache as any)[collectionName], [result]),
-      libroDiario: journalResult ? [...currentJournal, journalResult] : currentJournal
-    } as Partial<AppState>);
+    // La deuda CxC/CxP se actualiza por su snapshot completo autoritativo.
+    // El asiento sí puede parchearse localmente porque libroDiario no usa snapshot completo.
+    applyPatch({ libroDiario: journalResult ? [...currentJournal, journalResult] : currentJournal });
 
     return result;
   },
