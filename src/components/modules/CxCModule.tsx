@@ -274,19 +274,27 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
     }
   };
 
-  const eliminarDeuda = (deuda: any) => {
+  const eliminarDeuda = async (deuda: any) => {
     if (!confirm(`¿Seguro que desea eliminar el registro ${deuda.id}? Esta acción no se puede deshacer.`)) return;
-    const nuevas = state.cxc.filter((x: Debt) => x.id !== deuda.id);
-    
-    // Actualizar deuda del cliente
-    const clientesActualizados = allCustomers.map((c: Customer) => {
-      if (c.name === deuda.cliente || c.cedula === deuda.cliente) {
-        return { ...c, debt: Math.max(0, (c.debt || 0) - deuda.saldoUSD) };
-      }
-      return c;
-    });
-    
-    updateState({ cxc: nuevas, clientes: clientesActualizados });
+    const cedulaMatch = String(deuda.cliente || '').match(/\\[([^\\]]+)\\]$/);
+    const customerCedula = cedulaMatch?.[1] || undefined;
+    try {
+      const resultado = await Store.deleteCustomerDebtTransaction({
+        debtId: deuda.id,
+        customerCedula
+      });
+      if (!resultado) throw new Error('No se pudo eliminar la deuda.');
+      toast({
+        title: "Deuda eliminada",
+        description: `Se eliminó ${deuda.id} y se actualizó el saldo del cliente en la nube.`
+      });
+    } catch (e: any) {
+      toast({
+        variant: "destructive",
+        title: "No se pudo eliminar la deuda",
+        description: e?.message || 'La deuda cambió en otra caja. Actualice y vuelva a intentar.'
+      });
+    }
   };
 
   const handleExportPDF = () => {
