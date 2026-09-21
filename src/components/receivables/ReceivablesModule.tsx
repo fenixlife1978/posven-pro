@@ -27,6 +27,15 @@ export function ReceivablesModule() {
     const state = Store.get();
     setReceivables(state.cxc || []);
     setCustomers(state.clientes || []);
+
+    // CxC/clientes llegan desde snapshots completos autoritativos.
+    // Suscribimos el módulo para que otra caja pueda cobrar y esta pantalla
+    // se actualice sin depender de un estado local antiguo.
+    const unsubscribe = Store.subscribe((next: any) => {
+      if (next.cxc) setReceivables(next.cxc);
+      if (next.clientes) setCustomers(next.clientes);
+    });
+    return () => unsubscribe();
   }, []);
 
   // ✅ AHORA MUESTRA TODOS LOS CLIENTES, NO SOLO LOS QUE DEBEN
@@ -88,57 +97,48 @@ export function ReceivablesModule() {
     (sum, g) => sum + g.totalOutstanding, 0
   );
 
-  const handlePay = (id: string) => {
-    const all = [...receivables];
-    const idx = all.findIndex(r => r.id === id);
-    if (idx < 0) return;
+  const handlePay = async (id: string) => {
+    const r = receivables.find(item => item.id === id);
+    if (!r) return;
 
-    const r = all[idx];
-    const amount = r.saldoUSD;
-    
+    const amount = Number(r.saldoUSD) || 0;
     if (amount <= 0) {
-      toast({ 
+      toast({
         title: "Sin saldo pendiente",
         description: "Esta deuda ya está completamente pagada."
       });
       return;
     }
 
-    r.abonadoUSD = (r.abonadoUSD || 0) + amount;
-    r.saldoUSD = 0;
-    r.estado = 'pagada';
-    
-    // Add payment to history
-    if (!r.historialPagos) r.historialPagos = [];
-    r.historialPagos.push({
-      fecha: new Date().toISOString(),
-      montoUSD: amount,
-      montoBS: amount * Store.get().tasa,
-      metodo: 'efectivo_usd',
-      reciboId: 'PAY-' + Date.now().toString(36).toUpperCase()
-    });
+    const match = String(r.cliente || '').match(/\[([^\]]+)\]$/);
+    const customerCedula = match?.[1]?.trim();
 
-    // Update customer debt
-    const allCusts = [...customers];
-    const cIdx = allCusts.findIndex(c => 
-      c.name === r.cliente?.split('[')[0]?.trim() || ''
-    );
-    if (cIdx >= 0) {
-      allCusts[cIdx].debt = Math.max(0, (allCusts[cIdx].debt || 0) - amount);
+    try {
+      await Store.applyDebtPaymentTransaction({
+        collection: 'cxc',
+        debtId: r.id,
+        amountUSD: amount,
+        payment: {
+          fecha: new Date().toISOString(),
+          montoUSD: amount,
+          montoBS: amount * Store.get().tasa,
+          metodo: 'efectivo_usd',
+          reciboId: 'PAY-' + Date.now().toString(36).toUpperCase()
+        },
+        customerCedula
+      });
+
+      toast({
+        title: "Pago registrado exitosamente",
+        description: `Se cobró ${amount.toFixed(2)} USD de ${r.cliente}`
+      });
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "No se pudo registrar el pago",
+        description: error?.message || "La deuda cambió en otra caja. Actualice e intente nuevamente."
+      });
     }
-
-    // Update state (merge en Store para no pisar otros datos)
-    Store.set({
-      cxc: all,
-      clientes: allCusts
-    });
-    setReceivables(all);
-    setCustomers(allCusts);
-    
-    toast({ 
-      title: "Pago registrado exitosamente",
-      description: `Se cobró ${amount.toFixed(2)} USD de ${r.cliente}`
-    });
   };
 
   const getStatusBadge = (estado: string) => {
