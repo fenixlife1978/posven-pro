@@ -382,6 +382,8 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
       setFechaDeuda(Utils.hoy());
     } catch (e: any) {
       toast({ variant: "destructive", title: "No se pudo registrar la deuda", description: e?.message || 'La información cambió en otra caja. Actualice y vuelva a intentar.' });
+    } finally {
+      setIsProcessing(false);
     }
   };
 
