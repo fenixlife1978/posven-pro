@@ -59,6 +59,18 @@ async function claimOperation(tx: any, prefix: string, operationId: string): Pro
   return ref;
 }
 
+
+function terminalPrefix(terminal: any, terminalId?: string): string {
+  const raw = String(terminal?.prefijoCaja || '').trim().toUpperCase();
+  if (raw) return raw;
+  if (terminalId) return 'C-' + String(terminalId).replace(/[^A-Z0-9]/gi, '').slice(-6).toUpperCase();
+  return 'GLOBAL';
+}
+
+function terminalSeries(prefix: string, label: string, number: number, width = 6): string {
+  return prefix + '-' + label + '-' + String(number).padStart(width, '0');
+}
+
 const CATALOG_FIELDS: Record<string, string> = {
   categorias: 'categorias',
   departamentos: 'departamentos',
@@ -802,7 +814,14 @@ export const Store = {
       for (const pid of productIds) { const s = await tx.get(doc(db,'productos',pid)); if (!s.exists()) throw new Error('Un producto de la operación ya no existe en Firestore.'); products.set(pid,{...sanitizeForFirestore(s.data()),id:pid}); }
       const journalRef = journal ? doc(db,'libroDiario',String(journal.id)) : null;
       if (journalRef) { const js = await tx.get(journalRef); if (js.exists()) throw new Error('El asiento contable de esta operación ya existe.'); }
-      const existingRef = doc(db, operationType === 'DEVOLUCION' ? 'devoluciones' : 'anulaciones', String(operationDoc.id));
+      const counterField = operationType === 'DEVOLUCION' ? 'proximaDevolucion' : 'proximaAnulacion';
+      const label = operationType === 'DEVOLUCION' ? 'DEV' : 'ANU';
+      const nextCounter = Number(terminalRemote?.[counterField]) || 1;
+      const canonicalId = terminalRemote
+        ? terminalSeries(terminalPrefix(terminalRemote, terminalId), label, nextCounter, 6)
+        : terminalSeries('GLOBAL', label, Date.now(), 6);
+      const canonicalOperationDoc = sanitizeForFirestore({ ...operationDoc, id: canonicalId, terminalId: terminalId || operationDoc.terminalId, terminalName: terminalRemote?.nombre || operationDoc.terminalName });
+      const existingRef = doc(db, operationType === 'DEVOLUCION' ? 'devoluciones' : 'anulaciones', canonicalId);
       const existingOp = await tx.get(existingRef); if (existingOp.exists()) throw new Error('Esta operación ya fue registrada.');
       const terminalId = String(operationDoc.terminalId || '');
       const terminalRef = terminalId ? doc(db,'terminales',terminalId) : null;
@@ -817,12 +836,12 @@ export const Store = {
         products.set(pid,{...p,stock:after});
       }
       for (const [pid,p] of products) tx.set(doc(db,'productos',pid),sanitizeForFirestore(p),{merge:true});
-      tx.set(existingRef,sanitizeForFirestore(operationDoc),{merge:false});
+      tx.set(existingRef, canonicalOperationDoc, {merge:false});
       tx.set(saleRef,sanitizeForFirestore({...sale,estado: operationType === 'ANULACION' ? 'anulada' : 'parcialmente_devuelta'}),{merge:true});
       if (journalRef && journal) tx.set(journalRef,sanitizeForFirestore(journal),{merge:false});
-      if (terminalId && terminalRemote) { const field=operationType==='DEVOLUCION'?'proximaDevolucion':'proximaAnulacion'; const current=Number(terminalRemote[field])||1; tx.set(terminalRef!,{[field]:current+1},{merge:true}); }
-      tx.set(operationRef,{tipo:operationType,operationId,fecha:String(operationDoc.fecha||Utils.ahora()),referencia:String(operationDoc.id||operationId)},{merge:false});
-      result={operationId,operationType,products:[...products.values()]};
+      if (terminalRef && terminalRemote) tx.set(terminalRef, {[counterField]: nextCounter + 1}, {merge:true});
+      tx.set(operationRef,{tipo:operationType,operationId,fecha:String(canonicalOperationDoc.fecha||Utils.ahora()),referencia:String(canonicalId),terminalId:terminalId||'GLOBAL'},{merge:false});
+      result={operationId,operationType,receiptId:canonicalId,operationDoc:canonicalOperationDoc,products:[...products.values()],terminal: terminalRef ? {...terminalRemote,id:terminalId,[counterField]:nextCounter+1} : null};
     });
     if (result?.products?.length) await syncProductosRTDB([],result.products);
     return result;
@@ -834,9 +853,10 @@ export const Store = {
     amountUSD: number;
     payment: any;
     journal?: any;
-  }): Promise<{ appliedUSD: number; debts: any[] }> {
+    terminalId?: string;
+  }): Promise<{ appliedUSD: number; debts: any[]; receiptId?: string }> {
     if (typeof window === 'undefined' || !db) return { appliedUSD: 0, debts: [] };
-    const { operationId, provider, amountUSD, payment, journal } = params;
+    const { operationId, provider, amountUSD, payment, journal, terminalId } = params;
     if (!(amountUSD > 0)) return { appliedUSD: 0, debts: [] };
 
     const q = query(collection(db, 'cxp'), where('proveedor', '==', provider));
@@ -844,10 +864,18 @@ export const Store = {
     const opId = String(operationId || payment?.id || (provider + '|' + amountUSD + '|' + payment?.fecha + '|' + payment?.metodo));
     await runTransaction(db, async tx => {
       const operationRef = await claimOperation(tx, 'PAGO-CXP-GLOBAL', opId);
+      const terminalRef = terminalId ? doc(db, 'terminales', terminalId) : null;
+      const terminalSnap = terminalRef ? await tx.get(terminalRef) : null;
+      const terminalRemote = terminalSnap?.exists() ? sanitizeForFirestore(terminalSnap.data()) as any : null;
+      if (terminalId && !terminalRemote) throw new Error('La caja/terminal ya no existe en Firestore.');
       // IMPORTANTE: Firestore puede reintentar esta función completa si detecta
       // concurrencia. Todo el resultado se reconstruye en cada intento para no
       // duplicar appliedUSD/debts en memoria.
-      const nextResult = { appliedUSD: 0, debts: [] as any[] };
+      const nextResult = { appliedUSD: 0, debts: [] as any[], receiptId: '' as string };
+      const nextCounter = Number(terminalRemote?.proximoPagoProveedor) || 1;
+      nextResult.receiptId = terminalRemote
+        ? terminalSeries(terminalPrefix(terminalRemote, terminalId), 'CXP', nextCounter, 6)
+        : terminalSeries('GLOBAL', 'CXP', Date.now(), 6);
       const snap = await tx.get(q);
 
       const docs = snap.docs
@@ -896,12 +924,13 @@ export const Store = {
       if (journal?.id) {
         tx.set(
           doc(db, 'libroDiario', journal.id),
-          sanitizeForFirestore({ ...journal, montoUSD: nextResult.appliedUSD }),
+          sanitizeForFirestore({ ...journal, montoUSD: nextResult.appliedUSD, referencia: nextResult.receiptId, terminalId: terminalId || journal.terminalId, terminalName: terminalRemote?.nombre || journal.terminalName }),
           { merge: true }
         );
       }
+      if (terminalRef && terminalRemote) tx.set(terminalRef, { proximoPagoProveedor: nextCounter + 1 }, { merge: true });
 
-      tx.set(operationRef, { tipo: 'PAGO-CXP-GLOBAL', operationId: opId, fecha: payment?.fecha || new Date().toISOString(), referencia: provider }, { merge: false });
+      tx.set(operationRef, { tipo: 'PAGO-CXP-GLOBAL', operationId: opId, fecha: payment?.fecha || new Date().toISOString(), referencia: nextResult.receiptId, terminalId: terminalId || 'GLOBAL' }, { merge: false });
       result = nextResult;
     });
 
@@ -920,15 +949,20 @@ export const Store = {
     journal?: any | any[];
     sale?: any;
     customerCedula?: string;
+    terminalId?: string;
   }): Promise<any | null> {
     if (typeof window === 'undefined' || !db) return null;
-    const { operationId, collection: collectionName, debtId, amountUSD, payment, journal, sale, customerCedula } = params;
+    const { operationId, collection: collectionName, debtId, amountUSD, payment, journal, sale, customerCedula, terminalId } = params;
     if (!(amountUSD > 0)) return null;
     const debtRef = doc(db, collectionName, debtId);
     let result: any = null;
     const opId = String(operationId || payment?.id || (collectionName + '|' + debtId + '|' + amountUSD + '|' + payment?.metodo + '|' + payment?.fecha));
     await runTransaction(db, async tx => {
       const operationRef = await claimOperation(tx, 'PAGO-DEUDA', opId);
+      const terminalRef = terminalId ? doc(db, 'terminales', terminalId) : null;
+      const terminalSnap = terminalRef ? await tx.get(terminalRef) : null;
+      const terminalRemote = terminalSnap?.exists() ? sanitizeForFirestore(terminalSnap.data()) as any : null;
+      if (terminalId && !terminalRemote) throw new Error('La caja/terminal ya no existe en Firestore.');
       const debtSnap = await tx.get(debtRef);
       if (!debtSnap.exists()) throw new Error('La deuda ya no existe o fue eliminada en otra caja.');
       const remote = sanitizeForFirestore(debtSnap.data()) as any;
@@ -939,7 +973,10 @@ export const Store = {
       const nuevoSaldo = Math.max(0, saldoActual - applied);
       const nuevoAbonado = (Number(remote.abonadoUSD) || 0) + applied;
       const historial = Array.isArray(remote.historialPagos) ? [...remote.historialPagos] : [];
-      const pago = sanitizeForFirestore({ ...payment, montoUSD: applied });
+      const counterField = collectionName === 'cxc' ? 'proximoCobroDeuda' : 'proximoPagoProveedor';
+      const nextCounter = Number(terminalRemote?.[counterField]) || 1;
+      const receiptId = terminalRemote ? terminalSeries(terminalPrefix(terminalRemote, terminalId), collectionName === 'cxc' ? 'CXC' : 'CXP', nextCounter, 6) : terminalSeries('GLOBAL', collectionName === 'cxc' ? 'CXC' : 'CXP', Date.now(), 6);
+      const pago = sanitizeForFirestore({ ...payment, id: receiptId, reciboId: receiptId, terminalId: terminalId || payment?.terminalId, montoUSD: applied });
       historial.push(pago);
       const updated = {
         ...remote,
@@ -961,24 +998,27 @@ export const Store = {
       }
       tx.set(debtRef, sanitizeForFirestore(updated), { merge: true });
       if (customerRef) tx.set(customerRef, { debt: Math.max(0, (customerDebt || 0) - applied) }, { merge: true });
-      const journalItems = Array.isArray(journal) ? journal : (journal ? [journal] : []);
+      const journalItems = (Array.isArray(journal) ? journal : (journal ? [journal] : [])).map((entry: any) => entry ? sanitizeForFirestore({ ...entry, referencia: receiptId, terminalId: terminalId || entry.terminalId, terminalName: terminalRemote?.nombre || entry.terminalName }) : entry);
       journalItems.forEach((entry: any) => {
         if (entry?.id) tx.set(doc(db, 'libroDiario', entry.id), sanitizeForFirestore(entry), { merge: true });
       });
-      if (sale?.id) tx.set(doc(db, 'ventas', sale.id), sanitizeForFirestore(sale), { merge: true });
+      const persistedSale = sale?.id
+        ? sanitizeForFirestore({ ...sale, id: receiptId, terminalId: terminalId || sale.terminalId, terminalName: terminalRemote?.nombre || sale.terminalName })
+        : null;
+      if (persistedSale?.id) tx.set(doc(db, 'ventas', persistedSale.id), persistedSale, { merge: true });
+      if (terminalRef && terminalRemote) {
+        tx.set(terminalRef, { [counterField]: nextCounter + 1 }, { merge: true });
+      }
       tx.set(operationRef, { tipo: 'PAGO-DEUDA', operationId: opId, fecha: payment?.fecha || new Date().toISOString(), referencia: debtId }, { merge: false });
-      result = { ...updated, appliedUSD: applied };
+      result = { ...updated, appliedUSD: applied, receiptId, payment: pago, journal: journalItems, sale: persistedSale, terminal: terminalRef ? { ...terminalRemote, id: terminalId, [counterField]: nextCounter + 1 } : null };
     });
     // CxC/CxP se actualizan exclusivamente por sus snapshots completos autoritativos.
     // No parcheamos aquí el resultado local: un snapshot remoto puede haber llegado
     // inmediatamente antes y el resultado de esta transacción sería una versión
     // potencialmente antigua para la UI de esta caja.
-    if (journal) {
-      applyPatch({ libroDiario: mergeById(cache.libroDiario, Array.isArray(journal) ? journal : [journal]) });
-    }
-    if (sale?.id) {
-      applyPatch({ ventas: mergeById(cache.ventas, [sale]) });
-    }
+    if (result?.journal?.length) applyPatch({ libroDiario: mergeById(cache.libroDiario, result.journal) });
+    if (result?.sale?.id) applyPatch({ ventas: mergeById(cache.ventas, [result.sale]) });
+    if (result?.terminal?.id) applyPatch({ terminales: mergeById(cache.terminales || [], [result.terminal]) });
     return result;
   },
 
@@ -1283,7 +1323,8 @@ export const Store = {
         fallbackReceiptNumber ??
         1
       );
-      const reciboId = String(nextNumber).padStart(9, '0');
+      const prefijo = terminalPrefix(terminalRemote, terminalId);
+      const reciboId = terminalSeries(prefijo, 'V', nextNumber, 9);
       const saleRef = doc(db, 'ventas', reciboId);
       const existingSale = await tx.get(saleRef);
       if (existingSale.exists()) {
