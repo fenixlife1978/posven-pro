@@ -275,119 +275,89 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
         new Date(new Date(fecha).getTime() + (pDias * 24 * 60 * 60 * 1000)).toISOString().slice(0, 10) : 
         fecha;
 
-      const nuevosProductos = state.productos.map(p => {
-        const itemCompra = loteTemporal.find(i => i.productoId === p.id);
-        if (itemCompra) {
-          const stockActual = p.stock || 0;
-          const costoActual = p.costoUSD || 0;
-          const nuevaCantidad = itemCompra.cantidad;
-          const nuevoCosto = itemCompra.costoUnitarioUSD;
-          
-          const stockTotal = stockActual + nuevaCantidad;
-          const costoPromedio = Math.round((((stockActual * costoActual) + (nuevaCantidad * nuevoCosto)) / stockTotal + Number.EPSILON) * 10000) / 10000;
+      const purchaseId = 'COMP-' + Store.uid().toUpperCase().slice(0, 8);
+      const purchaseItems = loteTemporal.map(i => ({ ...i }));
+      const paidUSD = pMontoPagadoUSD;
+      const saldoUSD = saldoPendienteUSD;
 
-          return { ...p, stock: stockTotal, costoUSD: costoPromedio };
-        }
-        return p;
-      });
+      const paymentId = paidUSD > 0.0001 ? 'PAY-' + Store.uid().toUpperCase().slice(0, 8) : '';
+      const journalId = paidUSD > 0.0001 ? 'ACC-' + Store.uid().toUpperCase().slice(0, 8) : '';
+      const nuevaDeudaId = saldoUSD > 0.0001 ? 'CXP-' + Store.uid().slice(0, 6).toUpperCase() : '';
 
-      const nuevosMovimientos: Movimiento[] = loteTemporal.map(item => {
-        const p = state.productos.find(prod => prod.id === item.productoId);
-        return {
-          id: Store.uid(),
-          productoId: item.productoId,
-          tipo: 'compra',
-          cantidad: item.cantidad,
-          stockAntes: p?.stock || 0,
-          stockDespues: (p?.stock || 0) + item.cantidad,
-          fecha: fechaMov,
-          referencia: `COMPRA FACT: ${numeroFactura} - PROV: ${proveedor}`,
-          terminalId: 'ADMIN'
-        };
-      });
+      const initialHistory = paidUSD > 0.0001 ? [{
+        id: paymentId,
+        asientoId: journalId,
+        fecha: ahoraStr,
+        montoUSD: paidUSD,
+        montoBS: paidUSD * tasaActual,
+        metodo: 'efectivo_usd',
+        reciboId: 'INICIAL-CONTADO'
+      }] : [];
 
-      // Al insertar movimientos con fecha pasada, se recalcula el saldo (stockAntes/
-      // stockDespues) de cada producto afectado desde esa fecha hasta el día de hoy,
-      // para que el kardex quede corrido y consistente.
-      let movimientosFinal: Movimiento[] = [...(state.movimientos || []), ...nuevosMovimientos];
-      const idsNuevos = new Set(nuevosMovimientos.map(m => m.id));
-      const idsAfectados = [...new Set(loteTemporal.map(i => i.productoId))];
-      idsAfectados.forEach(pid => {
-        movimientosFinal = Utils.recalcularSaldoProducto(movimientosFinal, pid, idsNuevos);
-      });
+      const nuevaDeuda: Debt | undefined = saldoUSD > 0.0001 ? {
+        id: nuevaDeudaId,
+        fecha: fecha,
+        fechaVencimiento: fechaVencimiento,
+        proveedor: proveedor,
+        concepto: `FACTURA COMPRA #${numeroFactura}`,
+        montoUSD: totalUSD,
+        abonadoUSD: paidUSD,
+        saldoUSD: saldoUSD,
+        estado: paidUSD > 0.0001 ? 'parcial' : 'pendiente',
+        items: purchaseItems,
+        numeroFactura: numeroFactura,
+        historialPagos: initialHistory
+      } : undefined;
 
-      let nuevosAsientosDiario: LibroDiarioEntry[] = [];
-      if (pMontoPagadoUSD > 0.0001) {
-        nuevosAsientosDiario.push({
-          id: 'ACC-' + Store.uid().toUpperCase().slice(0, 5),
-          fecha: ahoraStr,
-          tipo: 'egreso',
-          categoria: 'COMPRA',
-          concepto: `COMPRA MERCANCIA FACT #${numeroFactura} - PROV: ${proveedor.toUpperCase()}`,
-          montoUSD: pMontoPagadoUSD,
-          montoBS: pMontoPagadoUSD * tasaActual,
-          metodo: 'efectivo_usd',
-          referencia: numeroFactura
-        });
-      }
-
-      const nuevasCxP = [...state.cxp];
-      if (saldoPendienteUSD > 0.0001) {
-        const initialHistory = pMontoPagadoUSD > 0.0001 ? [{
-          fecha: ahoraStr,
-          montoUSD: pMontoPagadoUSD,
-          montoBS: pMontoPagadoUSD * tasaActual,
-          metodo: 'efectivo_usd',
-          reciboId: 'INICIAL-CONTADO'
-        }] : [];
-
-        const nuevaDeuda: Debt = {
-          id: 'CXP-' + Store.uid().slice(0, 6).toUpperCase(),
-          fecha: fecha,
-          fechaVencimiento: fechaVencimiento,
-          proveedor: proveedor,
-          concepto: `FACTURA COMPRA #${numeroFactura}`,
-          montoUSD: totalUSD,
-          abonadoUSD: pMontoPagadoUSD,
-          saldoUSD: saldoPendienteUSD,
-          estado: pMontoPagadoUSD > 0.0001 ? 'parcial' : 'pendiente',
-          items: [...loteTemporal],
-          numeroFactura: numeroFactura,
-          historialPagos: initialHistory
-        };
-        nuevasCxP.push(nuevaDeuda);
-      }
-
-      const nuevaCompra = {
-        id: 'COMP-' + Store.uid().toUpperCase().slice(0, 8),
+      const nuevaCompra: PurchaseRecord = {
+        id: purchaseId,
         fecha: fecha,
         fechaHora: ahoraStr,
         proveedor: proveedor,
         numeroFactura: numeroFactura,
         condicion: condicion,
         montoUSD: totalUSD,
-        pagadoUSD: pMontoPagadoUSD,
-        saldoUSD: saldoPendienteUSD,
-        items: loteTemporal.map(i => ({ ...i })),
+        pagadoUSD: paidUSD,
+        saldoUSD: saldoUSD,
+        items: purchaseItems,
         terminalId: 'ADMIN'
       };
 
-      try {
-        await updateState({
-          productos: nuevosProductos,
-          movimientos: movimientosFinal,
-          libroDiario: [...nuevosAsientosDiario, ...(state.libroDiario || [])],
-          cxp: nuevasCxP,
-          compras: [nuevaCompra, ...(state.compras || [])]
-        });
+      const asientoCompra: LibroDiarioEntry | undefined = paidUSD > 0.0001 ? {
+        id: journalId,
+        fecha: ahoraStr,
+        tipo: 'egreso',
+        categoria: 'COMPRA',
+        concepto: `COMPRA MERCANCIA FACT #${numeroFactura} - PROV: ${proveedor.toUpperCase()}`,
+        montoUSD: paidUSD,
+        montoBS: paidUSD * tasaActual,
+        metodo: 'efectivo_usd',
+        referencia: numeroFactura,
+        terminalId: 'ADMIN'
+      } : undefined;
 
-        toast({ title: "Compra Registrada ✅", description: `Factura ${numeroFactura} guardada en Firestore.` });
-        
-        setProveedor('');
-        setNumeroFactura('');
-        setFecha(Utils.hoy());
-        setLoteTemporal([]);
-        setCondicion('contado');
+      await Store.createPurchaseTransaction({
+        purchase: nuevaCompra,
+        items: purchaseItems,
+        purchaseDate: fecha,
+        purchaseDateTime: fechaMov,
+        supplier: proveedor,
+        invoiceNumber: numeroFactura,
+        condition: condicion,
+        exchangeRate: tasaActual,
+        paidUSD,
+        dueDate: fechaVencimiento,
+        journal: asientoCompra,
+        debt: nuevaDeuda
+      });
+
+      toast({ title: "Compra Registrada ✅", description: `Factura ${numeroFactura} guardada en Firestore de forma transaccional.` });
+      
+      setProveedor('');
+      setNumeroFactura('');
+      setFecha(Utils.hoy());
+      setLoteTemporal([]);
+      setCondicion('contado');
       } catch (err: any) {
         console.error('❌ Error guardando compra:', err);
         toast({ title: "Error al guardar compra", description: err?.message || 'No se pudo persistir en Firestore', variant: "destructive", duration: 8000 });
