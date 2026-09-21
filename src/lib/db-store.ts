@@ -792,9 +792,13 @@ export const Store = {
     const { collection: collectionName, debtId, paymentId, journalId } = params;
     const debtRef = doc(db, collectionName, debtId);
     let result: any = null;
+    let journalResult: any = null;
     await runTransaction(db, async tx => {
       const debtSnap = await tx.get(debtRef);
       if (!debtSnap.exists()) throw new Error('La deuda ya no existe.');
+      const journalRef = journalId ? doc(db, 'libroDiario', journalId) : null;
+      const journalSnap = journalRef ? await tx.get(journalRef) : null;
+
       const remote = sanitizeForFirestore(debtSnap.data()) as any;
       const historial = Array.isArray(remote.historialPagos) ? [...remote.historialPagos] : [];
       const idx = historial.findIndex((p: any) => String(p?.id || '') === String(paymentId));
@@ -808,22 +812,24 @@ export const Store = {
       const updated = { ...remote, abonadoUSD: abonado, saldoUSD: saldo, estado, historialPagos: restantes };
       tx.set(debtRef, sanitizeForFirestore(updated), { merge: true });
 
-      if (journalId) {
-        const journalRef = doc(db, 'libroDiario', journalId);
-        const journalSnap = await tx.get(journalRef);
-        if (journalSnap.exists()) {
-          const journal = sanitizeForFirestore(journalSnap.data()) as any;
-          const nuevoMonto = Math.max(0, Math.round(((Number(journal.montoUSD) || 0) - monto + Number.EPSILON) * 100) / 100);
-          const nuevoBS = Math.max(0, Math.round(((Number(journal.montoBS) || 0) - (Number(pago?.montoBS) || 0) + Number.EPSILON) * 100) / 100);
-          if (nuevoMonto <= 0.001) tx.delete(journalRef);
-          else tx.set(journalRef, { ...journal, montoUSD: nuevoMonto, montoBS: nuevoBS, concepto: `${journal.concepto || ''} (abono revertido)` }, { merge: true });
+      if (journalRef && journalSnap?.exists()) {
+        const journal = sanitizeForFirestore(journalSnap.data()) as any;
+        const nuevoMonto = Math.max(0, Math.round(((Number(journal.montoUSD) || 0) - monto + Number.EPSILON) * 100) / 100);
+        const nuevoBS = Math.max(0, Math.round(((Number(journal.montoBS) || 0) - (Number(pago?.montoBS) || 0) + Number.EPSILON) * 100) / 100);
+        if (nuevoMonto <= 0.001) {
+          tx.delete(journalRef);
+          journalResult = null;
+        } else {
+          journalResult = { ...journal, montoUSD: nuevoMonto, montoBS: nuevoBS, concepto: `${journal.concepto || ''} (abono revertido)` };
+          tx.set(journalRef, sanitizeForFirestore(journalResult), { merge: true });
         }
       }
       result = { ...updated, reversedPayment: pago };
     });
+    const currentJournal = (cache.libroDiario || []).filter((e: any) => e.id !== journalId);
     applyPatch({
       [collectionName]: mergeById((cache as any)[collectionName], [result]),
-      ...(journalId ? { libroDiario: (cache.libroDiario || []).filter((e: any) => e.id !== journalId) } : {})
+      libroDiario: journalResult ? [...currentJournal, journalResult] : currentJournal
     } as Partial<AppState>);
     return result;
   },
