@@ -240,53 +240,39 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
     const ahoraStr = fechaPago;
     const reciboBase = `PAY-${Store.uid().toUpperCase().slice(0, 4)}`;
     const asientoId = 'ACC-' + Store.uid().toUpperCase().slice(0, 5);
-    let remanente = amount;
-    const aplicados: { id: string; monto: number }[] = [];
 
-    const nuevasCxP = (state.cxp || []).map((c: Debt) => {
-      if (c.proveedor?.toUpperCase() !== globalProvider.proveedor || !esDeudaActiva(c)) return c;
-      if (remanente <= 0.001) return c;
-      const pago = Math.min(c.saldoUSD, remanente);
-      remanente -= pago;
-      aplicados.push({ id: c.id, monto: pago });
-      const nuevoSaldo = Math.max(0, c.saldoUSD - pago);
-      return {
-        ...c,
-        abonadoUSD: c.abonadoUSD + pago,
-        saldoUSD: nuevoSaldo,
-        estado: nuevoSaldo <= 0.001 ? 'pagada' : 'parcial',
-        historialPagos: [...(c.historialPagos || []), {
-          id: 'PAYS-' + Store.uid().toUpperCase().slice(0, 6),
-          asientoId,
-          fecha: ahoraStr,
-          montoUSD: pago,
-          montoBS: pago * tasaAplicada,
-          metodo: paymentMethod,
-          reciboId: reciboBase
-        }]
-      };
-    });
-
-    // El remanente no asignado queda como excedente no aplicable (no hay más deudas que cubrir).
-    const totalAplicado = aplicados.reduce((s, a) => s + a.monto, 0);
-
-    // 2. Asiento contable consolidado del pago global.
+    const pagoBase = {
+      id: 'PAYS-' + Store.uid().toUpperCase().slice(0, 6),
+      asientoId,
+      fecha: ahoraStr,
+      montoUSD: amount,
+      montoBS: 0,
+      metodo: paymentMethod,
+      reciboId: reciboBase,
+      tasaAplicada
+    };
     const nuevoAsiento: LibroDiarioEntry = {
       id: asientoId,
       fecha: ahoraStr,
       tipo: 'egreso',
       categoria: 'PAGO_PROVEEDOR' as any,
-      concepto: `PAGO GLOBAL A: ${globalProvider.proveedor} - LIQUIDA ${aplicados.length} DEUDA(S)${pagoAtrasado ? ` - PAGO ATRASADO (TASA ${tasaAplicada.toFixed(2)})` : ''}`,
-      montoUSD: totalAplicado,
-      montoBS: totalAplicado * tasaAplicada,
+      concepto: `PAGO GLOBAL A: ${globalProvider.proveedor} - LIQUIDACIÓN POR ORDEN DE ANTIGÜEDAD${pagoAtrasado ? ` - PAGO ATRASADO (TASA ${tasaAplicada.toFixed(2)})` : ''}`,
+      montoUSD: amount,
+      montoBS: amount * tasaAplicada,
       metodo: paymentMethod,
       referencia: reciboBase
     };
 
-    updateState({
-      cxp: nuevasCxP as Debt[],
-      libroDiario: [nuevoAsiento, ...(state.libroDiario || [])]
+    const resultadoPago = await Store.applyGlobalProviderPaymentTransaction({
+      provider: globalProvider.proveedor,
+      amountUSD: amount,
+      payment: pagoBase,
+      journal: nuevoAsiento
     });
+    const totalAplicado = resultadoPago.appliedUSD;
+    const remanente = Math.max(0, amount - totalAplicado);
+    const aplicados = resultadoPago.debts;
+    if (totalAplicado <= 0.001) throw new Error('El saldo del proveedor cambió en otra caja. Actualice y vuelva a intentar.');
 
     toast({
       title: "Pago global registrado",
