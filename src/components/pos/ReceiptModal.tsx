@@ -574,6 +574,19 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
                           </tr>
                         </tbody></table>
                         <div className="separator-dashed"></div>
+                        <div className="text-center font-bold">COBROS DE DEUDAS</div>
+                        <div className="separator-dashed"></div>
+                        <table><tbody>
+                          <tr>
+                            <td>TOTAL Bs. POR COBRO DE DEUDAS:</td>
+                            <td className="text-right">{formatBs(cobrosDeudaBs)}</td>
+                          </tr>
+                          <tr>
+                            <td>TOTAL USD POR COBRO DE DEUDAS:</td>
+                            <td className="text-right">$ {formatUsd(cobrosDeudaUsd)}</td>
+                          </tr>
+                        </tbody></table>
+                        <div className="separator-dashed"></div>
                         <div className="text-center font-bold">CIERRE DE JORNADA EXITOSO</div>
                      </>
                    )}
