@@ -683,22 +683,46 @@ export const Store = {
     if (typeof window === 'undefined' || !db) return { appliedUSD: 0, debts: [] };
     const { provider, amountUSD, payment, journal } = params;
     if (!(amountUSD > 0)) return { appliedUSD: 0, debts: [] };
+
     const q = query(collection(db, 'cxp'), where('proveedor', '==', provider));
     let result = { appliedUSD: 0, debts: [] as any[] };
+
     await runTransaction(db, async tx => {
+      // IMPORTANTE: Firestore puede reintentar esta función completa si detecta
+      // concurrencia. Todo el resultado se reconstruye en cada intento para no
+      // duplicar appliedUSD/debts en memoria.
+      const nextResult = { appliedUSD: 0, debts: [] as any[] };
       const snap = await tx.get(q);
+
       const docs = snap.docs
         .map(d => ({ ref: d.ref, data: sanitizeForFirestore(d.data()) as any }))
         .filter(x => (Number(x.data.saldoUSD) || 0) > 0.001 && x.data.estado !== 'pagada')
-        .sort((a, b) => String(a.data.fecha || '').localeCompare(String(b.data.fecha || '')));
+        .sort((a, b) => {
+          const fecha = String(a.data.fecha || '').localeCompare(String(b.data.fecha || ''));
+          return fecha !== 0 ? fecha : String(a.data.id || '').localeCompare(String(b.data.id || ''));
+        });
+
       let remanente = amountUSD;
+
       for (const item of docs) {
         if (remanente <= 0.001) break;
+
         const saldo = Number(item.data.saldoUSD) || 0;
         const pago = Math.min(saldo, remanente);
-        remanente -= pago;
+        if (pago <= 0.001) continue;
+
+        remanente = Math.max(0, remanente - pago);
+
         const historial = Array.isArray(item.data.historialPagos) ? [...item.data.historialPagos] : [];
-        historial.push(sanitizeForFirestore({ ...payment, montoUSD: pago, montoBS: pago * (Number(payment.tasaAplicada) || 1) }));
+        const pagoHistorial = sanitizeForFirestore({
+          ...payment,
+          // El mismo pago global puede liquidar varias facturas, pero cada
+          // entrada conserva exactamente lo aplicado a esa factura.
+          montoUSD: pago,
+          montoBS: pago * (Number(payment.tasaAplicada) || 1)
+        });
+        historial.push(pagoHistorial);
+
         const nuevoSaldo = Math.max(0, saldo - pago);
         const updated = {
           ...item.data,
@@ -707,16 +731,30 @@ export const Store = {
           estado: nuevoSaldo <= 0.001 ? 'pagada' : 'parcial',
           historialPagos: historial
         };
+
         tx.set(item.ref, sanitizeForFirestore(updated), { merge: true });
-        result.debts.push({ ...updated, appliedUSD: pago });
-        result.appliedUSD += pago;
+        nextResult.debts.push({ ...updated, appliedUSD: pago });
+        nextResult.appliedUSD += pago;
       }
-      if (journal?.id) tx.set(doc(db, 'libroDiario', journal.id), sanitizeForFirestore({ ...journal, montoUSD: result.appliedUSD }), { merge: true });
+
+      if (journal?.id) {
+        tx.set(
+          doc(db, 'libroDiario', journal.id),
+          sanitizeForFirestore({ ...journal, montoUSD: nextResult.appliedUSD }),
+          { merge: true }
+        );
+      }
+
+      result = nextResult;
     });
+
     applyPatch({
       cxp: mergeById(cache.cxp, result.debts),
-      ...(journal?.id ? { libroDiario: mergeById(cache.libroDiario, [{ ...journal, montoUSD: result.appliedUSD }]) } : {})
+      ...(journal?.id
+        ? { libroDiario: mergeById(cache.libroDiario, [{ ...journal, montoUSD: result.appliedUSD }]) }
+        : {})
     });
+
     return result;
   },
 
