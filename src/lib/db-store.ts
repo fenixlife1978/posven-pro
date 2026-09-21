@@ -988,6 +988,10 @@ export const Store = {
 
     const purchaseRef = doc(db, 'compras', purchase.id);
     const opId = String(operationId || purchase.id || (invoiceNumber + '|' + supplier + '|' + purchaseDate));
+    if (typeof window !== 'undefined' && navigator.onLine === false) {
+      enqueueOfflineOperation('COMPRA', { ...params, operationId: opId }, opId);
+      return { queuedOffline: true, operationId: opId, purchase };
+    }
     const productIds = [...new Set(items.map((i: any) => String(i.productoId || '')).filter(Boolean))];
 
     let result: any = null;
@@ -1971,7 +1975,16 @@ registerOfflineProcessor(async (operation) => {
     await Store.applyInventoryMovementsTransaction({ ...(operation.payload || {}), fromOfflineQueue: true, operationId: operation.operationId });
     return;
   }
-  throw new Error('Tipo de operación offline no soportado todavía: ' + operation.type);
+  if (operation.type === 'COMPRA') { await Store.createPurchaseTransaction({ ...(operation.payload || {}), operationId: operation.operationId }); return; }
+  if (operation.type === 'PAGO-DEUDA') { await Store.applyDebtPaymentTransaction({ ...(operation.payload || {}), operationId: operation.operationId }); return; }
+  if (operation.type === 'PAGO-CXP-GLOBAL') { await Store.applyGlobalProviderPaymentTransaction({ ...(operation.payload || {}), operationId: operation.operationId }); return; }
+  if (operation.type === 'REVERSAR-PAGO') { await Store.reverseDebtPaymentTransaction({ ...(operation.payload || {}), operationId: operation.operationId }); return; }
+  if (operation.type === 'ELIMINAR-COMPRA') { await Store.deletePurchaseTransaction({ ...(operation.payload || {}), operationId: operation.operationId }); return; }
+  if (operation.type === 'ELIMINAR-CLIENTE') { await Store.deleteCustomerAndDebtsTransaction({ ...(operation.payload || {}), operationId: operation.operationId }); return; }
+  if (operation.type === 'ELIMINAR-CXC') { await Store.deleteCustomerDebtTransaction({ ...(operation.payload || {}), operationId: operation.operationId }); return; }
+  if (operation.type === 'DEUDA-CXC') { await Store.createCustomerDebtTransaction({ ...(operation.payload || {}), operationId: operation.operationId }); return; }
+  if (operation.type === 'DEUDA-CXP') { await Store.createSupplierDebtTransaction({ ...(operation.payload || {}), operationId: operation.operationId }); return; }
+  throw new Error('Tipo de operación offline no soportado: ' + operation.type);
 });
 
 export const Utils = {
