@@ -875,38 +875,14 @@ export const Store = {
       );
       const purchaseJournal = journalSnap.docs.filter(d => String((d.data() as any).categoria || '') === 'COMPRA');
 
-      const productIds = Array.from(new Set(
-        linkedDebts.flatMap(d => {
-          const items = Array.isArray((d.data() as any).items) ? (d.data() as any).items : [];
-          return items.map((i: any) => String(i.productoId || '')).filter(Boolean);
-        })
-      ));
-
-      if (purchaseSnap?.exists()) {
-        const purchase = purchaseSnap.data() as any;
-        if (Array.isArray(purchase.items)) {
-          purchase.items.forEach((i: any) => {
-            const pid = String(i.productoId || '');
-            if (pid && !productIds.includes(pid)) productIds.push(pid);
-          });
-        }
-      }
-
-      const movementDocs: any[] = [];
-      for (const pid of productIds) {
-        const snap = await tx.get(
-          query(collection(db, 'movimientos'), where('productoId', '==', pid))
-        );
-        movementDocs.push(...snap.docs);
-      }
-
-      const movementMatches = movementDocs.filter(d => {
-        const m = d.data() as any;
-        const ref = String(m.referencia || '').toLowerCase();
-        return String(m.tipo || '') === 'compra' &&
-          ref.includes('fact: ' + invoiceNumber.toLowerCase()) &&
-          ref.includes('prov: ' + supplier.toLowerCase());
-      });
+      // Los movimientos de una compra se identifican por su referencia exacta.
+      // Esto permite encontrar compras de contado aunque no exista CxP.
+      const purchaseReference = `COMPRA FACT: ${invoiceNumber} - PROV: ${supplier}`;
+      const movementSnap = await tx.get(
+        query(collection(db, 'movimientos'), where('referencia', '==', purchaseReference))
+      );
+      const movementDocs: any[] = movementSnap.docs;
+      const movementMatches = movementDocs.filter(d => String((d.data() as any).tipo || '') === 'compra');
 
       const affectedIds = new Set(movementMatches.map(d => String((d.data() as any).productoId || '')));
       const productSnaps = [];
@@ -931,14 +907,18 @@ export const Store = {
 
       // Todas las lecturas terminan antes de cualquier escritura para que Firestore
       // pueda reintentar de forma segura si otra caja cambia alguno de estos documentos.
+      const remainingMovementUpdates = movementDocs.filter(d =>
+        !movementMatches.some(m => m.id === d.id) &&
+        affectedIds.has(String((d.data() as any).productoId || ''))
+      ).length;
       const writesPlanned =
         movementMatches.length +
+        remainingMovementUpdates +
         linkedDebts.length +
         purchaseJournal.length +
         paymentJournalSnaps.filter(x => x.snap.exists()).length +
         (purchaseRef && purchaseSnap?.exists() ? 1 : 0) +
-        productSnaps.length +
-        movementDocs.filter(d => affectedIds.has(String((d.data() as any).productoId || ''))).length;
+        productSnaps.length;
 
       if (writesPlanned > 450) {
         throw new Error('La compra tiene demasiados movimientos históricos para revertirla en una sola transacción. Debe revisarse antes de eliminarla.');
