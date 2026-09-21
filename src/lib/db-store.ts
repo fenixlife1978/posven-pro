@@ -814,6 +814,11 @@ export const Store = {
       for (const pid of productIds) { const s = await tx.get(doc(db,'productos',pid)); if (!s.exists()) throw new Error('Un producto de la operación ya no existe en Firestore.'); products.set(pid,{...sanitizeForFirestore(s.data()),id:pid}); }
       const journalRef = journal ? doc(db,'libroDiario',String(journal.id)) : null;
       if (journalRef) { const js = await tx.get(journalRef); if (js.exists()) throw new Error('El asiento contable de esta operación ya existe.'); }
+      const terminalId = String(operationDoc.terminalId || '');
+      const terminalRef = terminalId ? doc(db,'terminales',terminalId) : null;
+      const terminalSnap = terminalRef ? await tx.get(terminalRef) : null;
+      if (terminalId && !terminalSnap?.exists()) throw new Error('La terminal de la operación ya no existe.');
+      const terminalRemote = terminalSnap?.exists() ? sanitizeForFirestore(terminalSnap.data()) as any : null;
       const counterField = operationType === 'DEVOLUCION' ? 'proximaDevolucion' : 'proximaAnulacion';
       const label = operationType === 'DEVOLUCION' ? 'DEV' : 'ANU';
       const nextCounter = Number(terminalRemote?.[counterField]) || 1;
@@ -823,11 +828,6 @@ export const Store = {
       const canonicalOperationDoc = sanitizeForFirestore({ ...operationDoc, id: canonicalId, terminalId: terminalId || operationDoc.terminalId, terminalName: terminalRemote?.nombre || operationDoc.terminalName });
       const existingRef = doc(db, operationType === 'DEVOLUCION' ? 'devoluciones' : 'anulaciones', canonicalId);
       const existingOp = await tx.get(existingRef); if (existingOp.exists()) throw new Error('Esta operación ya fue registrada.');
-      const terminalId = String(operationDoc.terminalId || '');
-      const terminalRef = terminalId ? doc(db,'terminales',terminalId) : null;
-      const terminalSnap = terminalRef ? await tx.get(terminalRef) : null;
-      if (terminalId && !terminalSnap?.exists()) throw new Error('La terminal de la operación ya no existe.');
-      const terminalRemote = terminalSnap?.exists() ? sanitizeForFirestore(terminalSnap.data()) as any : null;
       if ((movements?.length || 0) + productIds.length + 6 > 450) throw new Error('La operación contiene demasiados movimientos.');
       for (const m of movements || []) {
         const pid = String(m.productoId); const p = products.get(pid); const before = Number(p.stock)||0; const after = before + (Number(m.cantidad)||0);
