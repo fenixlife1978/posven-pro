@@ -341,10 +341,19 @@ async function applyInventoryMovementsTransaction(params: {
   operationType: string;
   movements: any[];
   productPatches?: Record<string, any>;
+  fromOfflineQueue?: boolean;
 }): Promise<any> {
   if (!db) return null;
-  const { operationId, operationType, movements, productPatches = {} } = params;
+  const { operationId, operationType, movements, productPatches = {}, fromOfflineQueue } = params;
   if (!movements?.length) throw new Error('No hay movimientos de inventario para registrar.');
+
+  if (!fromOfflineQueue && typeof window !== 'undefined' && navigator.onLine === false) {
+    if (!['AJUSTE-INVENTARIO', 'AJUSTE-INVENTARIO-POS'].includes(operationType)) {
+      throw new Error('Esta operación requiere conexión para proteger la consistencia de ventas/devoluciones.');
+    }
+    enqueueOfflineOperation('INVENTARIO', { operationId, operationType, movements, productPatches, fromOfflineQueue: true }, operationId);
+    return { queuedOffline: true, operationId, movements, products: [] };
+  }
 
   const productIds = [...new Set(movements.map(m => String(m.productoId || '')).filter(Boolean))];
   let result: any = null;
@@ -1956,6 +1965,10 @@ export const Store = {
 registerOfflineProcessor(async (operation) => {
   if (operation.type === 'VENTA') {
     await Store.createSaleTransaction({ ...(operation.payload || {}), fromOfflineQueue: true, operationId: operation.operationId });
+    return;
+  }
+  if (operation.type === 'INVENTARIO') {
+    await Store.applyInventoryMovementsTransaction({ ...(operation.payload || {}), fromOfflineQueue: true, operationId: operation.operationId });
     return;
   }
   throw new Error('Tipo de operación offline no soportado todavía: ' + operation.type);
