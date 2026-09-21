@@ -227,7 +227,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     if (typeof localStorage !== 'undefined') localStorage.removeItem('posven_apertura_done');
     
     updateState({ reportesZ: [...(state.reportesZ || []), nuevoZ], ultimoZ: numeroZ, fechaUltimoZ: ahora, acumuladoHistorico: data.acumuladoHistoricoUSD, fondoCajaHoyBS: 0, fondoCajaHoyUSD: 0 });
-    toast({ title: `Cierre Fiscal Z #${numeroZ} Exitoso` });
+    toast({ title: `Cierre Fiscal ${nuevoZ.id} Exitoso` });
     setShowReportType(null);
   };
 
