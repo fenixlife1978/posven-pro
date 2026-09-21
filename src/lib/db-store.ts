@@ -841,6 +841,38 @@ export const Store = {
     return result;
   },
 
+  async deleteCustomerAndDebtsTransaction(params: {
+    customerId: string;
+    customerName?: string;
+    customerCedula?: string;
+  }): Promise<any> {
+    if (typeof window === 'undefined' || !db) return null;
+    const { customerId, customerName, customerCedula } = params;
+    const customerRef = doc(db, 'clientes', customerId);
+    let result: any = null;
+    await runTransaction(db, async tx => {
+      const customerSnap = await tx.get(customerRef);
+      if (!customerSnap.exists()) throw new Error('El cliente ya no existe o fue eliminado en otra caja.');
+      const customer = sanitizeForFirestore(customerSnap.data()) as any;
+      const debtsSnap = await tx.get(query(collection(db, 'cxc')));
+      const debts = debtsSnap.docs.filter(d => {
+        const debt = d.data() as any;
+        const debtName = String(debt.cliente || '').split(' [')[0].trim();
+        return (customerName && debtName === customerName) ||
+          (customerCedula && String(debt.cliente || '').includes('[' + customerCedula + ']'));
+      });
+      const active = debts.find(d => {
+        const debt = d.data() as any;
+        return debt.estado !== 'pagada' && (Number(debt.saldoUSD) || 0) > 0.001;
+      });
+      if (active) throw new Error('El cliente tiene una deuda pendiente en otra caja. Actualice y vuelva a intentar.');
+      debts.forEach(d => tx.delete(d.ref));
+      tx.delete(customerRef);
+      result = { customer, deletedDebts: debts.length };
+    });
+    return result;
+  },
+
   async deleteCustomerDebtTransaction(params: {
     debtId: string;
     customerCedula?: string;
