@@ -232,6 +232,8 @@ export interface Terminal {
   acumuladoHistorico?: number;
   proximaDevolucion?: number;
   proximaAnulacion?: number;
+  proximoCobroDeuda?: number;
+  proximoPagoProveedor?: number;
 }
 
 export interface Supplier {
@@ -384,6 +386,8 @@ export interface AppState {
   proximoRecibo: number;
   proximaDevolucion: number;
   proximaAnulacion: number;
+  proximoCobroDeuda?: number;
+  proximoPagoProveedor?: number;
   acumuladoHistorico: number;
   fechaUltimoZ?: string;
   fondoCajaHoyUSD: number;
