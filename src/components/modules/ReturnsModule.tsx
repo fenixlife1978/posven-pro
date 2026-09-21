@@ -146,8 +146,8 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
         terminalName: terminal?.nombre || 'SISTEMA GLOBAL'
       };
 
-      const resultadoDev = await Store.processOfflineInventoryOperation({ operationId: idDev, operationType: 'DEVOLUCION', movements: nuevosMovimientos });
-      if (resultadoDev?.queuedOffline) { toast({ title: 'Devolución guardada sin conexión', description: 'Quedó pendiente de sincronización automática.' }); return; }
+      if (typeof window !== 'undefined' && navigator.onLine === false) throw new Error('Las devoluciones requieren conexión para garantizar que venta, devolución, inventario y contabilidad se registren como una sola operación.');
+      await Store.applyInventoryMovementsTransaction({ operationId: idDev, operationType: 'DEVOLUCION', movements: nuevosMovimientos });
 
       updateState({
         devoluciones: [nuevaDevolucion, ...(state.devoluciones || [])],
@@ -238,8 +238,8 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
         });
       }
 
-      const resultadoAnu = await Store.processOfflineInventoryOperation({ operationId: idAnu, operationType: 'ANULACION', movements: nuevosMovimientos });
-      if (resultadoAnu?.queuedOffline) { toast({ title: 'Anulación guardada sin conexión', description: 'Quedó pendiente de sincronización automática.' }); return; }
+      if (typeof window !== 'undefined' && navigator.onLine === false) throw new Error('Las anulaciones requieren conexión para garantizar que venta, anulación, inventario y contabilidad se registren como una sola operación.');
+      await Store.applyInventoryMovementsTransaction({ operationId: idAnu, operationType: 'ANULACION', movements: nuevosMovimientos });
 
       updateState({
         ventas: nuevasVentas,
