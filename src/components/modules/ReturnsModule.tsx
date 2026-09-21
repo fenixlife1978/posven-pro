@@ -146,8 +146,8 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
         terminalName: terminal?.nombre || 'SISTEMA GLOBAL'
       };
 
-      if (typeof window !== 'undefined' && navigator.onLine === false) throw new Error('Las devoluciones requieren conexión para garantizar que venta, devolución, inventario y contabilidad se registren como una sola operación.');
-      await Store.applyInventoryMovementsTransaction({ operationId: idDev, operationType: 'DEVOLUCION', movements: nuevosMovimientos });
+      const resultadoDev = await Store.processReturnOrCancellationTransaction({ operationId: idDev, operationType: 'DEVOLUCION', saleId: selectedSale.id, operationDoc: nuevaDevolucion, movements: nuevosMovimientos, journal: nuevoAsiento, refundItems: returnItems });
+      if (resultadoDev?.queuedOffline) { toast({ title: 'Devolución guardada sin conexión', description: 'Quedó pendiente de sincronización automática.' }); setView('list'); setSelectedSale(null); setReturnItems([]); return; }
 
       updateState({
         devoluciones: [nuevaDevolucion, ...(state.devoluciones || [])],
@@ -238,8 +238,8 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
         });
       }
 
-      if (typeof window !== 'undefined' && navigator.onLine === false) throw new Error('Las anulaciones requieren conexión para garantizar que venta, anulación, inventario y contabilidad se registren como una sola operación.');
-      await Store.applyInventoryMovementsTransaction({ operationId: idAnu, operationType: 'ANULACION', movements: nuevosMovimientos });
+      const resultadoAnu = await Store.processReturnOrCancellationTransaction({ operationId: idAnu, operationType: 'ANULACION', saleId: selectedSale.id, operationDoc: nuevaAnulacion, movements: nuevosMovimientos, journal: nuevosAsientosDiario[0], fullCancellation: true });
+      if (resultadoAnu?.queuedOffline) { toast({ title: 'Anulación guardada sin conexión', description: 'Quedó pendiente de sincronización automática.' }); setView('list'); setSelectedSale(null); return; }
 
       updateState({
         ventas: nuevasVentas,
