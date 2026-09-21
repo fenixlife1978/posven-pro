@@ -139,29 +139,16 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
   };
 
   const handleProcessPayment = async () => {
-    // Determinar si el método es en Bs. (Efectivo Bs. o Pago Movil).
     const esMetodoBS = paymentMethod === 'efectivo_bs' || paymentMethod === 'pagomovil';
     const rawMonto = parseFloat(paymentAmount) || 0;
     if (rawMonto <= 0) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "El monto debe ser mayor a cero."
-      });
+      toast({ variant: "destructive", title: "Error", description: "El monto debe ser mayor a cero." });
       return;
     }
-
-    // Si el método es en Bs., el monto ingresado es Bs. y la equivalencia de abono
-    // se calcula a la tasa BCV del sistema (amount USD = bs / tasa).
     const montoBS = esMetodoBS ? rawMonto : rawMonto * state.tasa;
     const amount = esMetodoBS ? rawMonto / state.tasa : rawMonto;
-
     if (amount > (showPaymentModal.saldoUSD + 0.001)) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "El monto no puede ser mayor al saldo pendiente."
-      });
+      toast({ variant: "destructive", title: "Error", description: "El monto no puede ser mayor al saldo pendiente." });
       return;
     }
 
@@ -180,22 +167,21 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
       montoUSD: amount, montoBS, metodo: paymentMethod, referencia: showPaymentModal.id
     };
 
-    const resultadoPago = await Store.applyDebtPaymentTransaction({
-      collection: 'cxp',
-      debtId: showPaymentModal.id,
-      amountUSD: amount,
-      payment: pago,
-      journal: nuevoAsiento
-    });
-    if (!resultadoPago) throw new Error('No se pudo registrar el pago al proveedor.');
-
-    toast({
-      title: "Pago registrado",
-      description: `Se abonó ${Utils.fmtUSD(amount)}${esMetodoBS ? ' (' + Utils.fmtBS(rawMonto) + ')' : ''} a ${showPaymentModal.proveedor.toUpperCase()}`
-    });
-    
-    setShowPaymentModal(null);
-    setPaymentAmount('');
+    try {
+      const resultadoPago = await Store.applyDebtPaymentTransaction({
+        collection: 'cxp',
+        debtId: showPaymentModal.id,
+        amountUSD: amount,
+        payment: pago,
+        journal: nuevoAsiento
+      });
+      if (!resultadoPago) throw new Error('No se pudo registrar el pago al proveedor.');
+      toast({ title: "Pago registrado", description: `Se abonó ${Utils.fmtUSD(amount)}${esMetodoBS ? ' (' + Utils.fmtBS(rawMonto) + ')' : ''} a ${showPaymentModal.proveedor.toUpperCase()}` });
+      setShowPaymentModal(null);
+      setPaymentAmount('');
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "No se pudo registrar el pago", description: e?.message || 'La deuda cambió en otra caja. Actualice y vuelva a intentar.' });
+    }
   };
 
   const handleOpenGlobalPayment = (provider: string) => {
