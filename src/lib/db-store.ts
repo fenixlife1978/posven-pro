@@ -1252,7 +1252,7 @@ export const Store = {
         }
         if (!customerRef || !remoteCustomer) throw new Error('No se pudo resolver el cliente para la venta a crédito.');
         debt = {
-          id: credit.debtId,
+          id: 'CRD-' + reciboId,
           fecha: now.slice(0, 10),
           fechaVencimiento: '2099-12-31',
           cliente: `${remoteCustomer.name} [${remoteCustomer.cedula}]`,
@@ -1295,13 +1295,21 @@ export const Store = {
         }), { merge: true });
       }
 
-      result = { sale, debt, journals, nextNumber: nextNumber + 1, terminal: terminalRemote };
+      result = { sale, debt, journals, products: [...productUpdates.values()], nextNumber: nextNumber + 1, terminal: { ...(terminalRemote || {}), proximoRecibo: nextNumber + 1 } };
     });
 
     // Las colecciones autoritativas se actualizan por sus snapshots. Solo
     // parcheamos libroDiario para que el asiento aparezca inmediatamente.
+    if (result?.products?.length) {
+      // Productos: Firestore sigue siendo la fuente de verdad y RTDB es su espejo.
+      await syncProductosRTDB(cache.productos || [], result.products);
+      applyPatch({ productos: mergeById(cache.productos || [], result.products) });
+    }
     if (result?.journals?.length) {
       applyPatch({ libroDiario: mergeById(cache.libroDiario, result.journals) });
+    }
+    if (result?.terminal?.id) {
+      applyPatch({ terminales: mergeById(cache.terminales || [], [result.terminal]) });
     }
     return result;
   },
