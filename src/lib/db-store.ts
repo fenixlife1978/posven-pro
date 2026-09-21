@@ -841,6 +841,212 @@ export const Store = {
     return result;
   },
 
+  async deletePurchaseTransaction(params: {
+    purchaseId?: string;
+    invoiceNumber: string;
+    supplier: string;
+    purchaseDate?: string;
+  }): Promise<any> {
+    if (typeof window === 'undefined' || !db) return null;
+
+    const invoiceNumber = String(params.invoiceNumber || '').trim();
+    const supplier = String(params.supplier || '').trim();
+    const purchaseDate = String(params.purchaseDate || '').slice(0, 10);
+    if (!invoiceNumber || !supplier) throw new Error('La compra no tiene factura/proveedor identificables.');
+
+    let result: any = null;
+    let journalPatch: LibroDiarioEntry[] = [];
+
+    await runTransaction(db, async tx => {
+      const purchaseRef = params.purchaseId ? doc(db, 'compras', params.purchaseId) : null;
+      const purchaseSnap = purchaseRef ? await tx.get(purchaseRef) : null;
+
+      const cxpSnap = await tx.get(
+        query(collection(db, 'cxp'), where('numeroFactura', '==', invoiceNumber))
+      );
+      const linkedDebts = cxpSnap.docs.filter(d => {
+        const debt = d.data() as any;
+        return String(debt.proveedor || '') === supplier &&
+          (!purchaseDate || String(debt.fecha || '').slice(0, 10) === purchaseDate);
+      });
+
+      const journalSnap = await tx.get(
+        query(collection(db, 'libroDiario'), where('referencia', '==', invoiceNumber))
+      );
+      const purchaseJournal = journalSnap.docs.filter(d => String((d.data() as any).categoria || '') === 'COMPRA');
+
+      const productIds = Array.from(new Set(
+        linkedDebts.flatMap(d => {
+          const items = Array.isArray((d.data() as any).items) ? (d.data() as any).items : [];
+          return items.map((i: any) => String(i.productoId || '')).filter(Boolean);
+        })
+      ));
+
+      if (purchaseSnap?.exists()) {
+        const purchase = purchaseSnap.data() as any;
+        if (Array.isArray(purchase.items)) {
+          purchase.items.forEach((i: any) => {
+            const pid = String(i.productoId || '');
+            if (pid && !productIds.includes(pid)) productIds.push(pid);
+          });
+        }
+      }
+
+      const movementDocs: any[] = [];
+      for (const pid of productIds) {
+        const snap = await tx.get(
+          query(collection(db, 'movimientos'), where('productoId', '==', pid))
+        );
+        movementDocs.push(...snap.docs);
+      }
+
+      const movementMatches = movementDocs.filter(d => {
+        const m = d.data() as any;
+        const ref = String(m.referencia || '').toLowerCase();
+        return String(m.tipo || '') === 'compra' &&
+          ref.includes('fact: ' + invoiceNumber.toLowerCase()) &&
+          ref.includes('prov: ' + supplier.toLowerCase());
+      });
+
+      const affectedIds = new Set(movementMatches.map(d => String((d.data() as any).productoId || '')));
+      const productSnaps = [];
+      for (const pid of affectedIds) {
+        const snap = await tx.get(doc(db, 'productos', pid));
+        if (snap.exists()) productSnaps.push({ pid, snap });
+      }
+
+      const paymentJournalIds = new Set<string>();
+      linkedDebts.forEach(d => {
+        const history = Array.isArray((d.data() as any).historialPagos) ? (d.data() as any).historialPagos : [];
+        history.forEach((p: any) => {
+          if (p?.asientoId) paymentJournalIds.add(String(p.asientoId));
+        });
+      });
+
+      const paymentJournalSnaps = [];
+      for (const id of paymentJournalIds) {
+        const snap = await tx.get(doc(db, 'libroDiario', id));
+        paymentJournalSnaps.push({ id, snap });
+      }
+
+      // Todas las lecturas terminan antes de cualquier escritura para que Firestore
+      // pueda reintentar de forma segura si otra caja cambia alguno de estos documentos.
+      const writesPlanned =
+        movementMatches.length +
+        linkedDebts.length +
+        purchaseJournal.length +
+        paymentJournalSnaps.filter(x => x.snap.exists()).length +
+        (purchaseRef && purchaseSnap?.exists() ? 1 : 0) +
+        productSnaps.length +
+        movementDocs.filter(d => affectedIds.has(String((d.data() as any).productoId || ''))).length;
+
+      if (writesPlanned > 450) {
+        throw new Error('La compra tiene demasiados movimientos históricos para revertirla en una sola transacción. Debe revisarse antes de eliminarla.');
+      }
+
+      // Si otra caja registró una compra equivalente antes de esta transacción,
+      // no borramos a ciegas. La coincidencia se basa en factura + proveedor + fecha.
+      const alreadyLinked = linkedDebts.length > 0 || purchaseSnap?.exists() || movementMatches.length > 0;
+      if (!alreadyLinked) throw new Error('La compra ya no existe en Firestore o fue modificada en otra caja. Actualice el historial.');
+
+      const baseByProduct = new Map<string, number>();
+      const newMovementsByProduct = new Map<string, any[]>();
+
+      for (const pid of affectedIds) {
+        const ms = movementDocs
+          .filter(d => String((d.data() as any).productoId || '') === pid)
+          .map(d => ({ ref: d.ref, data: d.data() as any }))
+          .sort((a, b) => {
+            const af = String(a.data.fecha || '');
+            const bf = String(b.data.fecha || '');
+            return af === bf ? 0 : af < bf ? -1 : 1;
+          });
+
+        const deletedIds = new Set(movementMatches
+          .filter(d => String((d.data() as any).productoId || '') === pid)
+          .map(d => d.id));
+
+        const remaining = ms.filter(x => !deletedIds.has(x.ref.id));
+        const firstExisting = ms.find(x => !deletedIds.has(x.ref.id));
+        const base = firstExisting ? Number(firstExisting.data.stockAntes) || 0 : 0;
+        baseByProduct.set(pid, base);
+
+        let balance = base;
+        const updated = remaining.map(x => {
+          const stockAntes = balance;
+          const stockDespues = stockAntes + (Number(x.data.cantidad) || 0);
+          balance = stockDespues;
+          return { ...x, data: { ...x.data, stockAntes, stockDespues } };
+        });
+        newMovementsByProduct.set(pid, updated);
+      }
+
+      const productUpdates: any[] = [];
+      for (const { pid, snap } of productSnaps) {
+        const remoteProduct = snap.data() as any;
+        const remaining = newMovementsByProduct.get(pid) || [];
+        const finalStock = remaining.length
+          ? Number(remaining[remaining.length - 1].data.stockDespues) || 0
+          : Number(baseByProduct.get(pid)) || 0;
+
+        let finalCost = Number(remoteProduct.costoUSD) || 0;
+        const deleted = movementMatches
+          .filter(d => String((d.data() as any).productoId || '') === pid)
+          .sort((a, b) => String((a.data() as any).fecha || '').localeCompare(String((b.data() as any).fecha || '')));
+        const delMov = deleted[0];
+        const item = linkedDebts
+          .flatMap(d => Array.isArray((d.data() as any).items) ? (d.data() as any).items : [])
+          .find((i: any) => String(i.productoId || '') === pid);
+        const q = Math.abs(Number(delMov ? (delMov.data() as any).cantidad : item?.cantidad) || 0);
+        const cq = Number(item?.costoUnitarioUSD) || 0;
+        const delFecha = delMov ? String((delMov.data() as any).fecha || '') : '';
+
+        const laterPurchaseLike = remaining.some(x =>
+          ['compra', 'ajuste_entrada', 'inicial'].includes(String(x.data.tipo || '')) &&
+          delFecha !== '' && String(x.data.fecha || '') > delFecha
+        );
+
+        const stockTrasCompra = delMov ? Number((delMov.data() as any).stockDespues) || 0 : (finalStock + q);
+        if (!laterPurchaseLike && q > 0 && (stockTrasCompra - q) > 0 && cq > 0) {
+          const den = stockTrasCompra - q;
+          finalCost = Math.max(0, Math.round((((stockTrasCompra * finalCost) - (q * cq)) / den + Number.EPSILON) * 10000) / 10000);
+        }
+
+        productUpdates.push({ ref: snap.ref, data: { ...remoteProduct, stock: finalStock, costoUSD: finalCost } });
+      }
+
+      movementMatches.forEach(d => tx.delete(d.ref));
+      newMovementsByProduct.forEach(items => {
+        items.forEach(x => tx.set(x.ref, sanitizeForFirestore(x.data), { merge: false }));
+      });
+      productUpdates.forEach(x => tx.set(x.ref, sanitizeForFirestore(x.data), { merge: false }));
+      linkedDebts.forEach(d => tx.delete(d.ref));
+      purchaseJournal.forEach(d => tx.delete(d.ref));
+      paymentJournalSnaps.forEach(x => {
+        if (x.snap.exists()) tx.delete(x.snap.ref);
+      });
+      if (purchaseRef?.exists()) tx.delete(purchaseRef);
+
+      journalPatch = purchaseJournal.map(d => d.data() as LibroDiarioEntry)
+        .filter(Boolean)
+        .concat(paymentJournalSnaps.filter(x => x.snap.exists()).map(x => x.snap.data() as LibroDiarioEntry));
+
+      result = {
+        deletedMovements: movementMatches.length,
+        deletedDebts: linkedDebts.length,
+        deletedJournals: purchaseJournal.length + paymentJournalSnaps.filter(x => x.snap.exists()).length,
+        deletedPurchase: !!purchaseRef?.exists(),
+        affectedProducts: productUpdates.length
+      };
+    });
+
+    if (journalPatch.length) {
+      const deletedIds = new Set(journalPatch.map((e: any) => e.id));
+      applyPatch({ libroDiario: (cache.libroDiario || []).filter((e: any) => !deletedIds.has(e.id)) });
+    }
+    return result;
+  },
+
   async deleteCustomerAndDebtsTransaction(params: {
     customerId: string;
     customerName?: string;
