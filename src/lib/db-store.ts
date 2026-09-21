@@ -805,6 +805,11 @@ export const Store = {
       if (journalRef) { const js = await tx.get(journalRef); if (js.exists()) throw new Error('El asiento contable de esta operación ya existe.'); }
       const existingRef = doc(db, operationType === 'DEVOLUCION' ? 'devoluciones' : 'anulaciones', String(operationDoc.id));
       const existingOp = await tx.get(existingRef); if (existingOp.exists()) throw new Error('Esta operación ya fue registrada.');
+      const terminalId = String(operationDoc.terminalId || '');
+      const terminalRef = terminalId ? doc(db,'terminales',terminalId) : null;
+      const terminalSnap = terminalRef ? await tx.get(terminalRef) : null;
+      if (terminalId && !terminalSnap?.exists()) throw new Error('La terminal de la operación ya no existe.');
+      const terminalRemote = terminalSnap?.exists() ? sanitizeForFirestore(terminalSnap.data()) as any : null;
       if ((movements?.length || 0) + productIds.length + 6 > 450) throw new Error('La operación contiene demasiados movimientos.');
       for (const m of movements || []) {
         const pid = String(m.productoId); const p = products.get(pid); const before = Number(p.stock)||0; const after = before + (Number(m.cantidad)||0);
@@ -816,8 +821,7 @@ export const Store = {
       tx.set(existingRef,sanitizeForFirestore(operationDoc),{merge:false});
       tx.set(saleRef,sanitizeForFirestore({...sale,estado: operationType === 'ANULACION' ? 'anulada' : 'parcialmente_devuelta'}),{merge:true});
       if (journalRef && journal) tx.set(journalRef,sanitizeForFirestore(journal),{merge:false});
-      const terminalId = String(operationDoc.terminalId || '');
-      if (terminalId) { const tr=doc(db,'terminales',terminalId); const ts=await tx.get(tr); if(ts.exists()) { const t=sanitizeForFirestore(ts.data()) as any; const field=operationType==='DEVOLUCION'?'proximaDevolucion':'proximaAnulacion'; const current=Number(t[field])||1; tx.set(tr,{[field]:current+1},{merge:true}); } }
+      if (terminalId && terminalRemote) { const field=operationType==='DEVOLUCION'?'proximaDevolucion':'proximaAnulacion'; const current=Number(terminalRemote[field])||1; tx.set(terminalRef!,{[field]:current+1},{merge:true}); }
       tx.set(operationRef,{tipo:operationType,operationId,fecha:String(operationDoc.fecha||Utils.ahora()),referencia:String(operationDoc.id||operationId)},{merge:false});
       result={operationId,operationType,products:[...products.values()]};
     });
