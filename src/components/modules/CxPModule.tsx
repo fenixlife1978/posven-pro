@@ -30,9 +30,10 @@ import { Pagination } from '@/components/ui/pagination';
 interface CxPModuleProps {
   state: AppState;
   updateState: (newState: Partial<AppState>) => void;
+  terminalId?: string;
 }
 
-export default function CxPModule({ state, updateState }: CxPModuleProps) {
+export default function CxPModule({ state, updateState, terminalId }: CxPModuleProps) {
   const [showDetails, setShowDetails] = useState<any>(null);
   const [showPaymentModal, setShowPaymentModal] = useState<any>(null);
   const [paymentAmount, setPaymentAmount] = useState('');
@@ -160,7 +161,7 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
 
     const ahoraStr = Utils.ahora();
     const asientoId = 'ACC-' + Store.uid().toUpperCase().slice(0, 5);
-    const reciboId = `PAY-${Store.uid().toUpperCase().slice(0, 4)}`;
+    const reciboId = `PEND-CXP-${Store.uid().toUpperCase().slice(0, 8)}`;
     const pago = {
       id: 'PAYS-' + Store.uid().toUpperCase().slice(0, 6),
       asientoId, fecha: ahoraStr, montoUSD: amount, montoBS,
@@ -179,7 +180,8 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
         debtId: showPaymentModal.id,
         amountUSD: amount,
         payment: pago,
-        journal: nuevoAsiento
+        journal: nuevoAsiento,
+        terminalId
       });
       if (!resultadoPago) throw new Error('No se pudo registrar el pago al proveedor.');
       if (resultadoPago.queuedOffline) { toast({ title: 'Pago guardado sin conexión', description: 'Quedó pendiente y se sincronizará automáticamente al regresar Internet.' }); setShowPaymentModal(null); setPaymentAmount(''); return; }
@@ -237,7 +239,7 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
       return;
     }
 
-    const reciboBase = `PAY-${Store.uid().toUpperCase().slice(0, 4)}`;
+    const reciboBase = `PEND-CXP-${Store.uid().toUpperCase().slice(0, 8)}`;
     const asientoId = 'ACC-' + Store.uid().toUpperCase().slice(0, 5);
     const pagoBase = {
       id: 'PAYS-' + Store.uid().toUpperCase().slice(0, 6),
@@ -266,7 +268,8 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
         provider: globalProvider.proveedor,
         amountUSD: amount,
         payment: pagoBase,
-        journal: nuevoAsiento
+        journal: nuevoAsiento,
+        terminalId
       });
 
       if (resultadoPago.queuedOffline) { toast({ title: 'Pago global guardado sin conexión', description: 'Quedó pendiente y se sincronizará automáticamente al regresar Internet.' }); return; }
