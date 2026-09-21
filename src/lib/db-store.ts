@@ -672,16 +672,18 @@ export const Store = {
         estado: nuevoSaldo <= 0.001 ? 'pagada' : 'parcial',
         historialPagos: historial
       };
-      tx.set(debtRef, sanitizeForFirestore(updated), { merge: true });
-
+      let customerRef: any = null;
+      let customerDebt: number | null = null;
       if (collectionName === 'cxc' && customerCedula) {
         const customersSnap = await tx.get(query(collection(db, 'clientes'), where('cedula', '==', customerCedula), limit(1)));
         if (!customersSnap.empty) {
-          const customerRef = customersSnap.docs[0].ref;
+          customerRef = customersSnap.docs[0].ref;
           const customer = customersSnap.docs[0].data() as any;
-          tx.set(customerRef, { debt: Math.max(0, (Number(customer.debt) || 0) - applied) }, { merge: true });
+          customerDebt = Number(customer.debt) || 0;
         }
       }
+      tx.set(debtRef, sanitizeForFirestore(updated), { merge: true });
+      if (customerRef) tx.set(customerRef, { debt: Math.max(0, (customerDebt || 0) - applied) }, { merge: true });
       if (journal?.id) tx.set(doc(db, 'libroDiario', journal.id), sanitizeForFirestore(journal), { merge: true });
       if (sale?.id) tx.set(doc(db, 'ventas', sale.id), sanitizeForFirestore(sale), { merge: true });
       result = { ...updated, appliedUSD: applied };
