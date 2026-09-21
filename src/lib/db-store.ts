@@ -782,6 +782,28 @@ export const Store = {
     return result;
   },
 
+  async createSupplierDebtTransaction(params: {
+    debt: any;
+    journal?: any;
+  }): Promise<any> {
+    if (typeof window === 'undefined' || !db) return null;
+    const { debt, journal } = params;
+    const debtRef = doc(db, 'cxp', debt.id);
+    let result: any = null;
+    await runTransaction(db, async tx => {
+      const existing = await tx.get(debtRef);
+      if (existing.exists()) throw new Error('La deuda de proveedor ya existe en otra caja. Actualice y vuelva a intentar.');
+      tx.set(debtRef, sanitizeForFirestore(debt), { merge: false });
+      if (journal?.id) tx.set(doc(db, 'libroDiario', journal.id), sanitizeForFirestore(journal), { merge: false });
+      result = debt;
+    });
+    applyPatch({
+      cxp: mergeById(cache.cxp, [result]),
+      ...(journal?.id ? { libroDiario: mergeById(cache.libroDiario, [journal]) } : {})
+    } as Partial<AppState>);
+    return result;
+  },
+
   async deleteCustomerDebtTransaction(params: {
     debtId: string;
     customerCedula?: string;
