@@ -348,7 +348,9 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       const terminal = getCurrentTerminal();
       const ahoraStr = Utils.ahora();
 
+      const operationId = 'VENTA-' + Store.uid();
       const resultado = await Store.createSaleTransaction({
+        operationId,
         cart: state.carrito,
         payments: listadoPagos,
         clientName: cliente,
@@ -361,6 +363,18 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       });
 
       if (!resultado?.sale) throw new Error('No se pudo registrar la venta.');
+
+      if (resultado.queuedOffline) {
+        updateState({ carrito: [] });
+        setPagos([]);
+        setCliente('Consumidor final');
+        setSelectedProductDisplay(null);
+        toast({
+          title: 'Venta guardada sin conexión',
+          description: 'La venta quedó pendiente y se enviará automáticamente a la base de datos al regresar Internet. No se emitió un comprobante fiscal definitivo.'
+        });
+        return;
+      }
 
       // El correlativo, inventario y movimientos ya fueron confirmados en Firestore.
       // Aquí solo limpiamos el carrito local; los datos autoritativos llegan por snapshots.
