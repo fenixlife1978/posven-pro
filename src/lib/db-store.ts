@@ -736,6 +736,22 @@ function init() {
     ));
   }
 
+  // Series y cierres Z: son datos de auditoría que el administrador
+  // debe poder consultar completos y en tiempo real, separados por caja.
+  for (const name of ['terminales', 'devoluciones', 'anulaciones', 'reportesZ']) {
+    const col = COLLECTIONS[name];
+    teardownFns.push(onSnapshot(
+      collection(db, col),
+      (snap) => {
+        const items = snap.docs
+          .map(d => sanitizeForFirestore(d.data()))
+          .filter(Boolean);
+        applyPatch({ [name]: items });
+      },
+      (err) => { if (err.code !== 'permission-denied') console.warn("Sync " + name + ":", err); }
+    ));
+  }
+
   // Históricos operativos: mantenemos la ventana de últimas 50 para no
   // convertir cada movimiento de una caja en una lectura completa.
   for (const name of ['ventas', 'movimientos']) {
