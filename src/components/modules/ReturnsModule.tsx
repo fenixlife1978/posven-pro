@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { AppState, Return, Sale, ReturnItem, Movimiento, Anulacion, LibroDiarioEntry } from '@/lib/types';
 import { Utils, Store } from '@/lib/db-store';
 import { DateRangeFilter, DateRange } from '@/components/ui/date-range-filter';
@@ -31,6 +31,7 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
   const [refundMethod, setRefundMethod] = useState<'EFECTIVO' | 'MISMO_METODO' | 'CREDITO_TIENDA'>('EFECTIVO');
   const [reason, setMotivo] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
+  const processingRef = useRef(false);
   const [rango, setRango] = useState<DateRange>({ desde: Utils.hoy(), hasta: Utils.hoy() });
 
   const buscarVenta = () => {
@@ -74,9 +75,10 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
   };
 
   const procesarDevolucion = async () => {
-    if (!selectedSale || returnItems.length === 0 || isProcessing) return;
+    if (!selectedSale || returnItems.length === 0 || isProcessing || processingRef.current) return;
     if (!reason.trim()) return alert('Por favor indique el motivo de la devolución');
 
+    processingRef.current = true;
     setIsProcessing(true);
     try {
       const totalDevuelto = returnItems.reduce((s, i) => s + (i.cantidad * i.precioUnitUSD), 0);
@@ -159,12 +161,13 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
       setReturnItems([]);
       setMotivo('');
     } finally {
+      processingRef.current = false;
       setIsProcessing(false);
     }
   };
 
   const anularFacturaCompleta = async () => {
-    if (!selectedSale || isProcessing) return;
+    if (!selectedSale || isProcessing || processingRef.current) return;
     const pin = prompt('AUTORIZACIÓN REQUERIDA: Ingrese PIN de Seguridad:');
     if (pin !== state.pinDevolucion) return alert('PIN Incorrecto');
 
@@ -172,6 +175,7 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
 
     const representaEgreso = confirm("¿Esta anulación requiere el REINTEGRO DE DINERO físico al cliente?\n(Si confirma, se generará un asiento de EGRESO en contabilidad)");
 
+    processingRef.current = true;
     setIsProcessing(true);
     try {
       const ahoraStr = Utils.ahora();
@@ -246,6 +250,7 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
       setView('list');
       setSelectedSale(null);
     } finally {
+      processingRef.current = false;
       setIsProcessing(false);
     }
   };
