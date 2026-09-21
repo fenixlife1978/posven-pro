@@ -1046,6 +1046,266 @@ export const Store = {
     return result;
   },
 
+  async createSaleTransaction(params: {
+    cart: any[];
+    payments: any[];
+    clientName: string;
+    terminalId?: string;
+    fallbackReceiptNumber?: number;
+    now: string;
+    tasa: number;
+    saleType?: string;
+    credit?: { customer: any; debtId: string };
+    cajeroId?: string;
+  }): Promise<any> {
+    if (typeof window === 'undefined' || !db) return null;
+    const { cart, payments, clientName, terminalId, fallbackReceiptNumber, now, tasa, saleType = 'VENTA', credit, cajeroId } = params;
+    if (!cart?.length) throw new Error('La venta no contiene productos.');
+    if (!(Number(tasa) > 0)) throw new Error('La tasa de la venta no es válida.');
+
+    let result: any = null;
+    await runTransaction(db, async tx => {
+      // Lecturas completas antes de cualquier escritura.
+      const terminalRef = terminalId ? doc(db, 'terminales', terminalId) : null;
+      const terminalSnap = terminalRef ? await tx.get(terminalRef) : null;
+      const terminalRemote = terminalSnap?.exists() ? sanitizeForFirestore(terminalSnap.data()) as any : null;
+
+      if (terminalId && !terminalRemote) {
+        throw new Error('La caja/terminal ya no existe en Firestore. Actualice la sesión.');
+      }
+
+      const nextNumber = Number(
+        terminalRemote?.proximoRecibo ??
+        fallbackReceiptNumber ??
+        1
+      );
+      const reciboId = String(nextNumber).padStart(9, '0');
+      const saleRef = doc(db, 'ventas', reciboId);
+      const existingSale = await tx.get(saleRef);
+      if (existingSale.exists()) {
+        throw new Error('El correlativo de esta venta ya fue utilizado por otra operación. Actualice la caja.');
+      }
+
+      const remoteProducts = new Map<string, any>();
+      const productIds = [...new Set(cart.map((i: any) => String(i.productoId || '')).filter(Boolean))];
+
+      for (const pid of productIds) {
+        const snap = await tx.get(doc(db, 'productos', pid));
+        if (!snap.exists()) throw new Error('Un producto de la venta ya no existe en Firestore.');
+        remoteProducts.set(pid, { ...sanitizeForFirestore(snap.data()), id: pid });
+      }
+
+      // Resolver componentes de kits desde Firestore, nunca desde el estado viejo de la caja.
+      const componentIds = new Set<string>();
+      for (const item of cart) {
+        const p = remoteProducts.get(String(item.productoId));
+        if (p?.isKit && p.kitType === 'stock_componentes' && Array.isArray(p.kitItems)) {
+          p.kitItems.forEach((ki: any) => componentIds.add(String(ki.productoId)));
+        }
+      }
+      for (const pid of componentIds) {
+        if (!remoteProducts.has(pid)) {
+          const snap = await tx.get(doc(db, 'productos', pid));
+          if (!snap.exists()) throw new Error('Un componente del kit ya no existe en Firestore.');
+          remoteProducts.set(pid, { ...sanitizeForFirestore(snap.data()), id: pid });
+        }
+      }
+
+      // CxC: resolver cliente remoto dentro de la misma transacción.
+      let customerRef: any = null;
+      let remoteCustomer: any = null;
+      if (credit) {
+        if (credit.customer?.id) {
+          customerRef = doc(db, 'clientes', credit.customer.id);
+          const snap = await tx.get(customerRef);
+          if (snap.exists()) remoteCustomer = sanitizeForFirestore(snap.data()) as any;
+        }
+        if (!remoteCustomer && credit.customer?.cedula) {
+          const snaps = await tx.get(query(
+            collection(db, 'clientes'),
+            where('cedula', '==', credit.customer.cedula),
+            limit(1)
+          ));
+          if (!snaps.empty) {
+            customerRef = snaps.docs[0].ref;
+            remoteCustomer = sanitizeForFirestore(snaps.docs[0].data()) as any;
+          }
+        }
+      }
+
+      const totals = cart.reduce((acc: any, item: any) => {
+        const p = remoteProducts.get(String(item.productoId));
+        const sub = Number(item.subtotalUSD) || 0;
+        if (p?.aplicaIVA) {
+          const base = sub / 1.16;
+          acc.base += base;
+          acc.iva += sub - base;
+        } else {
+          acc.exento += sub;
+        }
+        acc.total += sub;
+        return acc;
+      }, { total: 0, base: 0, iva: 0, exento: 0 });
+
+      const totalPaid = payments.reduce((s: number, p: any) => s + (Number(p.montoUSD) || 0), 0);
+      if (!credit && totalPaid + 0.001 < totals.total) {
+        throw new Error('El pago recibido es menor al total de la venta.');
+      }
+
+      const movements: any[] = [];
+      const productUpdates = new Map<string, any>();
+
+      for (const item of cart) {
+        const p = remoteProducts.get(String(item.productoId));
+        if (!p) throw new Error('Producto no encontrado.');
+        const qty = Number(item.cantidad) || 0;
+        if (qty <= 0) throw new Error('La venta contiene una cantidad inválida.');
+
+        if (p.isKit && p.kitType === 'stock_componentes' && Array.isArray(p.kitItems)) {
+          for (const ki of p.kitItems) {
+            const cp = remoteProducts.get(String(ki.productoId));
+            const required = qty * (Number(ki.cantidad) || 0);
+            const stock = Number(cp?.stock) || 0;
+            if (!cp || stock < required) {
+              throw new Error('Stock insuficiente para el kit: ' + (p.nombre || item.nombre || item.productoId));
+            }
+            const updated = { ...cp, stock: stock - required };
+            productUpdates.set(String(cp.id), updated);
+            movements.push({
+              id: Store.uid(),
+              productoId: cp.id,
+              tipo: 'venta',
+              cantidad: -required,
+              stockAntes: stock,
+              stockDespues: updated.stock,
+              fecha: now,
+              referencia: `KIT: ${p.nombre} - ${saleType} ${reciboId}`,
+              terminalId: terminalId || 'GLOBAL'
+            });
+          }
+        } else {
+          const stock = Number(p.stock) || 0;
+          if (stock < qty) throw new Error('Stock insuficiente para: ' + (p.nombre || item.nombre || item.productoId));
+          const updated = { ...p, stock: stock - qty };
+          productUpdates.set(String(p.id), updated);
+          movements.push({
+            id: Store.uid(),
+            productoId: p.id,
+            tipo: 'venta',
+            cantidad: -qty,
+            stockAntes: stock,
+            stockDespues: updated.stock,
+            fecha: now,
+            referencia: `${saleType} ${reciboId}`,
+            terminalId: terminalId || 'GLOBAL'
+          });
+        }
+      }
+
+      const vIgtf = payments
+        .filter((p: any) => p.metodo === 'efectivo_usd' || p.metodo === 'zelle')
+        .reduce((s: number, p: any) => s + (Number(p.montoUSD) || 0) * 0.03, 0);
+
+      const sale: any = {
+        id: reciboId,
+        fecha: now,
+        cliente: clientName,
+        items: cart.map((x: any) => ({ ...x })),
+        subtotalUSD: totals.total,
+        descuentoUSD: 0,
+        totalUSD: totals.total,
+        totalBS: totals.total * tasa,
+        metodoPago: credit ? 'credito' : (payments.length > 1 ? 'mixto' : (payments[0]?.metodo || 'efectivo_usd')),
+        estado: 'completada',
+        type: saleType,
+        received: totalPaid,
+        change: Math.max(0, totalPaid - totals.total),
+        payments: payments.map((x: any) => ({ ...x })),
+        terminalId: terminalId,
+        terminalName: terminalRemote?.nombre || 'SISTEMA GLOBAL',
+        cajeroId,
+        baseImponibleUSD: Utils.round(totals.base),
+        ivaUSD: Utils.round(totals.iva),
+        exentoUSD: Utils.round(totals.exento),
+        igtfUSD: Utils.round(vIgtf),
+        tasa
+      };
+
+      const journals = credit ? [] : payments.map((p: any) => ({
+        id: 'ACC-' + Store.uid().toUpperCase().slice(0, 10),
+        fecha: now,
+        tipo: 'ingreso',
+        categoria: 'VENTA',
+        concepto: `VENTA #${reciboId} - CLIENTE: ${String(clientName).toUpperCase()}`,
+        montoUSD: Number(p.montoUSD) || 0,
+        montoBS: Number(p.montoBS) || (Number(p.montoUSD) || 0) * tasa,
+        metodo: p.metodo,
+        referencia: reciboId + '-' + (terminalId || 'GLOBAL'),
+        terminalId: terminalId || 'GLOBAL'
+      }));
+
+      let debt: any = null;
+      if (credit) {
+        if (!remoteCustomer && credit.customer) {
+          customerRef = doc(db, 'clientes', credit.customer.id);
+          remoteCustomer = { ...credit.customer, debt: 0 };
+        }
+        if (!customerRef || !remoteCustomer) throw new Error('No se pudo resolver el cliente para la venta a crédito.');
+        debt = {
+          id: credit.debtId,
+          fecha: now.slice(0, 10),
+          fechaVencimiento: '2099-12-31',
+          cliente: `${remoteCustomer.name} [${remoteCustomer.cedula}]`,
+          montoUSD: totals.total,
+          abonadoUSD: 0,
+          saldoUSD: totals.total,
+          estado: 'pendiente',
+          historialPagos: [],
+          ventaId: reciboId
+        };
+      }
+
+      const writesPlanned = 1 + productUpdates.size + movements.length + journals.length +
+        (terminalRef ? 1 : 0) + (debt ? 1 : 0) + (customerRef ? 1 : 0);
+      if (writesPlanned > 450) {
+        throw new Error('La venta tiene demasiados movimientos para procesarse en una sola transacción.');
+      }
+
+      tx.set(saleRef, sanitizeForFirestore(sale), { merge: false });
+      for (const [pid, product] of productUpdates) {
+        tx.set(doc(db, 'productos', pid), sanitizeForFirestore(product), { merge: true });
+      }
+      for (const movement of movements) {
+        tx.set(doc(db, 'movimientos', movement.id), sanitizeForFirestore(movement), { merge: false });
+      }
+      for (const entry of journals) {
+        tx.set(doc(db, 'libroDiario', entry.id), sanitizeForFirestore(entry), { merge: false });
+      }
+      if (debt) tx.set(doc(db, 'cxc', debt.id), sanitizeForFirestore(debt), { merge: false });
+      if (customerRef && remoteCustomer) {
+        tx.set(customerRef, sanitizeForFirestore({
+          ...remoteCustomer,
+          debt: (Number(remoteCustomer.debt) || 0) + totals.total
+        }), { merge: true });
+      }
+      if (terminalRef && terminalRemote) {
+        tx.set(terminalRef, sanitizeForFirestore({
+          ...terminalRemote,
+          proximoRecibo: nextNumber + 1
+        }), { merge: true });
+      }
+
+      result = { sale, debt, journals, nextNumber: nextNumber + 1, terminal: terminalRemote };
+    });
+
+    // Las colecciones autoritativas se actualizan por sus snapshots. Solo
+    // parcheamos libroDiario para que el asiento aparezca inmediatamente.
+    if (result?.journals?.length) {
+      applyPatch({ libroDiario: mergeById(cache.libroDiario, result.journals) });
+    }
+    return result;
+  },
+
   async deletePurchaseTransaction(params: {
     purchaseId?: string;
     invoiceNumber: string;
