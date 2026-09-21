@@ -71,7 +71,6 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
   const [loteTemporal, setLoteTemporal] = useState<PurchaseItemTemp[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const processingRef = useRef(false);
-  const processingRef = useRef(false);
 
   const [showNewProductModal, setShowNewProductModal] = useState(false);
   const [confirmProcesar, setConfirmProcesar] = useState(false);
@@ -361,16 +360,11 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
       setFecha(Utils.hoy());
       setLoteTemporal([]);
       setCondicion('contado');
-      } catch (err: any) {
-        console.error('❌ Error guardando compra:', err);
-        toast({ title: "Error al guardar compra", description: err?.message || 'No se pudo persistir en Firestore', variant: "destructive", duration: 8000 });
-        // NO limpiar formulario: usuario puede reintentar
-      } finally {
-        setIsProcessing(false);
-      }
     } catch (err: any) {
       console.error('❌ Error procesando compra:', err);
-      processingRef.current = false;
+      toast({ title: "Error al guardar compra", description: err?.message || 'No se pudo persistir en Firestore', variant: "destructive", duration: 8000 });
+      // NO limpiar formulario: usuario puede reintentar
+    } finally {
       processingRef.current = false;
       setIsProcessing(false);
     }
@@ -398,7 +392,6 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
       return alert('No se pudo identificar la compra para eliminar.');
     }
     if (processingRef.current) return;
-    if (processingRef.current) return;
 
     const deudasVinculadas = (state.cxp || []).filter(d =>
       String(d.numeroFactura || '') === normFact &&
@@ -412,7 +405,6 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
 
     if (!confirm(`¿SEGURO QUE DESEA ELIMINAR LA COMPRA?\\n\\nFactura #${normFact} · ${normProv}\\nCondición: ${String(compra.condicion || '').toUpperCase()} · Total: ${Utils.fmtUSD(compra.montoUSD || 0)}\\n\\nSe revertirán en una operación protegida contra cambios de otras cajas:\\n• Movimientos de inventario de esta factura\\n• Stock y costo CPP afectados\\n• Asientos contables de compra y sus abonos\\n• ${txtDeudas}\\n\\nEsta acción es IRREVERSIBLE.`)) return;
 
-    processingRef.current = true;
     processingRef.current = true;
     setIsProcessing(true);
     try {
