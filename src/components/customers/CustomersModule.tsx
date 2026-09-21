@@ -41,7 +41,7 @@ export function CustomersModule() {
   );
 
   // ===== FUNCIÓN PARA ELIMINAR CLIENTE =====
-  const eliminarCliente = (cliente: Customer) => {
+  const eliminarCliente = async (cliente: Customer) => {
     // Verificar si el cliente tiene deudas pendientes
     const todasLasDeudas = store.cxc || [];
     const tieneDeudasPendientes = todasLasDeudas.some(
@@ -70,24 +70,23 @@ export function CustomersModule() {
       return;
     }
 
-    // Eliminar cliente de la lista de clientes
-    const clientesActualizados = customers.filter((c: Customer) => c.id !== cliente.id);
-    
-    // Eliminar todas las deudas del cliente
-    const deudasActualizadas = todasLasDeudas.filter((d: any) => d.cliente !== cliente.name);
-    
-    // Actualizar el store
-    Store.set({ 
-      clientes: clientesActualizados, 
-      cxc: deudasActualizadas 
-    });
-    
-    setCustomers(clientesActualizados);
-    
-    toast({ 
-      title: "Cliente eliminado", 
-      description: `El cliente "${cliente.name}" ha sido eliminado permanentemente.` 
-    });
+    try {
+      await Store.deleteCustomerAndDebtsTransaction({
+        customerId: cliente.id,
+        customerName: cliente.name,
+        customerCedula: cliente.cedula
+      });
+      toast({
+        title: "Cliente eliminado",
+        description: `El cliente "${cliente.name}" y su historial fueron eliminados de forma segura.`
+      });
+    } catch (e: any) {
+      toast({
+        variant: "destructive",
+        title: "No se pudo eliminar el cliente",
+        description: e?.message || 'La información cambió en otra caja. Actualice y vuelva a intentar.'
+      });
+    }
   };
 
   return (
