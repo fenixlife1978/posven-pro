@@ -900,6 +900,9 @@ export const Store = {
         const historial = Array.isArray(item.data.historialPagos) ? [...item.data.historialPagos] : [];
         const pagoHistorial = sanitizeForFirestore({
           ...payment,
+          id: nextResult.receiptId,
+          reciboId: nextResult.receiptId,
+          terminalId: terminalId || payment?.terminalId,
           // El mismo pago global puede liquidar varias facturas, pero cada
           // entrada conserva exactamente lo aplicado a esa factura.
           montoUSD: pago,
@@ -935,7 +938,7 @@ export const Store = {
     });
 
     // CxP se actualiza exclusivamente por el snapshot completo autoritativo.
-    if (journal?.id) applyPatch({ libroDiario: mergeById(cache.libroDiario, [{ ...journal, montoUSD: result.appliedUSD }]) });
+    if (journal?.id) applyPatch({ libroDiario: mergeById(cache.libroDiario, [{ ...journal, montoUSD: result.appliedUSD, referencia: result.receiptId, terminalId: terminalId || journal.terminalId }]) });
 
     return result;
   },
