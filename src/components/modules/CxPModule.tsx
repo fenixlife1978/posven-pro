@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { AppState, LibroDiarioEntry, PaymentMethod, Debt } from '@/lib/types';
 import { Utils, Store } from '@/lib/db-store';
 import { 
@@ -59,6 +59,7 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
   const [deudaMotivo, setDeudaMotivo] = useState('');
   const [fechaDeuda, setFechaDeuda] = useState(Utils.hoy());
   const [isProcessing, setIsProcessing] = useState(false);
+  const processingRef = useRef(false);
 
   // Una cuenta SOLO representa deuda activa cuando tiene monto real y saldo real
   // pendiente. Un monto $0.00 (o menor/despreciable) es NEUTRO: no es deuda por
@@ -153,7 +154,8 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
       return;
     }
 
-    if (isProcessing) return;
+    if (isProcessing || processingRef.current) return;
+    processingRef.current = true;
     setIsProcessing(true);
 
     const ahoraStr = Utils.ahora();
@@ -186,6 +188,7 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
     } catch (e: any) {
       toast({ variant: "destructive", title: "No se pudo registrar el pago", description: e?.message || 'La deuda cambió en otra caja. Actualice y vuelva a intentar.' });
     } finally {
+      processingRef.current = false;
       setIsProcessing(false);
     }
   };
@@ -204,7 +207,8 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
   };
 
   const handleProcessGlobalPayment = async () => {
-    if (!globalProvider || isProcessing) return;
+    if (!globalProvider || isProcessing || processingRef.current) return;
+    processingRef.current = true;
     setIsProcessing(true);
 
     const esMetodoBS = paymentMethod === 'efectivo_bs' || paymentMethod === 'pagomovil';
@@ -291,6 +295,7 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
         description: e?.message || 'Las deudas cambiaron en otra caja. Actualice y vuelva a intentar.'
       });
     } finally {
+      processingRef.current = false;
       setIsProcessing(false);
     }
   };
@@ -298,11 +303,12 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
   // Eliminar un abono/pago del historial: revierte TODOS los movimientos causados
   // (restaura la deuda, quita el abono, y revierte el asiento contable del ingreso/egreso).
   const handleEliminarPago = async (deuda: any, idx: number) => {
-    if (isProcessing) return;
+    if (isProcessing || processingRef.current) return;
     const pago = (deuda.historialPagos || [])[idx];
     if (!pago) return;
     if (!confirm(`¿Seguro que desea eliminar el abono de ${Utils.fmtUSD(pago.montoUSD)} (${Utils.metodoLabel(pago.metodo || 'otros')})?\\nSe revertirán la deuda y el asiento contable correspondiente.`)) return;
 
+    processingRef.current = true;
     setIsProcessing(true);
     try {
       const resultado = await Store.reverseDebtPaymentTransaction({
@@ -324,12 +330,13 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
         description: e?.message || 'La deuda cambió en otra caja. Actualice y vuelva a intentar.'
       });
     } finally {
+      processingRef.current = false;
       setIsProcessing(false);
     }
   };
 
   const handleGuardarDeudaDirecta = async () => {
-    if (isProcessing) return;
+    if (isProcessing || processingRef.current) return;
     if (!selectedProveedor) {
       toast({ variant: "destructive", title: "Error", description: "Debe seleccionar un proveedor." });
       return;
@@ -370,6 +377,7 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
       referencia: nuevaDeuda.id
     };
 
+    processingRef.current = true;
     setIsProcessing(true);
     try {
       await Store.createSupplierDebtTransaction({ debt: nuevaDeuda, journal: nuevoAsiento });
@@ -383,6 +391,7 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
     } catch (e: any) {
       toast({ variant: "destructive", title: "No se pudo registrar la deuda", description: e?.message || 'La información cambió en otra caja. Actualice y vuelva a intentar.' });
     } finally {
+      processingRef.current = false;
       setIsProcessing(false);
     }
   };
