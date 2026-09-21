@@ -138,7 +138,7 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
     setPaymentMethod('efectivo_usd');
   };
 
-  const handleProcessPayment = () => {
+  const handleProcessPayment = async () => {
     // Determinar si el método es en Bs. (Efectivo Bs. o Pago Movil).
     const esMetodoBS = paymentMethod === 'efectivo_bs' || paymentMethod === 'pagomovil';
     const rawMonto = parseFloat(paymentAmount) || 0;
@@ -211,7 +211,7 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
     setPagoAtrasadoTasa('');
   };
 
-  const handleProcessGlobalPayment = () => {
+  const handleProcessGlobalPayment = async () => {
     if (!globalProvider) return;
     // Determinar si el método es en Bs.
     const esMetodoBS = paymentMethod === 'efectivo_bs' || paymentMethod === 'pagomovil';
