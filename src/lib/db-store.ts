@@ -215,33 +215,53 @@ function mergeById<T extends { id?: any }>(existing: T[] | undefined, incoming: 
   return [...map.values()];
 }
 
-// Escribe SOLO los documentos que cambiaron/crearon/eliminaron en la colección.
-function syncArrayToCollection(name: string, prevArr: any[] | undefined, newArr: any[] | undefined): Promise<void> {
-  if (!db) return Promise.resolve();
+// Persistencia optimista por documento.
+// Antes de sobrescribir un registro existente se comprueba dentro de una
+// transacción que Firestore siga teniendo exactamente la versión que esta
+// caja leyó. Si otra caja lo cambió entretanto, abortamos en lugar de
+// pisar silenciosamente su modificación con un array local antiguo.
+async function syncArrayToCollection(name: string, prevArr: any[] | undefined, newArr: any[] | undefined): Promise<void> {
+  if (!db) return;
   const prevList = prevArr || [];
   const newList = newArr || [];
   const prevById = new Map(prevList.filter(x => x && x.id).map(x => [String(x.id), x]));
-  const newIds = new Set(newList.filter(x => x && x.id).map(x => String(x.id)));
+  const newById = new Map(newList.filter(x => x && x.id).map(x => [String(x.id), x]));
+  const changed: Array<{id:string; before:any; after:any|null}> = [];
 
-  const batch = writeBatch(db);
-  let ops = 0;
-  newList.forEach(x => {
-    if (!x || !x.id) return;
-    const before = prevById.get(String(x.id));
-    const clean = sanitizeForFirestore(x);
-    if (!before || JSON.stringify(sanitizeForFirestore(before)) !== JSON.stringify(clean)) {
-      batch.set(doc(db, name, String(x.id)), clean, { merge: true });
-      ops++;
+  newById.forEach((after, id) => {
+    const before = prevById.get(id);
+    if (!before || JSON.stringify(sanitizeForFirestore(before)) !== JSON.stringify(sanitizeForFirestore(after))) {
+      changed.push({ id, before: before ?? null, after });
     }
   });
-  prevById.forEach((_x, id) => {
-    if (!newIds.has(id)) {
-      batch.delete(doc(db, name, id));
-      ops++;
-    }
+  prevById.forEach((before, id) => {
+    if (!newById.has(id)) changed.push({ id, before, after: null });
   });
-  if (ops === 0) return Promise.resolve();
-  return batch.commit();
+
+  for (const item of changed) {
+    await runTransaction(db, async tx => {
+      const ref = doc(db, name, item.id);
+      const snap = await tx.get(ref);
+      const remote = snap.exists() ? sanitizeForFirestore(snap.data()) : null;
+      const expected = item.before ? sanitizeForFirestore(item.before) : null;
+
+      if (!item.before) {
+        if (snap.exists()) {
+          // Otro terminal creó el mismo ID: no lo reemplazamos.
+          throw new Error('Conflicto de sincronización: el registro ' + item.id + ' ya existe en Firestore.');
+        }
+        tx.set(ref, sanitizeForFirestore(item.after), { merge: true });
+        return;
+      }
+
+      if (!snap.exists() || JSON.stringify(remote) !== JSON.stringify(expected)) {
+        throw new Error('Conflicto de sincronización en ' + name + '/' + item.id + '. Otro terminal modificó el registro. Se conserva la versión remota.');
+      }
+
+      if (item.after === null) tx.delete(ref);
+      else tx.set(ref, sanitizeForFirestore(item.after), { merge: true });
+    });
+  }
 }
 
 // Stock atómico entre cajas (transacciones): calcula deltas por producto y los aplica contra el
