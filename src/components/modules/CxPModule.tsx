@@ -289,63 +289,30 @@ export default function CxPModule({ state, updateState }: CxPModuleProps) {
 
   // Eliminar un abono/pago del historial: revierte TODOS los movimientos causados
   // (restaura la deuda, quita el abono, y revierte el asiento contable del ingreso/egreso).
-  const handleEliminarPago = (deuda: any, idx: number) => {
+  const handleEliminarPago = async (deuda: any, idx: number) => {
     const pago = (deuda.historialPagos || [])[idx];
     if (!pago) return;
+    if (!confirm(`¿Seguro que desea eliminar el abono de ${Utils.fmtUSD(pago.montoUSD)} (${Utils.metodoLabel(pago.metodo || 'otros')})?\\nSe revertirán la deuda y el asiento contable correspondiente.`)) return;
 
-    if (!confirm(`¿Seguro que desea eliminar el abono de ${Utils.fmtUSD(pago.montoUSD)} (${Utils.metodoLabel(pago.metodo || 'otros')})?\nSe revertirán la deuda y el asiento contable correspondiente.`)) return;
-
-    // Revertir la deuda: eliminar este abono del historial y recalcular saldo/abonado/estado.
-    const nuevasCxP = (state.cxp || []).map((c: Debt) => {
-      if (c.id !== deuda.id) return c;
-      const restantes = (c.historialPagos || []).filter((_: any, i: number) => i !== idx);
-      const nuevoAbonado = restantes.reduce((s: number, p: any) => s + (p.montoUSD || 0), 0);
-      const nuevoSaldo = Math.max(0, Math.round((c.montoUSD - nuevoAbonado + Number.EPSILON) * 100) / 100);
-      let nuevoEstado: 'pendiente' | 'parcial' | 'pagada' = 'pendiente';
-      if (nuevoSaldo <= 0.001) nuevoEstado = 'pagada';
-      else if (nuevoAbonado > 0) nuevoEstado = 'parcial';
-      return {
-        ...c,
-        abonadoUSD: nuevoAbonado,
-        saldoUSD: nuevoSaldo,
-        estado: nuevoEstado,
-        historialPagos: restantes
-      };
-    });
-
-    // Revertir el asiento contable: reducir/eliminar el asiento ligado a este abono.
-    let nuevoDiario = state.libroDiario || [];
-    if ((pago as any).asientoId) {
-      const asientoId = (pago as any).asientoId;
-      const asiento = nuevoDiario.find((e: LibroDiarioEntry) => e.id === asientoId);
-      if (asiento) {
-        const resto = Math.round((asiento.montoUSD - pago.montoUSD + Number.EPSILON) * 100) / 100;
-        const restoBS = Math.round((asiento.montoBS - pago.montoBS + Number.EPSILON) * 100) / 100;
-        if (resto <= 0.001) {
-          // Este asiento pertenecía exclusivamente a este abono → eliminarlo.
-          nuevoDiario = nuevoDiario.filter((e: LibroDiarioEntry) => e.id !== asientoId);
-        } else {
-          // Asiento consolidado (pago global) → reducirlo por el monto del abono.
-          nuevoDiario = nuevoDiario.map((e: LibroDiarioEntry) =>
-            e.id === asientoId
-              ? { ...e, montoUSD: resto, montoBS: Math.max(0, restoBS), concepto: `${e.concepto} (abono revertido)` }
-              : e
-          );
-        }
-      }
-    }
-
-    updateState({ cxp: nuevasCxP as Debt[], libroDiario: nuevoDiario });
-
-    toast({
-      title: "Abono eliminado",
-      description: `Se revirtió el abono de ${Utils.fmtUSD(pago.montoUSD)}. Deuda restaurada a ${Utils.fmtUSD(Math.max(0, (deuda.montoUSD || 0) - (nuevasCxP.find((c: Debt) => c.id === deuda.id)?.abonadoUSD || 0)))}`
-    });
-
-    // Refrescar el modal de detalles si está abierto para reflejar la reversión.
-    const deudaActualizada = nuevasCxP.find((c: Debt) => c.id === deuda.id);
-    if (showDetails && showDetails.id === deuda.id) {
-      setShowDetails(deudaActualizada);
+    try {
+      const resultado = await Store.reverseDebtPaymentTransaction({
+        collection: 'cxp',
+        debtId: deuda.id,
+        paymentId: String(pago.id || ''),
+        journalId: pago.asientoId ? String(pago.asientoId) : undefined
+      });
+      if (!resultado) throw new Error('No se pudo revertir el abono.');
+      toast({
+        title: "Abono eliminado",
+        description: `Se revirtió el abono de ${Utils.fmtUSD(pago.montoUSD)}. La deuda quedó en ${Utils.fmtUSD(resultado.saldoUSD)}.`
+      });
+      if (showDetails && showDetails.id === deuda.id) setShowDetails(resultado);
+    } catch (e: any) {
+      toast({
+        variant: "destructive",
+        title: "No se pudo eliminar el abono",
+        description: e?.message || 'La deuda cambió en otra caja. Actualice y vuelva a intentar.'
+      });
     }
   };
 
