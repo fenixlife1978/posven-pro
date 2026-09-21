@@ -782,6 +782,46 @@ export const Store = {
     return result;
   },
 
+  async deleteCustomerDebtTransaction(params: {
+    debtId: string;
+    customerCedula?: string;
+    customerId?: string;
+  }): Promise<any> {
+    if (typeof window === 'undefined' || !db) return null;
+    const { debtId, customerCedula, customerId } = params;
+    const debtRef = doc(db, 'cxc', debtId);
+    let result: any = null;
+    await runTransaction(db, async tx => {
+      const debtSnap = await tx.get(debtRef);
+      if (!debtSnap.exists()) throw new Error('La deuda ya no existe o fue eliminada en otra caja.');
+      const debt = sanitizeForFirestore(debtSnap.data()) as any;
+      const saldo = Number(debt.saldoUSD) || 0;
+      let customerRef: any = null;
+      let customer: any = null;
+      if (customerId) {
+        customerRef = doc(db, 'clientes', customerId);
+        const snap = await tx.get(customerRef);
+        if (snap.exists()) customer = sanitizeForFirestore(snap.data()) as any;
+      } else if (customerCedula) {
+        const snaps = await tx.get(query(collection(db, 'clientes'), where('cedula', '==', customerCedula), limit(1)));
+        if (!snaps.empty) {
+          customerRef = snaps.docs[0].ref;
+          customer = sanitizeForFirestore(snaps.docs[0].data()) as any;
+        }
+      }
+      tx.delete(debtRef);
+      if (customerRef && customer) {
+        tx.set(customerRef, { debt: Math.max(0, (Number(customer.debt) || 0) - saldo) }, { merge: true });
+      }
+      result = { debt, customer: customer ? { ...customer, debt: Math.max(0, (Number(customer.debt) || 0) - saldo) } : null };
+    });
+    applyPatch({
+      cxc: (cache.cxc || []).filter((d: any) => d.id !== debtId),
+      ...(result.customer ? { clientes: mergeById(cache.clientes, [result.customer]) } : {})
+    } as Partial<AppState>);
+    return result;
+  },
+
   async createCustomerDebtTransaction(params: {
     debt: any;
     customer?: any;
