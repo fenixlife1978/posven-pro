@@ -336,6 +336,14 @@ function syncProductosTransactional(prevArr: any[] | undefined, newArr: any[] | 
 
 // Movimiento de inventario atómico: toma el stock REAL de Firestore y registra
 // el movimiento con stockAntes/stockDespues calculados dentro de la transacción.
+async function processOfflineInventoryOperation(params: { operationId: string; operationType: 'DEVOLUCION' | 'ANULACION'; movements: any[] }): Promise<any> {
+  if (typeof window !== 'undefined' && navigator.onLine === false) {
+    enqueueOfflineOperation(params.operationType, params, params.operationId);
+    return { queuedOffline: true, operationId: params.operationId };
+  }
+  return applyInventoryMovementsTransaction({ ...params, fromOfflineQueue: true });
+}
+
 async function applyInventoryMovementsTransaction(params: {
   operationId: string;
   operationType: string;
@@ -1984,6 +1992,7 @@ registerOfflineProcessor(async (operation) => {
   if (operation.type === 'ELIMINAR-CXC') { await Store.deleteCustomerDebtTransaction({ ...(operation.payload || {}), operationId: operation.operationId }); return; }
   if (operation.type === 'DEUDA-CXC') { await Store.createCustomerDebtTransaction({ ...(operation.payload || {}), operationId: operation.operationId }); return; }
   if (operation.type === 'DEUDA-CXP') { await Store.createSupplierDebtTransaction({ ...(operation.payload || {}), operationId: operation.operationId }); return; }
+  if (operation.type === 'DEVOLUCION' || operation.type === 'ANULACION') { await applyInventoryMovementsTransaction({ operationId: operation.operationId, operationType: operation.type, movements: operation.payload.movements, fromOfflineQueue: true }); return; }
   throw new Error('Tipo de operación offline no soportado: ' + operation.type);
 });
 
