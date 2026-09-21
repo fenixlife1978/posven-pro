@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   ShoppingBag, 
   Plus, 
@@ -70,6 +70,7 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
   const [costoInput, setCostoInput] = useState<string | number>(0);
   const [loteTemporal, setLoteTemporal] = useState<PurchaseItemTemp[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
+  const processingRef = useRef(false);
 
   const [showNewProductModal, setShowNewProductModal] = useState(false);
   const [confirmProcesar, setConfirmProcesar] = useState(false);
@@ -262,8 +263,9 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
   const handleProcessPurchase = async () => {
     if (!proveedor) return alert('Seleccione un proveedor');
     if (!numeroFactura) return alert('Ingrese el número de factura');
-    if (loteTemporal.length === 0 || isProcessing) return alert('Agregue productos a la lista');
+    if (loteTemporal.length === 0 || isProcessing || processingRef.current) return alert('Agregue productos a la lista');
 
+    processingRef.current = true;
     setIsProcessing(true);
     try {
       const ahoraStr = Utils.ahora();
@@ -367,6 +369,7 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
       }
     } catch (err: any) {
       console.error('❌ Error procesando compra:', err);
+      processingRef.current = false;
       setIsProcessing(false);
     }
   };
@@ -392,6 +395,7 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
     if (!normFact || !normProv) {
       return alert('No se pudo identificar la compra para eliminar.');
     }
+    if (processingRef.current) return;
 
     const deudasVinculadas = (state.cxp || []).filter(d =>
       String(d.numeroFactura || '') === normFact &&
@@ -405,6 +409,7 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
 
     if (!confirm(`¿SEGURO QUE DESEA ELIMINAR LA COMPRA?\\n\\nFactura #${normFact} · ${normProv}\\nCondición: ${String(compra.condicion || '').toUpperCase()} · Total: ${Utils.fmtUSD(compra.montoUSD || 0)}\\n\\nSe revertirán en una operación protegida contra cambios de otras cajas:\\n• Movimientos de inventario de esta factura\\n• Stock y costo CPP afectados\\n• Asientos contables de compra y sus abonos\\n• ${txtDeudas}\\n\\nEsta acción es IRREVERSIBLE.`)) return;
 
+    processingRef.current = true;
     setIsProcessing(true);
     try {
       const result = await Store.deletePurchaseTransaction({
@@ -428,6 +433,7 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
         duration: 8000
       });
     } finally {
+      processingRef.current = false;
       setIsProcessing(false);
     }
   };
