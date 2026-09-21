@@ -338,7 +338,7 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
         terminalId: 'ADMIN'
       } : undefined;
 
-      await Store.createPurchaseTransaction({
+      const resultCompra = await Store.createPurchaseTransaction({
         purchase: nuevaCompra,
         items: purchaseItems,
         purchaseDate: fecha,
@@ -353,6 +353,7 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
         debt: nuevaDeuda
       });
 
+      if (resultCompra?.queuedOffline) { toast({ title: 'Compra guardada sin conexión', description: 'Quedó pendiente y se sincronizará automáticamente al regresar Internet.' }); return; }
       toast({ title: "Compra Registrada ✅", description: `Factura ${numeroFactura} guardada en Firestore de forma transaccional.` });
       
       setProveedor('');
@@ -415,6 +416,7 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
         purchaseDate: compra.fecha
       });
 
+      if (result?.queuedOffline) { toast({ title: 'Eliminación guardada sin conexión', description: 'Quedó pendiente de sincronización.' }); return; }
       toast({
         title: "Compra eliminada",
         description: `Factura #${normFact} revertida de forma segura (${result?.deletedMovements || 0} movimientos, ${result?.deletedDebts || 0} CxP).`
