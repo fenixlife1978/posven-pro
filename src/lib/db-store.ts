@@ -782,6 +782,60 @@ export const Store = {
     return result;
   },
 
+  async createCustomerDebtTransaction(params: {
+    debt: any;
+    customer?: any;
+    customerId?: string;
+    customerCedula?: string;
+    journal?: any;
+  }): Promise<any> {
+    if (typeof window === 'undefined' || !db) return null;
+    const { debt, customer, customerId, customerCedula, journal } = params;
+    const debtRef = doc(db, 'cxc', debt.id);
+    let result: any = null;
+    await runTransaction(db, async tx => {
+      const existing = await tx.get(debtRef);
+      if (existing.exists()) throw new Error('La deuda ya existe en otra caja. Actualice y vuelva a intentar.');
+      let customerRef: any = null;
+      let remoteCustomer: any = null;
+      if (customerId) {
+        customerRef = doc(db, 'clientes', customerId);
+        const snap = await tx.get(customerRef);
+        if (!snap.exists()) throw new Error('El cliente ya no existe en otra caja.');
+        remoteCustomer = sanitizeForFirestore(snap.data()) as any;
+      } else if (customerCedula) {
+        const snaps = await tx.get(query(collection(db, 'clientes'), where('cedula', '==', customerCedula), limit(1)));
+        if (!snaps.empty) {
+          customerRef = snaps.docs[0].ref;
+          remoteCustomer = sanitizeForFirestore(snaps.docs[0].data()) as any;
+        }
+      }
+      if (!remoteCustomer && customer) {
+        customerRef = doc(db, 'clientes', customer.id);
+        const snap = await tx.get(customerRef);
+        if (snap.exists()) remoteCustomer = sanitizeForFirestore(snap.data()) as any;
+        else tx.set(customerRef, sanitizeForFirestore(customer), { merge: false });
+      }
+      const amount = Number(debt.montoUSD) || 0;
+      const mergedCustomer = remoteCustomer ? {
+        ...remoteCustomer,
+        debt: (Number(remoteCustomer.debt) || 0) + amount,
+        address: customer?.address || remoteCustomer.address || 'Sin dirección',
+        phone: customer?.phone || remoteCustomer.phone || 'Sin teléfono'
+      } : null;
+      if (customerRef && mergedCustomer) tx.set(customerRef, sanitizeForFirestore(mergedCustomer), { merge: true });
+      tx.set(debtRef, sanitizeForFirestore(debt), { merge: false });
+      if (journal?.id) tx.set(doc(db, 'libroDiario', journal.id), sanitizeForFirestore(journal), { merge: false });
+      result = { debt, customer: mergedCustomer };
+    });
+    applyPatch({
+      cxc: mergeById(cache.cxc, [result.debt]),
+      ...(result.customer ? { clientes: mergeById(cache.clientes, [result.customer]) } : {}),
+      ...(journal?.id ? { libroDiario: mergeById(cache.libroDiario, [journal]) } : {})
+    } as Partial<AppState>);
+    return result;
+  },
+
   async reverseDebtPaymentTransaction(params: {
     collection: 'cxc' | 'cxp';
     debtId: string;
