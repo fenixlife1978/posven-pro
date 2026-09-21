@@ -688,7 +688,10 @@ function init() {
     teardownFns.push(onValue(ref(rtdb, RTDB_PRODUCTS_PATH), (snap) => {
       const val = snap.val() || {};
       const items = Object.values(val).filter(Boolean);
-      applyPatch({ productos: mergeById((cache as any).productos, items) });
+      // El espejo RTDB representa el estado completo de productos.
+      // Reemplazamos el cache, no hacemos merge, para que una eliminación
+      // remota tampoco pueda dejar un producto fantasma en esta caja.
+      applyPatch({ productos: items });
     }, (err) => { if (err?.code !== 'permission-denied') console.warn("RTDB productos:", err); }));
   }
 
