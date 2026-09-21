@@ -453,7 +453,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         debtId: showAbonoModal.id,
         amountUSD: totalAbonado,
         payment: pagoAtomic,
-        journal: nuevasEntradasDiario[0],
+        journal: nuevasEntradasDiario,
         sale: saleAbono,
         customerCedula: clienteCedula
       });
