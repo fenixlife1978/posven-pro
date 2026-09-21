@@ -783,10 +783,10 @@ export const Store = {
    * La deuda y sus efectos contables se escriben en una sola transacción,
    * evitando que dos cajas trabajen sobre el mismo saldo antiguo.
    */
-  async processReturnOrCancellationTransaction(params: { operationId: string; operationType: 'DEVOLUCION' | 'ANULACION'; saleId: string; operationDoc: any; movements: any[]; journal?: any; refundItems?: any[]; fullCancellation?: boolean; }): Promise<any> {
+  async processReturnOrCancellationTransaction(params: { operationId: string; operationType: 'DEVOLUCION' | 'ANULACION'; saleId: string; operationDoc: any; movements: any[]; journal?: any; refundItems?: any[]; fullCancellation?: boolean; fromOfflineQueue?: boolean; }): Promise<any> {
     if (!db) return null;
     const { operationId, operationType, saleId, operationDoc, movements, journal, refundItems = [], fullCancellation = false } = params;
-    if (!fromOfflineQueueSafe() && typeof window !== 'undefined' && navigator.onLine === false) {
+    if (!params.fromOfflineQueue && typeof window !== 'undefined' && navigator.onLine === false) {
       enqueueOfflineOperation(operationType, { ...params }, operationId);
       return { queuedOffline: true, operationId };
     }
