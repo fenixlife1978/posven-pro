@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { AppState, Debt, Customer } from '@/lib/types';
 import { Utils, Store } from '@/lib/db-store';
 import { 
@@ -41,6 +41,7 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
   const [filterEstado, setFilterEstado] = useState<'todos' | 'pendiente' | 'pagada' | 'parcial'>('todos');
   const [page, setPage] = useState(1);
   const [isProcessing, setIsProcessing] = useState(false);
+  const processingRef = useRef(false);
   const pageSize = 10;
 
   useEffect(() => {
@@ -166,7 +167,7 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
 
   // ===== ELIMINAR CLIENTE COMPLETO =====
   const eliminarCliente = async (clientName: string) => {
-    if (isProcessing) return;
+    if (isProcessing || processingRef.current) return;
     // Verificar si el cliente tiene deudas pendientes
     const tieneDeudasPendientes = todasLasDeudas.some(
       (d: Debt) => {
@@ -205,6 +206,7 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
     const cliente = allCustomers.find((c: Customer) => c.name === clientName);
     if (!cliente) return;
 
+    processingRef.current = true;
     setIsProcessing(true);
     try {
       await Store.deleteCustomerAndDebtsTransaction({
@@ -223,12 +225,13 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
         description: e?.message || 'La información cambió en otra caja. Actualice y vuelva a intentar.'
       });
     } finally {
+      processingRef.current = false;
       setIsProcessing(false);
     }
   };
 
   const guardarDeudaDirecta = async () => {
-    if (isProcessing) return;
+    if (isProcessing || processingRef.current) return;
     if (!nuevaDeuda.cliente || !nuevaDeuda.cedula || nuevaDeuda.montoUSD <= 0) {
       alert('Por favor ingrese el cliente, su cédula y un monto válido.');
       return;
@@ -264,6 +267,7 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
       historialPagos: []
     };
 
+    processingRef.current = true;
     setIsProcessing(true);
     try {
       await Store.createCustomerDebtTransaction({
@@ -281,15 +285,17 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
     } catch (e: any) {
       toast({ variant: "destructive", title: "No se pudo registrar la deuda", description: e?.message || 'La información cambió en otra caja. Actualice y vuelva a intentar.' });
     } finally {
+      processingRef.current = false;
       setIsProcessing(false);
     }
   };
 
   const eliminarDeuda = async (deuda: any) => {
     if (!confirm(`¿Seguro que desea eliminar el registro ${deuda.id}? Esta acción no se puede deshacer.`)) return;
-    if (isProcessing) return;
+    if (isProcessing || processingRef.current) return;
     const cedulaMatch = String(deuda.cliente || '').match(/\[([^\]]+)\]$/);
     const customerCedula = cedulaMatch?.[1] || undefined;
+    processingRef.current = true;
     setIsProcessing(true);
     try {
       const resultado = await Store.deleteCustomerDebtTransaction({
@@ -308,6 +314,7 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
         description: e?.message || 'La deuda cambió en otra caja. Actualice y vuelva a intentar.'
       });
     } finally {
+      processingRef.current = false;
       setIsProcessing(false);
     }
   };
