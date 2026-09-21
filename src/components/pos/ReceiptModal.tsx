@@ -502,6 +502,12 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
                       const totalEstimadoBs = fondoBs + totalVentasEfectivoBs + entradasCajaBs - salidasCajaBs;
                       const totalEstimadoUsd = fondoUsd + totalVentasEfectivoUsd + entradasCajaUsd - salidasCajaUsd;
 
+                      // Total real de ventas del día: solo ventas, sin fondos de apertura,
+                      // entradas/salidas extraordinarias ni cobros de deudas.
+                      const ventasDiaBs = ventasEfectivoBs;
+                      const ventasDiaUsd = ventasEfectivoUsd;
+                      const totalVentasDiaUsd = (ventasDiaBs / (state.tasa || 1)) + ventasDiaUsd;
+
                       return (
                         <>
                         <table><tbody>
@@ -550,6 +556,24 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
                    <div className="separator-dashed"></div>
                    {type === 'REPORT_Z' && (
                      <>
+                        <div className="separator-dashed"></div>
+                        <div className="text-center font-bold">TOTAL DE VENTAS DEL DÍA EN USD</div>
+                        <div className="separator-dashed"></div>
+                        <table><tbody>
+                          <tr>
+                            <td>VENTAS EN Bs. → USD:</td>
+                            <td className="text-right">$ {formatUsd(ventasDiaBs / (state.tasa || 1))}</td>
+                          </tr>
+                          <tr>
+                            <td>VENTAS EN USD:</td>
+                            <td className="text-right">$ {formatUsd(ventasDiaUsd)}</td>
+                          </tr>
+                          <tr className="bold">
+                            <td>TOTAL VENTAS DEL DÍA:</td>
+                            <td className="text-right">$ {formatUsd(totalVentasDiaUsd)}</td>
+                          </tr>
+                        </tbody></table>
+                        <div className="separator-dashed"></div>
                         <div className="text-center font-bold">CIERRE DE JORNADA EXITOSO</div>
                      </>
                    )}
