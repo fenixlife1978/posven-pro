@@ -264,6 +264,7 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
       historialPagos: []
     };
 
+    setIsProcessing(true);
     try {
       await Store.createCustomerDebtTransaction({
         debt: nuevaEntrada,
@@ -279,13 +280,17 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
       toast({ title: "Deuda registrada", description: `Se registró ${Utils.fmtUSD(nuevaDeuda.montoUSD)} para ${nuevaDeuda.cliente}.` });
     } catch (e: any) {
       toast({ variant: "destructive", title: "No se pudo registrar la deuda", description: e?.message || 'La información cambió en otra caja. Actualice y vuelva a intentar.' });
+    } finally {
+      setIsProcessing(false);
     }
   };
 
   const eliminarDeuda = async (deuda: any) => {
     if (!confirm(`¿Seguro que desea eliminar el registro ${deuda.id}? Esta acción no se puede deshacer.`)) return;
+    if (isProcessing) return;
     const cedulaMatch = String(deuda.cliente || '').match(/\[([^\]]+)\]$/);
     const customerCedula = cedulaMatch?.[1] || undefined;
+    setIsProcessing(true);
     try {
       const resultado = await Store.deleteCustomerDebtTransaction({
         debtId: deuda.id,
@@ -302,6 +307,8 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
         title: "No se pudo eliminar la deuda",
         description: e?.message || 'La deuda cambió en otra caja. Actualice y vuelva a intentar.'
       });
+    } finally {
+      setIsProcessing(false);
     }
   };
 
