@@ -741,9 +741,8 @@ function init() {
 // ============================================================
 // API PÚBLICA
 // ============================================================
-export const applyInventoryMovementsTransaction = applyInventoryMovementsTransaction;
-
 export const Store = {
+  applyInventoryMovementsTransaction,
   subscribe(callback: (state: Partial<AppState>) => void): () => void {
     listeners.add(callback);
     init();
