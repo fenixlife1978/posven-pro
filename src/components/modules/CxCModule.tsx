@@ -220,7 +220,7 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
     });
   };
 
-  const guardarDeudaDirecta = () => {
+  const guardarDeudaDirecta = async () => {
     if (!nuevaDeuda.cliente || !nuevaDeuda.cedula || nuevaDeuda.montoUSD <= 0) {
       alert('Por favor ingrese el cliente, su cédula y un monto válido.');
       return;
@@ -228,33 +228,21 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
 
     const idFull = `${nuevaDeuda.tipoDoc}-${nuevaDeuda.cedula}`;
     const nombreFull = `${nuevaDeuda.cliente} [${idFull}]`;
+    const clienteExistente = allCustomers.find((c: Customer) => c.name === nuevaDeuda.cliente || c.cedula === idFull);
 
-    // Verificar si el cliente ya existe en la lista de clientes
-    const clienteExistente = allCustomers.find((c: Customer) => c.name === nuevaDeuda.cliente);
-    
-    if (!clienteExistente) {
-      // Crear nuevo cliente con teléfono y dirección
-      const nuevoCliente: Customer = {
-        id: `CUS-${Date.now()}`,
-        name: nuevaDeuda.cliente,
-        cedula: idFull,
-        address: nuevaDeuda.direccion || 'Sin dirección',
-        phone: nuevaDeuda.telefono || 'Sin teléfono',
-        debt: nuevaDeuda.montoUSD
-      };
-      updateState({ clientes: [...allCustomers, nuevoCliente] });
-    } else {
-      // Actualizar datos del cliente existente (teléfono y dirección)
-      const updatedCustomers = allCustomers.map((c: Customer) => 
-        c.id === clienteExistente.id ? { 
-          ...c, 
-          debt: (c.debt || 0) + nuevaDeuda.montoUSD,
-          address: nuevaDeuda.direccion || c.address || 'Sin dirección',
-          phone: nuevaDeuda.telefono || c.phone || 'Sin teléfono'
-        } : c
-      );
-      updateState({ clientes: updatedCustomers });
-    }
+    const nuevoCliente: Customer = clienteExistente ? {
+      ...clienteExistente,
+      debt: Number(clienteExistente.debt || 0) + nuevaDeuda.montoUSD,
+      address: nuevaDeuda.direccion || clienteExistente.address || 'Sin dirección',
+      phone: nuevaDeuda.telefono || clienteExistente.phone || 'Sin teléfono'
+    } : {
+      id: `CUS-${Date.now()}`,
+      name: nuevaDeuda.cliente,
+      cedula: idFull,
+      address: nuevaDeuda.direccion || 'Sin dirección',
+      phone: nuevaDeuda.telefono || 'Sin teléfono',
+      debt: nuevaDeuda.montoUSD
+    };
 
     const nuevaEntrada: Debt = {
       id: 'DEU-' + Store.uid().toUpperCase().slice(0, 6),
@@ -267,19 +255,23 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
       estado: 'pendiente' as 'pendiente',
       historialPagos: []
     };
-    updateState({ cxc: [...state.cxc, nuevaEntrada] });
-    setShowModal(false);
-    setNuevaDeuda({ 
-      cliente: '', 
-      tipoDoc: 'V', 
-      cedula: '', 
-      telefono: '',
-      direccion: '',
-      montoUSD: 0, 
-      fecha: Utils.hoy(), 
-      vencimiento: Utils.hoy(), 
-      sinVencimiento: false 
-    });
+
+    try {
+      await Store.createCustomerDebtTransaction({
+        debt: nuevaEntrada,
+        customer: nuevoCliente,
+        customerId: clienteExistente?.id,
+        customerCedula: idFull
+      });
+      setShowModal(false);
+      setNuevaDeuda({
+        cliente: '', tipoDoc: 'V', cedula: '', telefono: '', direccion: '',
+        montoUSD: 0, fecha: Utils.hoy(), vencimiento: Utils.hoy(), sinVencimiento: false
+      });
+      toast({ title: "Deuda registrada", description: `Se registró ${Utils.fmtUSD(nuevaDeuda.montoUSD)} para ${nuevaDeuda.cliente}.` });
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "No se pudo registrar la deuda", description: e?.message || 'La información cambió en otra caja. Actualice y vuelva a intentar.' });
+    }
   };
 
   const eliminarDeuda = (deuda: any) => {
