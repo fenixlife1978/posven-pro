@@ -60,6 +60,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   const [cliente, setCliente] = useState('Consumidor final');
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const processingRef = useRef(false);
   
   const [pagos, setPagos] = useState<PagoRealizado[]>([]);
   const [showMultiModal, setShowMultiModal] = useState(false);
@@ -338,7 +339,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   };
 
   const ejecutarVenta = async (pagosFinales?: PagoRealizado[]) => {
-    if (state.carrito.length === 0 || isProcessing) return;
+    if (state.carrito.length === 0 || isProcessing || processingRef.current) return;
+    processingRef.current = true;
     setIsProcessing(true);
     try {
       const listadoPagos = pagosFinales || pagos;
@@ -375,12 +377,14 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         description: err?.message || 'La operación fue rechazada para proteger el inventario.'
       });
     } finally {
+      processingRef.current = false;
       setIsProcessing(false);
     }
   };
 
   const ejecutarAbono = async (pagosAbono: PagoRealizado[]) => {
-    if (!showAbonoModal || isProcessing) return;
+    if (!showAbonoModal || isProcessing || processingRef.current) return;
+    processingRef.current = true;
     setIsProcessing(true);
     try {
       const totalAbonado = pagosAbono.reduce((s, p) => s + p.montoUSD, 0);
@@ -434,12 +438,13 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       await updateState({ proximoRecibo: state.proximoRecibo + 1, terminales: state.terminales.map(t => t.id === terminal?.id ? { ...t, proximoRecibo: t.proximoRecibo + 1 } : t) });
       setLastProcessedSale(saleAbono); setShowReceiptModal(true); setShowAbonoModal(null);
     } finally {
+      processingRef.current = false;
       setIsProcessing(false);
     }
   };
 
   const ejecutarVentaACredito = async () => {
-    if (state.carrito.length === 0 || isProcessing) return;
+    if (state.carrito.length === 0 || isProcessing || processingRef.current) return;
 
     let targetClient: Customer | null = selectedClient;
     let createNewClient = false;
@@ -460,6 +465,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
 
     if (!targetClient) return alert("Seleccione un cliente.");
 
+    processingRef.current = true;
     setIsProcessing(true);
     try {
       const terminal = getCurrentTerminal();
@@ -501,6 +507,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         description: err?.message || 'La operación fue rechazada para proteger inventario y cuenta por cobrar.'
       });
     } finally {
+      processingRef.current = false;
       setIsProcessing(false);
     }
   };
