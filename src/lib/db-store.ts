@@ -841,6 +841,211 @@ export const Store = {
     return result;
   },
 
+  async createPurchaseTransaction(params: {
+    purchase: any;
+    items: any[];
+    purchaseDate: string;
+    purchaseDateTime: string;
+    supplier: string;
+    invoiceNumber: string;
+    condition: 'contado' | 'credito' | 'mixto';
+    exchangeRate: number;
+    paidUSD: number;
+    dueDate: string;
+    journal?: any;
+    debt?: any;
+  }): Promise<any> {
+    if (typeof window === 'undefined' || !db) return null;
+
+    const {
+      purchase, items, purchaseDate, purchaseDateTime, supplier, invoiceNumber,
+      condition, exchangeRate, paidUSD, dueDate, journal, debt
+    } = params;
+
+    if (!items?.length) throw new Error('La compra no contiene productos.');
+    if (!invoiceNumber || !supplier) throw new Error('La compra no tiene factura/proveedor.');
+    if (!(Number(exchangeRate) > 0)) throw new Error('La tasa de la compra no es válida.');
+
+    const purchaseRef = doc(db, 'compras', purchase.id);
+    const productIds = [...new Set(items.map((i: any) => String(i.productoId || '')).filter(Boolean))];
+
+    let result: any = null;
+    let journalResult: any = null;
+
+    await runTransaction(db, async tx => {
+      // TODAS las lecturas van antes de cualquier escritura.
+      const purchaseSnap = await tx.get(purchaseRef);
+      if (purchaseSnap.exists()) {
+        throw new Error('Esta compra ya fue registrada en Firestore. Evite duplicarla.');
+      }
+
+      const existingPurchasesSnap = await tx.get(
+        query(collection(db, 'compras'), where('numeroFactura', '==', invoiceNumber))
+      );
+      const duplicatePurchase = existingPurchasesSnap.docs.find(d => {
+        const x = d.data() as any;
+        return String(x.proveedor || '').trim() === supplier &&
+          (!purchaseDate || String(x.fecha || '').slice(0, 10) === String(purchaseDate).slice(0, 10));
+      });
+      if (duplicatePurchase) {
+        throw new Error('Ya existe una compra con la misma factura, proveedor y fecha en otra caja.');
+      }
+
+      const existingDebtsSnap = await tx.get(
+        query(collection(db, 'cxp'), where('numeroFactura', '==', invoiceNumber))
+      );
+      const duplicateDebt = existingDebtsSnap.docs.find(d => {
+        const x = d.data() as any;
+        return String(x.proveedor || '').trim() === supplier &&
+          (!purchaseDate || String(x.fecha || '').slice(0, 10) === String(purchaseDate).slice(0, 10));
+      });
+      if (duplicateDebt) {
+        throw new Error('Ya existe una cuenta por pagar para esta factura y proveedor.');
+      }
+
+      const remoteProducts = new Map<string, any>();
+      const movementDocsByProduct = new Map<string, any[]>();
+
+      for (const pid of productIds) {
+        const productSnap = await tx.get(doc(db, 'productos', pid));
+        if (!productSnap.exists()) {
+          throw new Error('El producto ' + pid + ' ya no existe en Firestore. Actualice el inventario.');
+        }
+        remoteProducts.set(pid, { ...sanitizeForFirestore(productSnap.data()), id: pid });
+
+        const movementSnap = await tx.get(
+          query(collection(db, 'movimientos'), where('productoId', '==', pid))
+        );
+        movementDocsByProduct.set(pid, movementSnap.docs.map(d => ({
+          id: d.id,
+          ref: d.ref,
+          data: sanitizeForFirestore(d.data()) as any
+        })));
+      }
+
+      const writesForProducts = productIds.length;
+      const writesForNewMovements = items.length;
+      const writesForHistoricalMovements = [...movementDocsByProduct.values()]
+        .reduce((n, docs) => n + docs.length, 0);
+      const writesForDebt = debt?.id ? 1 : 0;
+      const writesForJournal = journal?.id ? 1 : 0;
+      const writesPlanned = 1 + writesForProducts + writesForNewMovements +
+        writesForHistoricalMovements + writesForDebt + writesForJournal;
+
+      // Dejamos margen respecto al límite duro de 500 escrituras.
+      if (writesPlanned > 450) {
+        throw new Error('La compra tiene demasiados movimientos históricos para registrarla en una sola transacción. Debe procesarse/revisarse antes de continuar.');
+      }
+
+      const itemsByProduct = new Map<string, any>();
+      for (const item of items) {
+        const pid = String(item.productoId);
+        const prev = itemsByProduct.get(pid);
+        itemsByProduct.set(pid, prev ? {
+          ...prev,
+          cantidad: (Number(prev.cantidad) || 0) + (Number(item.cantidad) || 0),
+          subtotalUSD: (Number(prev.subtotalUSD) || 0) + (Number(item.subtotalUSD) || 0)
+        } : { ...item });
+      }
+
+      // Calculamos el kardex completo de cada producto con el estado REMOTO.
+      // Así una compra registrada desde otra caja no parte del stock viejo de esta terminal.
+      const finalMovementsByProduct = new Map<string, any[]>();
+      const finalProducts = new Map<string, any>();
+
+      for (const pid of productIds) {
+        const product = remoteProducts.get(pid);
+        const incoming = itemsByProduct.get(pid);
+        const existing = [...(movementDocsByProduct.get(pid) || [])]
+          .sort((a, b) => String(a.data.fecha || '').localeCompare(String(b.data.fecha || '')));
+
+        const baseExisting = existing.find(m => String(m.data.tipo || '') !== 'compra' || true);
+        let balance = baseExisting ? Number(baseExisting.data.stockAntes) || 0 : 0;
+
+        const newMovement = {
+          id: String(items.find((i: any) => String(i.productoId) === pid)?.movementId || ('MOV-' + Store.uid())),
+          productoId: pid,
+          tipo: 'compra',
+          cantidad: Number(incoming.cantidad) || 0,
+          stockAntes: 0,
+          stockDespues: 0,
+          fecha: purchaseDateTime,
+          referencia: `COMPRA FACT: ${invoiceNumber} - PROV: ${supplier}`,
+          terminalId: String(purchase.terminalId || 'ADMIN')
+        };
+
+        const combined = [
+          ...existing.map(m => ({ id: m.id, ref: m.ref, data: m.data })),
+          { id: newMovement.id, ref: doc(db, 'movimientos', newMovement.id), data: newMovement }
+        ].sort((a, b) => String(a.data.fecha || '').localeCompare(String(b.data.fecha || '')));
+
+        let running = balance;
+        const recalculated = combined.map(entry => {
+          const before = running;
+          const after = before + (Number(entry.data.cantidad) || 0);
+          running = after;
+          return {
+            ...entry,
+            data: { ...entry.data, stockAntes: before, stockDespues: after }
+          };
+        });
+
+        finalMovementsByProduct.set(pid, recalculated);
+
+        const currentStock = Number(product.stock) || 0;
+        const incomingQty = Number(incoming.cantidad) || 0;
+        const newStock = currentStock + incomingQty;
+        const currentCost = Number(product.costoUSD) || 0;
+        const incomingCost = Number(incoming.costoUnitarioUSD) || 0;
+        const newCost = newStock > 0
+          ? Math.round((((currentStock * currentCost) + (incomingQty * incomingCost)) / newStock + Number.EPSILON) * 10000) / 10000
+          : incomingCost;
+
+        finalProducts.set(pid, { ...product, stock: newStock, costoUSD: newCost });
+      }
+
+      // Escrituras: compra + productos + kardex + CxP + asiento.
+      tx.set(purchaseRef, sanitizeForFirestore(purchase), { merge: false });
+
+      for (const [pid, product] of finalProducts) {
+        tx.set(doc(db, 'productos', pid), sanitizeForFirestore(product), { merge: true });
+      }
+
+      for (const [pid, entries] of finalMovementsByProduct) {
+        const existingIds = new Set((movementDocsByProduct.get(pid) || []).map(m => m.id));
+        for (const entry of entries) {
+          if (existingIds.has(entry.id)) {
+            tx.set(entry.ref, sanitizeForFirestore(entry.data), { merge: true });
+          } else {
+            tx.set(entry.ref, sanitizeForFirestore(entry.data), { merge: false });
+          }
+        }
+      }
+
+      if (debt?.id) {
+        tx.set(doc(db, 'cxp', debt.id), sanitizeForFirestore(debt), { merge: false });
+      }
+      if (journal?.id) {
+        tx.set(doc(db, 'libroDiario', journal.id), sanitizeForFirestore(journal), { merge: false });
+        journalResult = journal;
+      }
+
+      result = {
+        purchase,
+        debt: debt || null,
+        journal: journal || null,
+        productIds,
+        movementCount: items.length
+      };
+    });
+
+    // CxP y productos/movimientos/compras se mantienen por snapshots autoritativos.
+    if (journalResult?.id) {
+      applyPatch({ libroDiario: mergeById(cache.libroDiario, [journalResult]) });
+    }
+    return result;
+  },
+
   async deletePurchaseTransaction(params: {
     purchaseId?: string;
     invoiceNumber: string;
