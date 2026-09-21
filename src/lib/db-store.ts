@@ -4,14 +4,14 @@ import { AppState, Terminal, Movimiento } from './types';
 import { enqueueOfflineOperation, registerOfflineProcessor } from './offline-queue';
 import { db, rtdb } from './firebase';
 import {
-  collection, doc, getDoc, getDocs, getCountFromServer, onSnapshot, orderBy, limit, query, setDoc, where,
+  collection, doc, getDoc, getDocs, onSnapshot, orderBy, limit, query, setDoc, where,
   writeBatch, runTransaction, startAfter
 } from "firebase/firestore";
 import type { DocumentData, QueryDocumentSnapshot } from "firebase/firestore";
 import { onValue, ref, update, remove, get as rtdbGet } from "firebase/database";
 
 const STORAGE_KEY = 'posven_pro_session_data_cache';
-const PAGE_SIZE = 10;
+const PAGE_SIZE = 50;
 const CONFIG_COLLECTION = 'config';
 const CONFIG_DOC_ID = 'general';
 const CATALOGOS_COLLECTION = 'catalogos';
@@ -486,15 +486,11 @@ async function bootstrapProductos(): Promise<void> {
     }
 
     applyPatch({ productos: mergeById((cache as any).productos, mirrorItems) });
-    const count = await getCountFromServer(query(collection(db, 'productos'))).catch(() => null);
-    if (count && count.data().count !== mirrorItems.length) {
-      const items = await loadCollection('productos');
-      if (items.length > 0) {
-        const updates: Record<string, any> = {};
-        items.forEach(p => { updates[String(p.id)] = sanitizeForFirestore(p); });
-        await update(ref(rtdb, RTDB_PRODUCTS_PATH), updates);
-      }
-    }
+    // Si el espejo ya existe, RTDB es el canal realtime de productos.
+    // No hacemos un count() de Firestore en cada arranque: es una lectura
+    // adicional innecesaria. El saneado completo se ejecuta solo cuando
+    // el espejo está vacío; las escrituras normales mantienen ambos lados.
+
   } catch (e) {
     console.error('bootstrapProductos:', e);
   }
@@ -581,8 +577,8 @@ async function ensureReportData(): Promise<void> {
     ensureLoaded('terminales'),
     ensureLoaded('clientes'),
   ]);
-  // ✅ Pequeño delay para asegurar que el listener en tiempo real también actualice
-  await new Promise(resolve => setTimeout(resolve, 500));
+  // Los listeners ya entregan sus snapshots; no necesitamos esperar artificialmente.
+
 }
 
 // Siguiente página (10) de una colección ordenada por fecha desc (listas históricas).
@@ -777,9 +773,11 @@ function init() {
   //    (cada caja filtra por su propio corte Z, así que ninguna puede perder datos
   //    porque otra caja cierre el suyo). El resto del histórico se carga bajo
   //    demanda cuando se abre el módulo que lo necesita.
-  ['cxc', 'cxp', 'clientes', 'proveedores', 'terminales', 'devoluciones', 'anulaciones', 'reportesZ', 'caja', 'compras'].forEach(ensureLoaded);
-  ensureLoaded('ventas');
-  ensureLoaded('libroDiario');
+  // Los listeners ya entregan el snapshot inicial de estas colecciones.
+  // No hacemos un getDocs() inmediatamente después: sería una segunda lectura
+  // de los mismos documentos al arrancar. Los históricos se cargan bajo demanda
+  // cuando el módulo correspondiente los necesita.
+
 
   // 5) CATÁLOGOS
   loadCatalogs();
