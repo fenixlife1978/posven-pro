@@ -808,11 +808,16 @@ export const Store = {
       if (sale?.id) tx.set(doc(db, 'ventas', sale.id), sanitizeForFirestore(sale), { merge: true });
       result = { ...updated, appliedUSD: applied };
     });
-    applyPatch({
-      [collectionName]: mergeById((cache as any)[collectionName], [result]),
-      ...(journal ? { libroDiario: mergeById(cache.libroDiario, Array.isArray(journal) ? journal : [journal]) } : {}),
-      ...(sale?.id ? { ventas: mergeById(cache.ventas, [sale]) } : {})
-    } as Partial<AppState>);
+    // CxC/CxP se actualizan exclusivamente por sus snapshots completos autoritativos.
+    // No parcheamos aquí el resultado local: un snapshot remoto puede haber llegado
+    // inmediatamente antes y el resultado de esta transacción sería una versión
+    // potencialmente antigua para la UI de esta caja.
+    if (journal) {
+      applyPatch({ libroDiario: mergeById(cache.libroDiario, Array.isArray(journal) ? journal : [journal]) });
+    }
+    if (sale?.id) {
+      applyPatch({ ventas: mergeById(cache.ventas, [sale]) });
+    }
     return result;
   },
 
