@@ -75,6 +75,19 @@ export default function CxPModule({ state, updateState, terminalId }: CxPModuleP
   const pendientes = (state.cxp || []).filter(esDeudaActiva);
   const totalPendiente = pendientes.reduce((s: number, x: Debt) => s + x.saldoUSD, 0);
 
+  // Si el residuo en USD es menor a un centavo pero todavía representa
+  // bolívares por la tasa vigente, mostramos ambos importes para no ocultar
+  // diferencias de redondeo: "$0.00 (Bs. 2,06)".
+  const fmtSaldoCxP = (saldoUSD: number) => {
+    const usd = Number(saldoUSD) || 0;
+    const bs = usd * (Number(state.tasa) || 0);
+    const usdVisible = Utils.fmtUSD(usd);
+    if (usd > 0 && usdVisible === '$0.00' && bs > 0) {
+      return `${usdVisible} (${Utils.fmtBS(bs)})`;
+    }
+    return usdVisible;
+  };
+
   // Agrupar cuentas por pagar por proveedor (SOLO las que tienen deuda real activa,
   // excluyendo pagadas/neutrales de $0.00, en orden cronológico).
   const gruposProveedor = React.useMemo(() => {
@@ -515,7 +528,7 @@ export default function CxPModule({ state, updateState, terminalId }: CxPModuleP
                                   </td>
                                   <td className="text-ink font-black text-xs py-3 mono">{x.numeroFactura || '-'}</td>
                                   <td className="text-ink font-black text-xs text-right py-3 mono">{Utils.fmtUSD(x.montoUSD)}</td>
-                                  <td className="text-brand-gold-deep font-black text-sm text-right py-3 mono">{Utils.fmtUSD(x.saldoUSD)}</td>
+                                  <td className="text-brand-gold-deep font-black text-sm text-right py-3 mono">{fmtSaldoCxP(x.saldoUSD)}</td>
                                   <td className="py-3 px-6 text-center">
                                     <div className="flex justify-center items-center gap-3">
                                       <button onClick={() => setShowDetails(x)} className="w-9 h-9 rounded-full flex items-center justify-center bg-white text-status-success border-2 border-status-success/20 hover:bg-status-success hover:text-white transition-all shadow-md" title="Ver Historial Detallado">
@@ -656,7 +669,7 @@ export default function CxPModule({ state, updateState, terminalId }: CxPModuleP
                  </div>
                  <div className="p-3 bg-brand-gold-soft border border-brand-gold/20 rounded-lg">
                     <label className="text-[8px] font-black uppercase text-brand-gold-deep block mb-1">Saldo Actual</label>
-                    <p className="text-lg font-black text-brand-gold-deep">{Utils.fmtUSD(showDetails.saldoUSD)}</p>
+                    <p className="text-lg font-black text-brand-gold-deep">{fmtSaldoCxP(showDetails.saldoUSD)}</p>
                  </div>
               </div>
 
@@ -751,7 +764,7 @@ export default function CxPModule({ state, updateState, terminalId }: CxPModuleP
             <div className="modal-body p-8 space-y-6 bg-white">
                <div className="bg-surface-soft p-8 rounded-[20px] text-center border border-line shadow-inner">
                   <p className="text-ink text-[9px] font-black uppercase tracking-[0.2em] mb-2">SALDO PENDIENTE</p>
-                  <p className="text-3xl font-black text-status-danger">{Utils.fmtUSD(showPaymentModal.saldoUSD)}</p>
+                  <p className="text-3xl font-black text-status-danger">{fmtSaldoCxP(showPaymentModal.saldoUSD)}</p>
                   <p className="text-sm font-black text-ink mt-1 uppercase tracking-tight italic">Equiv. {Utils.fmtBS(showPaymentModal.saldoUSD * state.tasa)}</p>
                </div>
                
