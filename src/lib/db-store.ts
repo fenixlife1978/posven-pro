@@ -344,10 +344,12 @@ function syncProductosTransactional(prevArr: any[] | undefined, newArr: any[] | 
       tx.delete(doc(db, 'productos', id));
     }
     return finalStocks;
-  }).catch(async (e) => {
+  }).catch((e) => {
+    // No hacemos fallback a escrituras por fuera de la transacción:
+    // si la transacción falla por concurrencia, repetir la escritura con el
+    // array local podría pisar cambios hechos por otra caja.
     console.error("Error transaccional productos:", e);
-    await syncArrayToCollection('productos', prevArr, newArr);
-    return undefined;
+    throw e;
   });
 }
 
@@ -2316,6 +2318,11 @@ export const Store = {
     }
 
     // 2) CATÁLOGOS
+    // Los documentos del catálogo y su versión se publican en secuencia:
+    // primero deben persistir los cambios y solo después se actualiza la
+    // versión local/remota. Así una caja no puede marcar una versión como
+    // vigente si el catálogo remoto falló.
+    const catalogJobs: Promise<unknown>[] = [];
     let catalogosChanged = false;
     for (const [field, catName] of Object.entries(CATALOG_FIELDS)) {
       if ((patch as any)[field] === undefined) continue;
@@ -2323,19 +2330,24 @@ export const Store = {
       const prevList = (prev as any)[field] || [];
       if (JSON.stringify(prevList) !== JSON.stringify(newList)) {
         catalogosChanged = true;
-        jobs.push(setDoc(doc(db, CATALOGOS_COLLECTION, catName), { lista: sanitizeForFirestore(newList) })
-          .catch(e => console.error("Error persistiendo catálogo " + catName + ":", e)));
+        catalogJobs.push(
+          setDoc(doc(db, CATALOGOS_COLLECTION, catName), { lista: sanitizeForFirestore(newList) })
+        );
       }
     }
 
-    // Si un terminal modifica un catálogo, publica una única versión en
-    // config/general para que las demás cajas invaliden su caché sin tener
-    // que leer los 13 documentos de catalogos en cada arranque.
     if (catalogosChanged) {
       const catalogVersion = new Date().toISOString();
-      writeCatalogCacheMeta(catalogVersion);
-      jobs.push(setDoc(doc(db, CONFIG_COLLECTION, CONFIG_DOC_ID), { catalogosVersion: catalogVersion }, { merge: true })
-        .catch(e => console.error("Error actualizando versión de catálogos:", e)));
+      jobs.push(
+        Promise.all(catalogJobs)
+          .then(() => setDoc(
+            doc(db, CONFIG_COLLECTION, CONFIG_DOC_ID),
+            { catalogosVersion: catalogVersion },
+            { merge: true }
+          ))
+          .then(() => writeCatalogCacheMeta(catalogVersion))
+          .catch(e => console.error("Error persistiendo catálogo/version:", e))
+      );
     }
 
     // 3) CONFIG (config/general) — solo campos que cambiaron
