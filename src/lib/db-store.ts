@@ -1952,7 +1952,6 @@ export const Store = {
       }
 
       const movementDocs: any[] = [...movementDocsByProduct.values()].flat();
-      const movementMatchIds = new Set(movementMatches.map(d => d.id));
 
       const paymentJournalIds = new Set<string>();
       linkedDebts.forEach(d => {
