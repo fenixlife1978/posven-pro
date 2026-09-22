@@ -33,7 +33,8 @@ interface CxPModuleProps {
   terminalId?: string;
 }
 
-export default function CxPModule({ state, updateState, terminalId }: CxPModuleProps) {
+export default function CxPModule({
+  useEffect(() => { Store.ensureLoaded('cxp'); }, []); state, updateState, terminalId }: CxPModuleProps) {
   const [showDetails, setShowDetails] = useState<any>(null);
   const [showPaymentModal, setShowPaymentModal] = useState<any>(null);
   const [paymentAmount, setPaymentAmount] = useState('');
