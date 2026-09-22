@@ -8,7 +8,7 @@ import {
   writeBatch, runTransaction, startAfter
 } from "firebase/firestore";
 import type { DocumentData, QueryDocumentSnapshot } from "firebase/firestore";
-import { onValue, ref, update, remove, get as rtdbGet } from "firebase/database";
+import { onValue, ref, update, get as rtdbGet } from "firebase/database";
 
 const STORAGE_KEY = 'posven_pro_session_data_cache';
 const PAGE_SIZE = 50;
