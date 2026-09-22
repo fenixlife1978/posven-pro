@@ -66,6 +66,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   const [showMultiModal, setShowMultiModal] = useState(false);
   
   const [showAbonoModal, setShowAbonoModal] = useState<Debt | null>(null);
+  const [globalCustomer, setGlobalCustomer] = useState<{ name: string; cedula?: string; totalUSD: number; totalBS: number } | null>(null);
   const [globalCreditCustomer, setGlobalCreditCustomer] = useState<{ name: string; cedula?: string; totalUSD: number; totalBS: number } | null>(null);
   
   const [showDetails, setShowDetails] = useState<any | null>(null);
@@ -263,6 +264,41 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     });
     return groups;
   }, [state.cxc]);
+
+  const handleOpenGlobalPayment = (clientName: string, group: { totalUSD: number; debts: Debt[] }) => {
+    const activeDebts = group.debts.filter(esDeudaActiva);
+    if (activeDebts.length <= 1) return;
+    const totalUSD = activeDebts.reduce((s, d) => s + saldoActualDeuda(d), 0);
+    if (totalUSD <= 0.001) return;
+    const cedulaMatch = String(activeDebts[0]?.cliente || '').match(/\[([^\]]+)\]\s*$/);
+    setGlobalCustomer({ name: clientName.split(' [')[0], cedula: cedulaMatch?.[1]?.trim(), totalUSD, totalBS: totalUSD * state.tasa });
+  };
+
+  const handleProcessGlobalPayment = async (payments: any[]) => {
+    if (!globalCustomer || isProcessing || processingRef.current) return;
+    const totalUSD = payments.reduce((s, p) => s + (Number(p.usdAmount) || (Number(p.amount) || 0) / state.tasa), 0);
+    const totalBS = payments.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+    if (totalUSD <= 0 || totalBS <= 0) return;
+    processingRef.current = true;
+    setIsProcessing(true);
+    try {
+      const ahora = Utils.ahora();
+      const reciboProvisional = 'PEND-CXC-' + Store.uid().toUpperCase().slice(0, 8);
+      const pagoBase = { id: reciboProvisional, fecha: ahora, montoUSD: totalUSD, montoBS: totalBS, metodo: payments.length > 1 ? 'mixto' : payments[0].method, reciboId: reciboProvisional, tasaAplicada: state.tasa };
+      const journal = { id: 'ACC-' + Store.uid().toUpperCase().slice(0, 5), fecha: ahora, tipo: 'ingreso', categoria: 'COBRO_DEUDA', concepto: `PAGO GLOBAL CXC: ${globalCustomer.name.toUpperCase()} - LIQUIDACIÓN POR ORDEN DE ANTIGÜEDAD`, montoUSD: totalUSD, montoBS: totalBS, metodo: pagoBase.metodo, referencia: reciboProvisional, terminalId: currentTerminal?.id };
+      const resultado = await Store.applyGlobalCustomerPaymentTransaction({ customerName: globalCustomer.name, customerCedula: globalCustomer.cedula, amountUSD: totalUSD, amountBS: totalBS, payment: pagoBase, journal, terminalId: currentTerminal?.id });
+      if (!resultado || resultado.appliedUSD <= 0.000001) throw new Error('No hay saldo pendiente del cliente o la información cambió en otra caja.');
+      const aplicadoBS = Number(resultado.appliedBS) || 0;
+      const remanenteUSD = Math.max(0, totalUSD - Number(resultado.appliedUSD || 0));
+      toast({ title: 'Pago global registrado', description: `${Utils.fmtUSD(resultado.appliedUSD)} (${Utils.fmtBS(aplicadoBS)}) aplicado a ${resultado.debts.length} factura(s)${remanenteUSD > 0.000001 ? ' · excedente sin aplicar' : ''}.` });
+      setGlobalCustomer(null);
+    } catch (e: any) {
+      toast({ variant: 'destructive', title: 'No se pudo registrar el pago global', description: e?.message || 'Las cuentas cambiaron en otra caja. Actualice y vuelva a intentar.' });
+    } finally {
+      processingRef.current = false;
+      setIsProcessing(false);
+    }
+  };
 
   const getStockDisponible = (p: Product) => {
     let avail = p.stock || 0;
@@ -903,6 +939,10 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       {showReceiptModal && (<ReceiptModal isOpen={showReceiptModal} onClose={() => { setShowReceiptModal(false); setLastProcessedSale(null); }} saleData={lastProcessedSale} type="SALE" />)}
       {showReportType && reportSnapshot && (<ReceiptModal isOpen={!!showReportType} onClose={() => { if (showReportType === 'REPORT_Z') ejecutarCierreZ(); setShowReportType(null); }} reportData={reportSnapshot} type={showReportType} />)}
       {showMultiModal && (<FloatingPaymentModal total={totalBS} totalCents={Math.round(totalBS * 100)} exchangeRate={state.tasa} onClose={() => setShowMultiModal(false)} onConfirm={(data) => { ejecutarVenta(data.payments.map(p => ({ metodo: p.method as PaymentMethod, montoUSD: p.usdAmount || (p.amount / state.tasa), montoBS: p.amount }))); setShowMultiModal(false); }} />)}
+      {globalCustomer && (
+        <FloatingPaymentModal total={globalCustomer.totalBS} totalCents={Math.round(globalCustomer.totalBS * 100)} exchangeRate={state.tasa} allowPartial={true} onClose={() => setGlobalCustomer(null)} onConfirm={(data) => { void handleProcessGlobalPayment(data.payments); }} />
+      )}
+
       {showAbonoModal && (<FloatingPaymentModal total={showAbonoModal.saldoUSD * state.tasa} totalCents={Math.round(showAbonoModal.saldoUSD * state.tasa * 100)} exchangeRate={state.tasa} onClose={() => setShowAbonoModal(null)} allowPartial={true} onConfirm={(data) => { ejecutarAbono(data.payments.map(p => ({ metodo: p.method as PaymentMethod, montoUSD: p.usdAmount || (p.amount / state.tasa), montoBS: p.amount }))); }} />)}
       {globalCreditCustomer && (
         <FloatingPaymentModal
@@ -1038,6 +1078,11 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                           </td>
                           <td className="p-4 text-center">
                              <button onClick={() => setShowDetails(d)} className="w-10 h-10 rounded-full flex items-center justify-center bg-white text-status-success border-2 border-status-success/20 hover:bg-status-success hover:text-white transition-all shadow-md"><Eye className="w-5 h-5"/></button>
+                             {group.debts.filter(esDeudaActiva).length > 1 && (
+                               <button onClick={() => handleOpenGlobalPayment(clientName, group)} className="w-10 h-10 rounded-full flex items-center justify-center bg-white text-brand-gold-deep border-2 border-brand-gold/20 hover:bg-brand-gold hover:text-black transition-all shadow-md" title="Pago Global">
+                                 <HandCoins className="w-5 h-5" />
+                               </button>
+                             )}
                           </td>
                         </tr>
                       ))}
