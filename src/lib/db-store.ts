@@ -649,6 +649,44 @@ async function ensureReportData(terminalId?: string, cutoff?: string): Promise<v
   ]);
 }
 
+async function ensureReportRange(name: string, desde: string, hasta: string, terminalId = 'all'): Promise<void> {
+  if (!db || !COLLECTIONS[name] || !desde || !hasta) return;
+
+  const start = String(desde) + 'T00:00:00.000';
+  const endDate = new Date(String(hasta) + 'T00:00:00.000');
+  endDate.setDate(endDate.getDate() + 1);
+  const end = endDate.toISOString().slice(0, 23);
+  const key = `report-range:${name}:${terminalId}:${desde}:${hasta}`;
+  if (SINCE_STAMP[key] === 'done') return;
+
+  try {
+    const filters: any[] = [
+      where('fecha', '>=', start),
+      where('fecha', '<', end),
+    ];
+    if (terminalId !== 'all') {
+      filters.push(where('terminalId', '==', terminalId));
+    }
+
+    let cursor: QueryDocumentSnapshot | null = null;
+    while (true) {
+      const q = cursor
+        ? query(collection(db, COLLECTIONS[name]), ...filters, orderBy('fecha', 'asc'), startAfter(cursor), limit(1000))
+        : query(collection(db, COLLECTIONS[name]), ...filters, orderBy('fecha', 'asc'), limit(1000));
+      const snap = await getDocs(q);
+      const items = snap.docs.map(d => sanitizeForFirestore(d.data())).filter(Boolean);
+      if (items.length) applyPatch({ [name]: mergeById((cache as any)[name], items) });
+      if (snap.docs.length < 1000) break;
+      cursor = snap.docs[snap.docs.length - 1];
+    }
+
+    SINCE_STAMP[key] = 'done';
+  } catch (e) {
+    console.error("Error cargando rango de reporte " + name + ":", e);
+    throw e;
+  }
+}
+
 // Siguiente página (10) de una colección ordenada por fecha desc (listas históricas).
 async function loadMore(name: string, pageSize: number = PAGE_SIZE): Promise<number> {
   const col = COLLECTIONS[name];
@@ -2321,6 +2359,7 @@ export const Store = {
 
   loadMore,
   ensureLoaded,
+  ensureReportRange,
   startMasterSync,
   syncMasterSync,
   startTerminalSync,
