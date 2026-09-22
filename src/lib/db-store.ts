@@ -71,6 +71,8 @@ function terminalSeries(prefix: string, label: string, number: number, width = 6
   return prefix + '-' + label + '-' + String(number).padStart(width, '0');
 }
 
+const CATALOG_CACHE_META_KEY = 'posven_pro_catalog_cache_meta_v1';
+
 const CATALOG_FIELDS: Record<string, string> = {
   categorias: 'categorias',
   departamentos: 'departamentos',
@@ -659,18 +661,58 @@ async function kardex(productoId: string, max = 100): Promise<any[]> {
   }
 }
 
-async function loadCatalogs() {
+function readCatalogCacheMeta(): { ready: boolean; version: string } {
+  if (typeof window === 'undefined') return { ready: false, version: '' };
+  try {
+    const raw = localStorage.getItem(CATALOG_CACHE_META_KEY);
+    if (!raw) return { ready: false, version: '' };
+    const parsed = JSON.parse(raw);
+    return {
+      ready: parsed?.ready === true,
+      version: String(parsed?.version || '')
+    };
+  } catch {
+    return { ready: false, version: '' };
+  }
+}
+
+function writeCatalogCacheMeta(version: string): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(CATALOG_CACHE_META_KEY, JSON.stringify({
+      ready: true,
+      version: String(version || ''),
+      updatedAt: Date.now()
+    }));
+  } catch {
+    // La caché principal sigue funcionando aunque localStorage no esté disponible.
+  }
+}
+
+async function loadCatalogs(force = false, version = ''): Promise<void> {
   if (!db) return;
-  const patch: any = {};
-  for (const [field, catName] of Object.entries(CATALOG_FIELDS)) {
+
+  const meta = readCatalogCacheMeta();
+  if (!force && meta.ready && (!version || meta.version === version)) return;
+
+  const entries = Object.entries(CATALOG_FIELDS);
+  const results = await Promise.all(entries.map(async ([field, catName]) => {
     try {
       const snap = await getDoc(doc(db, CATALOGOS_COLLECTION, catName));
-      if (snap.exists()) patch[field] = snap.data().lista || [];
+      return [field, snap.exists() ? (snap.data().lista || []) : []] as const;
     } catch (e) {
       console.warn("Catálogo " + catName + ":", e);
+      return null;
     }
-  }
+  }));
+
+  const patch: any = {};
+  results.forEach(result => {
+    if (result) patch[result[0]] = result[1];
+  });
+
   if (Object.keys(patch).length > 0) applyPatch(patch);
+  writeCatalogCacheMeta(version || meta.version);
 }
 
 // ============================================================
@@ -792,6 +834,14 @@ function init() {
       if (val[f] !== undefined) patch[f] = sanitizeForFirestore(val[f]);
     }
     if (Object.keys(patch).length > 0) applyPatch(patch);
+
+    // Los catálogos son relativamente estáticos. Solo se vuelven a leer cuando
+    // su versión cambió en config/general, o cuando esta caja aún no tiene caché.
+    const remoteCatalogVersion = String(val.catalogosVersion || '');
+    const catalogMeta = readCatalogCacheMeta();
+    if (!catalogMeta.ready || (remoteCatalogVersion && catalogMeta.version !== remoteCatalogVersion)) {
+      void loadCatalogs(true, remoteCatalogVersion);
+    }
   }, (err) => { if (err.code !== 'permission-denied') console.warn("Sync config:", err); }));
 
   // 2) PRODUCTOS (tiempo real vía RTDB: el espejo evita re-leer la colección en cada venta).
@@ -895,7 +945,8 @@ function init() {
 
 
   // 5) CATÁLOGOS
-  loadCatalogs();
+  // Se hidratan desde la caché local. Si config/general detecta una versión
+  // nueva, el listener anterior ejecuta loadCatalogs() de forma controlada.
 }
 
 // ============================================================
@@ -2150,14 +2201,26 @@ export const Store = {
     }
 
     // 2) CATÁLOGOS
+    let catalogosChanged = false;
     for (const [field, catName] of Object.entries(CATALOG_FIELDS)) {
       if ((patch as any)[field] === undefined) continue;
       const newList = (patch as any)[field] || [];
       const prevList = (prev as any)[field] || [];
       if (JSON.stringify(prevList) !== JSON.stringify(newList)) {
+        catalogosChanged = true;
         jobs.push(setDoc(doc(db, CATALOGOS_COLLECTION, catName), { lista: sanitizeForFirestore(newList) })
           .catch(e => console.error("Error persistiendo catálogo " + catName + ":", e)));
       }
+    }
+
+    // Si un terminal modifica un catálogo, publica una única versión en
+    // config/general para que las demás cajas invaliden su caché sin tener
+    // que leer los 13 documentos de catalogos en cada arranque.
+    if (catalogosChanged) {
+      const catalogVersion = new Date().toISOString();
+      writeCatalogCacheMeta(catalogVersion);
+      jobs.push(setDoc(doc(db, CONFIG_COLLECTION, CONFIG_DOC_ID), { catalogosVersion: catalogVersion }, { merge: true })
+        .catch(e => console.error("Error actualizando versión de catálogos:", e)));
     }
 
     // 3) CONFIG (config/general) — solo campos que cambiaron
