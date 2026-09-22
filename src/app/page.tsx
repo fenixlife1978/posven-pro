@@ -237,14 +237,15 @@ export default function LicoreriaPOS() {
   }, [router]);
 
   // Maestros bajo demanda: solo mantienen realtime mientras el módulo que los necesita está abierto.
-  // Esto evita que cada caja escuche clientes/proveedores completos durante toda la jornada.
+  // El sincronizador conserva el listener si el siguiente módulo también lo necesita,
+  // evitando repetir el snapshot completo de clientes/proveedores al navegar.
   useEffect(() => {
     const clientesModules = new Set(['dashboard', 'ventas', 'cxc']);
     const proveedoresModules = new Set(['compras', 'proveedores', 'cxp']);
-    const cleanups: Array<() => void> = [];
-    if (clientesModules.has(activeModule)) cleanups.push(Store.startMasterSync('clientes'));
-    if (proveedoresModules.has(activeModule)) cleanups.push(Store.startMasterSync('proveedores'));
-    return () => cleanups.forEach(fn => fn());
+    const wanted: string[] = [];
+    if (clientesModules.has(activeModule)) wanted.push('clientes');
+    if (proveedoresModules.has(activeModule)) wanted.push('proveedores');
+    Store.syncMasterSync(wanted);
   }, [activeModule]);
 
   // LÓGICA DE NOTIFICACIONES CXP (CADA 6 HORAS / 72H VENCIMIENTO)
