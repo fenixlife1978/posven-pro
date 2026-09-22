@@ -175,11 +175,13 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   };
 
   const [reportLoading, setReportLoading] = useState(false);
+  const [reportLoadingType, setReportLoadingType] = useState<'REPORT_X' | 'REPORT_Z' | null>(null);
 
   const handleOpenReport = async (type: 'REPORT_X' | 'REPORT_Z') => {
     // Si el reporte ya está abierto, no hacer nada.
     if (showReportType) return;
     setReportLoading(true);
+    setReportLoadingType(type);
     try {
       // Garantiza que ventas/devoluciones/libroDiario/etc. estén cargados
       // desde Firestore antes de calcular. Evita el bug de "$0" tras reinicio
@@ -204,9 +206,12 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       setShowReportType(type);
     } catch (e) {
       console.error('Error abriendo reporte X/Z:', e);
-      toast({ variant: 'destructive', title: 'Error', description: 'No se pudieron cargar los datos del reporte. Reintenta.' });
+      const message = e instanceof Error ? e.message : String(e || 'Error desconocido');
+      console.error('Detalle Reporte X/Z:', message);
+      toast({ variant: 'destructive', title: 'Error', description: `No se pudieron cargar los datos del reporte: ${message}` });
     } finally {
       setReportLoading(false);
+      setReportLoadingType(null);
     }
   };
 
@@ -535,8 +540,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         <button onClick={() => setView('pos')} className={`btn btn-sm ${view === 'pos' ? 'btn-primary shadow-md' : 'bg-white text-ink font-bold border-line border'}`}><ShoppingCart className="w-3.5 h-3.5"/> Punto de Venta</button>
         <button onClick={() => setView('history')} className={`btn btn-sm ${view === 'history' ? 'btn-primary shadow-md' : 'bg-white text-ink font-bold border-line border'}`}><History className="w-3.5 h-3.5"/> Historial</button>
         <button onClick={() => setView('credits')} className={`btn btn-sm ${view === 'credits' ? 'btn-primary shadow-md' : 'bg-white text-ink font-bold border-line border'}`}><ClipboardList className="w-3.5 h-3.5"/> Consultar Créditos</button>
-        <button onClick={() => handleOpenReport('REPORT_X')} disabled={reportLoading} className="btn btn-sm bg-white text-ink font-bold border-line border disabled:opacity-50"><FileText className="w-3.5 h-3.5"/> {reportLoading ? 'Cargando…' : 'Reporte X'}</button>
-        <button onClick={() => handleOpenReport('REPORT_Z')} disabled={reportLoading} className="btn btn-sm bg-white text-ink font-bold border-line border disabled:opacity-50"><Receipt className="w-3.5 h-3.5"/> {reportLoading ? 'Cargando…' : 'Reporte Z'}</button>
+        <button onClick={() => handleOpenReport('REPORT_X')} disabled={reportLoading} className="btn btn-sm bg-white text-ink font-bold border-line border disabled:opacity-50"><FileText className="w-3.5 h-3.5"/> {reportLoadingType === 'REPORT_X' ? 'Cargando…' : 'Reporte X'}</button>
+        <button onClick={() => handleOpenReport('REPORT_Z')} disabled={reportLoading} className="btn btn-sm bg-white text-ink font-bold border-line border disabled:opacity-50"><Receipt className="w-3.5 h-3.5"/> {reportLoadingType === 'REPORT_Z' ? 'Cargando…' : 'Reporte Z'}</button>
         <button onClick={() => setView('returns')} className={`btn btn-sm ${view === 'returns' ? 'btn-primary shadow-md' : 'bg-white text-ink font-bold border-line border'}`}><RotateCcw className="w-3.5 h-3.5"/> Devoluciones y Anulaciones</button>
         
         {view === 'pos' && (
