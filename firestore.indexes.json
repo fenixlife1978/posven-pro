@@ -41,6 +41,20 @@
           "order": "ASCENDING"
         }
       ]
+    },
+    {
+      "collectionGroup": "reportesZ",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "terminalId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "ASCENDING"
+        }
+      ]
     }
   ],
   "fieldOverrides": []
