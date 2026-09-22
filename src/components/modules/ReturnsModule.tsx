@@ -23,7 +23,7 @@ import {
 import { toast } from '@/hooks/use-toast';
 
 export default function ReturnsModule({ state, updateState, onBackToPOS, terminalId }: { state: AppState, updateState: (s: Partial<AppState>) => void, onBackToPOS: () => void, terminalId?: string }) {
-  useEffect(() => { Store.ensureLoaded('ventas'); }, []);
+  useEffect(() => {\n    // Ventas y devoluciones históricas se cargan solo al entrar al módulo.\n    Store.ensureLoaded('ventas');\n    Store.ensureLoaded('devoluciones');\n    Store.ensureLoaded('anulaciones');\n  }, []);
   const [view, setView] = useState<'list' | 'create'>('list');
   const [saleSearch, setSaleSearch] = useState('');
   const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
