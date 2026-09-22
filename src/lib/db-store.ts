@@ -1414,14 +1414,29 @@ export const Store = {
         }
         remoteProducts.set(pid, { ...sanitizeForFirestore(productSnap.data()), id: pid });
 
-        const movementSnap = await tx.get(
-          query(collection(db, 'movimientos'), where('productoId', '==', pid))
-        );
-        movementDocsByProduct.set(pid, movementSnap.docs.map(d => ({
-          id: d.id,
-          ref: d.ref,
-          data: sanitizeForFirestore(d.data()) as any
-        })));
+        // Optimización: una compra normalmente se agrega al final del kardex.
+        // Primero consultamos solo el último movimiento. Solo si la compra está
+        // fechada antes (o exactamente en la misma marca de tiempo) descargamos
+        // el historial completo para reconstruir stockAntes/stockDespues.
+        const latestSnap = await tx.get(query(
+          collection(db, 'movimientos'),
+          where('productoId', '==', pid),
+          orderBy('fecha', 'desc'),
+          limit(1)
+        ));
+        const latestFecha = latestSnap.empty ? '' : String((latestSnap.docs[0].data() as any).fecha || '');
+        if (!latestFecha || String(purchaseDateTime) > latestFecha) {
+          movementDocsByProduct.set(pid, []);
+        } else {
+          const movementSnap = await tx.get(
+            query(collection(db, 'movimientos'), where('productoId', '==', pid))
+          );
+          movementDocsByProduct.set(pid, movementSnap.docs.map(d => ({
+            id: d.id,
+            ref: d.ref,
+            data: sanitizeForFirestore(d.data()) as any
+          })));
+        }
       }
 
       const writesForProducts = productIds.length;
