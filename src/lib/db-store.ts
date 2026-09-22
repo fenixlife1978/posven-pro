@@ -283,7 +283,6 @@ async function syncArrayToCollection(name: string, prevArr: any[] | undefined, n
           throw new Error('Conflicto de sincronización: el registro ' + item.id + ' ya existe en Firestore.');
         }
         tx.set(ref, sanitizeForFirestore(item.after), { merge: true });
-        FirestoreUsage.record('write', 1, name);
         return;
       }
 
@@ -293,12 +292,11 @@ async function syncArrayToCollection(name: string, prevArr: any[] | undefined, n
 
       if (item.after === null) {
         tx.delete(ref);
-        FirestoreUsage.record('delete', 1, name);
       } else {
         tx.set(ref, sanitizeForFirestore(item.after), { merge: true });
-        FirestoreUsage.record('write', 1, name);
       }
     });
+    FirestoreUsage.record(item.after === null ? 'delete' : 'write', 1, name);
   }
 }
 
