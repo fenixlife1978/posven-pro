@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { AppState, Debt, Customer } from '@/lib/types';
+import { AppState, Debt, Customer, PaymentMethod } from '@/lib/types';
 import { Utils, Store } from '@/lib/db-store';
 import { 
   Plus, 
@@ -30,8 +30,15 @@ import {
 import { exportarPDFCxC } from '@/lib/pdf-generator';
 import { useToast } from '@/hooks/use-toast';
 import { Pagination } from '@/components/ui/pagination';
+import FloatingPaymentModal from '@/components/pos/FloatingPaymentModal';
 
-export default function CxCModule({ state, updateState }: { state: AppState, updateState: (s: Partial<AppState>) => void }) {
+interface CxCModuleProps {
+  state: AppState;
+  updateState: (s: Partial<AppState>) => void;
+  terminalId?: string;
+}
+
+export default function CxCModule({ state, updateState, terminalId }: CxCModuleProps) {
   const { toast } = useToast();
   useEffect(() => { void Store.ensureLoaded('cxc'); }, []);
   const [showModal, setShowModal] = useState(false);
@@ -39,6 +46,7 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
   const [showDetailsSale, setShowDetailsSale] = useState<any>(null);
   const [expandedClient, setExpandedClient] = useState<string | null>(null);
   const [showClientHistory, setShowClientHistory] = useState<string | null>(null);
+  const [globalCustomer, setGlobalCustomer] = useState<{ name: string; cedula?: string; totalUSD: number; totalBS: number } | null>(null);
   const [filterEstado, setFilterEstado] = useState<'todos' | 'pendiente' | 'pagada' | 'parcial'>('todos');
   const [page, setPage] = useState(1);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -323,6 +331,84 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
     }
   };
 
+  const handleOpenGlobalPayment = (clientName: string, group: any) => {
+    const total = Number(group?.totalUSD) || 0;
+    if (total <= 0.001) return;
+    setGlobalCustomer({
+      name: clientName,
+      cedula: group?.customer?.cedula,
+      totalUSD: total,
+      totalBS: total * state.tasa
+    });
+  };
+
+  const handleProcessGlobalPayment = async (payments: any[]) => {
+    if (!globalCustomer || isProcessing || processingRef.current) return;
+    const totalUSD = payments.reduce((s, p) => s + (Number(p.usdAmount) || (Number(p.amount) || 0) / state.tasa), 0);
+    const totalBS = payments.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+    if (totalUSD <= 0 || totalBS <= 0) return;
+
+    processingRef.current = true;
+    setIsProcessing(true);
+    try {
+      const ahora = Utils.ahora();
+      const reciboProvisional = 'PEND-CXC-' + Store.uid().toUpperCase().slice(0, 8);
+      const pagoBase = {
+        id: reciboProvisional,
+        fecha: ahora,
+        montoUSD: totalUSD,
+        montoBS: totalBS,
+        metodo: payments.length > 1 ? 'mixto' : payments[0].method,
+        reciboId: reciboProvisional,
+        tasaAplicada: state.tasa
+      };
+      const asientoId = 'ACC-' + Store.uid().toUpperCase().slice(0, 5);
+      const journal = {
+        id: asientoId,
+        fecha: ahora,
+        tipo: 'ingreso',
+        categoria: 'COBRO_DEUDA',
+        concepto: `PAGO GLOBAL CXC: ${globalCustomer.name.toUpperCase()} - LIQUIDACIÓN POR ORDEN DE ANTIGÜEDAD`,
+        montoUSD: totalUSD,
+        montoBS: totalBS,
+        metodo: pagoBase.metodo,
+        referencia: reciboProvisional,
+        terminalId
+      };
+
+      const resultado = await Store.applyGlobalCustomerPaymentTransaction({
+        customerName: globalCustomer.name,
+        customerCedula: globalCustomer.cedula,
+        amountUSD: totalUSD,
+        amountBS: totalBS,
+        payment: pagoBase,
+        journal,
+        terminalId
+      });
+
+      if (!resultado || resultado.appliedUSD <= 0.000001) {
+        throw new Error('No hay saldo pendiente del cliente o la información cambió en otra caja.');
+      }
+
+      const aplicadoBS = Number(resultado.appliedBS) || 0;
+      const remanenteUSD = Math.max(0, totalUSD - Number(resultado.appliedUSD || 0));
+      toast({
+        title: 'Pago global registrado',
+        description: `${Utils.fmtUSD(resultado.appliedUSD)} (${Utils.fmtBS(aplicadoBS)}) aplicado a ${resultado.debts.length} factura(s)${remanenteUSD > 0.000001 ? ' · excedente sin aplicar' : ''}.`
+      });
+      setGlobalCustomer(null);
+    } catch (e: any) {
+      toast({
+        variant: 'destructive',
+        title: 'No se pudo registrar el pago global',
+        description: e?.message || 'Las cuentas cambiaron en otra caja. Actualice y vuelva a intentar.'
+      });
+    } finally {
+      processingRef.current = false;
+      setIsProcessing(false);
+    }
+  };
+
   const handleExportPDF = () => {
     exportarPDFCxC(pendientes, state.empresa, totalPendiente);
   };
@@ -459,6 +545,15 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
                            <div className="flex items-center justify-center gap-2">
                              {tieneDeudas ? (
                                <>
+                                 {tieneDeudaPendiente && (
+                                   <button
+                                     onClick={() => handleOpenGlobalPayment(clientName, group)}
+                                     className="px-3 h-10 rounded-lg flex items-center justify-center bg-brand-gold text-black font-black text-[9px] uppercase hover:bg-brand-gold-deep transition-all shadow-md"
+                                     title="Aplicar un pago global a las deudas desde la más antigua"
+                                   >
+                                     PAGO GLOBAL
+                                   </button>
+                                 )}
                                  <button 
                                    onClick={() => setShowClientHistory(clientName)} 
                                    className="w-10 h-10 rounded-full flex items-center justify-center bg-white text-status-success border-2 border-status-success/20 hover:bg-status-success hover:text-white transition-all shadow-md"
@@ -546,6 +641,17 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
         </div>
         <Pagination page={creditSafePage} totalPages={creditTotalPages} total={creditEntries.length} pageSize={pageSize} onPageChange={setPage} />
       </div>
+
+      {globalCustomer && (
+        <FloatingPaymentModal
+          total={globalCustomer.totalBS}
+          totalCents={Math.round(globalCustomer.totalBS * 100)}
+          exchangeRate={state.tasa}
+          allowPartial={true}
+          onClose={() => setGlobalCustomer(null)}
+          onConfirm={(data) => { void handleProcessGlobalPayment(data.payments); }}
+        />
+      )}
 
       {/* MODAL DETALLES AVANZADOS */}
       {showDetails && (
