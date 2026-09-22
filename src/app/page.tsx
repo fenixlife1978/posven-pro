@@ -499,6 +499,15 @@ export default function LicoreriaPOS() {
               >
                 Confirmar Apertura
               </button>
+
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="w-full h-11 bg-white text-status-danger border-2 border-status-danger/20 font-black text-[10px] rounded-xl hover:bg-status-danger hover:text-white transition-all uppercase tracking-widest flex items-center justify-center gap-2"
+              >
+                <LogOut className="w-4 h-4" />
+                REGRESAR AL LOGIN
+              </button>
             </div>
          </div>
       </div>
