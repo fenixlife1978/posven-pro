@@ -129,9 +129,9 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
             </div>
           </div>
 
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-            <div className="flex flex-wrap gap-4 flex-1 w-full">
-              <div className="relative flex-1 min-w-[200px]">
+          <div className="flex flex-col md:flex-row justify-between items-stretch md:items-center gap-4 min-w-0">
+            <div className="flex flex-col sm:flex-row sm:flex-wrap gap-3 flex-1 w-full min-w-0">
+              <div className="relative flex-1 min-w-0 w-full">
                 <Search className="absolute left-3 top-2.5 w-4 h-4 text-ink/30" />
                 <Input 
                   className="pl-9 h-11 text-sm font-bold bg-white border-line" 
@@ -140,7 +140,7 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
                   onChange={e => setSearch(e.target.value)} 
                 />
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
                 <Filter className="w-4 h-4 text-ink/30" />
                 <select 
                   className="form-select h-11 bg-white border-line text-xs font-black uppercase"
@@ -254,7 +254,7 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
 
   return (
     <div className="space-y-6">
-      <div className="tabs border-line border-b no-print">
+      <div className="tabs border-line border-b no-print flex overflow-x-auto whitespace-nowrap scrollbar-hide">
         <button onClick={() => setActiveTab('productos')} className={`tab ${activeTab === 'productos' ? 'active' : 'text-ink font-black'}`}>Productos</button>
         <button onClick={() => setActiveTab('reporte_general')} className={`tab ${activeTab === 'reporte_general' ? 'active' : 'text-ink font-black'}`}>Inventario CPP</button>
         <button onClick={() => setActiveTab('reporte_ventas')} className={`tab ${activeTab === 'reporte_ventas' ? 'active' : 'text-ink font-black'}`}>Ventas</button>
