@@ -1164,6 +1164,7 @@ export const Store = {
     operationId?: string;
     provider: string;
     amountUSD: number;
+    amountBS?: number;
     payment: any;
     journal?: any;
     terminalId?: string;
@@ -1272,7 +1273,7 @@ export const Store = {
     terminalId?: string;
   }): Promise<any | null> {
     if (typeof window === 'undefined' || !db) return null;
-    const { operationId, collection: collectionName, debtId, amountUSD, payment, journal, sale, customerCedula, terminalId } = params;
+    const { operationId, collection: collectionName, debtId, amountUSD, amountBS, payment, journal, sale, customerCedula, terminalId } = params;
     if (!(amountUSD > 0)) return null;
     const debtRef = doc(db, collectionName, debtId);
     let result: any = null;
@@ -1296,7 +1297,8 @@ export const Store = {
       const counterField = collectionName === 'cxc' ? 'proximoCobroDeuda' : 'proximoPagoProveedor';
       const nextCounter = Number(terminalRemote?.[counterField]) || 1;
       const receiptId = terminalRemote ? terminalSeries(terminalPrefix(terminalRemote, terminalId), collectionName === 'cxc' ? 'CXC' : 'CXP', nextCounter, 6) : terminalSeries('GLOBAL', collectionName === 'cxc' ? 'CXC' : 'CXP', Date.now(), 6);
-      const pago = sanitizeForFirestore({ ...payment, id: receiptId, reciboId: receiptId, terminalId: terminalId || payment?.terminalId, montoUSD: applied });
+      const appliedBS = Number(amountBS) > 0 ? Math.min(Number(amountBS), Number(payment?.montoBS) || Number(amountBS)) : (Number(payment?.montoBS) || (applied * (Number(Store.get().tasa) || 0)));
+      const pago = sanitizeForFirestore({ ...payment, id: receiptId, reciboId: receiptId, terminalId: terminalId || payment?.terminalId, montoUSD: applied, montoBS: appliedBS });
       historial.push(pago);
       const updated = {
         ...remote,
@@ -1330,7 +1332,7 @@ export const Store = {
         tx.set(terminalRef, { [counterField]: nextCounter + 1 }, { merge: true });
       }
       tx.set(operationRef, { tipo: 'PAGO-DEUDA', operationId: opId, fecha: payment?.fecha || new Date().toISOString(), referencia: debtId }, { merge: false });
-      result = { ...updated, appliedUSD: applied, receiptId, payment: pago, journal: journalItems, sale: persistedSale, terminal: terminalRef ? { ...terminalRemote, id: terminalId, [counterField]: nextCounter + 1 } : null };
+      result = { ...updated, appliedUSD: applied, appliedBS, receiptId, payment: pago, journal: journalItems, sale: persistedSale, terminal: terminalRef ? { ...terminalRemote, id: terminalId, [counterField]: nextCounter + 1 } : null };
     });
     // CxC/CxP se actualizan exclusivamente por sus snapshots completos autoritativos.
     // No parcheamos aquí el resultado local: un snapshot remoto puede haber llegado
