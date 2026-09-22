@@ -461,12 +461,13 @@ function syncProductosRTDB(prevArr: any[] | undefined, newArr: any[] | undefined
     if (!newList.some(p => p && String(p.id) === id)) removals.push(id);
   });
   if (Object.keys(updates).length === 0 && removals.length === 0) return Promise.resolve();
+  // RTDB permite enviar actualizaciones y eliminaciones en un único update
+  // multipath. Así una operación que elimina varios productos no genera un
+  // write remoto independiente por cada producto.
   const rootRef = ref(rtdb, RTDB_PRODUCTS_PATH);
-  return Promise.resolve()
-    .then(() => Object.keys(updates).length > 0 ? update(rootRef, updates) : undefined)
-    .then(() => removals.length > 0
-      ? Promise.all(removals.map(id => remove(ref(rtdb, RTDB_PRODUCTS_PATH + '/' + id))).concat([]))
-      : undefined)
+  const payload: Record<string, any> = { ...updates };
+  removals.forEach(id => { payload[id] = null; });
+  return update(rootRef, payload)
     .catch(e => console.error('RTDB sync productos:', e));
 }
 
@@ -2070,6 +2071,18 @@ export const Store = {
           collection(db, 'cxc'),
           where('cliente', '==', clienteExact)
         ));
+        // Compatibilidad con deudas antiguas que guardaban solo el nombre:
+        // solo hacemos esta segunda lectura si la consulta canónica no encontró
+        // nada. En datos nuevos el camino habitual sigue siendo una sola query.
+        if (debtsSnap.empty) {
+          const legacyName = String(customerName || customer.cliente || customer.nombre || '').trim();
+          if (legacyName) {
+            debtsSnap = await tx.get(query(
+              collection(db, 'cxc'),
+              where('cliente', '==', legacyName)
+            ));
+          }
+        }
       } else if (customerName) {
         debtsSnap = await tx.get(query(
           collection(db, 'cxc'),
