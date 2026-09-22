@@ -8,7 +8,6 @@ import { db, auth } from '@/lib/firebase';
 import { collection, getDocs, deleteDoc, doc, setDoc, writeBatch, query, limit } from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
 import { migrarEstructura } from '@/lib/migracion-firestore';
-import { FirestoreUsage } from '@/lib/firestore-usage';
 import { crearRespaldo, descargarRespaldo, cargarRespaldoDesdeArchivo } from '@/lib/backup';
 
 export default function ConfigModule({ state, updateState }: { state: AppState, updateState: (s: Partial<AppState>) => void }) {
@@ -21,7 +20,6 @@ export default function ConfigModule({ state, updateState }: { state: AppState, 
   const [showMigracionResultado, setShowMigracionResultado] = useState(false);
   const [isBackingUp, setIsBackingUp] = useState(false);
   const [backupError, setBackupError] = useState<string | null>(null);
-  const [firestoreUsage, setFirestoreUsage] = useState(FirestoreUsage.get());
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -29,13 +27,6 @@ export default function ConfigModule({ state, updateState }: { state: AppState, 
     setEmpresa(state.empresa);
     setPinDevolucion(state.pinDevolucion || '000000');
   }, [state.tasa, state.empresa, state.pinDevolucion]);
-
-  useEffect(() => {
-    const refresh = () => setFirestoreUsage(FirestoreUsage.get());
-    refresh();
-    const timer = setInterval(refresh, 5000);
-    return () => clearInterval(timer);
-  }, []);
 
   const guardarTasa = () => {
     const n = parseFloat(tasa.toString());
@@ -275,31 +266,7 @@ export default function ConfigModule({ state, updateState }: { state: AppState, 
   return (
     <div className="max-w-2xl space-y-6 animate-in fade-in duration-300 pb-20">
       {/* ===== TASA DE CAMBIO ===== */}      <div className="card shadow-lg border-line">
-        <div className="card-head bg-surface-soft border-b border-line px-5 py-4 flex items-center justify-between">
-          <h3 className="text-ink font-black uppercase text-xs tracking-widest flex items-center gap-2"><Activity className="w-4 h-4 text-brand-gold-deep" /> Consumo Firebase / Firestore</h3>
-          <span className="text-[8px] font-black uppercase tracking-widest text-ink/40">Medición local</span>
-        </div>
-        <div className="card-body p-6 space-y-5 bg-white">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            {[['Lecturas', firestoreUsage.reads, FirestoreUsage.dailyQuota.reads, BookOpen], ['Escrituras', firestoreUsage.writes, FirestoreUsage.dailyQuota.writes, PenLine], ['Eliminaciones', firestoreUsage.deletes, FirestoreUsage.dailyQuota.deletes, Trash2]].map(([label,value,quota,Icon]: any) => {
-              const pct = Math.min(100, (Number(value) / Number(quota)) * 100);
-              return <div key={String(label)} className="p-4 rounded-2xl border border-line bg-surface-soft/40">
-                <div className="flex items-center justify-between"><span className="text-[9px] font-black uppercase text-ink/60 flex items-center gap-1.5"><Icon className="w-3.5 h-3.5" />{label}</span><span className="text-[9px] font-black text-ink/50">{pct.toFixed(1)}%</span></div>
-                <div className="text-2xl font-black text-ink mt-1">{Number(value).toLocaleString('es-VE')}</div>
-                <div className="mt-2 h-2 rounded-full bg-ink/10 overflow-hidden"><div className="h-full bg-brand-gold rounded-full" style={{width: pct + '%'}} /></div>
-                <p className="mt-2 text-[8px] font-bold uppercase text-ink/40">Referencia diaria: {Number(quota).toLocaleString('es-VE')}</p>
-              </div>;
-            })}
-          </div>
-          <div className="p-4 rounded-2xl border border-brand-gold/20 bg-brand-gold-soft/30">
-            <p className="text-[9px] font-bold text-ink/60 leading-relaxed"><strong className="text-brand-gold-deep">Importante:</strong> este contador registra operaciones observables por PosVEN y no genera lecturas adicionales para medirse. La cifra oficial de Firebase/Google Cloud puede diferir.</p>
-            <p className="text-[8px] font-black uppercase text-ink/40 mt-2">Inicio: {new Date(firestoreUsage.periodStart).toLocaleString('es-VE')} · Actualizado: {new Date(firestoreUsage.updatedAt).toLocaleString('es-VE')}</p>
-          </div>
-        </div>
-      </div>
-
-
-      <div className="card shadow-lg border-line">
+        <div className="card shadow-lg border-line">
         <div className="card-head bg-surface-soft border-b border-line px-5 py-4">
           <h3 className="text-ink font-black uppercase text-xs tracking-widest">Tasa de Cambio Oficial</h3>
         </div>
