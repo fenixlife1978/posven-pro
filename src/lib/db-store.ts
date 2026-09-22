@@ -732,17 +732,29 @@ function init() {
     ));
   }
 
-  // Series y cierres Z: son datos de auditoría que el administrador
-  // debe poder consultar completos y en tiempo real, separados por caja.
-  for (const name of ['terminales', 'devoluciones', 'anulaciones', 'reportesZ']) {
+  // Terminales sí permanece completo y en tiempo real: contiene el estado
+  // operativo de cada caja y normalmente son pocos documentos.
+  teardownFns.push(onSnapshot(collection(db, COLLECTIONS.terminales), (snap) => {
+    const items = snap.docs.map(d => sanitizeForFirestore(d.data())).filter(Boolean);
+    applyPatch({ terminales: items });
+  }, (err) => { if (err.code !== 'permission-denied') console.warn("Sync terminales:", err); }));
+
+  // Históricos de auditoría: solo mantenemos una ventana reciente en realtime.
+  // El histórico completo se carga bajo demanda al abrir el módulo correspondiente.
+  for (const name of ['devoluciones', 'anulaciones', 'reportesZ']) {
     const col = COLLECTIONS[name];
     teardownFns.push(onSnapshot(
-      collection(db, col),
+      query(collection(db, col), orderBy('fecha', 'desc'), limit(100)),
       (snap) => {
-        const items = snap.docs
-          .map(d => sanitizeForFirestore(d.data()))
-          .filter(Boolean);
-        applyPatch({ [name]: items });
+        const currentArr = [...((cache as any)[name] || [])];
+        const map = new Map<string, any>(currentArr.map(x => [String(x.id), x]));
+        snap.docChanges().forEach(change => {
+          const item = sanitizeForFirestore(change.doc.data());
+          if (!item || !item.id) return;
+          if (change.type === 'removed') map.delete(String(item.id));
+          else map.set(String(item.id), item);
+        });
+        applyPatch({ [name]: [...map.values()] });
       },
       (err) => { if (err.code !== 'permission-denied') console.warn("Sync " + name + ":", err); }
     ));
