@@ -709,37 +709,7 @@ async function loadMore(name: string, pageSize: number = PAGE_SIZE): Promise<num
   }
 }
 
-// Carga SOLO los registros posteriores al último cierre Z (los módulos del POS
-// filtran por fecha > fechaUltimoZ, así que con eso basta). Evita re-leer el
-// histórico completo (miles de docs) en cada sesión. Se re-ejecuta cuando cambia
-// fechaUltimoZ (tras cada Reporte Z).
-// ✅ FIX: Si fechaUltimoZ está vacío, carga las ventas del día actual para
-// evitar el bug de reportes en $0 tras un corte de luz.
 const SINCE_STAMP: Record<string, string> = {};
-async function loadSinceLastZ(listName: string): Promise<void> {
-  const col = COLLECTIONS[listName];
-  if (!col || !db) return;
-  let desde = (cache as any).fechaUltimoZ || '';
-  
-  // ✅ FIX: Si no hay último Z, usar fecha de hoy (evita carga vacía)
-  if (!desde) {
-    desde = new Date().toISOString().split('T')[0];
-  }
-  
-  if (SINCE_STAMP[listName] === desde) return;
-  SINCE_STAMP[listName] = desde;
-  try {
-    const q = query(collection(db, col), where('fecha', '>', desde), limit(500));
-    const snap = await getDocs(q);
-    const items = snap.docs.map(d => sanitizeForFirestore(d.data())).filter(Boolean);
-    applyPatch({ [listName]: mergeById((cache as any)[listName], items) });
-  } catch (e) {
-    console.error("loadSinceLastZ " + listName + ":", e);
-    // ✅ FALLBACK: Si falla la query (ej: índice no existe), cargar todo
-    console.warn("loadSinceLastZ fallback: cargando colección completa");
-    await ensureLoaded(listName);
-  }
-}
 
 // Kardex de un producto (where + orden). Si falta el índice compuesto, carga y filtra en memoria.
 async function kardex(productoId: string, max = 100): Promise<any[]> {
@@ -1070,8 +1040,11 @@ function init() {
 // API PÚBLICA
 // ============================================================
 async function getSaleById(saleId: string): Promise<any | null> {
-  if (!db || !saleId) return null;
+  if (!saleId) return null;
   const id = String(saleId);
+  const cached = (cache.ventas || []).find((v: any) => String(v?.id || '') === id);
+  if (cached) return sanitizeForFirestore(cached);
+  if (!db) return null;
   try {
     const snap = await getDoc(doc(db, 'ventas', id));
     return snap.exists() ? sanitizeForFirestore({ ...snap.data(), id }) : null;
@@ -2086,13 +2059,26 @@ export const Store = {
       const customerSnap = await tx.get(customerRef);
       if (!customerSnap.exists()) throw new Error('El cliente ya no existe o fue eliminado en otra caja.');
       const customer = sanitizeForFirestore(customerSnap.data()) as any;
-      const debtsSnap = await tx.get(query(collection(db, 'cxc')));
-      const debts = debtsSnap.docs.filter(d => {
-        const debt = d.data() as any;
-        const debtName = String(debt.cliente || '').split(' [')[0].trim();
-        return (customerName && debtName === customerName) ||
-          (customerCedula && String(debt.cliente || '').includes('[' + customerCedula + ']'));
-      });
+      // Evita leer toda CxC: cuando conocemos la cédula, el formato
+      // canónico de cliente permite consultar únicamente las deudas de esa persona.
+      // Solo usamos la consulta histórica amplia como compatibilidad para datos
+      // antiguos que no contienen la cédula en el campo cliente.
+      let debtsSnap;
+      if (customerCedula) {
+        const clienteExact = `${customerName || customer.cliente || customer.nombre || ''} [${customerCedula}]`.trim();
+        debtsSnap = await tx.get(query(
+          collection(db, 'cxc'),
+          where('cliente', '==', clienteExact)
+        ));
+      } else if (customerName) {
+        debtsSnap = await tx.get(query(
+          collection(db, 'cxc'),
+          where('cliente', '==', customerName)
+        ));
+      } else {
+        debtsSnap = await tx.get(query(collection(db, 'cxc')));
+      }
+      const debts = debtsSnap.docs;
       const active = debts.find(d => {
         const debt = d.data() as any;
         return debt.estado !== 'pagada' && (Number(debt.saldoUSD) || 0) > 0.001;
