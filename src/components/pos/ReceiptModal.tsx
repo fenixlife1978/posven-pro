@@ -569,11 +569,11 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
                         <table><tbody>
                           <tr>
                             <td>TOTAL Bs. POR COBRO DE DEUDAS:</td>
-                            <td className="text-right">{formatBs(cobrosDeudaBs)}</td>
+                            <td className="text-right">{formatBs(data.cobrosDeudaBS ?? data.cobrosDeudaBs ?? 0)}</td>
                           </tr>
                           <tr>
                             <td>TOTAL USD POR COBRO DE DEUDAS:</td>
-                            <td className="text-right">$ {formatUsd(cobrosDeudaUsd)}</td>
+                            <td className="text-right">$ {formatUsd(data.cobrosDeudaUSD ?? data.cobrosDeudaUsd ?? 0)}</td>
                           </tr>
                         </tbody></table>
                         <div className="separator-dashed"></div>
