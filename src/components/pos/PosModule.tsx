@@ -231,10 +231,33 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     };
     
     if (typeof localStorage !== 'undefined') localStorage.removeItem('posven_apertura_done');
-    
-    updateState({ reportesZ: [...(state.reportesZ || []), nuevoZ], ultimoZ: numeroZ, fechaUltimoZ: ahora, acumuladoHistorico: data.acumuladoHistoricoUSD, fondoCajaHoyBS: 0, fondoCajaHoyUSD: 0 });
-    toast({ title: `Cierre Fiscal ${nuevoZ.id} Exitoso` });
+
+    const terminalId = currentTerminal?.id;
+    const terminalesActualizadas = terminalId
+      ? Utils.patchTerminal(state.terminales, terminalId, {
+          ultimoZ: numeroZ,
+          fechaUltimoZ: ahora,
+          acumuladoHistorico: data.acumuladoHistoricoUSD,
+          fondoCajaHoyBS: 0,
+          fondoCajaHoyUSD: 0,
+          isCashOpen: false,
+          cashData: null
+        })
+      : state.terminales;
+
+    updateState({
+      reportesZ: [...(state.reportesZ || []), nuevoZ],
+      terminales: terminalesActualizadas,
+      ultimoZ: numeroZ,
+      fechaUltimoZ: ahora,
+      acumuladoHistorico: data.acumuladoHistoricoUSD,
+      fondoCajaHoyBS: 0,
+      fondoCajaHoyUSD: 0,
+      isCashOpen: false
+    });
+    toast({ title: `Cierre Fiscal ${nuevoZ.id} Exitoso`, description: 'La jornada anterior quedó cerrada. La próxima apertura iniciará una nueva jornada.' });
     setShowReportType(null);
+    setReportSnapshot(null);
   };
 
   const saldoActualDeuda = (debt: any) => {
@@ -821,11 +844,12 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                             {group.debts.length > 1 && (
                               <button
                                 onClick={() => handleOpenGlobalCreditPayment(clientName, group.debts)}
-                                className="w-10 h-10 rounded-full flex items-center justify-center bg-white text-brand-gold-deep border-2 border-brand-gold/30 hover:bg-brand-gold hover:text-black transition-all shadow-md"
+                                className="h-10 px-3 rounded-full flex items-center justify-center gap-1.5 bg-brand-gold text-black border-2 border-brand-gold hover:bg-brand-gold-deep transition-all shadow-md font-black text-[9px] uppercase whitespace-nowrap"
                                 title="PAGO GLOBAL"
                                 aria-label="PAGO GLOBAL"
                               >
-                                <HandCoins className="w-5 h-5" />
+                                <HandCoins className="w-4 h-4" />
+                                <span>PAGO GLOBAL</span>
                               </button>
                             )}
                             <button onClick={() => setShowClientHistory(clientName)} className="w-10 h-10 rounded-full flex items-center justify-center bg-white text-status-success border-2 border-status-success/20 hover:bg-status-success hover:text-white transition-all shadow-md" title="Consultar historial">
