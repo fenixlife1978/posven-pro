@@ -679,6 +679,51 @@ async function loadCatalogs() {
 let started = false;
 let teardownFns: (() => void)[] = [];
 const masterSyncFns: Record<string, () => void> = {};
+const terminalSyncFns: Record<string, () => void> = {};
+
+function stopTerminalSync(): void {
+  const unsub = terminalSyncFns.main;
+  if (unsub) {
+    try { unsub(); } catch (e) { console.error(e); }
+    delete terminalSyncFns.main;
+  }
+}
+
+function startTerminalSync(terminalId?: string, all = false, initialItems: Terminal[] = []): () => void {
+  if (!db || typeof window === 'undefined') return () => {};
+  stopTerminalSync();
+
+  if (initialItems.length > 0) {
+    applyPatch({ terminales: mergeById((cache as any).terminales, initialItems) });
+  }
+
+  const target = all
+    ? collection(db, COLLECTIONS.terminales)
+    : (terminalId ? doc(db, COLLECTIONS.terminales, terminalId) : null);
+
+  if (!target) return () => {};
+
+  const unsub = onSnapshot(
+    target as any,
+    (snap: any) => {
+      if (all) {
+        const items = snap.docs.map((d: any) => sanitizeForFirestore(d.data())).filter(Boolean);
+        applyPatch({ terminales: items });
+      } else if (snap.exists()) {
+        const item = sanitizeForFirestore(snap.data());
+        const id = String(item?.id || snap.id);
+        applyPatch({ terminales: mergeById((cache as any).terminales, [{ ...item, id }]) });
+      }
+    },
+    (err: any) => {
+      if (err?.code !== 'permission-denied') console.warn("Sync terminal:", err);
+    }
+  );
+  terminalSyncFns.main = unsub;
+  return stopTerminalSync;
+}
+
+
 
 function stopMasterSync(name: string): void {
   const unsub = masterSyncFns[name];
@@ -727,6 +772,7 @@ function cleanup() {
   teardownFns.forEach(fn => { try { fn(); } catch (e) { console.error(e); } });
   teardownFns = [];
   Object.keys(masterSyncFns).forEach(stopMasterSync);
+  stopTerminalSync();
   started = false;
   Object.keys(loadedAll).forEach(k => { loadedAll[k] = false; });
   Object.keys(cursors).forEach(k => { cursors[k] = null; });
@@ -793,13 +839,9 @@ function init() {
   // Así evitamos descargar y mantener dos colecciones maestras completas en cada caja
   // durante toda la jornada cuando el operador está trabajando en otro módulo.
 
-  // Terminales sí permanece completo y en tiempo real: contiene el estado
-  // operativo de cada caja y normalmente son pocos documentos.
-  teardownFns.push(onSnapshot(collection(db, COLLECTIONS.terminales), (snap) => {
-    const items = snap.docs.map(d => sanitizeForFirestore(d.data())).filter(Boolean);
-    applyPatch({ terminales: items });
-  }, (err) => { if (err.code !== 'permission-denied') console.warn("Sync terminales:", err); }));
-
+  // Terminales: el listener se activa bajo demanda.
+  // Un cajero escucha solo SU terminal; administradores pueden activar el
+  // listado completo cuando necesitan gestionar las cajas.
   // Históricos de auditoría: solo mantenemos una ventana reciente en realtime.
   // El histórico completo se carga bajo demanda al abrir el módulo correspondiente.
   for (const name of ['devoluciones', 'anulaciones', 'reportesZ']) {
@@ -2140,6 +2182,7 @@ export const Store = {
   loadMore,
   ensureLoaded,
   startMasterSync,
+  startTerminalSync,
   ensureReportData,
   kardex,
 
