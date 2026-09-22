@@ -105,7 +105,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   const getFreshReportData = () => {
     // ✅ FIX: Obtener datos frescos del Store para evitar inconsistencias
     const freshState = Store.get();
-    const corteTimestamp = freshState.fechaUltimoZ || '';
+    const corteTimestamp = Utils.getTerminalCash(currentTerminal).fechaUltimoZ || freshState.fechaUltimoZ || '';
     const termId = currentTerminal?.id || 'GLOBAL';
     
     // Usar datos frescos del Store en lugar del state del componente
@@ -803,7 +803,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
             <table>
               <thead><tr><th>Recibo</th><th>Hora</th><th>Terminal</th><th>Cliente</th><th>Tipo</th><th className="text-right">Monto USD</th><th>Método</th><th className="text-center">Estado</th></tr></thead>
               <tbody>
-                {(state.ventas || []).filter(v => v.terminalId === currentTerminal?.id && v.fecha > (state.fechaUltimoZ || '')).sort((a,b) => b.fecha.localeCompare(a.fecha)).map(v => (
+                {(state.ventas || []).filter(v => v.terminalId === currentTerminal?.id && v.fecha > (Utils.getTerminalCash(currentTerminal).fechaUltimoZ || state.fechaUltimoZ || '')).sort((a,b) => b.fecha.localeCompare(a.fecha)).map(v => (
                   <tr key={v.id} className="border-b border-line/40 hover:bg-surface-warm/20"><td className="text-ink font-black text-xs mono">{v.id}</td><td className="text-ink font-bold text-xs">{v.fecha.split('T')[1]?.slice(0, 5)}</td><td className="text-ink font-black text-[10px] uppercase">{v.terminalName || state.terminales.find(t => t.id === v.terminalId)?.nombre || '-'}</td><td className="text-ink font-black text-xs uppercase truncate max-w-[150px]">{v.cliente}</td><td className="text-ink font-black text-[9px] uppercase"><span className={`badge ${v.type === 'COBRO DEUDA' ? 'badge-info' : 'badge-neutral'}`}>{v.type || 'VENTA'}</span></td><td className="text-brand-gold-deep font-black text-xs text-right">{Utils.fmtUSD(v.totalUSD)}</td><td className="text-ink font-bold text-[10px] uppercase">{Utils.metodoLabel(v.metodoPago)}</td><td className="text-center"><span className={`badge ${v.estado === 'pendiente' ? 'badge-warn' : (v.estado === 'anulada' ? 'badge-err' : 'badge-ok')} font-black text-[9px] uppercase`}>{v.estado}</span></td></tr>
                 ))}
               </tbody>
