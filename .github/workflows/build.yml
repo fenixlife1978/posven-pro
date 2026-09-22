@@ -90,13 +90,30 @@ jobs:
         run: |
           # Solo publica en GitHub Releases cuando es push a main/master o tag.
           # Para PRs y feature branches, solo sube el .exe como artefacto.
-          if ("${{ github.event_name }}" -eq "pull_request" -or "${{ github.ref }}" -like "refs/heads/fix/*" -or "${{ github.ref }}" -like "refs/heads/feature/*") {
-            Write-Host "ℹ️  PR/feature branch: solo artefacto, no release"
-            npx electron-builder --win --publish never
-          } else {
+          $publish = "never"
+          if ("${{ github.event_name }}" -ne "pull_request" -and "${{ github.ref }}" -notlike "refs/heads/fix/*" -and "${{ github.ref }}" -notlike "refs/heads/feature/*") {
+            $publish = "always"
             Write-Host "ℹ️  main/master/tag: publicación completa con release"
-            npx electron-builder --win --publish always
+          } else {
+            Write-Host "ℹ️  PR/feature branch: solo artefacto, no release"
           }
+
+          # GitHub/Electron puede responder HTTP 5xx temporalmente al descargar
+          # el runtime. Reintentar sin cambiar versión ni configuración.
+          for ($attempt = 1; $attempt -le 3; $attempt++) {
+            Write-Host "🔧 electron-builder intento $attempt de 3"
+            npx electron-builder --win --publish $publish
+            if ($LASTEXITCODE -eq 0) {
+              Write-Host "✅ electron-builder completado"
+              exit 0
+            }
+            if ($attempt -lt 3) {
+              Write-Host "⚠️  Falló electron-builder. Reintentando en 15 segundos..."
+              Start-Sleep -Seconds 15
+            }
+          }
+          Write-Host "❌ electron-builder falló después de 3 intentos"
+          exit 1
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
