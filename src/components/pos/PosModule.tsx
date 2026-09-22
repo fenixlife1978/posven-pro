@@ -407,7 +407,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     setIsProcessing(true);
     try {
       const totalAbonado = pagosAbono.reduce((s, p) => s + p.montoUSD, 0);
-      if (totalAbonado <= 0) return;
+      const totalAbonadoBS = pagosAbono.reduce((s, p) => s + (Number(p.montoBS) || 0), 0);
+      if (totalAbonado <= 0 || totalAbonadoBS <= 0) return;
 
       // La deuda histórica puede conservar un nombre antiguo. La identidad
       // operativa se resuelve por la cédula embebida en "cliente" y se contrasta
@@ -447,6 +448,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         collection: 'cxc',
         debtId: showAbonoModal.id,
         amountUSD: totalAbonado,
+        amountBS: totalAbonadoBS,
         payment: pagoAtomic,
         journal: nuevasEntradasDiario,
         sale: saleAbono,
@@ -459,6 +461,12 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
 
       const saleFinal = resultadoPago.sale || { ...saleAbono, id: resultadoPago.receiptId || saleAbono.id };
       setLastProcessedSale(saleFinal); setShowReceiptModal(true); setShowAbonoModal(null);
+    } catch (err: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Abono no registrado',
+        description: err?.message || 'No se pudo registrar el abono. El saldo no fue modificado.'
+      });
     } finally {
       processingRef.current = false;
       setIsProcessing(false);
