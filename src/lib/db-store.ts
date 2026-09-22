@@ -2004,7 +2004,6 @@ export const Store = {
       const alreadyLinked = linkedDebts.length > 0 || purchaseSnap?.exists() || movementMatches.length > 0;
       if (!alreadyLinked) throw new Error('La compra ya no existe en Firestore o fue modificada en otra caja. Actualice el historial.');
 
-      const baseByProduct = new Map<string, number>();
       const newMovementsByProduct = new Map<string, any[]>();
 
       for (const pid of affectedIds) {
@@ -2038,13 +2037,6 @@ export const Store = {
             }
           }));
 
-        const firstRemaining = remaining[0];
-        baseByProduct.set(
-          pid,
-          firstRemaining
-            ? Number(firstRemaining.data.stockAntes) || 0
-            : 0
-        );
         newMovementsByProduct.set(pid, remaining);
       }
 
