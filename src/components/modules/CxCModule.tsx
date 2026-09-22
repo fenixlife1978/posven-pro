@@ -33,9 +33,10 @@ import { Pagination } from '@/components/ui/pagination';
 
 export default function CxCModule({ state, updateState }: { state: AppState, updateState: (s: Partial<AppState>) => void }) {
   const { toast } = useToast();
-  useEffect(() => { Store.ensureLoaded('ventas'); Store.ensureLoaded('cxc'); }, []);
+  useEffect(() => { void Store.ensureLoaded('cxc'); }, []);
   const [showModal, setShowModal] = useState(false);
   const [showDetails, setShowDetails] = useState<any>(null);
+  const [showDetailsSale, setShowDetailsSale] = useState<any>(null);
   const [expandedClient, setExpandedClient] = useState<string | null>(null);
   const [showClientHistory, setShowClientHistory] = useState<string | null>(null);
   const [filterEstado, setFilterEstado] = useState<'todos' | 'pendiente' | 'pagada' | 'parcial'>('todos');
@@ -522,7 +523,7 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
                                              </td>
                                              <td className="p-2 text-center">
                                                 <div className="flex justify-center gap-1">
-                                                  <button onClick={() => setShowDetails(d)} className="text-ink hover:text-brand-gold p-1 transition-colors"><Eye className="w-3.5 h-3.5"/></button>
+                                                  <button onClick={async () => { setShowDetailsSale(null); setShowDetails(d); if (d?.ventaId || d?.id) setShowDetailsSale(await Store.getSaleById(d.ventaId || d.id)); }} className="text-ink hover:text-brand-gold p-1 transition-colors"><Eye className="w-3.5 h-3.5"/></button>
                                                   {d.estado !== 'pagada' && (
                                                     <button onClick={() => eliminarDeuda(d)} disabled={isProcessing} className="text-ink hover:text-status-danger p-1"><Trash2 className="w-3.5 h-3.5" /></button>
                                                   )}
@@ -548,13 +549,13 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
 
       {/* MODAL DETALLES AVANZADOS */}
       {showDetails && (
-        <div className="modal show" style={{ zIndex: 100 }}><div className="modal-bg" onClick={() => setShowDetails(null)}></div>
+        <div className="modal show" style={{ zIndex: 100 }}><div className="modal-bg" onClick={() => { setShowDetails(null); setShowDetailsSale(null); }}></div>
           <div className="modal-box max-w-[600px] bg-white border-2 border-line rounded-xl overflow-hidden shadow-2xl">
             <div className="modal-head py-4 px-6 border-b border-line bg-ink flex justify-between items-center text-white">
               <h3 className="font-black text-xs uppercase italic tracking-tighter flex items-center gap-2">
                 <Receipt className="w-5 h-5 text-brand-gold" /> HISTORIAL DETALLADO: {showDetails.id}
               </h3>
-              <button onClick={() => setShowDetails(null)} className="text-white hover:text-brand-gold"><X className="w-5 h-5"/></button>
+              <button onClick={() => { setShowDetails(null); setShowDetailsSale(null); }} className="text-white hover:text-brand-gold"><X className="w-5 h-5"/></button>
             </div>
             <div className="modal-body p-6 space-y-6 max-h-[75vh] overflow-y-auto bg-white">
               <div className="grid grid-cols-2 gap-4">
@@ -569,7 +570,7 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
               </div>
 
               {(() => {
-                const sale = state.ventas.find((v: any) => v.id === showDetails.ventaId || v.id === showDetails.id);
+                const sale = showDetailsSale;
                 if (!sale) return null;
                 return (
                   <div className="space-y-3 animate-in slide-in-from-top-2 duration-300">
@@ -626,7 +627,7 @@ export default function CxCModule({ state, updateState }: { state: AppState, upd
               </div>
             </div>
             <div className="modal-foot p-4 bg-surface-soft border-t border-line text-right">
-               <button onClick={() => setShowDetails(null)} className="btn btn-primary px-8 font-black uppercase text-[10px] rounded-lg shadow-md">Cerrar Ficha</button>
+               <button onClick={() => { setShowDetails(null); setShowDetailsSale(null); }} className="btn btn-primary px-8 font-black uppercase text-[10px] rounded-lg shadow-md">Cerrar Ficha</button>
             </div>
           </div>
         </div>
