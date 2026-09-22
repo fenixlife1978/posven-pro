@@ -266,7 +266,6 @@ export default function ConfigModule({ state, updateState }: { state: AppState, 
   return (
     <div className="max-w-2xl space-y-6 animate-in fade-in duration-300 pb-20">
       {/* ===== TASA DE CAMBIO ===== */}      <div className="card shadow-lg border-line">
-        <div className="card shadow-lg border-line">
         <div className="card-head bg-surface-soft border-b border-line px-5 py-4">
           <h3 className="text-ink font-black uppercase text-xs tracking-widest">Tasa de Cambio Oficial</h3>
         </div>
