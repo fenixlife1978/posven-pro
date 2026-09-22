@@ -94,17 +94,31 @@ export default function CxCModule({ state, updateState, terminalId }: CxCModuleP
   // Todas las deudas (incluyendo pagadas)
   const todasLasDeudas = state.cxc || [];
   
-  // Una cuenta SOLO es deuda activa (por cobrar) cuando tiene monto real y saldo
-  // real pendiente. Monto o saldo $0.00 (despreciable/negativo) es NEUTRO o PAGADO:
-  // no cuenta como cartera activa por cobrar.
+  // El saldo visible y operativo SIEMPRE representa la deuda actual.
+  // Si existe historial/abonado, nunca volvemos a mostrar el monto inicial como saldo.
+  // El campo saldoUSD sigue siendo el respaldo para datos antiguos sin historial.
+  const saldoActualDeuda = (x: any) => {
+    const monto = Math.max(0, Number(x?.montoUSD) || 0);
+    const saldoRegistrado = Math.max(0, Number(x?.saldoUSD) || 0);
+    const abonadoRegistrado = Math.max(0, Number(x?.abonadoUSD) || 0);
+    const abonadoHistorial = Array.isArray(x?.historialPagos)
+      ? x.historialPagos.reduce((sum: number, p: any) => sum + Math.max(0, Number(p?.montoUSD) || 0), 0)
+      : 0;
+    const abonadoActual = Math.min(monto, Math.max(abonadoRegistrado, abonadoHistorial));
+    return abonadoActual > 0.000001
+      ? Math.max(0, monto - abonadoActual)
+      : saldoRegistrado;
+  };
+
+  // Una cuenta SOLO es deuda activa (por cobrar) cuando conserva saldo real.
   const esDeudaActiva = (x: any) =>
     (x.montoUSD || 0) > 0.001 &&
-    (x.saldoUSD || 0) > 0.001 &&
+    saldoActualDeuda(x) > 0.001 &&
     x.estado !== 'pagada';
 
   // Deudas activas por cobrar para el total
   const pendientes = todasLasDeudas.filter(esDeudaActiva);
-  const totalPendiente = pendientes.reduce((s: number, x: any) => s + x.saldoUSD, 0);
+  const totalPendiente = pendientes.reduce((s: number, x: any) => s + saldoActualDeuda(x), 0);
 
   // Agrupar SOLO clientes que existen en state.clientes
   const groupedCredits = useMemo(() => {
@@ -135,7 +149,7 @@ export default function CxCModule({ state, updateState, terminalId }: CxCModuleP
         groups[customerKey].debts.push(debt);
         // Solo sumar al total si la deuda está realmente activa (tiene saldo pendiente)
         if (esDeudaActiva(debt)) {
-          groups[customerKey].totalUSD += debt.saldoUSD;
+          groups[customerKey].totalUSD += saldoActualDeuda(debt);
         }
       }
     });
@@ -157,7 +171,7 @@ export default function CxCModule({ state, updateState, terminalId }: CxCModuleP
           filteredGroups[name] = {
             ...group,
             debts: filteredDebts,
-            totalUSD: filteredDebts.reduce((s: number, d: Debt) => s + (esDeudaActiva(d) ? d.saldoUSD : 0), 0)
+            totalUSD: filteredDebts.reduce((s: number, d: Debt) => s + (esDeudaActiva(d) ? saldoActualDeuda(d) : 0), 0)
           };
         }
         // Los clientes sin deudas no se muestran cuando hay filtro activo
@@ -505,6 +519,13 @@ export default function CxCModule({ state, updateState, terminalId }: CxCModuleP
                 pageCreditEntries.map(([clientName, group]) => {
                   const tieneDeudaPendiente = group.totalUSD > 0;
                   const tieneDeudas = group.debts.length > 0;
+                  // Pago Global SOLO existe cuando el cliente tiene más de una factura/cuenta activa.
+                  // Se calcula sobre TODAS las deudas del cliente, no sobre el filtro visual.
+                  const deudasActivasCliente = todasLasDeudas.filter((d: Debt) => {
+                    const nombreCliente = d.cliente ? d.cliente.split(' [')[0] : '';
+                    return nombreCliente === clientName && esDeudaActiva(d);
+                  });
+                  const tieneMasDeUnaFacturaAdeudada = deudasActivasCliente.length > 1;
                   
                   return (
                     <React.Fragment key={clientName}>
@@ -545,7 +566,7 @@ export default function CxCModule({ state, updateState, terminalId }: CxCModuleP
                            <div className="flex items-center justify-center gap-2">
                              {tieneDeudas ? (
                                <>
-                                 {tieneDeudaPendiente && (
+                                 {tieneMasDeUnaFacturaAdeudada && (
                                    <button
                                      onClick={() => handleOpenGlobalPayment(clientName, group)}
                                      className="px-3 h-10 rounded-lg flex items-center justify-center bg-brand-gold text-black font-black text-[9px] uppercase hover:bg-brand-gold-deep transition-all shadow-md"
@@ -610,7 +631,7 @@ export default function CxCModule({ state, updateState, terminalId }: CxCModuleP
                                              </td>
                                              <td className="text-[10px] font-black p-2 mono text-ink">{d.id}</td>
                                              <td className="text-[10px] font-black p-2 text-right text-ink">{Utils.fmtUSD(d.montoUSD)}</td>
-                                             <td className="text-[10px] font-black p-2 text-right text-brand-gold-deep">{Utils.fmtUSD(d.saldoUSD)}</td>
+                                             <td className="text-[10px] font-black p-2 text-right text-brand-gold-deep">{Utils.fmtUSD(saldoActualDeuda(d))}</td>
                                              <td className="p-2 text-center">
                                                <span className={`badge ${d.estado === 'pagada' ? 'badge-ok' : (d.estado === 'parcial' ? 'badge-info' : 'badge-warn')} font-black text-[8px] uppercase px-3`}>
                                                  {d.estado}
@@ -776,7 +797,7 @@ export default function CxCModule({ state, updateState, terminalId }: CxCModuleP
                             <td className="p-4 text-xs font-black mono text-ink">{d.id}</td>
                             <td className="p-4 text-right text-xs font-black text-ink">{Utils.fmtUSD(d.montoUSD)}</td>
                             <td className="p-4 text-right text-xs font-black text-status-success">{Utils.fmtUSD(d.abonadoUSD)}</td>
-                            <td className="p-4 text-right text-sm font-black text-brand-gold-deep">{Utils.fmtUSD(d.saldoUSD)}</td>
+                            <td className="p-4 text-right text-sm font-black text-brand-gold-deep">{Utils.fmtUSD(saldoActualDeuda(d))}</td>
                             <td className="p-4 text-center">
                               <span className={`badge ${d.estado === 'pagada' ? 'badge-ok' : (d.estado === 'parcial' ? 'badge-info' : 'badge-warn')} font-black text-[8px] uppercase px-3`}>
                                 {d.estado}
