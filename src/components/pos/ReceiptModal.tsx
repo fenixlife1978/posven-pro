@@ -502,11 +502,9 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
                       const totalEstimadoBs = fondoBs + totalVentasEfectivoBs + entradasCajaBs - salidasCajaBs;
                       const totalEstimadoUsd = fondoUsd + totalVentasEfectivoUsd + entradasCajaUsd - salidasCajaUsd;
 
-                      // Total real de ventas del día: solo ventas, sin fondos de apertura,
+                      // Total real de ventas del período: solo ventas, sin fondos de apertura,
                       // entradas/salidas extraordinarias ni cobros de deudas.
-                      const ventasDiaBs = ventasEfectivoBs;
-                      const ventasDiaUsd = ventasEfectivoUsd;
-                      const totalVentasDiaUsd = (ventasDiaBs / (state.tasa || 1)) + ventasDiaUsd;
+                      const totalVentasDiaUsd = (ventasEfectivoBs / (state.tasa || 1)) + ventasEfectivoUsd;
 
                       return (
                         <>
