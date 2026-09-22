@@ -12,8 +12,9 @@ service cloud.firestore {
     }
     
     function isAdmin() {
-      return isAuthenticated() && 
-             exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+      // getUserData() ya valida el perfil requerido; evitar exists()+get()
+      // reduce una lectura dependiente innecesaria en cada operación.
+      return isAuthenticated() &&
              getUserData().rol == 'administrador';
     }
 
@@ -41,9 +42,8 @@ service cloud.firestore {
       allow read, write: if isAdmin();
       
       // Los cajeros tienen acceso si NO están bloqueados
-      allow read, write: if isAuthenticated() && 
-        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-        getUserData().rol == 'cajero' && 
+      allow read, write: if isAuthenticated() &&
+        getUserData().rol == 'cajero' &&
         getUserData().accesoBloqueado == false;
     }
   }
