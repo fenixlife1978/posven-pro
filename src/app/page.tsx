@@ -234,6 +234,17 @@ export default function LicoreriaPOS() {
     };
   }, [router]);
 
+  // Maestros bajo demanda: solo mantienen realtime mientras el módulo que los necesita está abierto.
+  // Esto evita que cada caja escuche clientes/proveedores completos durante toda la jornada.
+  useEffect(() => {
+    const clientesModules = new Set(['dashboard', 'ventas', 'cxc']);
+    const proveedoresModules = new Set(['compras', 'proveedores', 'cxp']);
+    const cleanups: Array<() => void> = [];
+    if (clientesModules.has(activeModule)) cleanups.push(Store.startMasterSync('clientes'));
+    if (proveedoresModules.has(activeModule)) cleanups.push(Store.startMasterSync('proveedores'));
+    return () => cleanups.forEach(fn => fn());
+  }, [activeModule]);
+
   // LÓGICA DE NOTIFICACIONES CXP (CADA 6 HORAS / 72H VENCIMIENTO)
   useEffect(() => {
     if (!state.cxp || state.cxp.length === 0 || userRole !== 'administrador') return;
