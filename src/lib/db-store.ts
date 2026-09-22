@@ -583,15 +583,40 @@ async function loadReportWindow(name: string, terminalId: string, cutoff: string
       filters.push(where('terminalId', '==', terminalId));
     }
 
-    const snap = await getDocs(query(
-      collection(db, COLLECTIONS[name]),
-      ...filters,
-      orderBy('fecha', 'asc'),
-      limit(1000)
-    ));
-    const items = snap.docs.map(d => sanitizeForFirestore(d.data())).filter(Boolean);
-    applyPatch({ [name]: mergeById((cache as any)[name], items) });
+    // Carga por páginas para no truncar un reporte si una caja supera 1000
+    // operaciones desde su último Z. Cada página sigue siendo una consulta
+    // acotada al período/terminal; no se descarga el histórico completo.
+    let cursor: QueryDocumentSnapshot | null = null;
+    let total = 0;
+    while (true) {
+      const pageQuery = cursor
+        ? query(
+            collection(db, COLLECTIONS[name]),
+            ...filters,
+            orderBy('fecha', 'asc'),
+            startAfter(cursor),
+            limit(1000)
+          )
+        : query(
+            collection(db, COLLECTIONS[name]),
+            ...filters,
+            orderBy('fecha', 'asc'),
+            limit(1000)
+          );
+
+      const snap = await getDocs(pageQuery);
+      const items = snap.docs.map(d => sanitizeForFirestore(d.data())).filter(Boolean);
+      if (items.length) {
+        applyPatch({ [name]: mergeById((cache as any)[name], items) });
+        total += items.length;
+      }
+
+      if (snap.docs.length < 1000) break;
+      cursor = snap.docs[snap.docs.length - 1];
+    }
+
     SINCE_STAMP[key] = 'done';
+    console.info("[db-store] Ventana de reporte cargada:", name, total, "registros");
   } catch (e) {
     console.error("Error cargando ventana de reporte " + name + ":", e);
     throw e;
