@@ -2259,6 +2259,7 @@ export const Store = {
   loadMore,
   ensureLoaded,
   startMasterSync,
+  syncMasterSync,
   startTerminalSync,
   ensureReportData,
   kardex,
