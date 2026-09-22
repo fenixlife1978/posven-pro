@@ -23,7 +23,12 @@ import {
 import { toast } from '@/hooks/use-toast';
 
 export default function ReturnsModule({ state, updateState, onBackToPOS, terminalId }: { state: AppState, updateState: (s: Partial<AppState>) => void, onBackToPOS: () => void, terminalId?: string }) {
-  useEffect(() => {\n    // Ventas y devoluciones históricas se cargan solo al entrar al módulo.\n    Store.ensureLoaded('ventas');\n    Store.ensureLoaded('devoluciones');\n    Store.ensureLoaded('anulaciones');\n  }, []);
+  useEffect(() => {
+    // Ventas y devoluciones históricas se cargan solo al entrar al módulo.
+    Store.ensureLoaded('ventas');
+    Store.ensureLoaded('devoluciones');
+    Store.ensureLoaded('anulaciones');
+  }, []);
   const [view, setView] = useState<'list' | 'create'>('list');
   const [saleSearch, setSaleSearch] = useState('');
   const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
@@ -175,9 +180,11 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
     const pin = prompt('AUTORIZACIÓN REQUERIDA: Ingrese PIN de Seguridad:');
     if (pin !== state.pinDevolucion) return alert('PIN Incorrecto');
 
-    if (!confirm(`¿ESTÁ SEGURO DE ANULAR LA FACTURA ${selectedSale.id}?\nEsta acción devolverá todo el stock al inventario.`)) return;
+    if (!confirm(`¿ESTÁ SEGURO DE ANULAR LA FACTURA ${selectedSale.id}?
+Esta acción devolverá todo el stock al inventario.`)) return;
 
-    const representaEgreso = confirm("¿Esta anulación requiere el REINTEGRO DE DINERO físico al cliente?\n(Si confirma, se generará un asiento de EGRESO en contabilidad)");
+    const representaEgreso = confirm("¿Esta anulación requiere el REINTEGRO DE DINERO físico al cliente?
+(Si confirma, se generará un asiento de EGRESO en contabilidad)");
 
     processingRef.current = true;
     setIsProcessing(true);
