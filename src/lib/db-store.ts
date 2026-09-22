@@ -714,11 +714,32 @@ function init() {
   }
 
   // 3) LISTAS VIVAS ENTRE CAJAS.
-  // CxC/CxP y los maestros de clientes/proveedores son datos financieros
-  // compartidos: una deuda puede quedar fuera de las últimas 50 y aun así
-  // cambiar desde otra caja. Para ellos el snapshot completo es la fuente
-  // autoritativa y reemplaza el cache local cuando llega.
-  for (const name of ['cxc', 'cxp', 'clientes', 'proveedores']) {
+  // CxC/CxP: el POS solo necesita deuda ACTIVA en tiempo real. Mantener
+  // miles de deudas ya pagadas conectadas en cada terminal genera lecturas
+  // iniciales innecesarias. El histórico completo se hidrata únicamente
+  // cuando se entra al módulo que lo necesita.
+  for (const name of ['cxc', 'cxp']) {
+    const col = COLLECTIONS[name];
+    teardownFns.push(onSnapshot(
+      query(collection(db, col), where('estado', 'in', ['pendiente', 'parcial'])),
+      (snap) => {
+        const currentArr = [...((cache as any)[name] || [])];
+        const map = new Map<string, any>(currentArr.map(x => [String(x.id), x]));
+        snap.docChanges().forEach(change => {
+          const item = sanitizeForFirestore(change.doc.data());
+          const id = String(item?.id || change.doc.id);
+          if (change.type === 'removed') map.delete(id);
+          else if (item) map.set(id, item);
+        });
+        applyPatch({ [name]: [...map.values()] });
+      },
+      (err) => { if (err.code !== 'permission-denied') console.warn("Sync " + name + ":", err); }
+    ));
+  }
+
+  // Clientes/proveedores siguen completos porque son maestros de consulta y
+  // sus cambios afectan búsquedas y validaciones en todas las cajas.
+  for (const name of ['clientes', 'proveedores']) {
     const col = COLLECTIONS[name];
     teardownFns.push(onSnapshot(
       collection(db, col),
