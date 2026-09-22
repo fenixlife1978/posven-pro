@@ -620,8 +620,25 @@ async function loadReportWindow(name: string, terminalId: string, cutoff: string
             limit(1000)
           );
 
-      const snap = await getDocs(pageQuery);
-      const items = snap.docs.map(d => sanitizeForFirestore(d.data())).filter(Boolean);
+      let snap;
+      try {
+        snap = await getDocs(pageQuery);
+      } catch (e: any) {
+        // Si el índice compuesto aún no fue desplegado en Firebase, no bloqueamos
+        // Reporte X/Z. Reintentamos la misma ventana solo por fecha y filtramos
+        // la terminal en memoria. Este camino es de contingencia; cuando el índice
+        // existe, la consulta optimizada anterior sigue siendo la utilizada.
+        if (e?.code !== 'failed-precondition' || name === 'devoluciones') throw e;
+        const fallbackFilters: any[] = [where('fecha', '>', cutoff)];
+        const fallbackQuery = cursor
+          ? query(collection(db, COLLECTIONS[name]), ...fallbackFilters, orderBy('fecha', 'asc'), startAfter(cursor), limit(1000))
+          : query(collection(db, COLLECTIONS[name]), ...fallbackFilters, orderBy('fecha', 'asc'), limit(1000));
+        snap = await getDocs(fallbackQuery);
+      }
+      const items = snap.docs
+        .map(d => sanitizeForFirestore(d.data()))
+        .filter(Boolean)
+        .filter((item: any) => name !== 'ventas' && name !== 'libroDiario' || String(item.terminalId || '') === terminalId);
       if (items.length) {
         applyPatch({ [name]: mergeById((cache as any)[name], items) });
         total += items.length;
