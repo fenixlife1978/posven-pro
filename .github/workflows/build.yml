@@ -46,6 +46,16 @@ jobs:
           # electron-builder gestionará los binarios al empaquetar.
           ELECTRON_SKIP_BINARY_DOWNLOAD: 1
 
+      - name: Cache Electron binaries
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/electron
+            ~/.cache/electron-builder
+          key: electron-${{ runner.os }}-${{ runner.arch }}-34.5.8
+          restore-keys: |
+            electron-${{ runner.os }}-${{ runner.arch }}-
+
       - name: Build Next.js
         run: npm run build
         env:
