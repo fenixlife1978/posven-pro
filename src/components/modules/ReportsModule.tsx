@@ -20,6 +20,15 @@ export default function ReportsModule({ state }: { state: AppState }) {
   const [hasta, setHasta] = useState(Utils.hoy());
   const [terminalFilter, setTerminalFilter] = useState('all');
   
+  useEffect(() => {
+    // Reportes es histórico y puede abarcar meses. Cargar únicamente el rango
+    // solicitado evita descargar colecciones completas al entrar al módulo.
+    void Promise.all([
+      Store.ensureReportRange('ventas', desde, hasta, terminalFilter),
+      Store.ensureReportRange('reportesZ', desde, hasta, terminalFilter),
+    ]).catch(e => console.error('Error cargando rango de reportes:', e));
+  }, [desde, hasta, terminalFilter]);
+
   // Filtrado de Ventas por Fecha y Terminal
   const ventasFiltradas = (state.ventas || []).filter(v => {
     const fechaVenta = v.fecha ? v.fecha.split('T')[0] : '';
