@@ -60,9 +60,13 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
   const [page, setPage] = useState(1);
 
   useEffect(() => {
-    Store.ensureLoaded('movimientos');
-    Store.ensureLoaded('ventas');
-  }, []);
+    if (activeTab !== 'productos') {
+      void Store.ensureLoaded('movimientos');
+    }
+    if (activeTab === 'reporte_ventas' || activeTab === 'reporte_devoluciones') {
+      void Store.ensureLoaded('ventas');
+    }
+  }, [activeTab]);
 
   useEffect(() => {
     setPage(1);
