@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { AppState, LibroDiarioEntry, PaymentMethod, Debt } from '@/lib/types';
 import { Utils, Store } from '@/lib/db-store';
 import { 
@@ -33,8 +33,8 @@ interface CxPModuleProps {
   terminalId?: string;
 }
 
-export default function CxPModule({
-  useEffect(() => { Store.ensureLoaded('cxp'); }, []); state, updateState, terminalId }: CxPModuleProps) {
+export default function CxPModule({ state, updateState, terminalId }: CxPModuleProps) {
+  useEffect(() => { Store.ensureLoaded('cxp'); }, []);
   const [showDetails, setShowDetails] = useState<any>(null);
   const [showPaymentModal, setShowPaymentModal] = useState<any>(null);
   const [paymentAmount, setPaymentAmount] = useState('');
@@ -197,8 +197,7 @@ export default function CxPModule({
     }
   };
 
-  const handleOpenGlobalPayment = (provider: string) => {
-    const grupo = gruposProveedor.find(g => g.proveedor === provider);
+  const handleOpenGlobalPayment = (provider: string) => {    const grupo = gruposProveedor.find(g => g.proveedor === provider);
     if (!grupo) return;
     const total = grupo.saldoTotal;
     if (total <= 0) return;
@@ -397,8 +396,7 @@ export default function CxPModule({
       setDeudaMotivo('');
       setProveedorSearch('');
       setFechaDeuda(Utils.hoy());
-    } catch (e: any) {
-      toast({ variant: "destructive", title: "No se pudo registrar la deuda", description: e?.message || 'La información cambió en otra caja. Actualice y vuelva a intentar.' });
+    } catch (e: any) {      toast({ variant: "destructive", title: "No se pudo registrar la deuda", description: e?.message || 'La información cambió en otra caja. Actualice y vuelva a intentar.' });
     } finally {
       processingRef.current = false;
       setIsProcessing(false);
@@ -597,8 +595,7 @@ export default function CxPModule({
                   <tr className="bg-surface-soft">
                     <th className="text-ink font-black text-[10px] uppercase py-4 px-6 border-b border-line">Fecha</th>
                     <th className="text-ink font-black text-[10px] uppercase py-4 border-b border-line">Proveedor</th>
-                    <th className="text-ink font-black text-[10px] uppercase py-4 border-b border-line">Factura</th>
-                    <th className="text-ink font-black text-[10px] uppercase py-4 text-right border-b border-line">Monto USD</th>
+                    <th className="text-ink font-black text-[10px] uppercase py-4 border-b border-line">Factura</th>                    <th className="text-ink font-black text-[10px] uppercase py-4 text-right border-b border-line">Monto USD</th>
                     <th className="text-ink font-black text-[10px] uppercase py-4 text-right border-b border-line">Pagado</th>
                     <th className="text-ink font-black text-[10px] uppercase py-4 text-center border-b border-line">Abonos</th>
                     <th className="text-ink font-black text-[10px] uppercase px-6 text-center border-b border-line">Acciones</th>
@@ -797,8 +794,7 @@ export default function CxPModule({
                     )}
                   </div>
                   <button onClick={handleProcessPayment} disabled={isProcessing} className="btn btn-primary w-full h-14 font-black uppercase text-xs shadow-xl">CONFIRMAR Y ASENTAR PAGO</button>
-                 </>
-                 );
+                 </>                 );
                })()}
             </div>
           </div>
@@ -997,8 +993,7 @@ export default function CxPModule({
                     <label className="text-ink text-[10px] font-black uppercase block mb-1">Monto (USD)</label>
                     <div className="relative">
                       <DollarSign className="absolute left-3 top-3 w-4 h-4 text-ink opacity-30" />
-                      <input 
-                        type="number" 
+                      <input                         type="number" 
                         className="form-input pl-10 h-11 text-sm font-black text-ink w-full" 
                         placeholder="0.00"
                         value={deudaMonto}
