@@ -728,8 +728,12 @@ function init() {
         snap.docChanges().forEach(change => {
           const item = sanitizeForFirestore(change.doc.data());
           const id = String(item?.id || change.doc.id);
-          if (change.type === 'removed') map.delete(id);
-          else if (item) map.set(id, item);
+          if (change.type === 'removed') {
+            // Si dejó de pertenecer al conjunto activo porque pasó a pagada,
+            // conservamos el histórico ya hidratado. Si realmente fue
+            // eliminado y seguía activa, sí retiramos el documento.
+            if (item && String(item.estado || '') !== 'pagada') map.delete(id);
+          } else if (item) map.set(id, item);
         });
         applyPatch({ [name]: [...map.values()] });
       },
