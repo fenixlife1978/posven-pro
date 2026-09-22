@@ -675,10 +675,42 @@ async function loadCatalogs() {
 // ============================================================
 let started = false;
 let teardownFns: (() => void)[] = [];
+const masterSyncFns: Record<string, () => void> = {};
+
+function stopMasterSync(name: string): void {
+  const unsub = masterSyncFns[name];
+  if (unsub) {
+    try { unsub(); } catch (e) { console.error(e); }
+    delete masterSyncFns[name];
+  }
+}
+
+function startMasterSync(name: string): () => void {
+  if (!db || typeof window === 'undefined') return () => {};
+  if (!COLLECTIONS[name]) return () => {};
+  if (masterSyncFns[name]) return () => stopMasterSync(name);
+
+  const col = COLLECTIONS[name];
+  const unsub = onSnapshot(
+    collection(db, col),
+    (snap) => {
+      const items = snap.docs
+        .map(d => sanitizeForFirestore(d.data()))
+        .filter(Boolean);
+      applyPatch({ [name]: items });
+    },
+    (err) => {
+      if (err.code !== 'permission-denied') console.warn("Sync maestro " + name + ":", err);
+    }
+  );
+  masterSyncFns[name] = unsub;
+  return () => stopMasterSync(name);
+}
 
 function cleanup() {
   teardownFns.forEach(fn => { try { fn(); } catch (e) { console.error(e); } });
   teardownFns = [];
+  Object.keys(masterSyncFns).forEach(stopMasterSync);
   started = false;
   Object.keys(loadedAll).forEach(k => { loadedAll[k] = false; });
   Object.keys(cursors).forEach(k => { cursors[k] = null; });
@@ -741,21 +773,9 @@ function init() {
     ));
   }
 
-  // Clientes/proveedores siguen completos porque son maestros de consulta y
-  // sus cambios afectan búsquedas y validaciones en todas las cajas.
-  for (const name of ['clientes', 'proveedores']) {
-    const col = COLLECTIONS[name];
-    teardownFns.push(onSnapshot(
-      collection(db, col),
-      (snap) => {
-        const items = snap.docs
-          .map(d => sanitizeForFirestore(d.data()))
-          .filter(Boolean);
-        applyPatch({ [name]: items });
-      },
-      (err) => { if (err.code !== 'permission-denied') console.warn("Sync " + name + ":", err); }
-    ));
-  }
+  // Clientes/proveedores se sincronizan solo mientras el módulo que los necesita está abierto.
+  // Así evitamos descargar y mantener dos colecciones maestras completas en cada caja
+  // durante toda la jornada cuando el operador está trabajando en otro módulo.
 
   // Terminales sí permanece completo y en tiempo real: contiene el estado
   // operativo de cada caja y normalmente son pocos documentos.
@@ -2103,6 +2123,7 @@ export const Store = {
 
   loadMore,
   ensureLoaded,
+  startMasterSync,
   ensureReportData,
   kardex,
 
