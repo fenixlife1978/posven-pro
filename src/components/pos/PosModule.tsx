@@ -184,7 +184,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       // Garantiza que ventas/devoluciones/libroDiario/etc. estén cargados
       // desde Firestore antes de calcular. Evita el bug de "$0" tras reinicio
       // o corte de luz, donde el cache aún no terminó de hidratarse.
-      await Store.ensureReportData();
+      await Store.ensureReportData(currentTerminal?.id || 'GLOBAL', Utils.getTerminalCash(currentTerminal).fechaUltimoZ || new Date().toISOString().split('T')[0]);
       
       // ✅ Verificar que los datos se cargaron correctamente
       const state = Store.get();
