@@ -8,6 +8,7 @@ import { db, auth } from '@/lib/firebase';
 import { collection, getDocs, deleteDoc, doc, setDoc, writeBatch, query, limit } from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
 import { migrarEstructura } from '@/lib/migracion-firestore';
+import { FirestoreUsage } from '@/lib/firestore-usage';
 import { crearRespaldo, descargarRespaldo, cargarRespaldoDesdeArchivo } from '@/lib/backup';
 
 export default function ConfigModule({ state, updateState }: { state: AppState, updateState: (s: Partial<AppState>) => void }) {
