@@ -810,6 +810,20 @@ function startMasterSync(name: string): () => void {
   return () => stopMasterSync(name);
 }
 
+// Ajusta los listeners maestros al módulo activo sin reiniciarlos cuando
+// el nuevo módulo sigue necesitando la misma colección. Así, por ejemplo,
+// Dashboard → Ventas → CxC mantiene un único listener de clientes durante
+// toda la navegación y evita repetir el snapshot inicial completo.
+function syncMasterSync(names: string[]): void {
+  const wanted = new Set(names.filter(name => !!COLLECTIONS[name]));
+  Object.keys(masterSyncFns).forEach(name => {
+    if (!wanted.has(name)) stopMasterSync(name);
+  });
+  wanted.forEach(name => {
+    if (!masterSyncFns[name]) startMasterSync(name);
+  });
+}
+
 function cleanup() {
   teardownFns.forEach(fn => { try { fn(); } catch (e) { console.error(e); } });
   teardownFns = [];
