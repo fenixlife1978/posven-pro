@@ -856,7 +856,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                           <div className="flex items-center justify-center gap-2">
                             {group.debts.filter(esDeudaActiva).length > 1 && (
                               <button
-                                onClick={() => handleOpenGlobalCreditPayment(clientName, group.debts)}
+                                onClick={() => handleOpenGlobalPayment(clientName, group)}
                                 className="px-3 h-10 rounded-lg flex items-center justify-center bg-brand-gold text-black font-black text-[9px] uppercase hover:bg-brand-gold-deep transition-all shadow-md"
                                 title="Pago global: aplica el monto desde la factura más antigua"
                               >
