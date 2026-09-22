@@ -683,6 +683,12 @@ function stopMasterSync(name: string): void {
     try { unsub(); } catch (e) { console.error(e); }
     delete masterSyncFns[name];
   }
+  // Al cerrar el listener ya no podemos considerar esta colección como
+  // completamente hidratada por realtime. Si un módulo pide el histórico
+  // después, ensureLoaded() volverá a consultarlo solo cuando sea necesario.
+  if (name === 'clientes' || name === 'proveedores') {
+    loadedAll[name] = false;
+  }
 }
 
 function startMasterSync(name: string): () => void {
@@ -698,6 +704,13 @@ function startMasterSync(name: string): () => void {
         .map(d => sanitizeForFirestore(d.data()))
         .filter(Boolean);
       applyPatch({ [name]: items });
+
+      // Este snapshot ya contiene la colección completa. Marcarla como
+      // hidratada evita que ensureReportData()/ensureLoaded() dispare una
+      // segunda lectura completa mientras el listener está activo.
+      if (name === 'clientes' || name === 'proveedores') {
+        loadedAll[name] = true;
+      }
     },
     (err) => {
       if (err.code !== 'permission-denied') console.warn("Sync maestro " + name + ":", err);
