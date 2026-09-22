@@ -572,18 +572,56 @@ async function ensureLoaded(name: string): Promise<void> {
 // Como cada caja filtra por SU PROPIO `fechaUltimoZ` (per-terminal), ventas y
 // libroDiario se cargan COMPLETOS: una caja nunca debe perder datos porque
 // otra hizo su corte Z.
-async function ensureReportData(): Promise<void> {
-  if (!db) return;
-  await Promise.all([
-    ensureLoaded('ventas'),
-    ensureLoaded('devoluciones'),
-    ensureLoaded('anulaciones'),
-    ensureLoaded('libroDiario'),
-    ensureLoaded('terminales'),
-    ensureLoaded('clientes'),
-  ]);
-  // Los listeners ya entregan sus snapshots; no necesitamos esperar artificialmente.
+async function loadReportWindow(name: string, terminalId: string, cutoff: string): Promise<void> {
+  if (!db || !COLLECTIONS[name]) return;
+  const key = `report:${name}:${terminalId}:${cutoff}`;
+  if (SINCE_STAMP[key] === 'done') return;
 
+  try {
+    const filters: any[] = [where('fecha', '>', cutoff)];
+    if (name === 'ventas' || name === 'libroDiario') {
+      filters.push(where('terminalId', '==', terminalId));
+    }
+
+    const snap = await getDocs(query(
+      collection(db, COLLECTIONS[name]),
+      ...filters,
+      orderBy('fecha', 'asc'),
+      limit(1000)
+    ));
+    const items = snap.docs.map(d => sanitizeForFirestore(d.data())).filter(Boolean);
+    applyPatch({ [name]: mergeById((cache as any)[name], items) });
+    SINCE_STAMP[key] = 'done';
+  } catch (e) {
+    console.error("Error cargando ventana de reporte " + name + ":", e);
+    throw e;
+  }
+}
+
+// Reportes X/Z solo necesitan el período posterior al último Z de ESTA caja.
+// No tiene sentido descargar ventas/libroDiario históricos de todas las cajas.
+async function ensureReportData(terminalId?: string, cutoff?: string): Promise<void> {
+  if (!db) return;
+
+  const termId = String(terminalId || 'GLOBAL');
+  const desde = String(cutoff || '');
+
+  // Si no tenemos terminal/corte (casos administrativos), conservamos el
+  // comportamiento seguro anterior.
+  if (!terminalId || !cutoff) {
+    await Promise.all([
+      ensureLoaded('ventas'),
+      ensureLoaded('devoluciones'),
+      ensureLoaded('libroDiario'),
+    ]);
+    return;
+  }
+
+  await Promise.all([
+    loadReportWindow('ventas', termId, desde),
+    loadReportWindow('devoluciones', termId, desde),
+    loadReportWindow('libroDiario', termId, desde),
+  ]);
 }
 
 // Siguiente página (10) de una colección ordenada por fecha desc (listas históricas).
