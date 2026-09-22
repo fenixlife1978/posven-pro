@@ -102,10 +102,10 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     return auth?.currentUser ? state.terminales.find(t => t.usuarioId === auth.currentUser!.uid) : null;
   }, [state.terminales]);
 
-  const getFreshReportData = () => {
+  const getFreshReportData = (windowStart?: string, windowEndExclusive?: string) => {
     // ✅ FIX: Obtener datos frescos del Store para evitar inconsistencias
     const freshState = Store.get();
-    const corteTimestamp = Utils.getTerminalCash(currentTerminal).fechaUltimoZ || freshState.fechaUltimoZ || '';
+    const corteTimestamp = windowStart ?? (Utils.getTerminalCash(currentTerminal).fechaUltimoZ || freshState.fechaUltimoZ || '');
     const termId = currentTerminal?.id || 'GLOBAL';
     
     // Usar datos frescos del Store en lugar del state del componente
@@ -113,9 +113,10 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     const allDevoluciones = freshState.devoluciones || [];
     const allLibroDiario = freshState.libroDiario || [];
     
-    const vActivas = allVentas.filter(v => v.fecha > corteTimestamp && v.estado !== 'anulada' && v.terminalId === termId);
-    const vAnuladas = allVentas.filter(v => v.fecha > corteTimestamp && v.estado === 'anulada' && v.terminalId === termId);
-    const dHoy = allDevoluciones.filter(d => d.fecha > corteTimestamp && (allVentas.find(v => v.id === d.ventaId)?.terminalId === termId));
+    const inWindow = (fecha: string) => fecha > corteTimestamp && (!windowEndExclusive || fecha < windowEndExclusive);
+    const vActivas = allVentas.filter(v => inWindow(v.fecha) && v.estado !== 'anulada' && v.terminalId === termId);
+    const vAnuladas = allVentas.filter(v => inWindow(v.fecha) && v.estado === 'anulada' && v.terminalId === termId);
+    const dHoy = allDevoluciones.filter(d => inWindow(d.fecha) && (allVentas.find(v => v.id === d.ventaId)?.terminalId === termId));
     
     const brUSD = vActivas.reduce((s, v) => s + v.totalUSD, 0);
     const devUSD = dHoy.reduce((s, d) => s + d.totalUSD, 0);
@@ -146,7 +147,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     const desdeNC = sortedDevs.length > 0 ? sortedDevs[0].id : 'N/A';
     const hastaNC = sortedDevs.length > 0 ? sortedDevs[sortedDevs.length - 1].id : 'N/A';
 
-    const relevantDiario = allLibroDiario.filter(e => e.fecha > corteTimestamp);
+    const relevantDiario = allLibroDiario.filter(e => inWindow(e.fecha));
     const totalSalidasCaja = relevantDiario.filter(e => e.tipo === 'egreso').reduce((s, e) => s + e.montoUSD, 0);
     const totalEntradasCaja = relevantDiario.filter(e => e.tipo === 'ingreso' && e.categoria !== 'VENTA' && e.categoria !== 'COBRO_DEUDA').reduce((s, e) => s + e.montoUSD, 0);
     const cobrosDeudaUSD = relevantDiario.filter(e => e.tipo === 'ingreso' && e.categoria === 'COBRO_DEUDA').reduce((s, e) => s + e.montoUSD, 0);
@@ -187,11 +188,28 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       // Garantiza que ventas/devoluciones/libroDiario/etc. estén cargados
       // desde Firestore antes de calcular. Evita el bug de "$0" tras reinicio
       // o corte de luz, donde el cache aún no terminó de hidratarse.
-      await Store.ensureReportData(currentTerminal?.id || 'GLOBAL', Utils.getTerminalCash(currentTerminal).fechaUltimoZ || new Date().toISOString().split('T')[0]);
+      const freshBeforeReport = Store.get();
+      const terminalCashBeforeReport = Utils.getTerminalCash(currentTerminal);
+      const lastZBeforeReport = terminalCashBeforeReport.fechaUltimoZ || freshBeforeReport.fechaUltimoZ || '';
+      let reportWindowStart = lastZBeforeReport;
+      let reportWindowEndExclusive = '';
       
-      // ✅ Verificar que los datos se cargaron correctamente
+      // Recuperación de jornada omitida: si esta caja no tiene fecha de último Z,
+      // el Z debe poder cerrar la jornada calendario anterior sin tragarse las ventas de hoy.
+      if (type === 'REPORT_Z' && !lastZBeforeReport) {
+        const todayStart = new Date();
+        todayStart.setHours(0, 0, 0, 0);
+        const previousDayStart = new Date(todayStart);
+        previousDayStart.setDate(previousDayStart.getDate() - 1);
+        reportWindowStart = previousDayStart.toISOString();
+        reportWindowEndExclusive = todayStart.toISOString();
+      }
+      
+      await Store.ensureReportData(currentTerminal?.id || 'GLOBAL', reportWindowStart || undefined);
+      
+      // Verificar que los datos se cargaron correctamente
       const state = Store.get();
-      const ventasDelDia = (state.ventas || []).filter(v => v.estado !== 'anulada');
+      const ventasDelDia = (state.ventas || []).filter(v => v.estado !== 'anulada' && v.terminalId === (currentTerminal?.id || 'GLOBAL'));
       
       // Si no hay ventas pero isCashOpen es true, mostrar advertencia
       if (ventasDelDia.length === 0 && state.isCashOpen) {
@@ -202,7 +220,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         });
       }
       
-      const data = getFreshReportData();
+      const data = getFreshReportData(reportWindowStart, reportWindowEndExclusive || undefined);
       setReportSnapshot(data);
       setShowReportType(type);
     } catch (e) {
