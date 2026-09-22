@@ -308,7 +308,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     try {
       // Garantiza que las colecciones necesarias estén cargadas desde Firestore
       // antes de calcular el reporte. Evita el bug de reporte en $0 tras reinicio.
-      await Store.ensureReportData();
+      await Store.ensureReportData(currentTerminal?.id || 'GLOBAL', Utils.getTerminalCash(currentTerminal).fechaUltimoZ || new Date().toISOString().split('T')[0]);
       
       // ✅ Verificar que los datos se cargaron correctamente
       const state = Store.get();
