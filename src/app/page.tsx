@@ -158,6 +158,7 @@ export default function LicoreriaPOS() {
                       }
                       
                       const myTerm = terminals.find((t: Terminal) => t.usuarioId === currentUser.uid);
+                      if (myTerm?.id) Store.startTerminalSync(myTerm.id, false, [myTerm]);
                       const cajaEstaAbierta = !!myTerm?.isCashOpen;
                       // Mostrar apertura solo si la caja de ESTE terminal no está abierta
                       // O si el flag de localStorage está ausente
@@ -169,6 +170,7 @@ export default function LicoreriaPOS() {
                       setLoading(false);
                    }).catch(() => setLoading(false));
                 } else {
+                   Store.startTerminalSync(undefined, true);
                    const target = savedModule || 'dashboard';
                    setActiveTab(target);
                    setShowApertura(false);
