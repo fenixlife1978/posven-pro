@@ -558,17 +558,9 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
                         <div className="text-center font-bold">TOTAL DE VENTAS DEL DÍA EN USD</div>
                         <div className="separator-dashed"></div>
                         <table><tbody>
-                          <tr>
-                            <td>VENTAS EN Bs. → USD:</td>
-                            <td className="text-right">$ {formatUsd(ventasDiaBs / (state.tasa || 1))}</td>
-                          </tr>
-                          <tr>
-                            <td>VENTAS EN USD:</td>
-                            <td className="text-right">$ {formatUsd(ventasDiaUsd)}</td>
-                          </tr>
                           <tr className="bold">
                             <td>TOTAL VENTAS DEL DÍA:</td>
-                            <td className="text-right">$ {formatUsd(totalVentasDiaUsd)}</td>
+                            <td className="text-right">$ {formatUsd(Number(data.totalVentasUSD) || 0)}</td>
                           </tr>
                         </tbody></table>
                         <div className="separator-dashed"></div>
