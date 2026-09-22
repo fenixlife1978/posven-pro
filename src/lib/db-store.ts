@@ -1261,11 +1261,150 @@ export const Store = {
     return result;
   },
 
+  async applyGlobalCustomerPaymentTransaction(params: {
+    operationId?: string;
+    customerName: string;
+    customerCedula?: string;
+    amountUSD: number;
+    amountBS?: number;
+    payment: any;
+    journal?: any;
+    terminalId?: string;
+  }): Promise<{ appliedUSD: number; appliedBS: number; debts: any[]; receiptId?: string }> {
+    if (typeof window === 'undefined' || !db) return { appliedUSD: 0, appliedBS: 0, debts: [] };
+    const { operationId, customerName, customerCedula, amountUSD, amountBS, payment, journal, terminalId } = params;
+    if (!(amountUSD > 0)) return { appliedUSD: 0, appliedBS: 0, debts: [] };
+
+    const customerLabel = customerCedula ? `${customerName} [${customerCedula}]` : customerName;
+    const q = query(collection(db, 'cxc'), where('cliente', '==', customerLabel));
+    let result = { appliedUSD: 0, appliedBS: 0, debts: [] as any[], receiptId: '' as string };
+    const opId = String(operationId || payment?.id || ('CXC-GLOBAL|' + customerLabel + '|' + amountUSD + '|' + payment?.fecha + '|' + payment?.metodo));
+
+    await runTransaction(db, async tx => {
+      const operationRef = await claimOperation(tx, 'PAGO-CXC-GLOBAL', opId);
+      const terminalRef = terminalId ? doc(db, 'terminales', terminalId) : null;
+      const terminalSnap = terminalRef ? await tx.get(terminalRef) : null;
+      const terminalRemote = terminalSnap?.exists() ? sanitizeForFirestore(terminalSnap.data()) as any : null;
+      if (terminalId && !terminalRemote) throw new Error('La caja/terminal ya no existe en Firestore.');
+
+      const nextResult = { appliedUSD: 0, appliedBS: 0, debts: [] as any[], receiptId: '' as string };
+      const nextCounter = Number(terminalRemote?.proximoCobroDeuda) || 1;
+      nextResult.receiptId = terminalRemote
+        ? terminalSeries(terminalPrefix(terminalRemote, terminalId), 'CXC', nextCounter, 6)
+        : terminalSeries('GLOBAL', 'CXC', Date.now(), 6);
+
+      const snap = await tx.get(q);
+      const docs = snap.docs
+        .map(d => ({ ref: d.ref, data: sanitizeForFirestore(d.data()) as any }))
+        .filter(x => (Number(x.data.saldoUSD) || 0) > 0.001 && x.data.estado !== 'pagada')
+        .sort((a, b) => {
+          const fecha = String(a.data.fecha || '').localeCompare(String(b.data.fecha || ''));
+          return fecha !== 0 ? fecha : String(a.data.id || '').localeCompare(String(b.data.id || ''));
+        });
+
+      let remanenteUSD = amountUSD;
+      let remanenteBS = Number(amountBS) > 0 ? Number(amountBS) : amountUSD * (Number(payment?.tasaAplicada) || Number(Store.get().tasa) || 0);
+      const tasaAplicada = Number(payment?.tasaAplicada) || Number(Store.get().tasa) || 0;
+
+      for (const item of docs) {
+        if (remanenteUSD <= 0.000001) break;
+        const saldo = Number(item.data.saldoUSD) || 0;
+        const pagoUSD = Math.min(saldo, remanenteUSD);
+        if (pagoUSD <= 0) continue;
+
+        const pagoBS = Math.min(remanenteBS, pagoUSD * tasaAplicada);
+        remanenteUSD = Math.max(0, remanenteUSD - pagoUSD);
+        remanenteBS = Math.max(0, remanenteBS - pagoBS);
+
+        const historial = Array.isArray(item.data.historialPagos) ? [...item.data.historialPagos] : [];
+        const pagoHistorial = sanitizeForFirestore({
+          ...payment,
+          id: nextResult.receiptId,
+          reciboId: nextResult.receiptId,
+          terminalId: terminalId || payment?.terminalId,
+          montoUSD: pagoUSD,
+          montoBS: pagoBS
+        });
+        historial.push(pagoHistorial);
+
+        const nuevoSaldo = Math.max(0, saldo - pagoUSD);
+        const updated = {
+          ...item.data,
+          abonadoUSD: (Number(item.data.abonadoUSD) || 0) + pagoUSD,
+          saldoUSD: nuevoSaldo,
+          estado: nuevoSaldo <= 0.001 ? 'pagada' : 'parcial',
+          historialPagos: historial
+        };
+
+        tx.set(item.ref, sanitizeForFirestore(updated), { merge: true });
+        nextResult.debts.push({ ...updated, appliedUSD: pagoUSD, appliedBS: pagoBS });
+        nextResult.appliedUSD += pagoUSD;
+        nextResult.appliedBS += pagoBS;
+      }
+
+      if (nextResult.appliedUSD <= 0.000001) {
+        throw new Error('No hay saldo pendiente del cliente para registrar este pago.');
+      }
+
+      if (customerCedula) {
+        const customersSnap = await tx.get(query(collection(db, 'clientes'), where('cedula', '==', customerCedula), limit(1)));
+        if (!customersSnap.empty) {
+          const customerRef = customersSnap.docs[0].ref;
+          const customer = customersSnap.docs[0].data() as any;
+          const customerDebt = Number(customer.debt) || 0;
+          tx.set(customerRef, { debt: Math.max(0, customerDebt - nextResult.appliedUSD) }, { merge: true });
+        }
+      }
+
+      if (journal?.id) {
+        tx.set(
+          doc(db, 'libroDiario', journal.id),
+          sanitizeForFirestore({
+            ...journal,
+            montoUSD: nextResult.appliedUSD,
+            montoBS: nextResult.appliedBS,
+            referencia: nextResult.receiptId,
+            terminalId: terminalId || journal.terminalId,
+            terminalName: terminalRemote?.nombre || journal.terminalName
+          }),
+          { merge: true }
+        );
+      }
+
+      if (terminalRef && terminalRemote) tx.set(terminalRef, { proximoCobroDeuda: nextCounter + 1 }, { merge: true });
+      tx.set(operationRef, {
+        tipo: 'PAGO-CXC-GLOBAL',
+        operationId: opId,
+        fecha: payment?.fecha || new Date().toISOString(),
+        referencia: nextResult.receiptId,
+        terminalId: terminalId || 'GLOBAL'
+      }, { merge: false });
+
+      nextResult.debts = nextResult.debts.map((d: any) => d);
+      result = nextResult;
+    });
+
+    if (journal?.id) {
+      applyPatch({
+        libroDiario: mergeById(cache.libroDiario, [{
+          ...journal,
+          montoUSD: result.appliedUSD,
+          montoBS: result.appliedBS,
+          referencia: result.receiptId,
+          terminalId: terminalId || journal.terminalId
+        }])
+      });
+    }
+
+    return result;
+  },
+
   async applyDebtPaymentTransaction(params: {
     operationId?: string;
     collection: 'cxc' | 'cxp';
     debtId: string;
     amountUSD: number;
+    amountBS?: number;
     payment: any;
     journal?: any | any[];
     sale?: any;
