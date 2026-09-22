@@ -1069,6 +1069,18 @@ function init() {
 // ============================================================
 // API PÚBLICA
 // ============================================================
+async function getSaleById(saleId: string): Promise<any | null> {
+  if (!db || !saleId) return null;
+  const id = String(saleId);
+  try {
+    const snap = await getDoc(doc(db, 'ventas', id));
+    return snap.exists() ? sanitizeForFirestore({ ...snap.data(), id }) : null;
+  } catch (e) {
+    console.error('Error leyendo venta puntual:', e);
+    throw e;
+  }
+}
+
 export const Store = {
   applyInventoryMovementsTransaction,
   subscribe(callback: (state: Partial<AppState>) => void): () => void {
@@ -2377,6 +2389,7 @@ export const Store = {
   startTerminalSync,
   ensureReportData,
   kardex,
+  getSaleById,
 
   uid(): string {
     return Date.now().toString(36) + Math.random().toString(36).substr(2, 6);
