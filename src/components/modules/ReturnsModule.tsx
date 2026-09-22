@@ -270,16 +270,24 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
 
   const historialUnificado = useMemo(() => {
     const enRango = (f: string) => f && f.slice(0, 10) >= rango.desde && f.slice(0, 10) <= rango.hasta;
+    // La lista operativa de la jornada empieza después del último Z de ESTA caja.
+    // No borramos documentos históricos de Firestore: quedan disponibles para
+    // trazabilidad, pero la nueva jornada arranca limpia aunque el Z se haga
+    // durante el mismo día.
+    const terminal = state.terminales.find(t => t.id === terminalId);
+    const corteTimestamp = terminal?.fechaUltimoZ || '';
+    const enJornadaActual = (fecha: string) => !corteTimestamp || fecha > corteTimestamp;
+
     const devs = (state.devoluciones || [])
-      .filter(d => (!terminalId || state.ventas.find(v => v.id === d.ventaId)?.terminalId === terminalId) && enRango(d.fecha))
+      .filter(d => (!terminalId || state.ventas.find(v => v.id === d.ventaId)?.terminalId === terminalId) && enRango(d.fecha) && enJornadaActual(d.fecha))
       .map(d => ({ ...d, tipoOperacion: 'DEVOLUCIÓN' }));
     
     const anus = (state.anulaciones || [])
-      .filter(a => (!terminalId || state.ventas.find(v => v.id === a.ventaId)?.terminalId === terminalId) && enRango(a.fecha))
+      .filter(a => (!terminalId || state.ventas.find(v => v.id === a.ventaId)?.terminalId === terminalId) && enRango(a.fecha) && enJornadaActual(a.fecha))
       .map(a => ({ ...a, tipoOperacion: 'ANULACIÓN', items: a.items || [] }));
     
     return [...devs, ...anus].sort((a, b) => b.fecha.localeCompare(a.fecha));
-  }, [state.devoluciones, state.anulaciones, state.ventas, terminalId, rango]);
+  }, [state.devoluciones, state.anulaciones, state.ventas, state.terminales, terminalId, rango]);
 
   return (
     <div className="space-y-6">
