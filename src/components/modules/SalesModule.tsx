@@ -145,7 +145,9 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   const [histPage, setHistPage] = useState(1);
   const [showReportType, setShowReportType] = useState<'REPORT_X' | 'REPORT_Z' | null>(null);
   const [reportSnapshot, setReportSnapshot] = useState<any>(null);
-  const [cliente, setCliente] = useState('Consumidor final');
+  const [reportLoadingType, setReportLoadingType] = useState<'REPORT_X' | 'REPORT_Z' | null>(null);
+  const [globalCreditCustomer, setGlobalCreditCustomer] = useState<{ name: string; cedula?: string; totalUSD: number; totalBS: number } | null>(null);
+  const [cliente, setCliente = useState('Consumidor final');
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   
@@ -300,11 +302,9 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     };
   };
 
-  const [reportLoading, setReportLoading] = useState(false);
-
   const handleOpenReport = async (type: 'REPORT_X' | 'REPORT_Z') => {
-    if (showReportType) return;
-    setReportLoading(true);
+    if (showReportType || reportLoadingType) return;
+    setReportLoadingType(type);
     try {
       // Garantiza que las colecciones necesarias estén cargadas desde Firestore
       // antes de calcular el reporte. Evita el bug de reporte en $0 tras reinicio.
@@ -331,7 +331,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       console.error('Error abriendo reporte X/Z:', e);
       toast({ variant: 'destructive', title: 'Error', description: 'No se pudieron cargar los datos del reporte. Reintenta.' });
     } finally {
-      setReportLoading(false);
+      setReportLoadingType(null);
     }
   };
 
@@ -367,6 +367,62 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     });
     toast({ title: `Cierre Fiscal ${nuevoZ.id} Exitoso` });
     setShowReportType(null);
+  };
+
+  const handleOpenGlobalCreditPayment = (clientName: string, debts: Debt[]) => {
+    const activeDebts = debts
+      .filter(d => d.estado !== 'pagada' && (Number(d.saldoUSD) || 0) > 0.001)
+      .sort((a, b) => a.fecha.localeCompare(b.fecha) || a.id.localeCompare(b.id));
+    if (activeDebts.length <= 1) return;
+    const totalUSD = activeDebts.reduce((sum, d) => sum + (Number(d.saldoUSD) || 0), 0);
+    if (totalUSD <= 0.001) return;
+    const cedulaMatch = String(activeDebts[0]?.cliente || '').match(/\[([^\]]+)\]\s*$/);
+    setGlobalCreditCustomer({
+      name: clientName,
+      cedula: cedulaMatch?.[1]?.trim(),
+      totalUSD,
+      totalBS: totalUSD * state.tasa
+    });
+  };
+
+  const handleProcessGlobalCreditPayment = async (payments: any[]) => {
+    if (!globalCreditCustomer || isProcessing || !payments?.length) return;
+    const totalUSD = payments.reduce((s, p) => s + (Number(p.usdAmount) || (Number(p.amount) || 0) / state.tasa), 0);
+    const totalBS = payments.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+    if (totalUSD <= 0 || totalBS <= 0) return;
+    setIsProcessing(true);
+    try {
+      const terminal = currentTerminal;
+      const operationId = 'PAGO-GLOBAL-CXC-' + Store.uid();
+      const receiptId = 'PEND-CXC-' + Store.uid().toUpperCase().slice(0, 8);
+      const payment = {
+        id: receiptId, reciboId: receiptId, fecha: Utils.ahora(),
+        montoUSD: totalUSD, montoBS: totalBS,
+        metodo: payments.length > 1 ? 'mixto' : payments[0].method,
+        tasaAplicada: state.tasa, terminalId: terminal?.id
+      };
+      const result = await Store.applyGlobalCustomerPaymentTransaction({
+        operationId,
+        customerName: globalCreditCustomer.name,
+        customerCedula: globalCreditCustomer.cedula,
+        amountUSD: totalUSD,
+        amountBS: totalBS,
+        payment,
+        journal: {
+          id: 'JD-' + Store.uid(), fecha: Utils.ahora(), tipo: 'ingreso',
+          categoria: 'COBRO_DEUDA', montoUSD: totalUSD, montoBS: totalBS,
+          descripcion: 'PAGO GLOBAL CxC', terminalId: terminal?.id
+        },
+        terminalId: terminal?.id
+      });
+      if (!result) throw new Error('No se pudo registrar el Pago Global.');
+      toast({ title: 'Pago Global registrado', description: `Aplicado: ${Utils.fmtUSD(result.appliedUSD)} · ${Utils.fmtBS(result.appliedBS)}` });
+      setGlobalCreditCustomer(null);
+    } catch (err: any) {
+      toast({ variant: 'destructive', title: 'Pago Global no registrado', description: err?.message || 'No se pudo registrar el cobro.' });
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const groupedCredits = useMemo(() => {
@@ -993,7 +1049,14 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                         <td className="text-right py-4 font-black text-ink">{group.debts.length} Facturas</td>
                         <td className="text-right py-4 font-black text-status-info text-base">{Utils.fmtUSD(group.totalUSD)}</td>
                         <td className="text-right py-4 font-black text-ink">{Utils.fmtBS(group.totalUSD * state.tasa)}</td>
-                        <td className="text-center py-4"><button onClick={() => setShowClientHistory(clientName)} className="w-10 h-10 rounded-full flex items-center justify-center bg-white text-status-success border-2 border-status-success/20 hover:bg-status-success hover:text-white transition-all shadow-md"><Eye className="w-5 h-5" /></button></td>
+                        <td className="text-center py-4"><div className="flex items-center justify-center gap-2">
+                          {group.debts.length > 1 && (
+                            <button onClick={() => handleOpenGlobalCreditPayment(clientName, group.debts)} className="h-10 px-3 rounded-full flex items-center justify-center gap-1.5 bg-brand-gold text-black border-2 border-brand-gold hover:bg-brand-gold-deep transition-all shadow-md font-black text-[9px] uppercase whitespace-nowrap" title="PAGO GLOBAL" aria-label="PAGO GLOBAL">
+                              <HandCoins className="w-4 h-4" /><span>PAGO GLOBAL</span>
+                            </button>
+                          )}
+                          <button onClick={() => setShowClientHistory(clientName)} className="w-10 h-10 rounded-full flex items-center justify-center bg-white text-status-success border-2 border-status-success/20 hover:bg-status-success hover:text-white transition-all shadow-md"><Eye className="w-5 h-5" /></button>
+                        </div></td>
                       </tr>
                       {expandedClient === clientName && (
                         <tr className="bg-surface-soft/40 animate-in slide-in-from-top-1 duration-200">
@@ -1062,6 +1125,16 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         </div>
       )}
 
+      {globalCreditCustomer && (
+        <FloatingPaymentModal
+          total={globalCreditCustomer.totalBS}
+          totalCents={Math.round(globalCreditCustomer.totalBS * 100)}
+          exchangeRate={state.tasa}
+          allowPartial={true}
+          onClose={() => setGlobalCreditCustomer(null)}
+          onConfirm={(data) => { void handleProcessGlobalCreditPayment(data.payments); }}
+        />
+      )}
       {showReceiptModal && (
         <ReceiptModal 
           isOpen={showReceiptModal} 
