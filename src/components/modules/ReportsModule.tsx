@@ -7,7 +7,14 @@ import { FileText, TrendingUp, Calendar, Printer, ArrowLeft, Monitor } from 'luc
 import { exportarPDFVentasDetallado } from '@/lib/pdf-generator';
 
 export default function ReportsModule({ state }: { state: AppState }) {
-  useEffect(() => {\n    // El listener realtime mantiene solo los últimos 100 cortes; al abrir Reportes\n    // se recupera el histórico completo para filtros y exportaciones.\n    Store.ensureLoaded('ventas');\n    Store.ensureLoaded('reportesZ');\n    Store.ensureLoaded('devoluciones');\n    Store.ensureLoaded('anulaciones');\n  }, []);
+  useEffect(() => {
+    // El listener realtime mantiene solo los últimos 100 cortes; al abrir Reportes
+    // se recupera el histórico completo para filtros y exportaciones.
+    Store.ensureLoaded('ventas');
+    Store.ensureLoaded('reportesZ');
+    Store.ensureLoaded('devoluciones');
+    Store.ensureLoaded('anulaciones');
+  }, []);
   const [tab, setTab] = useState('ventas');
   const [desde, setDesde] = useState(Utils.hoy());
   const [hasta, setHasta] = useState(Utils.hoy());
