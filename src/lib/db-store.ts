@@ -283,6 +283,7 @@ async function syncArrayToCollection(name: string, prevArr: any[] | undefined, n
           throw new Error('Conflicto de sincronización: el registro ' + item.id + ' ya existe en Firestore.');
         }
         tx.set(ref, sanitizeForFirestore(item.after), { merge: true });
+        FirestoreUsage.record('write', 1, name);
         return;
       }
 
@@ -290,8 +291,13 @@ async function syncArrayToCollection(name: string, prevArr: any[] | undefined, n
         throw new Error('Conflicto de sincronización en ' + name + '/' + item.id + '. Otro terminal modificó el registro. Se conserva la versión remota.');
       }
 
-      if (item.after === null) tx.delete(ref);
-      else tx.set(ref, sanitizeForFirestore(item.after), { merge: true });
+      if (item.after === null) {
+        tx.delete(ref);
+        FirestoreUsage.record('delete', 1, name);
+      } else {
+        tx.set(ref, sanitizeForFirestore(item.after), { merge: true });
+        FirestoreUsage.record('write', 1, name);
+      }
     });
   }
 }
@@ -505,6 +511,7 @@ const cursors: Record<string, QueryDocumentSnapshot<DocumentData> | null> = {};
 async function loadCollection(name: string): Promise<any[]> {
   if (!db) return [];
   const snap = await getDocs(collection(db, name));
+  FirestoreUsage.record('read', snap.size, name);
   return snap.docs.map(d => sanitizeForFirestore(d.data())).filter(Boolean);
 }
 
@@ -522,6 +529,7 @@ async function loadAll(name: string): Promise<void> {
         ? query(collection(db, col), orderBy('fecha', 'desc'), startAfter(lastDoc), limit(500))
         : query(collection(db, col), orderBy('fecha', 'desc'), limit(500));
       const snap = await getDocs(q);
+      FirestoreUsage.record('read', snap.size, name);
       const items = snap.docs.map(d => sanitizeForFirestore(d.data())).filter(Boolean);
       all.push(...items);
       lastDoc = snap.docs.length > 0 ? snap.docs[snap.docs.length - 1] : null;
@@ -703,6 +711,7 @@ function startMasterSync(name: string): () => void {
       const items = snap.docs
         .map(d => sanitizeForFirestore(d.data()))
         .filter(Boolean);
+      FirestoreUsage.record('realtimeRead', snap.size, name);
       applyPatch({ [name]: items });
 
       // Este snapshot ya contiene la colección completa. Marcarla como
@@ -2110,6 +2119,7 @@ export const Store = {
       const newList = (patch as any)[field] || [];
       const prevList = (prev as any)[field] || [];
       if (JSON.stringify(prevList) !== JSON.stringify(newList)) {
+        FirestoreUsage.record('write', 1, 'Configuración');
         jobs.push(setDoc(doc(db, CATALOGOS_COLLECTION, catName), { lista: sanitizeForFirestore(newList) })
           .catch(e => console.error("Error persistiendo catálogo " + catName + ":", e)));
       }
@@ -2127,6 +2137,7 @@ export const Store = {
       }
     }
     if (Object.keys(toWrite).length > 0) {
+      FirestoreUsage.record('write', 1, 'Configuración');
       jobs.push(setDoc(doc(db, CONFIG_COLLECTION, CONFIG_DOC_ID), toWrite, { merge: true })
         .catch(e => console.error("Error persistiendo config:", e)));
     }
