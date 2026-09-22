@@ -561,15 +561,15 @@ export default function LicoreriaPOS() {
         </div>
       </aside>
 
-      <main className="flex-1 flex flex-col min-h-screen max-w-full overflow-hidden">
-        <header className="sticky top-0 z-30 bg-surface-warm/85 backdrop-blur-md border-b border-line px-7 py-3.5 flex items-center gap-6 no-print">
+      <main className="flex-1 flex flex-col min-h-screen min-w-0 w-0 max-w-full overflow-hidden">
+        <header className="sticky top-0 z-30 bg-surface-warm/85 backdrop-blur-md border-b border-line px-3 sm:px-7 py-3.5 flex items-center gap-2 sm:gap-6 no-print min-w-0 overflow-hidden">
           {!isCajero && (
             <button className="p-2 -ml-2 text-ink hover:text-brand-gold" onClick={() => setIsSidebarOpen(true)}>
               <Menu className="w-[20px] h-[20px]" />
             </button>
           )}
           
-          <div className="shrink-0">
+          <div className="shrink-0 min-w-0">
             <h2 className="font-display text-lg font-[800] text-ink leading-tight">Pos<span className="text-brand-gold">VEN</span> pro</h2>
             <p className="text-[0.7rem] text-ink uppercase font-bold tracking-widest">{isCajero ? 'Terminal de Punto de Venta' : 'Soluciones Venezuela'}</p>
           </div>
@@ -624,7 +624,7 @@ export default function LicoreriaPOS() {
           </div>
         </header>
         
-        <div className="p-7 flex-1 overflow-y-auto">{renderModule()}</div>
+        <div className="p-3 sm:p-7 flex-1 min-w-0 overflow-x-hidden overflow-y-auto">{renderModule()}</div>
 
         <footer className="px-8 py-6 border-t border-line text-[0.76rem] font-black text-ink flex flex-col sm:flex-row justify-between gap-4 no-print bg-surface-warm/30">
           <div>© 2026 PosVEN Pro · Persistencia Offline Activa</div>
