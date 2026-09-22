@@ -66,6 +66,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   const [showMultiModal, setShowMultiModal] = useState(false);
   
   const [showAbonoModal, setShowAbonoModal] = useState<Debt | null>(null);
+  const [globalCreditCustomer, setGlobalCreditCustomer] = useState<{ name: string; cedula?: string; totalUSD: number; totalBS: number } | null>(null);
   
   const [showDetails, setShowDetails] = useState<any | null>(null);
   const [lastProcessedSale, setLastProcessedSale] = useState<any | null>(null);
@@ -236,12 +237,28 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     setShowReportType(null);
   };
 
+  const saldoActualDeuda = (debt: any) => {
+    const monto = Math.max(0, Number(debt?.montoUSD) || 0);
+    const saldoRegistrado = Math.max(0, Number(debt?.saldoUSD) || 0);
+    const abonadoRegistrado = Math.max(0, Number(debt?.abonadoUSD) || 0);
+    const abonadoHistorial = Array.isArray(debt?.historialPagos)
+      ? debt.historialPagos.reduce((sum: number, p: any) => sum + Math.max(0, Number(p?.montoUSD) || 0), 0)
+      : 0;
+    const abonadoActual = Math.min(monto, Math.max(abonadoRegistrado, abonadoHistorial));
+    return abonadoActual > 0.000001 ? Math.max(0, monto - abonadoActual) : saldoRegistrado;
+  };
+
+  const esDeudaActiva = (debt: any) =>
+    (Number(debt?.montoUSD) || 0) > 0.001 &&
+    saldoActualDeuda(debt) > 0.001 &&
+    debt?.estado !== 'pagada';
+
   const groupedCredits = useMemo(() => {
     const groups: Record<string, { totalUSD: number; debts: Debt[] }> = {};
-    (state.cxc || []).filter(x => x.estado !== 'pagada').forEach(debt => {
+    (state.cxc || []).filter(esDeudaActiva).forEach(debt => {
       const name = debt.cliente || 'DESCONOCIDO';
       if (!groups[name]) groups[name] = { totalUSD: 0, debts: [] };
-      groups[name].totalUSD += debt.saldoUSD;
+      groups[name].totalUSD += saldoActualDeuda(debt);
       groups[name].debts.push(debt);
     });
     return groups;
@@ -335,6 +352,90 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   }, [clientSearch, state.clientes]);
 
   const getCurrentTerminal = () => currentTerminal;
+  const handleOpenGlobalCreditPayment = (clientName: string, debts: Debt[]) => {
+    const activeDebts = debts.filter(esDeudaActiva).sort((a, b) => a.fecha.localeCompare(b.fecha) || a.id.localeCompare(b.id));
+    if (activeDebts.length <= 1) return;
+    const totalUSD = activeDebts.reduce((sum, d) => sum + saldoActualDeuda(d), 0);
+    if (totalUSD <= 0.001) return;
+    const cedulaMatch = String(activeDebts[0]?.cliente || '').match(/\[([^\]]+)\]\s*$/);
+    setGlobalCreditCustomer({
+      name: clientName,
+      cedula: cedulaMatch?.[1]?.trim(),
+      totalUSD,
+      totalBS: totalUSD * state.tasa
+    });
+  };
+
+  const handleProcessGlobalCreditPayment = async (payments: any[]) => {
+    if (!globalCreditCustomer || isProcessing || processingRef.current) return;
+    const totalUSD = payments.reduce((s, p) => s + (Number(p.usdAmount) || (Number(p.amount) || 0) / state.tasa), 0);
+    const totalBS = payments.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+    if (totalUSD <= 0 || totalBS <= 0) return;
+
+    processingRef.current = true;
+    setIsProcessing(true);
+    try {
+      const ahora = Utils.ahora();
+      const terminal = getCurrentTerminal();
+      const reciboProvisional = 'PEND-CXC-' + Store.uid().toUpperCase().slice(0, 8);
+      const pagoBase = {
+        id: reciboProvisional,
+        fecha: ahora,
+        montoUSD: totalUSD,
+        montoBS: totalBS,
+        metodo: payments.length > 1 ? 'mixto' : payments[0].method,
+        reciboId: reciboProvisional,
+        tasaAplicada: state.tasa
+      };
+      const asientoId = 'ACC-' + Store.uid().toUpperCase().slice(0, 5);
+      const journal = {
+        id: asientoId,
+        fecha: ahora,
+        tipo: 'ingreso',
+        categoria: 'COBRO_DEUDA',
+        concepto: `PAGO GLOBAL CXC: ${globalCreditCustomer.name.toUpperCase()} - LIQUIDACIÓN POR ORDEN DE ANTIGÜEDAD`,
+        montoUSD: totalUSD,
+        montoBS: totalBS,
+        metodo: pagoBase.metodo,
+        referencia: reciboProvisional,
+        terminalId: terminal?.id,
+        terminalName: terminal?.nombre || 'SISTEMA GLOBAL'
+      };
+
+      const resultado = await Store.applyGlobalCustomerPaymentTransaction({
+        operationId: 'PAGO-GLOBAL-CXC-' + Store.uid(),
+        customerName: globalCreditCustomer.name,
+        customerCedula: globalCreditCustomer.cedula,
+        amountUSD: totalUSD,
+        amountBS: totalBS,
+        payment: pagoBase,
+        journal,
+        terminalId: terminal?.id
+      });
+
+      if (!resultado || resultado.appliedUSD <= 0.000001) {
+        throw new Error('No hay saldo pendiente del cliente o la información cambió en otra caja.');
+      }
+
+      const aplicadoBS = Number(resultado.appliedBS) || 0;
+      const remanenteUSD = Math.max(0, totalUSD - Number(resultado.appliedUSD || 0));
+      toast({
+        title: 'Pago global registrado',
+        description: `${Utils.fmtUSD(resultado.appliedUSD)} (${Utils.fmtBS(aplicadoBS)}) aplicado a ${resultado.debts.length} factura(s)${remanenteUSD > 0.000001 ? ' · excedente sin aplicar' : ''}.`
+      });
+      setGlobalCreditCustomer(null);
+    } catch (e: any) {
+      toast({
+        variant: 'destructive',
+        title: 'No se pudo registrar el pago global',
+        description: e?.message || 'Las cuentas cambiaron en otra caja. Actualice y vuelva a intentar.'
+      });
+    } finally {
+      processingRef.current = false;
+      setIsProcessing(false);
+    }
+  };
+
 
   const guardarNuevaTasa = () => {
     const n = parseFloat(nuevaTasa);
@@ -715,7 +816,22 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                         <td className="text-right py-4 font-black text-ink">{group.debts.length} Facturas</td>
                         <td className="text-right py-4 font-black text-status-info text-base">{Utils.fmtUSD(group.totalUSD)}</td>
                         <td className="text-right py-4 font-black text-ink">{Utils.fmtBS(group.totalUSD * state.tasa)}</td>
-                        <td className="text-center py-4"><button onClick={() => setShowClientHistory(clientName)} className="w-10 h-10 rounded-full flex items-center justify-center bg-white text-status-success border-2 border-status-success/20 hover:bg-status-success hover:text-white transition-all shadow-md"><Eye className="w-5 h-5" /></button></td>
+                        <td className="text-center py-4">
+                          <div className="flex items-center justify-center gap-2">
+                            {group.debts.filter(esDeudaActiva).length > 1 && (
+                              <button
+                                onClick={() => handleOpenGlobalCreditPayment(clientName, group.debts)}
+                                className="px-3 h-10 rounded-lg flex items-center justify-center bg-brand-gold text-black font-black text-[9px] uppercase hover:bg-brand-gold-deep transition-all shadow-md"
+                                title="Pago global: aplica el monto desde la factura más antigua"
+                              >
+                                PAGO GLOBAL
+                              </button>
+                            )}
+                            <button onClick={() => setShowClientHistory(clientName)} className="w-10 h-10 rounded-full flex items-center justify-center bg-white text-status-success border-2 border-status-success/20 hover:bg-status-success hover:text-white transition-all shadow-md" title="Consultar historial">
+                              <Eye className="w-5 h-5" />
+                            </button>
+                          </div>
+                        </td>
                       </tr>
                       {expandedClient === clientName && (
                         <tr className="bg-surface-soft/40 animate-in slide-in-from-top-1 duration-200">
@@ -723,7 +839,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                               <div className="card border-line bg-white shadow-inner rounded-xl overflow-hidden">
                                  <table className="w-full">
                                     <thead className="bg-ink/5"><tr><th className="text-[9px] font-black uppercase p-2 text-left">Emisión</th><th className="text-[9px] font-black uppercase p-2 text-left">Vencimiento</th><th className="text-[9px] font-black uppercase p-2 text-right">Saldo USD</th><th className="text-[9px] font-black uppercase p-2 text-center">Acciones</th></tr></thead>
-                                    <tbody>{group.debts.map(d => (<tr key={d.id} className="border-b border-line/20"><td className="text-[10px] font-black p-2">{Utils.fmtFecha(d.fecha)}</td><td className={`text-[10px] font-black p-2 ${d.fechaVencimiento < Utils.hoy() ? 'text-status-danger' : 'text-ink'}`}>{d.fechaVencimiento === '2099-12-31' ? 'ABIERTA' : Utils.fmtFecha(d.fechaVencimiento)}</td><td className="text-[10px] font-black p-2 text-right text-brand-gold-deep">{Utils.fmtUSD(d.saldoUSD)}</td><td className="p-2 text-center"><div className="flex justify-center gap-2"><button onClick={() => setShowDetails(d)} className="w-8 h-8 rounded-full flex items-center justify-center text-status-success hover:bg-status-success/10"><Eye className="w-4 h-4"/></button><button onClick={() => { setShowAbonoModal(d); }} className="btn btn-sm btn-primary h-7 px-3 text-[8px] uppercase">Abonar</button></div></td></tr>))}</tbody>
+                                    <tbody>{group.debts.map(d => (<tr key={d.id} className="border-b border-line/20"><td className="text-[10px] font-black p-2">{Utils.fmtFecha(d.fecha)}</td><td className={`text-[10px] font-black p-2 ${d.fechaVencimiento < Utils.hoy() ? 'text-status-danger' : 'text-ink'}`}>{d.fechaVencimiento === '2099-12-31' ? 'ABIERTA' : Utils.fmtFecha(d.fechaVencimiento)}</td><td className="text-[10px] font-black p-2 text-right text-brand-gold-deep">{Utils.fmtUSD(saldoActualDeuda(d))}</td><td className="p-2 text-center"><div className="flex justify-center gap-2"><button onClick={() => setShowDetails(d)} className="w-8 h-8 rounded-full flex items-center justify-center text-status-success hover:bg-status-success/10"><Eye className="w-4 h-4"/></button><button onClick={() => { setShowAbonoModal(d); }} className="btn btn-sm btn-primary h-7 px-3 text-[8px] uppercase">Abonar</button></div></td></tr>))}</tbody>
                                  </table>
                               </div>
                            </td>
@@ -788,6 +904,16 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       {showReportType && reportSnapshot && (<ReceiptModal isOpen={!!showReportType} onClose={() => { if (showReportType === 'REPORT_Z') ejecutarCierreZ(); setShowReportType(null); }} reportData={reportSnapshot} type={showReportType} />)}
       {showMultiModal && (<FloatingPaymentModal total={totalBS} totalCents={Math.round(totalBS * 100)} exchangeRate={state.tasa} onClose={() => setShowMultiModal(false)} onConfirm={(data) => { ejecutarVenta(data.payments.map(p => ({ metodo: p.method as PaymentMethod, montoUSD: p.usdAmount || (p.amount / state.tasa), montoBS: p.amount }))); setShowMultiModal(false); }} />)}
       {showAbonoModal && (<FloatingPaymentModal total={showAbonoModal.saldoUSD * state.tasa} totalCents={Math.round(showAbonoModal.saldoUSD * state.tasa * 100)} exchangeRate={state.tasa} onClose={() => setShowAbonoModal(null)} allowPartial={true} onConfirm={(data) => { ejecutarAbono(data.payments.map(p => ({ metodo: p.method as PaymentMethod, montoUSD: p.usdAmount || (p.amount / state.tasa), montoBS: p.amount }))); }} />)}
+      {globalCreditCustomer && (
+        <FloatingPaymentModal
+          total={globalCreditCustomer.totalBS}
+          totalCents={Math.round(globalCreditCustomer.totalBS * 100)}
+          exchangeRate={state.tasa}
+          allowPartial={true}
+          onClose={() => setGlobalCreditCustomer(null)}
+          onConfirm={(data) => { void handleProcessGlobalCreditPayment(data.payments); }}
+        />
+      )}
 
       {showDetails && (
         <div className="modal show" style={{ zIndex: 110 }}><div className="modal-bg" onClick={() => setShowDetails(null)}></div>
