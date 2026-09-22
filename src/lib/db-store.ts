@@ -1912,15 +1912,47 @@ export const Store = {
       const movementSnap = await tx.get(
         query(collection(db, 'movimientos'), where('referencia', '==', purchaseReference))
       );
-      const movementDocs: any[] = movementSnap.docs;
-      const movementMatches = movementDocs.filter(d => String((d.data() as any).tipo || '') === 'compra');
+      const movementMatches = movementSnap.docs.filter(d => String((d.data() as any).tipo || '') === 'compra');
 
-      const affectedIds = new Set(movementMatches.map(d => String((d.data() as any).productoId || '')));
+      const affectedIds = new Set(movementMatches.map(d => String((d.data() as any).productoId || '')).filter(Boolean));
       const productSnaps = [];
+      const movementDocsByProduct = new Map<string, any[]>();
+
       for (const pid of affectedIds) {
+        const deletedForProduct = movementMatches
+          .filter(d => String((d.data() as any).productoId || '') === pid)
+          .sort((a, b) => String((a.data() as any).fecha || '').localeCompare(String((b.data() as any).fecha || '')));
+        const firstDeletedFecha = deletedForProduct.length
+          ? String((deletedForProduct[0].data() as any).fecha || '')
+          : '';
+
+        // Solo necesitamos la cola del kardex desde la compra eliminada hacia
+        // adelante. Evitamos descargar el historial anterior del producto.
+        let tailSnap;
+        if (firstDeletedFecha) {
+          tailSnap = await tx.get(query(
+            collection(db, 'movimientos'),
+            where('productoId', '==', pid),
+            where('fecha', '>=', firstDeletedFecha)
+          ));
+        } else {
+          tailSnap = await tx.get(query(
+            collection(db, 'movimientos'),
+            where('productoId', '==', pid)
+          ));
+        }
+        movementDocsByProduct.set(pid, tailSnap.docs.map(d => ({
+          id: d.id,
+          ref: d.ref,
+          data: sanitizeForFirestore(d.data()) as any
+        })));
+
         const snap = await tx.get(doc(db, 'productos', pid));
         if (snap.exists()) productSnaps.push({ pid, snap });
       }
+
+      const movementDocs: any[] = [...movementDocsByProduct.values()].flat();
+      const movementMatchIds = new Set(movementMatches.map(d => d.id));
 
       const paymentJournalIds = new Set<string>();
       linkedDebts.forEach(d => {
@@ -1964,9 +1996,8 @@ export const Store = {
       const newMovementsByProduct = new Map<string, any[]>();
 
       for (const pid of affectedIds) {
-        const ms = movementDocs
-          .filter(d => String((d.data() as any).productoId || '') === pid)
-          .map(d => ({ ref: d.ref, data: d.data() as any }))
+        const ms = (movementDocsByProduct.get(pid) || [])
+          .map(d => ({ ref: d.ref, data: d.data as any }))
           .sort((a, b) => {
             const af = String(a.data.fecha || '');
             const bf = String(b.data.fecha || '');
@@ -1977,28 +2008,45 @@ export const Store = {
           .filter(d => String((d.data() as any).productoId || '') === pid)
           .map(d => d.id));
 
-        const remaining = ms.filter(x => !deletedIds.has(x.ref.id));
-        const firstExisting = ms.find(x => !deletedIds.has(x.ref.id));
-        const base = firstExisting ? Number(firstExisting.data.stockAntes) || 0 : 0;
-        baseByProduct.set(pid, base);
+        const deletedQty = movementMatches
+          .filter(d => String((d.data() as any).productoId || '') === pid)
+          .reduce((sum, d) => sum + Math.abs(Number((d.data() as any).cantidad) || 0), 0);
 
-        let balance = base;
-        const updated = remaining.map(x => {
-          const stockAntes = balance;
-          const stockDespues = stockAntes + (Number(x.data.cantidad) || 0);
-          balance = stockDespues;
-          return { ...x, data: { ...x.data, stockAntes, stockDespues } };
-        });
-        newMovementsByProduct.set(pid, updated);
+        // Como solo cargamos el tramo desde la compra eliminada, los valores
+        // históricos del primer movimiento restante ya contienen la compra.
+        // Se corrigen restando exactamente la cantidad eliminada.
+        const remaining = ms
+          .filter(x => !deletedIds.has(x.ref.id))
+          .map(x => ({
+            ...x,
+            data: {
+              ...x.data,
+              stockAntes: (Number(x.data.stockAntes) || 0) - deletedQty,
+              stockDespues: (Number(x.data.stockDespues) || 0) - deletedQty
+            }
+          }));
+
+        const firstRemaining = remaining[0];
+        baseByProduct.set(
+          pid,
+          firstRemaining
+            ? Number(firstRemaining.data.stockAntes) || 0
+            : 0
+        );
+        newMovementsByProduct.set(pid, remaining);
       }
 
       const productUpdates: any[] = [];
       for (const { pid, snap } of productSnaps) {
         const remoteProduct = snap.data() as any;
         const remaining = newMovementsByProduct.get(pid) || [];
-        const finalStock = remaining.length
-          ? Number(remaining[remaining.length - 1].data.stockDespues) || 0
-          : Number(baseByProduct.get(pid)) || 0;
+        const deletedQty = movementMatches
+          .filter(d => String((d.data() as any).productoId || '') === pid)
+          .reduce((sum, d) => sum + Math.abs(Number((d.data() as any).cantidad) || 0), 0);
+        const finalStock = Math.max(
+          0,
+          (Number(remoteProduct.stock) || 0) - deletedQty
+        );
 
         let finalCost = Number(remoteProduct.costoUSD) || 0;
         const deleted = movementMatches
