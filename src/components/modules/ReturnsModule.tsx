@@ -180,11 +180,9 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
     const pin = prompt('AUTORIZACIÓN REQUERIDA: Ingrese PIN de Seguridad:');
     if (pin !== state.pinDevolucion) return alert('PIN Incorrecto');
 
-    if (!confirm(`¿ESTÁ SEGURO DE ANULAR LA FACTURA ${selectedSale.id}?
-Esta acción devolverá todo el stock al inventario.`)) return;
+    if (!confirm(`¿ESTÁ SEGURO DE ANULAR LA FACTURA ${selectedSale.id}?\nEsta acción devolverá todo el stock al inventario.`)) return;
 
-    const representaEgreso = confirm("¿Esta anulación requiere el REINTEGRO DE DINERO físico al cliente?
-(Si confirma, se generará un asiento de EGRESO en contabilidad)");
+    const representaEgreso = confirm("¿Esta anulación requiere el REINTEGRO DE DINERO físico al cliente?\n(Si confirma, se generará un asiento de EGRESO en contabilidad)");
 
     processingRef.current = true;
     setIsProcessing(true);
