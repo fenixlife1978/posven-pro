@@ -272,30 +272,43 @@ async function syncArrayToCollection(name: string, prevArr: any[] | undefined, n
     if (!newById.has(id)) changed.push({ id, before, after: null });
   });
 
-  for (const item of changed) {
+  // Agrupamos cambios en transacciones para reducir round-trips. Cada lote
+  // mantiene la validación optimista: primero lee todas las versiones remotas
+  // y solo después escribe, sin sobrepasar el límite de la transacción.
+  const CHUNK_SIZE = 450;
+  for (let offset = 0; offset < changed.length; offset += CHUNK_SIZE) {
+    const chunk = changed.slice(offset, offset + CHUNK_SIZE);
     await runTransaction(db, async tx => {
-      const ref = doc(db, name, item.id);
-      const snap = await tx.get(ref);
-      const remote = snap.exists() ? sanitizeForFirestore(snap.data()) : null;
-      const expected = item.before ? sanitizeForFirestore(item.before) : null;
+      const snapshots = new Map<string, any>();
+      for (const item of chunk) {
+        const ref = doc(db, name, item.id);
+        const snap = await tx.get(ref);
+        snapshots.set(item.id, snap);
+      }
 
-      if (!item.before) {
-        if (snap.exists()) {
-          // Otro terminal creó el mismo ID: no lo reemplazamos.
-          throw new Error('Conflicto de sincronización: el registro ' + item.id + ' ya existe en Firestore.');
+      for (const item of chunk) {
+        const ref = doc(db, name, item.id);
+        const snap = snapshots.get(item.id);
+        const remote = snap.exists() ? sanitizeForFirestore(snap.data()) : null;
+        const expected = item.before ? sanitizeForFirestore(item.before) : null;
+
+        if (!item.before) {
+          if (snap.exists()) {
+            throw new Error('Conflicto de sincronización: el registro ' + item.id + ' ya existe en Firestore.');
+          }
+          tx.set(ref, sanitizeForFirestore(item.after), { merge: true });
+          continue;
         }
-        tx.set(ref, sanitizeForFirestore(item.after), { merge: true });
-        return;
-      }
 
-      if (!snap.exists() || JSON.stringify(remote) !== JSON.stringify(expected)) {
-        throw new Error('Conflicto de sincronización en ' + name + '/' + item.id + '. Otro terminal modificó el registro. Se conserva la versión remota.');
-      }
+        if (!snap.exists() || JSON.stringify(remote) !== JSON.stringify(expected)) {
+          throw new Error('Conflicto de sincronización en ' + name + '/' + item.id + '. Otro terminal modificó el registro. Se conserva la versión remota.');
+        }
 
-      if (item.after === null) {
-        tx.delete(ref);
-      } else {
-        tx.set(ref, sanitizeForFirestore(item.after), { merge: true });
+        if (item.after === null) {
+          tx.delete(ref);
+        } else {
+          tx.set(ref, sanitizeForFirestore(item.after), { merge: true });
+        }
       }
     });
   }
