@@ -5,6 +5,7 @@ export type AppRole = 'administrador' | 'cajero';
 
 export type AuthUser = {
   id: string;
+  firebaseUid: string | null;
   username: string;
   email: string | null;
   nombre: string;
@@ -41,6 +42,7 @@ export function verifyPassword(password: string, stored: string) {
 function mapUser(row: any): AuthUser {
   return {
     id: String(row.id),
+    firebaseUid: row.firebase_uid == null ? null : String(row.firebase_uid),
     username: String(row.username),
     email: row.email == null ? null : String(row.email),
     nombre: String(row.nombre || ''),

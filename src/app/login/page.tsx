@@ -27,58 +27,83 @@ export default function LoginPage() {
   const [authChecked, setAuthChecked] = useState(false);
 
   useEffect(() => {
-    // Safety timeout para evitar pantalla blanca infinita si Firebase no responde
     const timer = setTimeout(() => {
       if (!authChecked) setAuthChecked(true);
     }, 8000);
 
-    const checkSystemStatus = async () => {
-      if (!db) return;
+    const checkTursoSession = async () => {
       try {
-        const configDoc = await getDoc(doc(db, 'config', 'general'));
-        if (configDoc.exists()) {
-          const data = configDoc.data();
-          setSystemEmpty(data.isInitialized === false);
-        } else {
-          setSystemEmpty(true);
+        const response = await fetch('/api/auth/session', { cache: 'no-store' });
+        if (response.ok) {
+          router.push('/');
+          return true;
         }
-      } catch (e) {
-        console.warn("Silent status check:", e);
-        setSystemEmpty(false);
-      }
-    };
-    checkSystemStatus();
+        if (response.status !== 503) return false;
+      } catch {}
 
-    if (!auth) return;
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      if (user) {
+      return null;
+    };
+
+    let unsubscribe = () => {};
+    (async () => {
+      const tursoState = await checkTursoSession();
+      if (tursoState === true) {
+        setAuthChecked(true);
+        return;
+      }
+
+      const checkSystemStatus = async () => {
+        if (!db) return;
         try {
-          const userDoc = await getDoc(doc(db, 'users', user.uid));
-          if (userDoc.exists()) {
-            const userData = userDoc.data();
-            if (userData.accesoBloqueado) {
-              await signOut(auth);
-              toast({ variant: "destructive", title: "Acceso Bloqueado", description: "Su cuenta está suspendida." });
-              setAuthChecked(true);
-              return;
-            }
-            router.push('/');
+          const configDoc = await getDoc(doc(db, 'config', 'general'));
+          if (configDoc.exists()) {
+            const data = configDoc.data();
+            setSystemEmpty(data.isInitialized === false);
           } else {
+            setSystemEmpty(true);
+          }
+        } catch {
+          setSystemEmpty(false);
+        }
+      };
+      await checkSystemStatus();
+
+      if (!auth) {
+        setAuthChecked(true);
+        return;
+      }
+
+      unsubscribe = onAuthStateChanged(auth, async (user) => {
+        if (user) {
+          try {
+            const userDoc = await getDoc(doc(db, 'users', user.uid));
+            if (userDoc.exists()) {
+              const userData = userDoc.data();
+              if (userData.accesoBloqueado) {
+                await signOut(auth);
+                toast({ variant: "destructive", title: "Acceso Bloqueado", description: "Su cuenta está suspendida." });
+                setAuthChecked(true);
+                return;
+              }
+              router.push('/');
+            } else {
+              setAuthChecked(true);
+            }
+          } catch {
             setAuthChecked(true);
           }
-        } catch (e) {
+        } else {
           setAuthChecked(true);
         }
-      } else {
-        setAuthChecked(true);
-      }
-    });
+      });
+    })();
 
     return () => {
       unsubscribe();
       clearTimeout(timer);
     };
   }, [router]);
+
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -89,9 +114,30 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      if (!auth || !db) throw new Error("Servicios no disponibles");
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ identifier: email, password, role }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        toast({ title: "Acceso autorizado", description: `Bienvenido, ${data.user?.nombre || email}.` });
+        router.push('/');
+        return;
+      }
+
+      const data = await response.json().catch(() => ({}));
+
+      // Mientras la migración no esté activada, conservamos Firebase como respaldo.
+      // Una vez configurado Turso, cualquier error de credenciales/rol viene directamente de Turso.
+      if (response.status !== 503) {
+        throw new Error(data?.error || "Credenciales inválidas o acceso no autorizado.");
+      }
+
+      if (!auth || !db) throw new Error("Servicios de acceso no disponibles");
       await setPersistence(auth, browserSessionPersistence);
-      
+
       let user;
       if (isRegistering) {
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
@@ -103,7 +149,7 @@ export default function LoginPage() {
 
       const userDocRef = doc(db, 'users', user.uid);
       const userDoc = await getDoc(userDocRef);
-      
+
       if (!userDoc.exists() || isRegistering) {
         const newUserData = {
           email: user.email!.toLowerCase(),
@@ -118,29 +164,22 @@ export default function LoginPage() {
         if (isRegistering) {
           const configRef = doc(db, 'config', 'general');
           await setDoc(configRef, { isInitialized: true }, { merge: true });
-          
-          toast({ 
-            title: "¡Configuración Exitosa!", 
-            description: "Administrador raíz creado. El sistema se ha inicializado.",
-            variant: "default"
-          });
+          toast({ title: "¡Configuración Exitosa!", description: "Administrador raíz creado. El sistema se ha inicializado." });
         }
       } else {
         const userData = userDoc.data();
         if (userData.rol !== role) {
           await signOut(auth);
-          toast({ variant: "destructive", title: "Rol Incorrecto", description: `Usted está registrado como ${userData.rol.toUpperCase()}.` });
-          setLoading(false);
-          return;
+          throw new Error(`Usted está registrado como ${userData.rol.toUpperCase()}.`);
         }
       }
 
       router.push('/');
     } catch (err: any) {
+      const message = String(err?.message || '');
+      let mensaje = message || "Credenciales inválidas o fallo de conexión.";
       const code = typeof err?.code === 'string' ? err.code : '';
-      console.error('Error de Auth:', { code, message: err?.message });
 
-      let mensaje = "Credenciales inválidas o fallo de conexión.";
       if (code === 'auth/invalid-credential' || code === 'auth/wrong-password' || code === 'auth/user-not-found') {
         mensaje = "Correo o contraseña incorrectos.";
       } else if (code === 'auth/invalid-api-key') {
