@@ -129,3 +129,25 @@ El respaldo POSVEN no contiene contraseñas de Firebase Authentication. Si no se
 ### Seguridad
 
 El endpoint está bloqueado mientras Turso no esté configurado. No se ejecuta durante la transición Firebase. La importación destructiva requiere confirmación explícita.
+
+
+## Auditoría de relaciones usuario → terminal → caja → operación
+
+La migración conserva las referencias históricas dentro de `data_json` sin renombrarlas ni sustituirlas por valores inventados. El modelo actual utiliza:
+
+- `terminales.usuarioId`: asignación de una caja/terminal al UID del cajero.
+- `ventas.terminalId`: terminal que originó la venta.
+- `ventas.cajeroId`: UID del cajero que realizó la venta.
+- `movimientos.terminalId`: terminal asociado al movimiento de inventario.
+- `devoluciones.terminalId` y `anulaciones.terminalId`: terminal de la operación relacionada.
+- `libroDiario.terminalId`: terminal que originó el asiento de caja.
+- `reportesZ.terminalId`: terminal cuyo corte Z fue generado.
+- `compras.terminalId`: terminal asociado a la compra cuando corresponde.
+- `cashHistory[].terminalId`: terminal de cada sesión de caja histórica.
+- `auditoriaSistema.terminalId` y `auditoriaSistema.usuarioId`: trazabilidad de interrupciones y eventos administrativos.
+
+Durante la verificación se recorren también objetos anidados y se detectan referencias explícitas adicionales (`usuarioId`, `userId`, `firebaseUid`, `cajeroId`, `createdBy`, `openedBy`, `closedBy`, etc.). Las referencias de usuario se validan contra `users.id` y `users.firebase_uid`; las de terminal contra `terminales.id`.
+
+### Regla de compatibilidad
+
+No se deben reemplazar los Firebase UID históricos por nombres de usuario. Mientras exista compatibilidad de transición, el UID queda conservado y `user_identity_map` permite relacionarlo con el nuevo `users.id`. Esto mantiene intactos los registros históricos y permite que el sistema Turso resuelva la identidad sin perder la trazabilidad del cajero original.
