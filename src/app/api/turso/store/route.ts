@@ -12,6 +12,12 @@ import {
   upsertTerminalTransaction,
   deleteTerminalTransaction,
   createZClosureTransaction,
+  applyDebtPaymentTransaction,
+  applyGlobalProviderPaymentTransaction,
+  applyGlobalCustomerPaymentTransaction,
+  createCustomerDebtTransaction,
+  createSupplierDebtTransaction,
+  processReturnOrCancellationTransaction,
   type TursoStoreTable,
 } from '@/lib/turso/pos-store';
 
@@ -88,6 +94,30 @@ export async function POST(request: Request) {
       }
       case 'terminalDelete': {
         const result = await deleteTerminalTransaction({ user, terminalId: String(body.terminalId) });
+        return NextResponse.json({ ok: true, ...result });
+      }
+      case 'debtPayment': {
+        const result = await applyDebtPaymentTransaction(body);
+        return NextResponse.json({ ok: true, ...result });
+      }
+      case 'globalProviderPayment': {
+        const result = await applyGlobalProviderPaymentTransaction(body);
+        return NextResponse.json({ ok: true, ...result });
+      }
+      case 'globalCustomerPayment': {
+        const result = await applyGlobalCustomerPaymentTransaction(body);
+        return NextResponse.json({ ok: true, ...result });
+      }
+      case 'customerDebt': {
+        const result = await createCustomerDebtTransaction(body);
+        return NextResponse.json({ ok: true, ...result });
+      }
+      case 'supplierDebt': {
+        const result = await createSupplierDebtTransaction(body);
+        return NextResponse.json({ ok: true, ...result });
+      }
+      case 'returnOrCancellation': {
+        const result = await processReturnOrCancellationTransaction(body);
         return NextResponse.json({ ok: true, ...result });
       }
       case 'zClosure': {

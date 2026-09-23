@@ -1267,6 +1267,8 @@ export const Store = {
       enqueueOfflineOperation(operationType, { ...params }, operationId);
       return { queuedOffline: true, operationId };
     }
+    const tursoResult = await tryTursoOperation('returnOrCancellation', params);
+    if (tursoResult) return tursoResult;
     let result: any = null;
     await runTransaction(db, async tx => {
       const operationRef = await claimOperation(tx, operationType, operationId);
@@ -1325,6 +1327,8 @@ export const Store = {
     if (typeof window === 'undefined' || !db) return { appliedUSD: 0, debts: [] };
     const { operationId, provider, amountUSD, payment, journal, terminalId } = params;
     if (!(amountUSD > 0)) return { appliedUSD: 0, debts: [] };
+    const tursoResult = await tryTursoOperation('globalProviderPayment', params);
+    if (tursoResult) return tursoResult;
 
     const q = query(collection(db, 'cxp'), where('proveedor', '==', provider));
     let result = { appliedUSD: 0, debts: [] as any[] };
@@ -1427,6 +1431,8 @@ export const Store = {
     if (typeof window === 'undefined' || !db) return { appliedUSD: 0, appliedBS: 0, debts: [] };
     const { operationId, customerName, customerCedula, amountUSD, amountBS, payment, journal, terminalId } = params;
     if (!(amountUSD > 0)) return { appliedUSD: 0, appliedBS: 0, debts: [] };
+    const tursoResult = await tryTursoOperation('globalCustomerPayment', params);
+    if (tursoResult) return tursoResult;
 
     const customerLabel = customerCedula ? `${customerName} [${customerCedula}]` : customerName;
     const q = query(collection(db, 'cxc'), where('cliente', '==', customerLabel));
@@ -1567,6 +1573,8 @@ export const Store = {
     if (typeof window === 'undefined' || !db) return null;
     const { operationId, collection: collectionName, debtId, amountUSD, amountBS, payment, journal, sale, customerCedula, terminalId } = params;
     if (!(amountUSD > 0)) return null;
+    const tursoResult = await tryTursoOperation('debtPayment', params);
+    if (tursoResult) return tursoResult;
     const debtRef = doc(db, collectionName, debtId);
     let result: any = null;
     const opId = String(operationId || payment?.id || (collectionName + '|' + debtId + '|' + amountUSD + '|' + payment?.metodo + '|' + payment?.fecha));
@@ -1642,6 +1650,8 @@ export const Store = {
     journal?: any;
   }): Promise<any> {
     if (typeof window === 'undefined' || !db) return null;
+    const tursoResult = await tryTursoOperation('supplierDebt', params);
+    if (tursoResult) return tursoResult;
     const { operationId, debt, journal } = params;
     const debtRef = doc(db, 'cxp', debt.id);
     let result: any = null;
@@ -2535,6 +2545,8 @@ export const Store = {
     journal?: any;
   }): Promise<any> {
     if (typeof window === 'undefined' || !db) return null;
+    const tursoResult = await tryTursoOperation('customerDebt', params);
+    if (tursoResult) return tursoResult;
     const { operationId, debt, customer, customerId, customerCedula, journal } = params;
     const debtRef = doc(db, 'cxc', debt.id);
     let result: any = null;
