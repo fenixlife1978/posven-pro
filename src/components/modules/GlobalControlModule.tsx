@@ -83,7 +83,7 @@ export default function GlobalControlModule({ state, updateState }: { state: App
   };
 
 
-  const createTerminal = () => {
+  const createTerminal = async () => {
     if (!newTerminalName.trim()) return;
     // Prefijo de caja correlativo (C1, C2, ...) para numeración de facturas independiente por caja.
     const usedPrefixes = (state.terminales || [])
@@ -111,23 +111,72 @@ export default function GlobalControlModule({ state, updateState }: { state: App
       fechaUltimoZ: '',
       acumuladoHistorico: 0
     };
-    updateState({ terminales: [...(state.terminales || []), newTerm] });
-    setNewTerminalName('');
-    setShowAddTerminal(false);
-    toast({ title: "Terminal Creado" });
+    try {
+      const response = await fetch('/api/turso/store', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ operation: 'terminalUpsert', terminal: newTerm }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || body?.ok === false) {
+        throw new Error(String(body?.error || 'No se pudo crear el terminal.'));
+      }
+      const persisted = body?.terminal || newTerm;
+      updateState({ terminales: [...(state.terminales || []).filter(t => t.id !== persisted.id), persisted] });
+      setNewTerminalName('');
+      setShowAddTerminal(false);
+      toast({ title: "Terminal Creado", description: "Terminal guardado en Turso." });
+    } catch (e: any) {
+      console.error("Error creando terminal:", e);
+      toast({ variant: "destructive", title: "Error al crear terminal", description: e?.message || "No se pudo guardar el terminal." });
+    }
   };
 
-  const deleteTerminal = (id: string) => {
+  const deleteTerminal = async (id: string) => {
     if (!confirm('¿Eliminar este terminal?')) return;
-    updateState({ terminales: state.terminales.filter(t => t.id !== id) });
+    try {
+      const response = await fetch('/api/turso/store', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ operation: 'terminalDelete', terminalId: id }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || body?.ok === false) {
+        throw new Error(String(body?.error || 'No se pudo eliminar el terminal.'));
+      }
+      updateState({ terminales: state.terminales.filter(t => t.id !== id) });
+      toast({ title: "Terminal Eliminado", description: "Terminal eliminado de Turso." });
+    } catch (e: any) {
+      console.error("Error eliminando terminal:", e);
+      toast({ variant: "destructive", title: "Error al eliminar terminal", description: e?.message || "No se pudo eliminar el terminal." });
+    }
   };
 
-  const assignUserToTerminal = (terminalId: string, userId: string | null) => {
-    const updated = state.terminales.map(t => 
-      t.id === terminalId ? { ...t, usuarioId: userId === 'none' ? null : userId } : t
-    );
-    updateState({ terminales: updated });
-    toast({ title: "Asignación Actualizada" });
+  const assignUserToTerminal = async (terminalId: string, userId: string | null) => {
+    const assignedUserId = userId === 'none' ? null : userId;
+    try {
+      const response = await fetch('/api/turso/store', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ operation: 'terminalPatch', terminalId, patch: { usuarioId: assignedUserId } }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || body?.ok === false) {
+        throw new Error(String(body?.error || 'No se pudo actualizar la asignación.'));
+      }
+      const persisted = body?.terminal;
+      const updated = state.terminales.map(t =>
+        t.id === terminalId ? (persisted || { ...t, usuarioId: assignedUserId }) : t
+      );
+      updateState({ terminales: updated });
+      toast({ title: "Asignación Actualizada", description: "Responsable guardado en Turso." });
+    } catch (e: any) {
+      console.error("Error actualizando asignación:", e);
+      toast({ variant: "destructive", title: "Error de asignación", description: e?.message || "No se pudo guardar la asignación." });
+    }
   };
 
   return (
