@@ -36,7 +36,7 @@ export default function UsersModule() {
     if (response?.ok) {
       const data = await response.json();
       setUsingTurso(true);
-      setUsuarios((data.users || []).map((u: any) => ({
+      setUsuarios((data.usuarios || data.users || []).map((u: any) => ({
         ...u,
         uid: u.firebaseUid || u.id,
         fechaCreacion: u.fechaCreacion || ''
