@@ -828,10 +828,12 @@ const masterSyncFns: Record<string, () => void> = {};
 const terminalSyncFns: Record<string, () => void> = {};
 
 function stopTerminalSync(): void {
-  const unsub = terminalSyncFns.main;
-  if (unsub) {
-    try { unsub(); } catch (e) { console.error(e); }
-    delete terminalSyncFns.main;
+  for (const key of ['main', 'sales']) {
+    const unsub = terminalSyncFns[key];
+    if (unsub) {
+      try { unsub(); } catch (e) { console.error(e); }
+      delete terminalSyncFns[key];
+    }
   }
 }
 
@@ -866,6 +868,35 @@ function startTerminalSync(terminalId?: string, all = false, initialItems: Termi
     }
   );
   terminalSyncFns.main = unsub;
+
+  // Historial operativo del POS: para un cajero cargamos las ventas de SU caja,
+  // no solo las últimas 50 ventas globales. Así un reinicio no puede dejar la
+  // pantalla mostrando únicamente operaciones antiguas de otra jornada/caja.
+  // Se usa solo un filtro de igualdad para evitar depender de un índice compuesto;
+  // el orden se hace en memoria.
+  const salesQuery = all
+    ? query(collection(db, COLLECTIONS.ventas), limit(500))
+    : (terminalId
+      ? query(collection(db, COLLECTIONS.ventas), where('terminalId', '==', terminalId), limit(500))
+      : null);
+
+  if (salesQuery) {
+    const salesUnsub = onSnapshot(
+      salesQuery,
+      (snap: any) => {
+        const items = snap.docs
+          .map((d: any) => sanitizeForFirestore({ ...d.data(), id: d.data()?.id || d.id }))
+          .filter(Boolean)
+          .sort((a: any, b: any) => String(b.fecha || '').localeCompare(String(a.fecha || '')));
+        applyPatch({ ventas: items });
+      },
+      (err: any) => {
+        if (err?.code !== 'permission-denied') console.warn("Sync ventas terminal:", err);
+      }
+    );
+    terminalSyncFns.sales = salesUnsub;
+  }
+
   return stopTerminalSync;
 }
 
@@ -1033,7 +1064,7 @@ function init() {
 
   // Históricos operativos: mantenemos la ventana de últimas 50 para no
   // convertir cada movimiento de una caja en una lectura completa.
-  for (const name of ['ventas', 'movimientos']) {
+  for (const name of ['movimientos']) {
     const col = COLLECTIONS[name];
     teardownFns.push(onSnapshot(
       query(collection(db, col), orderBy('fecha', 'desc'), limit(50)),
