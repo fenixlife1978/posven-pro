@@ -1284,6 +1284,9 @@ export const Store = {
     }
     const tursoResult = await tryTursoOperation('returnOrCancellation', params);
     if (tursoResult) return tursoResult;
+    const tursoResult = await tryTursoOperation('sale', params);
+    if (tursoResult) return tursoResult;
+
     let result: any = null;
     await runTransaction(db, async tx => {
       const operationRef = await claimOperation(tx, operationType, operationId);
@@ -1915,8 +1918,6 @@ export const Store = {
   },
 
   async createSaleTransaction(params: {
-    const tursoResult = await tryTursoOperation('sale', params);
-    if (tursoResult) return tursoResult;
     operationId?: string;
     cart: any[];
     payments: any[];
@@ -1937,7 +1938,9 @@ export const Store = {
 
     const opId = String(operationId || (terminalId || 'GLOBAL') + '|' + saleType + '|' + JSON.stringify({ cart, payments, client: clientName, credit: credit ? { customerId: credit.customer?.id, cedula: credit.customer?.cedula } : null }));
 
-    // Las transacciones Firestore no funcionan completamente offline. En ese caso
+    // Las ventas pueden quedar en cola local cuando Turso/Firebase no están disponibles.
+    // La cola se procesa posteriormente cuando vuelve la conexión.
+    if (!fromOfflineQueue && typeof window !== 'undefined' && navigator.onLine === false) { En ese caso
     // persistimos la INTENCIÓN de venta en una cola local que sobrevive al reinicio.
     // Al volver la conexión, el procesador la ejecuta contra el Firestore real.
     if (!fromOfflineQueue && typeof window !== 'undefined' && navigator.onLine === false) {
