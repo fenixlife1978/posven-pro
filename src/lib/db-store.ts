@@ -1029,31 +1029,43 @@ function stopMasterSync(name: string): void {
 }
 
 function startMasterSync(name: string): () => void {
-  if (!db || typeof window === 'undefined') return () => {};
+  if (typeof window === 'undefined') return () => {};
   if (!COLLECTIONS[name]) return () => {};
   if (masterSyncFns[name]) return () => stopMasterSync(name);
 
-  const col = COLLECTIONS[name];
-  const unsub = onSnapshot(
-    collection(db, col),
-    (snap) => {
-      const items = snap.docs
-        .map(d => sanitizeForFirestore(d.data()))
-        .filter(Boolean);
-      applyPatch({ [name]: items });
-
-      // Este snapshot ya contiene la colección completa. Marcarla como
-      // hidratada evita que ensureReportData()/ensureLoaded() dispare una
-      // segunda lectura completa mientras el listener está activo.
-      if (name === 'clientes' || name === 'proveedores') {
+  // Con Turso activo, clientes/proveedores deben salir de Turso. El listener
+  // Firebase se conserva únicamente como fallback cuando Turso no está configurado.
+  void (async () => {
+    try {
+      const tursoItems = await tryTursoRead(name, { limit: 2000 });
+      if (tursoItems !== null) {
+        applyPatch({ [name]: tursoItems });
         loadedAll[name] = true;
+        return;
       }
-    },
-    (err) => {
-      if (err.code !== 'permission-denied') console.warn("Sync maestro " + name + ":", err);
+    } catch (e) {
+      console.error('[db-store] Error cargando ' + name + ' desde Turso:', e);
+      return;
     }
-  );
-  masterSyncFns[name] = unsub;
+
+    if (!db) return;
+    const col = COLLECTIONS[name];
+    const unsub = onSnapshot(
+      collection(db, col),
+      (snap) => {
+        const items = snap.docs
+          .map(d => sanitizeForFirestore(d.data()))
+          .filter(Boolean);
+        applyPatch({ [name]: items });
+        if (name === 'clientes' || name === 'proveedores') loadedAll[name] = true;
+      },
+      (err) => {
+        if (err.code !== 'permission-denied') console.warn("Sync maestro " + name + ":", err);
+      }
+    );
+    masterSyncFns[name] = unsub;
+  })();
+
   return () => stopMasterSync(name);
 }
 
