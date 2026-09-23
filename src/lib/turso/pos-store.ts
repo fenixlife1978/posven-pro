@@ -63,6 +63,23 @@ function tableName(table: TursoStoreTable): string {
 function rowStatement(table: TursoStoreTable, record: any): TursoStatement {
   const id = String(record?.id || '');
   if (!id) throw new Error('El registro no tiene id.');
+  const dataJson = JSON.stringify(clean({ ...record, id }));
+
+  // productos conserva todo su payload dentro de data_json y su esquema
+  // histórico no tiene columna fecha. Las demás tablas operativas sí la usan
+  // para ordenar/consultar cronológicamente.
+  if (table === 'productos') {
+    return {
+      sql: `INSERT INTO productos(id,data_json,updated_at)
+        VALUES(?,?,CURRENT_TIMESTAMP)
+        ON CONFLICT(id) DO UPDATE SET
+          data_json=excluded.data_json,
+          updated_at=CURRENT_TIMESTAMP`,
+      args: [id, dataJson],
+      wantRows: false,
+    };
+  }
+
   return {
     sql: `INSERT INTO ${tableName(table)}(id,data_json,fecha,updated_at)
       VALUES(?,?,?,CURRENT_TIMESTAMP)
@@ -70,11 +87,7 @@ function rowStatement(table: TursoStoreTable, record: any): TursoStatement {
         data_json=excluded.data_json,
         fecha=excluded.fecha,
         updated_at=CURRENT_TIMESTAMP`,
-    args: [
-      id,
-      JSON.stringify(clean({ ...record, id })),
-      record?.fecha == null ? null : String(record.fecha),
-    ],
+    args: [id, dataJson, record?.fecha == null ? null : String(record.fecha)],
     wantRows: false,
   };
 }
