@@ -1,5 +1,7 @@
 export interface User {
   uid: string;
+  firebaseUid?: string | null;
+  isSeedAdmin?: boolean;
   nombre: string;
   email: string;
   rol: 'administrador' | 'cajero';

@@ -69,3 +69,44 @@ No se debe depender de Firebase para recuperar el acceso después de un reinicio
 8. Probar caja, ventas, inventario, CxC/CxP, pagos, X/Z, recuperación e idempotencia.
 9. Sólo después retirar Firebase de POSVEN PRO.
 10. Mantener `posven.vercel.app` intacto hasta cerrar la validación.
+
+
+## Preservación de identidad de cajeros
+
+La migración de usuarios NO crea un cajero nuevo desconectado de sus históricos.
+
+Para cada usuario existente de Firebase se conservarán:
+- el Firebase UID original en `users.firebase_uid`;
+- el mismo UID como `users.id` cuando no exista conflicto;
+- nombre, correo, rol, estado y fecha de creación;
+- el documento/perfil original completo en `data_json`;
+- una entrada en `user_identity_map` con la relación entre la identidad Firebase y el usuario Turso.
+
+### Por qué esto preserva la caja
+
+El sistema actual guarda referencias de identidad en datos como:
+- `terminales.usuarioId`;
+- `ventas.cajeroId`;
+- registros de caja/operaciones y auditoría;
+- otros documentos que puedan conservar el UID dentro de `data_json`.
+
+Al conservar el mismo UID, esos históricos no se deben reescribir sólo por cambiar el motor de persistencia.
+
+### Contraseñas
+
+Firebase Authentication no entrega las contraseñas en texto plano. Firebase sí permite exportar cuentas y, para determinados esquemas, hashes de contraseña; la documentación oficial indica que los parámetros de hash son específicos del proyecto. Por ello la migración de identidad/historial se hará independientemente de la migración de credenciales. Cada usuario migrado tendrá una credencial Turso establecida durante el proceso, sin modificar sus históricos.
+
+Referencia oficial: Firebase documenta la exportación/importación de usuarios y sus parámetros de hash en su documentación de Authentication.
+
+### Regla de validación obligatoria
+
+Antes de retirar Firebase de POSVEN PRO se debe comprobar, para cada cajero migrado:
+
+1. inicia sesión en Turso;
+2. el sistema encuentra la misma terminal/caja;
+3. la caja conserva apertura/cierre e historial;
+4. sus ventas históricas siguen mostrando el cajero correcto;
+5. devoluciones, anulaciones, cobros y demás operaciones conservan la relación;
+6. X/Z y recuperación después de refrescar/reiniciar conservan los mismos datos.
+
+No se considera completada la migración de un cajero si cualquiera de esas relaciones se pierde.

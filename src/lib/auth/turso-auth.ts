@@ -135,6 +135,63 @@ export async function ensureSeedAdmin() {
   });
 }
 
+export async function createMigratedUser(input: {
+  firebaseUid: string;
+  username: string;
+  email?: string;
+  nombre: string;
+  password: string;
+  rol: AppRole;
+  fechaCreacion?: string;
+  dataJson?: string;
+}) {
+  const firebaseUid = String(input.firebaseUid || '').trim();
+  const username = input.username.trim().toLowerCase();
+  const email = input.email?.trim().toLowerCase() || null;
+  if (!firebaseUid || !username || !input.nombre.trim()) {
+    throw new Error('firebaseUid, nombre y usuario son obligatorios.');
+  }
+  if (!['administrador', 'cajero'].includes(input.rol)) throw new Error('Rol inválido.');
+
+  const existing = await tursoExecute({
+    sql: 'SELECT id FROM users WHERE id=? OR lower(username)=? OR (? IS NOT NULL AND lower(email)=?) OR firebase_uid=? LIMIT 1',
+    args: [firebaseUid, username, email, email, firebaseUid],
+  });
+
+  const passwordHash = hashPassword(input.password);
+  const fecha = input.fechaCreacion || nowIso();
+  const dataJson = input.dataJson || '{}';
+
+  if (existing.rows.length) {
+    const existingId = String(existing.rows[0].id);
+    await tursoExecute({
+      sql: `UPDATE users SET username=?, email=?, nombre=?, rol=?, password_hash=?, firebase_uid=?, fecha_creacion=?, data_json=?, updated_at=? WHERE id=?`,
+      args: [username, email, input.nombre.trim(), input.rol, passwordHash, firebaseUid, fecha, dataJson, nowIso(), existingId],
+      wantRows: false,
+    });
+    return findUser(username);
+  }
+
+  await tursoExecute({
+    sql: `INSERT INTO users
+      (id, username, email, nombre, rol, password_hash, acceso_bloqueado, is_seed_admin, firebase_uid, fecha_creacion, data_json)
+      VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?)`,
+    args: [firebaseUid, username, email, input.nombre.trim(), input.rol, passwordHash, firebaseUid, fecha, dataJson],
+    wantRows: false,
+  });
+  return findUser(username);
+}
+
+export async function findUserByFirebaseUid(firebaseUid: string) {
+  const value = String(firebaseUid || '').trim();
+  if (!value) return null;
+  const result = await tursoExecute({
+    sql: 'SELECT * FROM users WHERE firebase_uid=? OR id=? LIMIT 1',
+    args: [value, value],
+  });
+  return result.rows[0] ? mapUser(result.rows[0]) : null;
+}
+
 export async function createSession(userId: string) {
   const id = randomBytes(32).toString('hex');
   const created = nowIso();
