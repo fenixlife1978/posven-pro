@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { tursoExecute, tursoTransaction } from '@/lib/turso/client';
-import { createMigratedUser, hashPassword } from '@/lib/auth/turso-auth';
+import { createMigratedUser } from '@/lib/auth/turso-auth';
 
 export type FirebaseBackup = {
   app?: string;
@@ -57,6 +57,30 @@ function safeJson(value: any) {
 
 function generatedPassword() {
   return 'PV-' + randomBytes(18).toString('base64url');
+}
+
+const USER_REFERENCE_KEYS = ['usuarioId','usuario_id','userId','user_id','firebaseUid','cajeroId','cajero_id','createdBy','created_by','updatedBy','updated_by','openedBy','opened_by','closedBy','closed_by','anuladoPor','anulado_por','revertidoPor','revertido_por','responsableId','responsable_id'];
+const TERMINAL_REFERENCE_KEYS = ['terminalId','terminal_id','cajaId','caja_id'];
+type ReferenceAudit = { byCollection: Record<string,{user:Record<string,number>;terminal:Record<string,number>}>; userReferences:Array<{collection:string;field:string;value:string;count:number}>; terminalReferences:Array<{collection:string;field:string;value:string;count:number}> };
+function auditObject(value:any, collection:string, audit:ReferenceAudit, seen=new WeakSet<object>()) {
+  if (!value || typeof value !== 'object' || seen.has(value)) return; seen.add(value);
+  if (Array.isArray(value)) { for (const item of value) auditObject(item,collection,audit,seen); return; }
+  const bucket = audit.byCollection[collection] ||= {user:{},terminal:{}};
+  for (const [key,raw] of Object.entries(value)) {
+    if (USER_REFERENCE_KEYS.includes(key) && raw != null && String(raw).trim()) { const v=String(raw).trim(); const k=key+'='+v; bucket.user[k]=(bucket.user[k]||0)+1; }
+    if (TERMINAL_REFERENCE_KEYS.includes(key) && raw != null && String(raw).trim()) { const v=String(raw).trim(); const k=key+'='+v; bucket.terminal[k]=(bucket.terminal[k]||0)+1; }
+    auditObject(raw,collection,audit,seen);
+  }
+}
+export function auditarReferenciasFirebase(backup:FirebaseBackup):ReferenceAudit {
+  validateFirebaseBackup(backup); const audit:ReferenceAudit={byCollection:{},userReferences:[],terminalReferences:[]}; const data=backup.data||{};
+  for (const [key,table] of Object.entries(COLLECTION_TABLES)) for (const row of asRows(data[key])) auditObject(row,table,audit);
+  for (const key of Object.keys(AUXILIARY_TABLES)) for (const row of asRows(data[key])) auditObject(row,key,audit);
+  for (const [collection,bucket] of Object.entries(audit.byCollection)) {
+    for (const [compound,count] of Object.entries(bucket.user)) { const i=compound.indexOf('='); audit.userReferences.push({collection,field:compound.slice(0,i),value:compound.slice(i+1),count}); }
+    for (const [compound,count] of Object.entries(bucket.terminal)) { const i=compound.indexOf('='); audit.terminalReferences.push({collection,field:compound.slice(0,i),value:compound.slice(i+1),count}); }
+  }
+  return audit;
 }
 
 export function validateFirebaseBackup(backup: FirebaseBackup) {
@@ -244,19 +268,14 @@ export async function verificarMigracionFirebase(backup: FirebaseBackup) {
   }
   const users = await tursoExecute({ sql: 'SELECT COUNT(*) AS total FROM users WHERE firebase_uid IS NOT NULL' });
   const identities = await tursoExecute({ sql: "SELECT COUNT(*) AS total FROM user_identity_map WHERE source='firebase'" });
-  const identityRows = await tursoExecute({
-    sql: `SELECT json_extract(data_json,'$.usuarioId') AS usuario_id FROM terminales
-      WHERE json_extract(data_json,'$.usuarioId') IS NOT NULL`,
-  });
-  let terminalIdentityMissing = 0;
-  for (const row of identityRows.rows) {
-    const uid = String(row.usuario_id || '');
-    const found = await tursoExecute({
-      sql: 'SELECT 1 FROM users WHERE id=? OR firebase_uid=? LIMIT 1',
-      args: [uid, uid],
-    });
-    if (!found.rows.length) terminalIdentityMissing++;
-  }
+  const audit = auditarReferenciasFirebase(backup);
+  const userRows = await tursoExecute({ sql: 'SELECT id, firebase_uid FROM users' });
+  const userIds = new Set<string>();
+  for (const row of userRows.rows) { if (row.id != null) userIds.add(String(row.id)); if (row.firebase_uid != null) userIds.add(String(row.firebase_uid)); }
+  const terminalRows = await tursoExecute({ sql: 'SELECT id FROM terminales' });
+  const terminalIds = new Set<string>(terminalRows.rows.map((row:any) => String(row.id)));
+  const unresolvedUserReferences = audit.userReferences.filter(ref => !userIds.has(ref.value));
+  const unresolvedTerminalReferences = audit.terminalReferences.filter(ref => !terminalIds.has(ref.value));
 
   const expectedCounts = {
     users: asRows(data.users).length,
@@ -274,7 +293,8 @@ export async function verificarMigracionFirebase(backup: FirebaseBackup) {
     cajaCount: counts.caja >= expectedCounts.caja,
     reportesZCount: counts.reportes_z >= expectedCounts.reportesZ,
     identityMap: Number(identities.rows[0]?.total || 0) >= expectedCounts.users,
-    terminalUserReferences: terminalIdentityMissing === 0,
+    terminalUserReferences: unresolvedUserReferences.length === 0,
+    terminalReferences: unresolvedTerminalReferences.length === 0,
   };
   return {
     expected: expectedCounts,
@@ -287,7 +307,9 @@ export async function verificarMigracionFirebase(backup: FirebaseBackup) {
       reportesZ: counts.reportes_z,
       firebaseIdentityMap: Number(identities.rows[0]?.total || 0),
     },
-    terminalIdentityMissing,
+    referenceAudit: audit,
+    unresolvedUserReferences,
+    unresolvedTerminalReferences,
     checks,
     ok: Object.values(checks).every(Boolean),
   };
