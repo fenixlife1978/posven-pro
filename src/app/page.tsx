@@ -113,6 +113,7 @@ export default function LicoreriaPOS() {
           setUserRole(currentUser.rol);
           setUserProfile(profile);
           setUser({ uid: legacyUid, email: currentUser.email, ...currentUser });
+          setState(prev => ({ ...prev, user: profile, isAuthenticated: true } as AppState));
 
           if (currentUser.rol === 'cajero') {
             // Turso es la fuente de verdad cuando la sesión Turso está activa.
@@ -139,8 +140,20 @@ export default function LicoreriaPOS() {
               return;
             }
             if (myTerm.id) Store.startTerminalSync(myTerm.id, false, [myTerm]);
-            setShowApertura(!myTerm.isCashOpen);
-            setActiveTab(sessionStorage.getItem('posven_active_module') || 'ventas');
+
+            // Regla de continuidad de caja:
+            // - Sin corte Z => isCashOpen=true: NO se crea una nueva apertura.
+            //   Se recupera la jornada existente y se conservan sus ventas,
+            //   movimientos y demás registros persistidos en Turso.
+            // - Con corte Z / caja cerrada => isCashOpen=false: se exige una
+            //   nueva apertura antes de entrar al POS.
+            //
+            // El estado de caja vive en el documento de la terminal, no en
+            // sessionStorage/localStorage; por eso un reinicio/corte de luz
+            // no debe convertir una jornada abierta en una jornada nueva.
+            const jornadaAbierta = myTerm.isCashOpen === true;
+            setShowApertura(!jornadaAbierta);
+            setActiveTab('ventas');
           } else {
             Store.startTerminalSync(undefined, true);
             setShowApertura(false);
@@ -182,6 +195,7 @@ export default function LicoreriaPOS() {
           setUserRole(data.rol);
           setUserProfile(data);
           setUser(currentUser);
+          setState(prev => ({ ...prev, user: { ...data, uid: currentUser.uid }, isAuthenticated: true } as AppState));
 
           if (data.rol === 'cajero') {
             const configSnap = await getDocs(query(collection(db, 'terminales'), where('usuarioId', '==', currentUser.uid)));
