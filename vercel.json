@@ -1,4 +1,3 @@
 {
-  "outputDirectory": ".next",
-  "ignoreCommand": "exit 1"
+  "outputDirectory": ".next"
 }
