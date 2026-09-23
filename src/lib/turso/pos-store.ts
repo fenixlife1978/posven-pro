@@ -156,6 +156,75 @@ export async function patchCatalog(name: string, lista: any[]): Promise<any[]> {
   await tursoExecute({ sql: 'INSERT INTO catalogos(nombre,lista_json,data_json,updated_at) VALUES(?,?,?,CURRENT_TIMESTAMP) ON CONFLICT(nombre) DO UPDATE SET lista_json=excluded.lista_json, updated_at=CURRENT_TIMESTAMP', args: [String(name), JSON.stringify(value), '{}'], wantRows: false });
   return value;
 }
+export async function syncProductChanges(params: {
+  changes: Array<{ before?: any | null; after?: any | null }>;
+  deletedIds?: string[];
+}): Promise<{ products: any[]; deletedIds: string[] }> {
+  assertTursoReady();
+  const changes = Array.isArray(params.changes) ? params.changes : [];
+  const deletedIds = Array.isArray(params.deletedIds) ? params.deletedIds.map(String) : [];
+  if (changes.length + deletedIds.length > 450) throw new Error('El lote de productos supera el límite seguro de 450 registros.');
+
+  return tursoInteractiveTransaction(async tx => {
+    const products: any[] = [];
+    const deleted = new Set<string>();
+
+    for (const change of changes) {
+      const after = change?.after;
+      const before = change?.before;
+      const id = String(after?.id || before?.id || '');
+      if (!id) continue;
+
+      const current = rowFromDb((await tx.execute(txSelect('productos', id))).rows[0]);
+
+      if (!before) {
+        if (current) throw new Error('El producto ' + id + ' ya existe en Turso.');
+        if (!after) continue;
+        await tx.execute(rowStatement('productos', after));
+        products.push(after);
+        continue;
+      }
+
+      if (!current) throw new Error('El producto ' + id + ' ya no existe en Turso.');
+
+      // El stock se modifica por delta para no pisar una venta/ajuste concurrente.
+      const beforeStock = Number(before.stock) || 0;
+      const afterStock = Number(after?.stock) || 0;
+      const deltaStock = after ? afterStock - beforeStock : 0;
+      const next = after ? { ...current, ...after, stock: (Number(current.stock) || 0) + deltaStock, id } : current;
+      await tx.execute(rowStatement('productos', next));
+      products.push(next);
+    }
+
+    for (const id of deletedIds) {
+      await tx.execute({ sql: 'DELETE FROM productos WHERE id=?', args: [id], wantRows: false });
+      deleted.add(id);
+    }
+
+    return { products, deletedIds: [...deleted] };
+  });
+}
+
+export async function syncRecords(params: {
+  table: TursoStoreTable;
+  records: any[];
+  deletedIds?: string[];
+}): Promise<{ records: any[]; deletedIds: string[] }> {
+  assertTursoReady();
+  const table = params.table;
+  const records = Array.isArray(params.records) ? params.records : [];
+  const deletedIds = Array.isArray(params.deletedIds) ? params.deletedIds.map(String) : [];
+  if (records.length + deletedIds.length > 450) throw new Error('El lote supera el límite seguro de 450 registros.');
+
+  return tursoInteractiveTransaction(async tx => {
+    for (const id of deletedIds) {
+      await tx.execute({ sql: `DELETE FROM ${tableName(table)} WHERE id=?`, args: [id], wantRows: false });
+    }
+    for (const record of records) await tx.execute(rowStatement(table, record));
+    return { records, deletedIds };
+  });
+}
+
 export async function upsertRecords(table: TursoStoreTable, records: any[]): Promise<{ count: number }> {
   assertTursoReady();
   if (!records.length) return { count: 0 };

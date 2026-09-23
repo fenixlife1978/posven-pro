@@ -444,7 +444,11 @@ async function applyInventoryMovementsTransaction(params: {
   if (!db) return null;
 
   const tursoResult = await tryTursoOperation('inventory', params);
-  if (tursoResult) return tursoResult;
+  if (tursoResult) {
+    if (Array.isArray(tursoResult.products) && tursoResult.products.length) applyPatch({ productos: mergeById(cache.productos, tursoResult.products) });
+    if (Array.isArray(tursoResult.movements) && tursoResult.movements.length) applyPatch({ movimientos: mergeById(cache.movimientos, tursoResult.movements) });
+    return tursoResult;
+  }
 
   const { operationId, operationType, movements, productPatches = {}, fromOfflineQueue } = params;
   if (!movements?.length) throw new Error('No hay movimientos de inventario para registrar.');
@@ -2788,20 +2792,61 @@ export const Store = {
       const prevArr = ((prev as any)[k] || []) as any[];
       const newArr = ((patch as any)[k] || []) as any[];
       if (k === 'productos') {
-        jobs.push(syncProductosTransactional(prevArr, newArr)
-          .then((stocks) => {
-            let toSync = newArr;
-            if (stocks && stocks.size > 0) {
-              const corrected = newArr.map((p: any) => {
-                const s = stocks.get(String(p.id));
-                return s !== undefined ? { ...p, stock: s } : p;
-              });
-              applyPatch({ productos: corrected });
-              toSync = corrected;
-            }
-            return syncProductosRTDB(prevArr, toSync);
-          })
-          .catch(e => console.error("Error persistiendo productos:", e)));
+        const prevById = new Map(prevArr.filter(x => x?.id).map(x => [String(x.id), x]));
+        const newById = new Map(newArr.filter(x => x?.id).map(x => [String(x.id), x]));
+        const changes: Array<{ before?: any | null; after?: any | null }> = [];
+        const deletedIds: string[] = [];
+        newById.forEach((after, id) => {
+          const before = prevById.get(id);
+          if (!before || JSON.stringify(sanitizeForFirestore(before)) !== JSON.stringify(sanitizeForFirestore(after))) {
+            changes.push({ before: before || null, after });
+          }
+        });
+        prevById.forEach((_before, id) => { if (!newById.has(id)) deletedIds.push(id); });
+
+        jobs.push((async () => {
+          const result = await tryTursoOperation('productSync', { changes, deletedIds });
+          if (result) {
+            const canonical = Array.isArray(result.products) ? result.products : [];
+            const next = mergeById(newArr, canonical).filter(p => !deletedIds.includes(String(p.id)));
+            applyPatch({ productos: next });
+            return;
+          }
+
+          // Turso no configurado: conserva el comportamiento Firebase existente.
+          const stocks = await syncProductosTransactional(prevArr, newArr);
+          let toSync = newArr;
+          if (stocks && stocks.size > 0) {
+            const corrected = newArr.map((p: any) => {
+              const s = stocks.get(String(p.id));
+              return s !== undefined ? { ...p, stock: s } : p;
+            });
+            applyPatch({ productos: corrected });
+            toSync = corrected;
+          }
+          await syncProductosRTDB(prevArr, toSync);
+        })().catch(e => console.error("Error persistiendo productos:", e)));
+      } else if (['clientes', 'proveedores', 'movimientos'].includes(String(k))) {
+        const prevById = new Map(prevArr.filter(x => x?.id).map(x => [String(x.id), x]));
+        const newById = new Map(newArr.filter(x => x?.id).map(x => [String(x.id), x]));
+        const records = [...newById.values()].filter((after: any) => {
+          const before = prevById.get(String(after.id));
+          return !before || JSON.stringify(sanitizeForFirestore(before)) !== JSON.stringify(sanitizeForFirestore(after));
+        });
+        const deletedIds = [...prevById.keys()].filter(id => !newById.has(id));
+
+        jobs.push((async () => {
+          const result = await tryTursoOperation('recordsSync', {
+            table: String(k),
+            records: sanitizeForFirestore(records),
+            deletedIds,
+          });
+          if (result) {
+            applyPatch({ [k]: mergeById(newArr, Array.isArray(result.records) ? result.records : []) });
+            return;
+          }
+          await syncArrayToCollection(COLLECTIONS[k], prevArr, newArr);
+        })().catch(e => console.error("Error persistiendo " + k + ":", e)));
       } else {
         jobs.push(syncArrayToCollection(COLLECTIONS[k], prevArr, newArr).catch(e => console.error("Error persistiendo " + k + ":", e)));
       }

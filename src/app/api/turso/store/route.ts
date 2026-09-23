@@ -6,6 +6,8 @@ import {
   getRecord,
   listRecords,
   upsertRecords,
+  syncProductChanges,
+  syncRecords,
   getAppConfig,
   patchAppConfig,
   getCatalog,
@@ -92,6 +94,26 @@ export async function POST(request: Request) {
         if (user.rol !== 'administrador') throw new Error('Se requiere administrador.');
         const lista = await patchCatalog(String(body.name), Array.isArray(body.lista) ? body.lista : []);
         return NextResponse.json({ ok: true, name: String(body.name), lista });
+      }
+      case 'productSync': {
+        if (user.rol !== 'administrador') throw new Error('Se requiere administrador.');
+        const result = await syncProductChanges({
+          changes: Array.isArray(body.changes) ? body.changes : [],
+          deletedIds: Array.isArray(body.deletedIds) ? body.deletedIds : [],
+        });
+        return NextResponse.json({ ok: true, ...result });
+      }
+      case 'recordsSync': {
+        const allowed = new Set(['clientes', 'proveedores', 'movimientos']);
+        const target = String(body.table || '');
+        if (!allowed.has(target)) throw new Error('Tabla no permitida para sincronización general.');
+        if (target === 'proveedores' && user.rol !== 'administrador') throw new Error('Se requiere administrador.');
+        const result = await syncRecords({
+          table: target as any,
+          records: Array.isArray(body.records) ? body.records : [],
+          deletedIds: Array.isArray(body.deletedIds) ? body.deletedIds : [],
+        });
+        return NextResponse.json({ ok: true, ...result });
       }
       case 'upsert': {
         if (user.rol !== 'administrador') throw new Error('Se requiere administrador.');
