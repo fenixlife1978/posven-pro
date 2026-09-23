@@ -184,8 +184,16 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   }, [view]);
 
   const currentTerminal = useMemo(() => {
-    return auth?.currentUser ? state.terminales.find(t => t.usuarioId === auth.currentUser!.uid) : null;
-  }, [state.terminales]);
+    const appUser: any = (state as any).user || null;
+    const ids = [
+      appUser?.id,
+      appUser?.uid,
+      appUser?.firebaseUid,
+      auth?.currentUser?.uid,
+    ].filter(Boolean).map(String);
+    if (!ids.length) return null;
+    return state.terminales.find(t => ids.includes(String(t.usuarioId || ''))) || null;
+  }, [state.terminales, (state as any).user]);
 
   const histVentas = useMemo(() => {
     const tc = Utils.getTerminalCash(currentTerminal);
