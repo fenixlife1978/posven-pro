@@ -25,6 +25,7 @@ export default function LoginPage() {
   const [isRegistering, setIsRegistering] = useState(false);
   const [systemEmpty, setSystemEmpty] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
+  const [statusMessage, setStatusMessage] = useState("Inicializando Base de Datos Turso...");
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -32,13 +33,20 @@ export default function LoginPage() {
     }, 8000);
 
     const checkTursoSession = async () => {
+      setStatusMessage("Inicializando Base de Datos Turso...");
       try {
         const response = await fetch('/api/auth/session', { cache: 'no-store' });
         if (response.ok) {
+          setStatusMessage("Sesión Turso encontrada. Ingresando...");
           router.push('/');
           return true;
         }
-        if (response.status !== 503) return false;
+        if (response.status === 503) {
+          setStatusMessage("Turso no está disponible; preparando respaldo Firebase...");
+          return null;
+        }
+        setStatusMessage("Turso respondió, pero no hay sesión activa.");
+        return false;
       } catch {}
 
       return null;
@@ -112,6 +120,7 @@ export default function LoginPage() {
       return;
     }
     setLoading(true);
+    setStatusMessage("Inicializando Base de Datos Turso...");
 
     try {
       const response = await fetch('/api/auth/login', {
@@ -121,6 +130,7 @@ export default function LoginPage() {
       });
 
       if (response.ok) {
+        setStatusMessage("Turso autenticó correctamente. Ingresando...");
         const data = await response.json();
         toast({ title: "Acceso autorizado", description: `Bienvenido, ${data.user?.nombre || email}.` });
         router.push('/');
@@ -135,7 +145,9 @@ export default function LoginPage() {
         throw new Error(data?.error || "Credenciales inválidas o acceso no autorizado.");
       }
 
+      setStatusMessage("Turso devolvió 503. Intentando respaldo Firebase...");
       if (!auth || !db) throw new Error("Servicios de acceso no disponibles");
+      setStatusMessage("Conectando con Firebase como respaldo...");
       await setPersistence(auth, browserSessionPersistence);
 
       let user;
@@ -211,7 +223,7 @@ export default function LoginPage() {
       <div className="min-h-screen bg-surface-warm flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
           <div className="w-10 h-10 border-4 border-brand-gold border-t-transparent rounded-full animate-spin"></div>
-          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-ink/40">Iniciando Seguridad...</p>
+          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-ink/40 text-center px-6">{statusMessage}</p>
         </div>
       </div>
     );
@@ -300,7 +312,9 @@ export default function LoginPage() {
             disabled={loading} 
             className="w-full h-[56px] bg-[#C8952E] text-black font-black text-sm rounded-2xl flex items-center justify-center hover:bg-[#D9A540] transition-all disabled:opacity-50 shadow-lg uppercase tracking-widest"
           >
-            {loading ? <div className="w-6 h-6 border-2 border-black/20 border-t-black rounded-full animate-spin" /> : (isRegistering ? "Configurar Acceso Inicial" : "Iniciar Sesión")}
+            {loading ? (
+              <span className="flex items-center gap-3"><div className="w-5 h-5 border-2 border-black/20 border-t-black rounded-full animate-spin" />{statusMessage}</span>
+            ) : (isRegistering ? "Configurar Acceso Inicial" : "Iniciar Sesión")}
           </button>
         </form>
 
