@@ -1696,6 +1696,8 @@ export const Store = {
     if (!invoiceNumber || !supplier) throw new Error('La compra no tiene factura/proveedor.');
     if (!(Number(exchangeRate) > 0)) throw new Error('La tasa de la compra no es válida.');
 
+    const tursoResult = await tryTursoOperation('createPurchase', params);
+    if (tursoResult) return tursoResult;
     const purchaseRef = doc(db, 'compras', purchase.id);
     const opId = String(operationId || purchase.id || (invoiceNumber + '|' + supplier + '|' + purchaseDate));
     if (typeof window !== 'undefined' && navigator.onLine === false) {
@@ -2220,6 +2222,8 @@ export const Store = {
     const purchaseDate = String(params.purchaseDate || '').slice(0, 10);
     if (!invoiceNumber || !supplier) throw new Error('La compra no tiene factura/proveedor identificables.');
 
+    const tursoResult = await tryTursoOperation('deletePurchase', params);
+    if (tursoResult) return tursoResult;
     let result: any = null;
     let journalPatch: LibroDiarioEntry[] = [];
     const opId = operationId || (invoiceNumber + '|' + supplier + '|' + purchaseDate + '|DELETE');
