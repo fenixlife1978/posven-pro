@@ -8,6 +8,10 @@ import {
   upsertRecords,
   createSaleTransaction,
   applyInventoryMovementsTransaction,
+  patchTerminalTransaction,
+  upsertTerminalTransaction,
+  deleteTerminalTransaction,
+  createZClosureTransaction,
   type TursoStoreTable,
 } from '@/lib/turso/pos-store';
 
@@ -72,6 +76,27 @@ export async function POST(request: Request) {
       }
       case 'sale': {
         const result = await createSaleTransaction(body);
+        return NextResponse.json({ ok: true, ...result });
+      }
+      case 'terminalPatch': {
+        const result = await patchTerminalTransaction({ user, terminalId: String(body.terminalId), patch: body.patch || {} });
+        return NextResponse.json({ ok: true, ...result });
+      }
+      case 'terminalUpsert': {
+        const result = await upsertTerminalTransaction({ user, terminal: body.terminal });
+        return NextResponse.json({ ok: true, ...result });
+      }
+      case 'terminalDelete': {
+        const result = await deleteTerminalTransaction({ user, terminalId: String(body.terminalId) });
+        return NextResponse.json({ ok: true, ...result });
+      }
+      case 'zClosure': {
+        const result = await createZClosureTransaction({
+          user,
+          terminalId: String(body.terminalId),
+          report: body.report,
+          terminalPatch: body.terminalPatch || {},
+        });
         return NextResponse.json({ ok: true, ...result });
       }
       default:

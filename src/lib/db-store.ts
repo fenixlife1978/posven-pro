@@ -2591,6 +2591,75 @@ export const Store = {
     // Echo local inmediato (la UI ya muestra el cambio al instante)
     applyPatch(patch);
 
+    // Cuando Turso está activo, las operaciones críticas de terminal/caja no
+    // deben pasar por Firebase. La comparación se hace contra el cache anterior
+    // y solo se envían los campos que realmente cambiaron.
+    if (patch.terminales !== undefined) {
+      const prevTerminals = (prev.terminales || []) as any[];
+      const nextTerminals = (patch.terminales || []) as any[];
+
+      // Corte Z: reporte + terminal/correlativo se confirman juntos.
+      if (patch.reportesZ !== undefined) {
+        const reportes = (patch.reportesZ || []) as any[];
+        const previousReports = (prev.reportesZ || []) as any[];
+        const newestReport = reportes.length ? reportes[reportes.length - 1] : null;
+        const terminalId = String(newestReport?.terminalId || '');
+        const terminal = nextTerminals.find((t: any) => String(t?.id || '') === terminalId);
+        const previousTerminal = prevTerminals.find((t: any) => String(t?.id || '') === terminalId);
+        if (newestReport && terminal && previousTerminal) {
+          const terminalPatch: Record<string, any> = {};
+          Object.keys(terminal).forEach(key => {
+            if (key === 'id') return;
+            if (JSON.stringify(terminal[key]) !== JSON.stringify(previousTerminal[key])) terminalPatch[key] = terminal[key];
+          });
+          const zResult = await tryTursoOperation('zClosure', {
+            terminalId,
+            report: newestReport,
+            terminalPatch,
+          });
+          if (zResult) {
+            const canonicalReport = zResult.report;
+            applyPatch({
+              reportesZ: [...previousReports, canonicalReport],
+              terminales: mergeById(prevTerminals, [zResult.terminal]),
+              ultimoZ: canonicalReport.numeroZ,
+              fechaUltimoZ: canonicalReport.fecha,
+              acumuladoHistorico: canonicalReport.acumuladoHistoricoUSD ?? cache.acumuladoHistorico,
+              fondoCajaHoyBS: zResult.terminal.fondoCajaHoyBS ?? 0,
+              fondoCajaHoyUSD: zResult.terminal.fondoCajaHoyUSD ?? 0,
+              isCashOpen: !!zResult.terminal.isCashOpen,
+            });
+            return;
+          }
+        }
+      }
+
+      // Apertura/cierre de caja y demás cambios de una terminal.
+      // Se procesa solo si existe una terminal previa; las altas/bajas de
+      // terminales se mantienen en el flujo administrativo hasta activar
+      // explícitamente la migración de gestión de terminales.
+      for (const terminal of nextTerminals) {
+        if (!terminal?.id) continue;
+        const previous = prevTerminals.find((t: any) => String(t?.id || '') === String(terminal.id));
+        if (!previous) continue;
+        const terminalPatch: Record<string, any> = {};
+        Object.keys(terminal).forEach(key => {
+          if (key === 'id') return;
+          if (JSON.stringify(terminal[key]) !== JSON.stringify(previous[key])) terminalPatch[key] = terminal[key];
+        });
+        if (Object.keys(terminalPatch).length === 0) continue;
+        const result = await tryTursoOperation('terminalPatch', {
+          terminalId: String(terminal.id),
+          patch: terminalPatch,
+        });
+        if (result) {
+          applyPatch({ terminales: mergeById(prevTerminals, [result.terminal]) });
+          return;
+        }
+        break;
+      }
+    }
+
     // 1) COLEECCIONES: escritura por documento (nunca el array completo en un doc)
     const jobs: Promise<unknown>[] = [];
     for (const key of Object.keys(COLLECTIONS)) {

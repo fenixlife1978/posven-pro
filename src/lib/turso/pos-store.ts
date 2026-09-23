@@ -404,3 +404,89 @@ export async function applyInventoryMovementsTransaction(params: {
     return { movements: persistedMovements, productIds, products: persistedProducts };
   });
 }
+
+
+function assertTerminalAccess(user: { rol: string; id: string; firebaseUid?: string | null }, terminal: any) {
+  if (user.rol === 'administrador') return;
+  const assigned = String(terminal?.usuarioId || '');
+  const allowed = new Set([String(user.id), user.firebaseUid ? String(user.firebaseUid) : '']);
+  if (!assigned || !allowed.has(assigned)) throw new Error('Esta terminal no está asignada al usuario autenticado.');
+}
+
+export async function patchTerminalTransaction(params: {
+  user: { rol: string; id: string; firebaseUid?: string | null };
+  terminalId: string;
+  patch: Record<string, any>;
+}) {
+  assertTursoReady();
+  return tursoInteractiveTransaction(async tx => {
+    const current = rowFromDb((await tx.execute(txSelect('terminales', params.terminalId))).rows[0]);
+    if (!current) throw new Error('La terminal ya no existe en Turso.');
+    assertTerminalAccess(params.user, current);
+    const updated = { ...current, ...clean(params.patch), id: params.terminalId };
+    await tx.execute(rowStatement('terminales', updated));
+    return { terminal: updated };
+  });
+}
+
+export async function upsertTerminalTransaction(params: {
+  user: { rol: string };
+  terminal: any;
+}) {
+  assertTursoReady();
+  if (params.user.rol !== 'administrador') throw new Error('Se requiere administrador.');
+  if (!params.terminal?.id) throw new Error('La terminal no tiene id.');
+  await tursoInteractiveTransaction(async tx => {
+    await tx.execute(rowStatement('terminales', params.terminal));
+  });
+  return { terminal: params.terminal };
+}
+
+export async function deleteTerminalTransaction(params: {
+  user: { rol: string };
+  terminalId: string;
+}) {
+  assertTursoReady();
+  if (params.user.rol !== 'administrador') throw new Error('Se requiere administrador.');
+  return tursoInteractiveTransaction(async tx => {
+    await tx.execute({ sql: 'DELETE FROM terminales WHERE id=?', args: [params.terminalId], wantRows: false });
+    return { terminalId: params.terminalId };
+  });
+}
+
+export async function createZClosureTransaction(params: {
+  user: { rol: string; id: string; firebaseUid?: string | null };
+  terminalId: string;
+  report: any;
+  terminalPatch: Record<string, any>;
+}) {
+  assertTursoReady();
+  return tursoInteractiveTransaction(async tx => {
+    const current = rowFromDb((await tx.execute(txSelect('terminales', params.terminalId))).rows[0]);
+    if (!current) throw new Error('La terminal ya no existe en Turso.');
+    assertTerminalAccess(params.user, current);
+
+    const expectedNumber = Number(current.ultimoZ || 0) + 1;
+    const requestedNumber = Number(params.report?.numeroZ || expectedNumber);
+    if (requestedNumber !== expectedNumber) {
+      throw new Error('El número Z cambió en otra caja. Actualice y vuelva a generar el corte.');
+    }
+
+    const prefix = terminalPrefix(current, params.terminalId);
+    let report = { ...clean(params.report), terminalId: params.terminalId, numeroZ: expectedNumber };
+    const requestedId = String(report.id || '');
+    const existing = requestedId ? await tx.execute(txSelect('reportesZ', requestedId)) : { rows: [] } as any;
+    if (existing.rows.length) {
+      report.id = terminalSeries(prefix, 'Z', expectedNumber, 6);
+      const canonical = await tx.execute(txSelect('reportesZ', report.id));
+      if (canonical.rows.length) throw new Error('El corte Z de esta terminal ya fue registrado.');
+    } else if (!requestedId) {
+      report.id = terminalSeries(prefix, 'Z', expectedNumber, 6);
+    }
+
+    const updatedTerminal = { ...current, ...clean(params.terminalPatch), ultimoZ: expectedNumber, id: params.terminalId };
+    await tx.execute(rowStatement('reportesZ', report));
+    await tx.execute(rowStatement('terminales', updatedTerminal));
+    return { report, terminal: updatedTerminal };
+  });
+}
