@@ -216,5 +216,16 @@ export async function restaurarRespaldo(backup: BackupFile): Promise<void> {
 export async function cargarRespaldoDesdeArchivo(file: File): Promise<void> {
   const backup = await leerArchivoRespaldo(file);
   if (!backup) return;
-  await restaurarRespaldo(backup);
+
+  const response = await fetch('/api/turso/backup', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ backup }),
+  });
+
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok || body?.ok === false) {
+    throw new Error(body?.error || 'No se pudo restaurar el respaldo en Turso.');
+  }
 }
