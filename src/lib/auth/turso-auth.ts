@@ -1,4 +1,4 @@
-import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
+import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { tursoExecute, tursoTransaction } from '@/lib/turso/client';
 
 export type AppRole = 'administrador' | 'cajero';
@@ -179,6 +179,43 @@ export async function listUsers() {
       FROM users ORDER BY lower(nombre), lower(username)`,
   });
   return result.rows.map(mapUser);
+}
+
+export async function setUserBlocked(id: string, blocked: boolean) {
+  const target = await tursoExecute({
+    sql: `SELECT rol, is_seed_admin, acceso_bloqueado FROM users WHERE id=? LIMIT 1`,
+    args: [id],
+  });
+  if (!target.rows[0]) throw new Error('Usuario no encontrado.');
+
+  const wasBlocked = Number(target.rows[0].acceso_bloqueado || 0) === 1;
+  if (wasBlocked === blocked) return;
+
+  if (blocked && String(target.rows[0].rol) === 'administrador') {
+    const activeAdmins = await tursoExecute({
+      sql: `SELECT COUNT(*) AS total FROM users
+        WHERE rol='administrador' AND acceso_bloqueado=0 AND id<>?`,
+      args: [id],
+    });
+    const total = Number(activeAdmins.rows[0]?.total || 0);
+    if (total < 1) {
+      if (Number(target.rows[0].is_seed_admin || 0) === 1) {
+        throw new Error('Primero debe crear y activar otro administrador antes de desactivar el administrador semilla.');
+      }
+      throw new Error('No se puede desactivar al último administrador activo del sistema.');
+    }
+  }
+
+  await tursoTransaction([
+    {
+      sql: `UPDATE users SET acceso_bloqueado=? WHERE id=?`,
+      args: [blocked ? 1 : 0, id],
+      wantRows: false,
+    },
+    ...(blocked
+      ? [{ sql: `UPDATE sessions SET revoked_at=? WHERE user_id=? AND revoked_at IS NULL`, args: [nowIso(), id], wantRows: false }]
+      : []),
+  ]);
 }
 
 export async function deleteUser(id: string) {

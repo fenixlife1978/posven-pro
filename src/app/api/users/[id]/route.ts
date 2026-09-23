@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { deleteUser, getSessionUser } from '@/lib/auth/turso-auth';
+import { deleteUser, getSessionUser, setUserBlocked } from '@/lib/auth/turso-auth';
 import { tursoExecute } from '@/lib/turso/client';
 
 export const runtime = 'nodejs';
@@ -16,14 +16,28 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
 
   const { id } = await context.params;
   const body = await request.json().catch(() => ({}));
-  const nombre = String(body?.nombre || '').trim();
-  const rol = String(body?.rol || '');
+  const target = await tursoExecute({
+    sql: 'SELECT is_seed_admin, nombre, rol, acceso_bloqueado FROM users WHERE id=? LIMIT 1',
+    args: [id],
+  });
+  if (!target.rows[0]) return NextResponse.json({ error: 'Usuario no encontrado.' }, { status: 404 });
+
+  const body = await request.json().catch(() => ({}));
+  const hasBlockChange = typeof body?.accesoBloqueado === 'boolean';
+
+  if (hasBlockChange) {
+    try {
+      await setUserBlocked(id, Boolean(body.accesoBloqueado));
+    } catch (error: any) {
+      return NextResponse.json({ error: error?.message || 'No fue posible cambiar el estado del usuario.' }, { status: 400 });
+    }
+  }
+
+  const nombre = body?.nombre === undefined ? String(target.rows[0].nombre || '') : String(body.nombre || '').trim();
+  const rol = body?.rol === undefined ? String(target.rows[0].rol || '') : String(body.rol || '');
   if (!nombre || !['administrador', 'cajero'].includes(rol)) {
     return NextResponse.json({ error: 'Datos de usuario inválidos.' }, { status: 400 });
   }
-
-  const target = await tursoExecute({ sql: 'SELECT is_seed_admin FROM users WHERE id=? LIMIT 1', args: [id] });
-  if (!target.rows[0]) return NextResponse.json({ error: 'Usuario no encontrado.' }, { status: 404 });
   if (Number(target.rows[0].is_seed_admin) === 1 && rol !== 'administrador') {
     return NextResponse.json({ error: 'El administrador semilla debe conservar el rol administrador.' }, { status: 400 });
   }
