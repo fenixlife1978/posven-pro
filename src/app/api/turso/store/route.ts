@@ -1,0 +1,86 @@
+import { NextResponse } from 'next/server';
+import { getSessionUser } from '@/lib/auth/turso-auth';
+import {
+  assertTursoReady,
+  getRecord,
+  listRecords,
+  upsertRecords,
+  createSaleTransaction,
+  applyInventoryMovementsTransaction,
+  type TursoStoreTable,
+} from '@/lib/turso/pos-store';
+
+export const runtime = 'nodejs';
+
+const TABLES = new Set([
+  'productos','movimientos','ventas','cxc','cxp','clientes','proveedores',
+  'devoluciones','anulaciones','terminales','libroDiario','reportesZ','caja','compras',
+]);
+
+function table(value: unknown): TursoStoreTable {
+  const name = String(value || '');
+  if (!TABLES.has(name)) throw new Error('Tabla POSVEN no permitida.');
+  return name as TursoStoreTable;
+}
+
+async function requireAdminOrOperator() {
+  const user = await getSessionUser();
+  if (!user) throw new Error('No autenticado.');
+  return user;
+}
+
+export async function GET(request: Request) {
+  try {
+    assertTursoReady();
+    await requireAdminOrOperator();
+    const url = new URL(request.url);
+    const t = table(url.searchParams.get('table'));
+    const id = url.searchParams.get('id');
+    if (id) return NextResponse.json({ ok: true, record: await getRecord(t, id) });
+    const records = await listRecords(t, {
+      limit: Number(url.searchParams.get('limit') || 500),
+      terminalId: url.searchParams.get('terminalId') || undefined,
+      estado: url.searchParams.get('estado') || undefined,
+    });
+    return NextResponse.json({ ok: true, records });
+  } catch (error: any) {
+    const message = String(error?.message || error);
+    const status = message.includes('no está configurado') ? 503
+      : message.includes('No autenticado') ? 401
+      : 400;
+    return NextResponse.json({ ok: false, error: message }, { status });
+  }
+}
+
+export async function POST(request: Request) {
+  try {
+    assertTursoReady();
+    const user = await requireAdminOrOperator();
+    const body = await request.json();
+
+    switch (String(body?.operation || '')) {
+      case 'upsert': {
+        if (user.rol !== 'administrador') throw new Error('Se requiere administrador.');
+        const result = await upsertRecords(table(body.table), Array.isArray(body.records) ? body.records : []);
+        return NextResponse.json({ ok: true, ...result });
+      }
+      case 'inventory': {
+        const result = await applyInventoryMovementsTransaction(body);
+        return NextResponse.json({ ok: true, ...result });
+      }
+      case 'sale': {
+        const result = await createSaleTransaction(body);
+        return NextResponse.json({ ok: true, ...result });
+      }
+      default:
+        throw new Error('Operación Turso no soportada todavía.');
+    }
+  } catch (error: any) {
+    const message = String(error?.message || error);
+    const status = message.includes('no está configurado') ? 503
+      : message.includes('No autenticado') ? 401
+      : message.includes('Se requiere administrador') ? 403
+      : 400;
+    return NextResponse.json({ ok: false, error: message }, { status });
+  }
+}

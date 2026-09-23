@@ -212,3 +212,64 @@ export async function tursoTransaction(statements: TursoStatement[]) {
     throw error;
   }
 }
+
+
+export type TursoTransactionContext = {
+  execute: (statement: TursoStatement) => Promise<any>;
+};
+
+/**
+ * Transacción interactiva: permite leer datos dentro de BEGIN IMMEDIATE,
+ * calcular el siguiente estado y escribirlo antes de COMMIT. Es la pieza
+ * necesaria para conservar las garantías de concurrencia que tenía Firestore
+ * runTransaction().
+ */
+export async function tursoInteractiveTransaction<T>(
+  callback: (tx: TursoTransactionContext) => Promise<T>,
+): Promise<T> {
+  if (!isTursoConfigured()) {
+    throw new Error('Turso no está configurado: faltan TURSO_DATABASE_URL y/o TURSO_AUTH_TOKEN.');
+  }
+
+  let response = await pipeline([
+    { type: 'execute', stmt: { sql: 'BEGIN IMMEDIATE', want_rows: false } },
+  ]);
+  let baton = response.baton;
+  if (!baton) throw new Error('Turso cerró el stream al iniciar la transacción.');
+
+  const execute = async (statement: TursoStatement) => {
+    if (!baton) throw new Error('La transacción Turso ya fue cerrada.');
+    response = await pipeline([statementRequest(statement)], baton);
+    baton = response.baton;
+    const item = response.results[0];
+    if (!item || item.type === 'error') {
+      throw new Error(item?.error?.message || 'Turso rechazó una sentencia de la transacción.');
+    }
+    return resultFromItem(item);
+  };
+
+  try {
+    const value = await callback({ execute });
+    if (!baton) throw new Error('Turso cerró el stream antes del COMMIT.');
+    response = await pipeline([
+      { type: 'execute', stmt: { sql: 'COMMIT', want_rows: false } },
+      { type: 'close' },
+    ], baton);
+    const commit = response.results[0];
+    if (!commit || commit.type === 'error') {
+      throw new Error(commit?.error?.message || 'Turso no pudo confirmar la transacción.');
+    }
+    baton = null;
+    return value;
+  } catch (error) {
+    if (baton) {
+      try {
+        await pipeline([
+          { type: 'execute', stmt: { sql: 'ROLLBACK', want_rows: false } },
+          { type: 'close' },
+        ], baton);
+      } catch {}
+    }
+    throw error;
+  }
+}
