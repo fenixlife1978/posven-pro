@@ -1,7 +1,7 @@
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
-  output: 'export',
+  // Turso migration uses a server build because /api/* requires a Next.js runtime.\n  // The legacy/main branch keeps the static Electron export.\n  output: (process.env.VERCEL || process.env.TURSO_MIGRATION_BUILD === '1') ? undefined : 'export',
   trailingSlash: true, // Crucial para que Electron resuelva las rutas de archivos correctamente
   distDir: 'out',
   typescript: {
