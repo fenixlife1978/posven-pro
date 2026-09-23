@@ -1,3 +1,4 @@
+import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { getSessionUser } from '@/lib/auth/turso-auth';
 import {
@@ -23,8 +24,10 @@ function table(value: unknown): TursoStoreTable {
   return name as TursoStoreTable;
 }
 
-async function requireAdminOrOperator() {
-  const user = await getSessionUser();
+async function requireUser() {
+  const cookieStore = await cookies();
+  const sessionId = cookieStore.get('posven_session')?.value || null;
+  const user = await getSessionUser(sessionId);
   if (!user) throw new Error('No autenticado.');
   return user;
 }
@@ -32,7 +35,7 @@ async function requireAdminOrOperator() {
 export async function GET(request: Request) {
   try {
     assertTursoReady();
-    await requireAdminOrOperator();
+    await requireUser();
     const url = new URL(request.url);
     const t = table(url.searchParams.get('table'));
     const id = url.searchParams.get('id');
@@ -46,8 +49,7 @@ export async function GET(request: Request) {
   } catch (error: any) {
     const message = String(error?.message || error);
     const status = message.includes('no está configurado') ? 503
-      : message.includes('No autenticado') ? 401
-      : 400;
+      : message.includes('No autenticado') ? 401 : 400;
     return NextResponse.json({ ok: false, error: message }, { status });
   }
 }
@@ -55,7 +57,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     assertTursoReady();
-    const user = await requireAdminOrOperator();
+    const user = await requireUser();
     const body = await request.json();
 
     switch (String(body?.operation || '')) {
@@ -79,8 +81,7 @@ export async function POST(request: Request) {
     const message = String(error?.message || error);
     const status = message.includes('no está configurado') ? 503
       : message.includes('No autenticado') ? 401
-      : message.includes('Se requiere administrador') ? 403
-      : 400;
+      : message.includes('Se requiere administrador') ? 403 : 400;
     return NextResponse.json({ ok: false, error: message }, { status });
   }
 }
