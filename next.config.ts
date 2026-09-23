@@ -1,9 +1,14 @@
 import type { NextConfig } from 'next';
 
+const isTursoServerBuild = Boolean(process.env.VERCEL || process.env.TURSO_MIGRATION_BUILD === '1');
+
 const nextConfig: NextConfig = {
-  // Turso migration uses a server build because /api/* requires a Next.js runtime.\n  // The legacy/main branch keeps the static Electron export.\n  output: (process.env.VERCEL || process.env.TURSO_MIGRATION_BUILD === '1') ? undefined : 'export',
+  // Turso migration uses a server build because /api/* requires a Next.js runtime.
+  // The legacy/main branch keeps the static Electron export.
+  output: isTursoServerBuild ? undefined : 'export',
   trailingSlash: true, // Crucial para que Electron resuelva las rutas de archivos correctamente
-  distDir: 'out',
+  // The legacy Electron build uses ./out; Vercel/Next server builds must use the default .next.
+  distDir: isTursoServerBuild ? '.next' : 'out',
   typescript: {
     ignoreBuildErrors: true,
   },
