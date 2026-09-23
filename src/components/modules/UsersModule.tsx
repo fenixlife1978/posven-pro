@@ -32,25 +32,23 @@ export default function UsersModule() {
   const [formData, setFormData] = useState(emptyForm);
 
   const cargarUsuarios = async () => {
-    try {
-      const response = await fetch('/api/users', { cache: 'no-store' });
-      if (response.ok) {
-        const data = await response.json();
-        setUsingTurso(true);
-        setUsuarios((data.users || []).map((u: any) => ({
-          ...u,
-          uid: u.firebaseUid || u.id,
-          fechaCreacion: u.fechaCreacion || ''
-        })));
-        return;
-      }
-      if (response.status !== 503) throw new Error((await response.json().catch(() => ({}))).error || 'No autorizado.');
-    } catch (error) {
-      // Turso no configurado: durante la transición conservamos el módulo Firebase.
-      if (String(error).includes('No autorizado')) throw error;
+    const response = await fetch('/api/users', { cache: 'no-store' }).catch(() => null);
+    if (response?.ok) {
+      const data = await response.json();
+      setUsingTurso(true);
+      setUsuarios((data.users || []).map((u: any) => ({
+        ...u,
+        uid: u.firebaseUid || u.id,
+        fechaCreacion: u.fechaCreacion || ''
+      })));
+      return;
+    }
+    if (response && response.status !== 503) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.error || 'No autorizado para gestionar usuarios.');
     }
 
-    const querySnapshot = await getDocs(collection(db, 'users'));
+    // Turso no configurado: durante la transición conservamos el módulo Firebase.
     const list: UserProfile[] = [];
     querySnapshot.forEach((d) => {
       const data: any = d.data();
