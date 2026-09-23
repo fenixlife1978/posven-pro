@@ -623,8 +623,8 @@ async function loadAll(name: string): Promise<void> {
 const loadingPromises: Record<string, Promise<void>> = {};
 async function ensureLoaded(name: string): Promise<void> {
   if (loadedAll[name]) return;
-  if (!db) return;
   if (loadingPromises[name]) return loadingPromises[name];
+  if (!db && typeof window === 'undefined') return;
   const p = (async () => {
     loadedAll[name] = true;
     try {
@@ -633,6 +633,7 @@ async function ensureLoaded(name: string): Promise<void> {
     } catch (e) {
       console.error("Error cargando " + name + ":", e);
       loadedAll[name] = false;
+      throw e;
     } finally {
       delete loadingPromises[name];
     }
@@ -783,8 +784,14 @@ async function ensureReportRange(name: string, desde: string, hasta: string, ter
 // Siguiente página (10) de una colección ordenada por fecha desc (listas históricas).
 async function loadMore(name: string, pageSize: number = PAGE_SIZE): Promise<number> {
   const col = COLLECTIONS[name];
-  if (!col || !db) return 0;
+  if (!col) return 0;
   try {
+    const tursoItems = await tryTursoRead(name, { limit: pageSize });
+    if (tursoItems !== null) {
+      applyPatch({ [name]: mergeById((cache as any)[name], tursoItems) });
+      return tursoItems.length;
+    }
+    if (!db) return 0;
     const last = cursors[name] || null;
     const q = last
       ? query(collection(db, col), orderBy('fecha', 'desc'), startAfter(last), limit(pageSize))
@@ -804,7 +811,15 @@ const SINCE_STAMP: Record<string, string> = {};
 
 // Kardex de un producto (where + orden). Si falta el índice compuesto, carga y filtra en memoria.
 async function kardex(productoId: string, max = 100): Promise<any[]> {
-  if (!db) return [];
+  try {
+    const tursoItems = await tryTursoRead('movimientos', { limit: Math.max(max * 4, max) });
+    if (tursoItems !== null) {
+      return tursoItems
+        .filter((m: any) => String(m?.productoId || '') === String(productoId))
+        .sort((a: any, b: any) => String(b.fecha || '').localeCompare(String(a.fecha || '')))
+        .slice(0, max);
+    }
+    if (!db) return [];
   try {
     const snap = await getDocs(query(
       collection(db, 'movimientos'),
@@ -1187,8 +1202,13 @@ async function getSaleById(saleId: string): Promise<any | null> {
   const id = String(saleId);
   const cached = (cache.ventas || []).find((v: any) => String(v?.id || '') === id);
   if (cached) return sanitizeForFirestore(cached);
-  if (!db) return null;
   try {
+    const tursoItems = await tryTursoRead('ventas', { limit: 500 });
+    if (tursoItems !== null) {
+      const found = tursoItems.find((v: any) => String(v?.id || '') === id);
+      return found ? sanitizeForFirestore(found) : null;
+    }
+    if (!db) return null;
     const snap = await getDoc(doc(db, 'ventas', id));
     return snap.exists() ? sanitizeForFirestore({ ...snap.data(), id }) : null;
   } catch (e) {
