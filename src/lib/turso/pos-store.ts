@@ -133,8 +133,11 @@ export async function listRecords(
     args.push(String(options.estado));
   }
   const where = filters.length ? ' WHERE ' + filters.join(' AND ') : '';
+  // productos no tiene columna fecha; se ordena por updated_at. Las demás
+  // tablas operativas sí conservan fecha para ordenar cronológicamente.
+  const orderBy = table === 'productos' ? 'updated_at DESC' : "COALESCE(fecha,'') DESC";
   const result = await tursoExecute({
-    sql: `SELECT id,data_json FROM ${tableName(table)}${where} ORDER BY COALESCE(fecha,'') DESC LIMIT ${limit}`,
+    sql: `SELECT id,data_json FROM ${tableName(table)}${where} ORDER BY ${orderBy} LIMIT ${limit}`,
     args,
   });
   return result.rows.map(rowFromDb).filter(Boolean);
