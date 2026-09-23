@@ -1940,7 +1940,7 @@ export const Store = {
 
     // Las ventas pueden quedar en cola local cuando Turso/Firebase no están disponibles.
     // La cola se procesa posteriormente cuando vuelve la conexión.
-    if (!fromOfflineQueue && typeof window !== 'undefined' && navigator.onLine === false) { En ese caso
+    // Si estamos offline, dejamos la venta en la cola local antes de intentar Turso.
     // persistimos la INTENCIÓN de venta en una cola local que sobrevive al reinicio.
     // Al volver la conexión, el procesador la ejecuta contra el Firestore real.
     if (!fromOfflineQueue && typeof window !== 'undefined' && navigator.onLine === false) {
