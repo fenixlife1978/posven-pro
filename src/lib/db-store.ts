@@ -42,6 +42,34 @@ const COLLECTIONS: Record<string, string> = {
 // Catálogos: viven como docs catalogos/{nombre} con { lista: [...] }
 const OPERATIONS_COLLECTION = 'operaciones';
 
+// ============================================================
+// PUENTE DE OPERACIONES CRÍTICAS A TURSO
+// ------------------------------------------------------------
+// Turso solo toma el control cuando sus credenciales existen en el servidor.
+// Si no está configurado (HTTP 503), el flujo existente de Firebase continúa.
+// Si Turso sí está configurado pero falla por otra causa, NO hacemos fallback
+// a Firebase: evitar dos fuentes de verdad es obligatorio durante la migración.
+// ============================================================
+async function tryTursoOperation(operation: string, payload: any): Promise<any | null> {
+  if (typeof window === 'undefined') return null;
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return null;
+  let response: Response;
+  try {
+    response = await fetch('/api/turso/store', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify({ operation, ...payload }),
+    });
+  } catch {
+    throw new Error('No se pudo contactar con Turso. La operación no fue enviada a Firebase para evitar duplicados.');
+  }
+  if (response.status === 503) return null;
+  let body: any = null;
+  try { body = await response.json(); } catch {}
+  if (!response.ok || body?.ok === false) throw new Error(String(body?.error || ('Turso rechazó la operación (' + response.status + ').')));
+  return body;
+}
+
+
 function operationDocId(prefix: string, operationId: string): string {
   const input = prefix + '|' + operationId;
   let h = 2166136261;
@@ -376,6 +404,10 @@ async function applyInventoryMovementsTransaction(params: {
   fromOfflineQueue?: boolean;
 }): Promise<any> {
   if (!db) return null;
+
+  const tursoResult = await tryTursoOperation('inventory', params);
+  if (tursoResult) return tursoResult;
+
   const { operationId, operationType, movements, productPatches = {}, fromOfflineQueue } = params;
   if (!movements?.length) throw new Error('No hay movimientos de inventario para registrar.');
 
@@ -1766,6 +1798,8 @@ export const Store = {
   },
 
   async createSaleTransaction(params: {
+    const tursoResult = await tryTursoOperation('sale', params);
+    if (tursoResult) return tursoResult;
     operationId?: string;
     cart: any[];
     payments: any[];
