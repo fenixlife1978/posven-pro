@@ -562,9 +562,15 @@ function syncProductosRTDB(prevArr: any[] | undefined, newArr: any[] | undefined
 //  - Si el espejo está vacío → lo siembra COMPLETO desde Firestore.
 //  - Si está incompleto (menos productos que Firestore) → lo repuebla completo.
 // Firestore sigue siendo la fuente de verdad; RTDB es el espejo barato de tiempo real.
-async function bootstrapProductos(): Promise<void> {
-  if (!rtdb || !db) return;
+async function bootstrapProductos(): Promise<boolean> {
+  if (!db) return false;
   try {
+    const tursoItems = await tryTursoRead('productos', { limit: 5000 });
+    if (tursoItems !== null) {
+      applyPatch({ productos: tursoItems });
+      return true;
+    }
+    if (!rtdb) return false;
     const snap = await rtdbGet(ref(rtdb, RTDB_PRODUCTS_PATH));
     const val = snap.val();
     const mirrorItems: any[] = val ? Object.values(val).filter(Boolean) : [];
@@ -577,20 +583,16 @@ async function bootstrapProductos(): Promise<void> {
         items.forEach(p => { updates[String(p.id)] = sanitizeForFirestore(p); });
         await update(ref(rtdb, RTDB_PRODUCTS_PATH), updates);
       }
-      return;
+      return false;
     }
 
     applyPatch({ productos: mergeById((cache as any).productos, mirrorItems) });
-    // Si el espejo ya existe, RTDB es el canal realtime de productos.
-    // No hacemos un count() de Firestore en cada arranque: es una lectura
-    // adicional innecesaria. El saneado completo se ejecuta solo cuando
-    // el espejo está vacío; las escrituras normales mantienen ambos lados.
-
+    return false;
   } catch (e) {
     console.error('bootstrapProductos:', e);
+    return false;
   }
 }
-
 // ============================================================
 // LECTURAS
 // ============================================================
@@ -1104,18 +1106,16 @@ function init() {
     }, (err) => { if (err.code !== 'permission-denied') console.warn('Sync config:', err); }));
   })();
 
-  // 2) PRODUCTOS (tiempo real vía RTDB: el espejo evita re-leer la colección en cada venta).
-  bootstrapProductos();
-  if (rtdb) {
+  // 2) PRODUCTOS: Turso es la fuente cuando está activo. RTDB solo se usa como fallback.
+  void (async () => {
+    const usingTurso = await bootstrapProductos();
+    if (usingTurso || !rtdb) return;
     teardownFns.push(onValue(ref(rtdb, RTDB_PRODUCTS_PATH), (snap) => {
       const val = snap.val() || {};
       const items = Object.values(val).filter(Boolean);
-      // El espejo RTDB representa el estado completo de productos.
-      // Reemplazamos el cache, no hacemos merge, para que una eliminación
-      // remota tampoco pueda dejar un producto fantasma en esta caja.
       applyPatch({ productos: items });
     }, (err) => { if (err?.code !== 'permission-denied') console.warn("RTDB productos:", err); }));
-  }
+  })();
 
   // 3) LISTAS VIVAS ENTRE CAJAS.
   // CxC/CxP: el POS solo necesita deuda ACTIVA en tiempo real. Mantener
