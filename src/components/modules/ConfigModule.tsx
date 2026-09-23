@@ -20,6 +20,8 @@ export default function ConfigModule({ state, updateState }: { state: AppState, 
   const [showMigracionResultado, setShowMigracionResultado] = useState(false);
   const [isBackingUp, setIsBackingUp] = useState(false);
   const [backupError, setBackupError] = useState<string | null>(null);
+  const [backupProgress, setBackupProgress] = useState<{ percent: number; stage: string; detail: string } | null>(null);
+  const [isRestoringBackup, setIsRestoringBackup] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -66,14 +68,23 @@ export default function ConfigModule({ state, updateState }: { state: AppState, 
     e.target.value = '';
     if (!file) return;
     setBackupError(null);
+    setBackupProgress(null);
+
     const confirmar = window.confirm('Se restaurará el sistema completo desde este respaldo. Los datos actuales serán reemplazados. ¿Desea continuar?');
     if (!confirmar) return;
+
+    setIsRestoringBackup(true);
+    setBackupProgress({ percent: 0, stage: 'Preparando', detail: 'Leyendo y validando el archivo…' });
+
     try {
-      await cargarRespaldoDesdeArchivo(file);
-      toast({ title: "Respaldo Restaurado", description: "El sistema fue restaurado correctamente. Se recomienda recargar la aplicación." });
+      await cargarRespaldoDesdeArchivo(file, (progress) => setBackupProgress(progress));
+      toast({ title: "Respaldo Restaurado", description: "La restauración terminó correctamente. Se recomienda recargar la aplicación." });
     } catch (err: any) {
-      console.error(err);
+      console.error('❌ Error restaurando respaldo:', err);
       setBackupError(err?.message || 'No se pudo cargar el respaldo seleccionado.');
+      setBackupProgress(null);
+    } finally {
+      setIsRestoringBackup(false);
     }
   };
 
@@ -447,9 +458,10 @@ export default function ConfigModule({ state, updateState }: { state: AppState, 
             <button
               className="btn h-12 px-8 font-black uppercase text-xs shadow-md flex items-center gap-2 border border-line bg-surface-soft/50 hover:bg-surface-soft"
               onClick={() => fileInputRef.current?.click()}
+              disabled={isRestoringBackup}
             >
-              <Database className="w-4 h-4" />
-              Cargar Respaldo
+              {isRestoringBackup ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Database className="w-4 h-4" />}
+              {isRestoringBackup ? 'RESTAURANDO...' : 'Cargar Respaldo'}
             </button>
           </div>
 
@@ -460,6 +472,22 @@ export default function ConfigModule({ state, updateState }: { state: AppState, 
             className="hidden"
             onChange={handleArchivoRespaldo}
           />
+
+          {backupProgress && (
+            <div className="p-4 rounded-lg border border-blue-500 bg-blue-50">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs text-blue-800 font-black uppercase">{backupProgress.stage}</p>
+                <p className="text-sm text-blue-900 font-black">{backupProgress.percent}%</p>
+              </div>
+              <div className="h-3 w-full rounded-full bg-blue-100 overflow-hidden">
+                <div
+                  className="h-full bg-blue-600 transition-all duration-300"
+                  style={{ width: `${backupProgress.percent}%` }}
+                />
+              </div>
+              <p className="text-xs text-blue-700 mt-2 font-bold">{backupProgress.detail}</p>
+            </div>
+          )}
 
           {backupError && (
             <div className="p-4 rounded-lg border bg-red-50 border-red-500">
