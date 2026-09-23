@@ -40,7 +40,7 @@ export default function GlobalControlModule({ state, updateState }: { state: App
           const data = await response.json().catch(() => ({}));
           if (!response.ok) throw new Error(data?.error || 'No se pudieron cargar los usuarios.');
           if (!cancelled) {
-            setUsers(Array.isArray(data.users) ? data.users : []);
+            setUsers(Array.isArray(data.usuarios) ? data.usuarios : (Array.isArray(data.users) ? data.users : []));
             setLoadingUsers(false);
           }
           return;
