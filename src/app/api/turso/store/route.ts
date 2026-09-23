@@ -20,6 +20,7 @@ import {
   processReturnOrCancellationTransaction,
   reverseDebtPaymentTransaction,
   deleteCustomerAndDebtsTransaction,
+  deleteCustomerDebtTransaction,
   createPurchaseTransaction,
   deletePurchaseTransaction,
   type TursoStoreTable,
@@ -125,6 +126,7 @@ export async function POST(request: Request) {
       }
       case 'createPurchase': { const result=await createPurchaseTransaction(body); return NextResponse.json({ok:true,...result}); }
       case 'deletePurchase': { const result=await deletePurchaseTransaction(body); return NextResponse.json({ok:true,...result}); }
+      case 'deleteCustomerDebt': { const result=await deleteCustomerDebtTransaction(body); return NextResponse.json({ok:true,...result}); }
       case 'deleteCustomerAndDebts': {
         const result=await deleteCustomerAndDebtsTransaction(body); return NextResponse.json({ok:true,...result});
       }

@@ -2508,6 +2508,8 @@ export const Store = {
     customerId?: string;
   }): Promise<any> {
     if (typeof window === 'undefined' || !db) return null;
+    const tursoResult = await tryTursoOperation('deleteCustomerDebt', params);
+    if (tursoResult) return tursoResult;
     const { operationId, debtId, customerCedula, customerId } = params;
     const debtRef = doc(db, 'cxc', debtId);
     let result: any = null;
