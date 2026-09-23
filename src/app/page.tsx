@@ -114,17 +114,24 @@ export default function LicoreriaPOS() {
           setUserProfile(profile);
           setUser({ uid: legacyUid, email: currentUser.email, ...currentUser });
 
-          if (currentUser.rol === 'cajero' && !currentUser.firebaseUid) {
-            // Durante la migración, los cajeros existentes deben conservar firebase_uid
-            // para que el resto del sistema Firebase siga identificando su terminal.
-            setLoading(false);
-            return;
-          }
-
-          if (currentUser.rol === 'cajero' && db && legacyUid) {
-            const configSnap = await getDocs(query(collection(db, 'terminales'), where('usuarioId', '==', legacyUid)));
-            const terminals = configSnap.docs.map(d => d.data()) as Terminal[];
-            const myTerm = terminals.find((t: Terminal) => t.usuarioId === legacyUid);
+          if (currentUser.rol === 'cajero') {
+            // Turso es la fuente de verdad cuando la sesión Turso está activa.
+            // El cajero ya no depende de firebaseUid para encontrar su terminal.
+            // Esto permite que usuarios migrados/creados directamente en Turso
+            // puedan abrir caja y entrar al POS sin autenticación Firebase.
+            const terminalsResponse = await fetch('/api/turso/store?table=terminales&limit=500', {
+              credentials: 'include',
+              cache: 'no-store',
+            });
+            if (!terminalsResponse.ok) {
+              throw new Error('No se pudieron consultar los terminales en Turso.');
+            }
+            const terminalsBody = await terminalsResponse.json();
+            const terminals = Array.isArray(terminalsBody?.records) ? terminalsBody.records as Terminal[] : [];
+            const myTerm = terminals.find((t: Terminal) =>
+              String(t?.usuarioId || '') === String(currentUser.id) ||
+              (!!currentUser.firebaseUid && String(t?.usuarioId || '') === String(currentUser.firebaseUid))
+            );
             if (!myTerm) {
               await fetch('/api/auth/logout', { method: 'POST' });
               alert("ACCESO RESTRINGIDO: Su usuario no tiene un terminal asignado.");
