@@ -151,3 +151,8 @@ Durante la verificación se recorren también objetos anidados y se detectan ref
 ### Regla de compatibilidad
 
 No se deben reemplazar los Firebase UID históricos por nombres de usuario. Mientras exista compatibilidad de transición, el UID queda conservado y `user_identity_map` permite relacionarlo con el nuevo `users.id`. Esto mantiene intactos los registros históricos y permite que el sistema Turso resuelva la identidad sin perder la trazabilidad del cajero original.
+
+
+## Validación de entorno Preview
+
+Las variables `TURSO_DATABASE_URL` y `TURSO_AUTH_TOKEN` deben estar configuradas para **Preview** antes de validar el login Turso. La configuración de **Production** se mantiene sin cambios durante esta fase.
