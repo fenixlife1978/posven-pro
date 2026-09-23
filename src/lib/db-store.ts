@@ -1107,28 +1107,38 @@ function init() {
   // miles de deudas ya pagadas conectadas en cada terminal genera lecturas
   // iniciales innecesarias. El histórico completo se hidrata únicamente
   // cuando se entra al módulo que lo necesita.
-  for (const name of ['cxc', 'cxp']) {
-    const col = COLLECTIONS[name];
-    teardownFns.push(onSnapshot(
-      query(collection(db, col), where('estado', 'in', ['pendiente', 'parcial'])),
-      (snap) => {
-        const currentArr = [...((cache as any)[name] || [])];
-        const map = new Map<string, any>(currentArr.map(x => [String(x.id), x]));
-        snap.docChanges().forEach(change => {
-          const item = sanitizeForFirestore(change.doc.data());
-          const id = String(item?.id || change.doc.id);
-          if (change.type === 'removed') {
-            // Si dejó de pertenecer al conjunto activo porque pasó a pagada,
-            // conservamos el histórico ya hidratado. Si realmente fue
-            // eliminado y seguía activa, sí retiramos el documento.
-            if (item && String(item.estado || '') !== 'pagada') map.delete(id);
-          } else if (item) map.set(id, item);
-        });
-        applyPatch({ [name]: [...map.values()] });
-      },
-      (err) => { if (err.code !== 'permission-denied') console.warn("Sync " + name + ":", err); }
-    ));
-  }
+  // CxC/CxP: Turso es la fuente de lectura cuando está activo. Firebase
+  // conserva el listener únicamente como fallback mientras Turso no esté configurado.
+  void (async () => {
+    for (const name of ['cxc', 'cxp']) {
+      try {
+        const tursoItems = await tryTursoRead(name, { limit: 2000 });
+        if (tursoItems !== null) {
+          applyPatch({ [name]: tursoItems.filter((x: any) => ['pendiente', 'parcial'].includes(String(x?.estado || ''))) });
+          continue;
+        }
+        const col = COLLECTIONS[name];
+        teardownFns.push(onSnapshot(
+          query(collection(db, col), where('estado', 'in', ['pendiente', 'parcial'])),
+          (snap) => {
+            const currentArr = [...((cache as any)[name] || [])];
+            const map = new Map<string, any>(currentArr.map(x => [String(x.id), x]));
+            snap.docChanges().forEach(change => {
+              const item = sanitizeForFirestore(change.doc.data());
+              const id = String(item?.id || change.doc.id);
+              if (change.type === 'removed') {
+                if (item && String(item.estado || '') !== 'pagada') map.delete(id);
+              } else if (item) map.set(id, item);
+            });
+            applyPatch({ [name]: [...map.values()] });
+          },
+          (err) => { if (err.code !== 'permission-denied') console.warn("Sync " + name + ":", err); }
+        ));
+      } catch (e) {
+        console.error("[db-store] Error leyendo " + name + " desde Turso:", e);
+      }
+    }
+  })();
 
   // Clientes/proveedores se sincronizan solo mientras el módulo que los necesita está abierto.
   // Así evitamos descargar y mantener dos colecciones maestras completas en cada caja
@@ -1139,24 +1149,35 @@ function init() {
   // listado completo cuando necesitan gestionar las cajas.
   // Históricos de auditoría: solo mantenemos una ventana reciente en realtime.
   // El histórico completo se carga bajo demanda al abrir el módulo correspondiente.
-  for (const name of ['devoluciones', 'anulaciones', 'reportesZ']) {
-    const col = COLLECTIONS[name];
-    teardownFns.push(onSnapshot(
-      query(collection(db, col), orderBy('fecha', 'desc'), limit(100)),
-      (snap) => {
-        const currentArr = [...((cache as any)[name] || [])];
-        const map = new Map<string, any>(currentArr.map(x => [String(x.id), x]));
-        snap.docChanges().forEach(change => {
-          const item = sanitizeForFirestore(change.doc.data());
-          if (!item || !item.id) return;
-          if (change.type === 'removed') map.delete(String(item.id));
-          else map.set(String(item.id), item);
-        });
-        applyPatch({ [name]: [...map.values()] });
-      },
-      (err) => { if (err.code !== 'permission-denied') console.warn("Sync " + name + ":", err); }
-    ));
-  }
+  void (async () => {
+    for (const name of ['devoluciones', 'anulaciones', 'reportesZ']) {
+      try {
+        const tursoItems = await tryTursoRead(name, { limit: 100 });
+        if (tursoItems !== null) {
+          applyPatch({ [name]: tursoItems });
+          continue;
+        }
+        const col = COLLECTIONS[name];
+        teardownFns.push(onSnapshot(
+          query(collection(db, col), orderBy('fecha', 'desc'), limit(100)),
+          (snap) => {
+            const currentArr = [...((cache as any)[name] || [])];
+            const map = new Map<string, any>(currentArr.map(x => [String(x.id), x]));
+            snap.docChanges().forEach(change => {
+              const item = sanitizeForFirestore(change.doc.data());
+              if (!item || !item.id) return;
+              if (change.type === 'removed') map.delete(String(item.id));
+              else map.set(String(item.id), item);
+            });
+            applyPatch({ [name]: [...map.values()] });
+          },
+          (err) => { if (err.code !== 'permission-denied') console.warn("Sync " + name + ":", err); }
+        ));
+      } catch (e) {
+        console.error("[db-store] Error leyendo " + name + " desde Turso:", e);
+      }
+    }
+  })();
 
   // Históricos operativos: mantenemos la ventana de últimas 50 para no
   // convertir cada movimiento de una caja en una lectura completa.
