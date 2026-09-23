@@ -1,5 +1,6 @@
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { tursoExecute, tursoTransaction } from '@/lib/turso/client';
+import { ensureTursoSchema } from '@/lib/turso/schema-init';
 
 export type AppRole = 'administrador' | 'cajero';
 
@@ -54,6 +55,7 @@ function mapUser(row: any): AuthUser {
 }
 
 export async function findUser(identifier: string) {
+  await ensureTursoSchema();
   const value = String(identifier || '').trim().toLowerCase();
   if (!value) return null;
   const result = await tursoExecute({
@@ -64,6 +66,7 @@ export async function findUser(identifier: string) {
 }
 
 export async function getUserWithSecret(identifier: string) {
+  await ensureTursoSchema();
   const value = String(identifier || '').trim().toLowerCase();
   const result = await tursoExecute({
     sql: `SELECT * FROM users WHERE lower(username)=? OR lower(COALESCE(email,''))=? LIMIT 1`,
@@ -80,6 +83,7 @@ export async function createUser(input: {
   rol: AppRole;
   isSeedAdmin?: boolean;
 }) {
+  await ensureTursoSchema();
   const username = input.username.trim().toLowerCase();
   const email = input.email?.trim().toLowerCase() || null;
   if (!username || !input.nombre.trim()) throw new Error('Nombre y usuario son obligatorios.');
@@ -107,6 +111,7 @@ export async function createUser(input: {
 }
 
 export async function ensureSeedAdmin() {
+  await ensureTursoSchema();
   const result = await tursoExecute({
     sql: `SELECT id FROM users WHERE username='admin' AND is_seed_admin=1 LIMIT 1`,
   });
@@ -117,9 +122,6 @@ export async function ensureSeedAdmin() {
   });
 
   if (existing.rows.length) {
-    // Si el usuario admin ya proviene de Firebase, NO sobrescribimos su contraseña.
-    // Se conserva su identidad y credencial actual; queda marcado como semilla
-    // para que un factory reset pueda restaurarlo a admin/admin123.
     await tursoExecute({
       sql: `UPDATE users SET rol='administrador', is_seed_admin=1, email=COALESCE(email, 'admin@posven.local') WHERE username='admin'`,
       wantRows: false,
@@ -147,6 +149,7 @@ export async function createMigratedUser(input: {
   fechaCreacion?: string;
   dataJson?: string;
 }) {
+  await ensureTursoSchema();
   const firebaseUid = String(input.firebaseUid || '').trim();
   const username = input.username.trim().toLowerCase();
   const email = input.email?.trim().toLowerCase() || null;
@@ -185,6 +188,7 @@ export async function createMigratedUser(input: {
 }
 
 export async function findUserByFirebaseUid(firebaseUid: string) {
+  await ensureTursoSchema();
   const value = String(firebaseUid || '').trim();
   if (!value) return null;
   const result = await tursoExecute({
@@ -195,6 +199,7 @@ export async function findUserByFirebaseUid(firebaseUid: string) {
 }
 
 export async function createSession(userId: string) {
+  await ensureTursoSchema();
   const id = randomBytes(32).toString('hex');
   const created = nowIso();
   const expires = new Date(Date.now() + SESSION_DAYS * 86400000).toISOString();
@@ -207,6 +212,7 @@ export async function createSession(userId: string) {
 }
 
 export async function getSessionUser(sessionId: string | null | undefined) {
+  await ensureTursoSchema();
   if (!sessionId) return null;
   const result = await tursoExecute({
     sql: `SELECT u.* FROM sessions s JOIN users u ON u.id=s.user_id
@@ -226,6 +232,7 @@ export async function getSessionUser(sessionId: string | null | undefined) {
 }
 
 export async function revokeSession(sessionId: string | null | undefined) {
+  await ensureTursoSchema();
   if (!sessionId) return;
   await tursoExecute({
     sql: `UPDATE sessions SET revoked_at=? WHERE id=?`,
@@ -235,6 +242,7 @@ export async function revokeSession(sessionId: string | null | undefined) {
 }
 
 export async function listUsers() {
+  await ensureTursoSchema();
   const result = await tursoExecute({
     sql: `SELECT id, username, email, nombre, rol, acceso_bloqueado, is_seed_admin, fecha_creacion
       FROM users ORDER BY lower(nombre), lower(username)`,
@@ -243,6 +251,7 @@ export async function listUsers() {
 }
 
 export async function setUserBlocked(id: string, blocked: boolean) {
+  await ensureTursoSchema();
   const target = await tursoExecute({
     sql: `SELECT rol, is_seed_admin, acceso_bloqueado FROM users WHERE id=? LIMIT 1`,
     args: [id],
@@ -280,6 +289,7 @@ export async function setUserBlocked(id: string, blocked: boolean) {
 }
 
 export async function deleteUser(id: string) {
+  await ensureTursoSchema();
   const target = await tursoExecute({
     sql: `SELECT is_seed_admin FROM users WHERE id=? LIMIT 1`,
     args: [id],
