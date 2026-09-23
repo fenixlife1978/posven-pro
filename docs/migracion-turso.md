@@ -110,3 +110,22 @@ Antes de retirar Firebase de POSVEN PRO se debe comprobar, para cada cajero migr
 6. X/Z y recuperación después de refrescar/reiniciar conservan los mismos datos.
 
 No se considera completada la migración de un cajero si cualquiera de esas relaciones se pierde.
+
+
+## Importador Firebase → Turso
+
+Se agregó `src/lib/turso/migration.ts` y el endpoint administrativo `POST /api/migration/firebase`.
+
+El endpoint funciona en dos fases:
+1. **Dry-run (por defecto):** valida el respaldo y devuelve conteos sin escribir datos.
+2. **Importación confirmada:** requiere sesión de administrador Turso y el texto exacto `MIGRAR_FIREBASE_A_TURSO`.
+
+La importación conserva los payloads originales completos en `data_json`, conserva IDs, importa terminales/caja/ventas/movimientos/X/Z y registra `migration_runs`.
+
+### Contraseñas de usuarios migrados
+
+El respaldo POSVEN no contiene contraseñas de Firebase Authentication. Si no se proporciona `passwordByFirebaseUid`, se genera una contraseña temporal aleatoria para el usuario migrado. Esa contraseña NO se muestra ni se guarda en el respaldo. Antes de entregar el acceso al cajero debe establecerse una contraseña conocida mediante el flujo administrativo correspondiente.
+
+### Seguridad
+
+El endpoint está bloqueado mientras Turso no esté configurado. No se ejecuta durante la transición Firebase. La importación destructiva requiere confirmación explícita.

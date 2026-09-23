@@ -117,9 +117,11 @@ export async function ensureSeedAdmin() {
   });
 
   if (existing.rows.length) {
+    // Si el usuario admin ya proviene de Firebase, NO sobrescribimos su contraseña.
+    // Se conserva su identidad y credencial actual; queda marcado como semilla
+    // para que un factory reset pueda restaurarlo a admin/admin123.
     await tursoExecute({
-      sql: `UPDATE users SET password_hash=?, rol='administrador', acceso_bloqueado=0, is_seed_admin=1 WHERE username='admin'`,
-      args: [hashPassword('admin123')],
+      sql: `UPDATE users SET rol='administrador', is_seed_admin=1, email=COALESCE(email, 'admin@posven.local') WHERE username='admin'`,
       wantRows: false,
     });
     return;
