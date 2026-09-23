@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
-import { getSessionUser } from '@/lib/auth/turso-auth';
+import { createSession, getSessionUser } from '@/lib/auth/turso-auth';
 import {
   assertTursoReady,
   factoryResetTransaction,
@@ -43,7 +43,19 @@ export async function POST(request: Request) {
 
     if (action === 'reset') {
       const result = await factoryResetTransaction({ user });
-      return NextResponse.json({ ok: true, action, ...result });
+      // El reset elimina las sesiones para limpiar completamente la base de datos.
+      // Debemos crear inmediatamente una nueva sesión para que los siguientes
+      // bloques del respaldo sigan autenticados sin obligar al usuario a volver a entrar.
+      const session = await createSession(String(result.seedAdmin.id));
+      const response = NextResponse.json({ ok: true, action, ...result });
+      response.cookies.set('posven_session', session.id, {
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: process.env.NODE_ENV === 'production',
+        path: '/',
+        expires: new Date(session.expires),
+      });
+      return response;
     }
 
     if (action === 'table') {
