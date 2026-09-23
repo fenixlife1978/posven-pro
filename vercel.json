@@ -1,0 +1,3 @@
+{
+  "ignoreCommand": "if [ \"$VERCEL_ENV\" = \"preview\" ]; then echo 'Preview deshabilitado durante la migración Turso'; exit 0; else exit 1; fi"
+}
