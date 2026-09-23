@@ -18,6 +18,8 @@ import {
   createCustomerDebtTransaction,
   createSupplierDebtTransaction,
   processReturnOrCancellationTransaction,
+  reverseDebtPaymentTransaction,
+  deleteCustomerAndDebtsTransaction,
   type TursoStoreTable,
 } from '@/lib/turso/pos-store';
 
@@ -115,6 +117,12 @@ export async function POST(request: Request) {
       case 'supplierDebt': {
         const result = await createSupplierDebtTransaction(body);
         return NextResponse.json({ ok: true, ...result });
+      }
+      case 'reverseDebtPayment': {
+        const result=await reverseDebtPaymentTransaction(body); return NextResponse.json({ok:true,...result});
+      }
+      case 'deleteCustomerAndDebts': {
+        const result=await deleteCustomerAndDebtsTransaction(body); return NextResponse.json({ok:true,...result});
       }
       case 'returnOrCancellation': {
         const result = await processReturnOrCancellationTransaction(body);

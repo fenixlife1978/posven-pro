@@ -2441,6 +2441,8 @@ export const Store = {
     customerCedula?: string;
   }): Promise<any> {
     if (typeof window === 'undefined' || !db) return null;
+    const tursoResult = await tryTursoOperation('deleteCustomerAndDebts', params);
+    if (tursoResult) return tursoResult;
     const { operationId, customerId, customerName, customerCedula } = params;
     const customerRef = doc(db, 'clientes', customerId);
     let result: any = null;
@@ -2601,6 +2603,8 @@ export const Store = {
     journalId?: string;
   }): Promise<any | null> {
     if (typeof window === 'undefined' || !db) return null;
+    const tursoResult = await tryTursoOperation('reverseDebtPayment', params);
+    if (tursoResult) return tursoResult;
     const { operationId, collection: collectionName, debtId, paymentId, journalId } = params;
     const debtRef = doc(db, collectionName, debtId);
     let result: any = null;

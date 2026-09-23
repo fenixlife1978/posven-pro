@@ -642,3 +642,50 @@ export async function processReturnOrCancellationTransaction(params:any){
     return {operationId,operationType,receiptId:canonicalId,operationDoc:{...operationDoc,id:canonicalId},products:[...products.values()],terminal:terminal?{...terminal,id:terminalId,[field]:counter+1}:null};
   });
 }
+
+export async function reverseDebtPaymentTransaction(params:any){
+  assertTursoReady();
+  const {operationId,collection,debtId,paymentId,journalId}=params;
+  return tursoInteractiveTransaction(async tx=>{
+    const opId=String(operationId||collection+'|'+debtId+'|'+paymentId+'|REVERSE');
+    const check=await tx.execute({sql:'SELECT id FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',args:['REVERSAR-PAGO',opId]});
+    if(check.rows.length) throw new Error('Esta operación ya fue procesada. No se registrará nuevamente.');
+    const debt=rowFromDb((await tx.execute(txSelect(collection,debtId))).rows[0]); if(!debt) throw new Error('La deuda ya no existe.');
+    const historial=Array.isArray(debt.historialPagos)?debt.historialPagos:[]; const idx=historial.findIndex((p:any)=>String(p?.id||'')===String(paymentId));
+    if(idx<0) throw new Error('El abono ya fue eliminado o no existe en la deuda.');
+    const pago=historial[idx], restantes=historial.filter((_:any,i:number)=>i!==idx);
+    const abonado=Math.max(0,Math.round((restantes.reduce((s:number,p:any)=>s+(Number(p?.montoUSD)||0),0)+Number.EPSILON)*100)/100);
+    const saldo=Math.max(0,Math.round(((Number(debt.montoUSD)||0)-abonado+Number.EPSILON)*100)/100);
+    const updated={...debt,abonadoUSD:abonado,saldoUSD:saldo,estado:saldo<=.001?'pagada':abonado>0?'parcial':'pendiente',historialPagos:restantes};
+    const statements:TursoStatement[]=[rowStatement(collection,updated)];
+    if(journalId){
+      const jr=await tx.execute(txSelect('libroDiario',journalId)); const journal=rowFromDb(jr.rows[0]);
+      if(journal){
+        const monto=Math.max(0,Math.round(((Number(journal.montoUSD)||0)-(Number(pago?.montoUSD)||0)+Number.EPSILON)*100)/100);
+        const montoBS=Math.max(0,Math.round(((Number(journal.montoBS)||0)-(Number(pago?.montoBS)||0)+Number.EPSILON)*100)/100);
+        if(monto<=.001) await tx.execute({sql:'DELETE FROM libro_diario WHERE id=?',args:[journalId],wantRows:false});
+        else statements.push(rowStatement('libroDiario',{...journal,montoUSD:monto,montoBS:montoBS,concepto:String(journal.concepto||'').replace(/ \(abono revertido\)$/i,'')+' (abono revertido)'}));
+      }
+    }
+    statements.push({sql:'INSERT INTO operaciones(id,prefijo,operation_id,data_json) VALUES(?,?,?,?)',args:['REVERSAR-PAGO-'+opId,'REVERSAR-PAGO',opId,JSON.stringify({tipo:'REVERSAR-PAGO',operationId:opId,referencia:paymentId})],wantRows:false});
+    for(const s of statements) await tx.execute(s);
+    return {...updated,reversedPayment:pago};
+  });
+}
+export async function deleteCustomerAndDebtsTransaction(params:any){
+  assertTursoReady();
+  return tursoInteractiveTransaction(async tx=>{
+    const {operationId,customerId,customerName,customerCedula}=params; const opId=String(operationId||customerId);
+    const check=await tx.execute({sql:'SELECT id FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',args:['ELIMINAR-CLIENTE',opId]});
+    if(check.rows.length) throw new Error('Esta operación ya fue procesada. No se registrará nuevamente.');
+    const customer=customerId?rowFromDb((await tx.execute(txSelect('clientes',customerId))).rows[0]):null; if(!customer) throw new Error('El cliente ya no existe.');
+    const exact=customerCedula?String(customerName||customer.cliente||customer.nombre||'')+' ['+customerCedula+']':String(customerName||customer.cliente||customer.nombre||'');
+    const found=await tx.execute({sql:"SELECT id,data_json FROM cxc WHERE json_extract(data_json,'$.cliente') IN (?,?)",args:[exact,String(customerName||customer.cliente||customer.nombre||'')]});
+    const debts=found.rows.map(rowFromDb);
+    const active=debts.find((d:any)=>d.estado!=='pagada'&&(Number(d.saldoUSD)||0)>.001); if(active) throw new Error('El cliente tiene una deuda pendiente.');
+    for(const d of debts) await tx.execute({sql:'DELETE FROM cxc WHERE id=?',args:[d.id],wantRows:false});
+    await tx.execute({sql:'DELETE FROM clientes WHERE id=?',args:[customerId],wantRows:false});
+    await tx.execute({sql:'INSERT INTO operaciones(id,prefijo,operation_id,data_json) VALUES(?,?,?,?)',args:['ELIMINAR-CLIENTE-'+opId,'ELIMINAR-CLIENTE',opId,JSON.stringify({tipo:'ELIMINAR-CLIENTE',operationId:opId,referencia:customerId})],wantRows:false});
+    return {customer,deletedDebts:debts.length};
+  });
+}
