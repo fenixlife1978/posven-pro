@@ -231,8 +231,20 @@ export async function cargarRespaldoDesdeArchivo(
   ] as const;
   const BATCH_SIZE = 450;
 
+  // En Firebase el historial de caja se guarda como "cashHistory";
+  // en Turso su tabla equivalente es "caja". Ambos deben usar la misma
+  // fuente durante la migración para no perder cierres/movimientos de caja.
+  const backupRowsForTable = (name: typeof TABLES[number]): any[] => {
+    if (name === 'caja') {
+      return Array.isArray(backup.data.cashHistory)
+        ? (backup.data.cashHistory as any[])
+        : (Array.isArray(backup.data.caja) ? (backup.data.caja as any[]) : []);
+    }
+    return Array.isArray(backup.data[name]) ? (backup.data[name] as any[]) : [];
+  };
+
   const totalRows =
-    TABLES.reduce((sum, name) => sum + (Array.isArray(backup.data[name]) ? (backup.data[name] as any[]).length : 0), 0) +
+    TABLES.reduce((sum, name) => sum + backupRowsForTable(name).length, 0) +
     CATALOGS.reduce((sum, name) => sum + (Array.isArray(backup.data[name]) ? (backup.data[name] as any[]).length : 0), 0) +
     1;
   let completed = 0;
@@ -272,7 +284,7 @@ export async function cargarRespaldoDesdeArchivo(
   report('Preparando', 'Base de datos reiniciada. Iniciando carga…');
 
   for (const name of TABLES) {
-    const rows = Array.isArray(backup.data[name]) ? (backup.data[name] as any[]) : [];
+    const rows = backupRowsForTable(name);
     for (let i = 0; i < rows.length; i += BATCH_SIZE) {
       const batch = rows.slice(i, i + BATCH_SIZE);
       if (!batch.length) continue;
