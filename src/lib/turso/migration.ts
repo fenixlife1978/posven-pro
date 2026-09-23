@@ -135,8 +135,9 @@ export async function importarRespaldoFirebase(
 
     for (const [key, table] of Object.entries(COLLECTION_TABLES)) {
       const rows = asRows(data[key]);
-      for (const row of rows) {
-        const id = rowId(row, 0);
+      for (let index = 0; index < rows.length; index++) {
+        const row = rows[index];
+        const id = rowId(row, index);
         await tursoExecute({
           sql: `INSERT INTO ${table} (id, data_json, fecha, updated_at)
             VALUES (?, ?, ?, CURRENT_TIMESTAMP)
@@ -165,8 +166,9 @@ export async function importarRespaldoFirebase(
     }
 
     for (const [key, table] of Object.entries(AUXILIARY_TABLES)) {
-      for (const row of asRows(data[key])) {
-        const id = rowId(row, 0);
+      for (let index = 0; index < asRows(data[key]).length; index++) {
+        const row = asRows(data[key])[index];
+        const id = rowId(row, index);
         if (table === 'operaciones') {
           await tursoExecute({
             sql: `INSERT INTO operaciones (id, prefijo, operation_id, data_json)
@@ -230,4 +232,63 @@ export async function importarRespaldoFirebase(
     }).catch(() => {});
     throw error;
   }
+}
+
+export async function verificarMigracionFirebase(backup: FirebaseBackup) {
+  const expected = validateFirebaseBackup(backup);
+  const data = backup.data || {};
+  const counts: Record<string, number> = {};
+  for (const table of Object.values(COLLECTION_TABLES)) {
+    const result = await tursoExecute({ sql: `SELECT COUNT(*) AS total FROM ${table}` });
+    counts[table] = Number(result.rows[0]?.total || 0);
+  }
+  const users = await tursoExecute({ sql: 'SELECT COUNT(*) AS total FROM users WHERE firebase_uid IS NOT NULL' });
+  const identities = await tursoExecute({ sql: "SELECT COUNT(*) AS total FROM user_identity_map WHERE source='firebase'" });
+  const identityRows = await tursoExecute({
+    sql: `SELECT json_extract(data_json,'$.usuarioId') AS usuario_id FROM terminales
+      WHERE json_extract(data_json,'$.usuarioId') IS NOT NULL`,
+  });
+  let terminalIdentityMissing = 0;
+  for (const row of identityRows.rows) {
+    const uid = String(row.usuario_id || '');
+    const found = await tursoExecute({
+      sql: 'SELECT 1 FROM users WHERE id=? OR firebase_uid=? LIMIT 1',
+      args: [uid, uid],
+    });
+    if (!found.rows.length) terminalIdentityMissing++;
+  }
+
+  const expectedCounts = {
+    users: asRows(data.users).length,
+    terminales: asRows(data.terminales).length,
+    ventas: asRows(data.ventas).length,
+    movimientos: asRows(data.movimientos).length,
+    caja: asRows(data.cashHistory).length,
+    reportesZ: asRows(data.reportesZ).length,
+  };
+  const checks = {
+    usersCount: Number(users.rows[0]?.total || 0) >= expectedCounts.users,
+    terminalesCount: counts.terminales >= expectedCounts.terminales,
+    ventasCount: counts.ventas >= expectedCounts.ventas,
+    movimientosCount: counts.movimientos >= expectedCounts.movimientos,
+    cajaCount: counts.caja >= expectedCounts.caja,
+    reportesZCount: counts.reportes_z >= expectedCounts.reportesZ,
+    identityMap: Number(identities.rows[0]?.total || 0) >= expectedCounts.users,
+    terminalUserReferences: terminalIdentityMissing === 0,
+  };
+  return {
+    expected: expectedCounts,
+    actual: {
+      users: Number(users.rows[0]?.total || 0),
+      terminales: counts.terminales,
+      ventas: counts.ventas,
+      movimientos: counts.movimientos,
+      caja: counts.caja,
+      reportesZ: counts.reportes_z,
+      firebaseIdentityMap: Number(identities.rows[0]?.total || 0),
+    },
+    terminalIdentityMissing,
+    checks,
+    ok: Object.values(checks).every(Boolean),
+  };
 }
