@@ -50,60 +50,38 @@ export default function GlobalControlModule({ state, updateState }: { state: App
   const toggleAccess = async (userId: string, currentStatus: boolean) => {
     try {
       const newStatus = !currentStatus;
-      const userRef = doc(db, 'users', userId);
-      
-      // Actualización directa y forzada en Firestore
-      await updateDoc(userRef, { 
-        accesoBloqueado: newStatus 
+      const response = await fetch('/api/users/' + encodeURIComponent(userId), {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accesoBloqueado: newStatus }),
       });
-      
-      toast({ 
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || body?.ok === false) {
+        if (response.status === 503) throw new Error('Turso no está configurado.');
+        throw new Error(String(body?.error || 'No se pudo actualizar el acceso.'));
+      }
+      toast({
         title: newStatus ? "Acceso Bloqueado" : "Acceso Concedido",
-        description: `El estado del operador ha sido sincronizado en la nube.`
+        description: 'El estado del operador fue actualizado en Turso.'
       });
     } catch (e: any) {
       console.error("Error al actualizar acceso:", e);
-      toast({ 
-        variant: "destructive", 
-        title: "Error de Seguridad", 
-        description: "No tiene permisos suficientes para realizar esta acción." 
+      toast({
+        variant: "destructive",
+        title: "Error de Seguridad",
+        description: e?.message || "No tiene permisos suficientes para realizar esta acción."
       });
     }
   };
 
   const migrateUserIds = async () => {
-    if (!confirm('Esta acción migrará los usuarios que usan el correo como ID hacia el UID de Auth. ¿Desea continuar?')) return;
-    
-    setIsMigrating(true);
-    try {
-      const querySnapshot = await getDocs(collection(db, 'users'));
-      let migratedCount = 0;
-      
-      for (const userDoc of querySnapshot.docs) {
-        const data = userDoc.data();
-        const docId = userDoc.id;
-        
-        if (docId.includes('@') && data.uid) {
-           await setDoc(doc(db, 'users', data.uid), {
-             ...data,
-             email: data.email?.toLowerCase()
-           });
-           await deleteDoc(doc(db, 'users', docId));
-           migratedCount++;
-        }
-      }
-      
-      toast({ 
-        title: "Migración Exitosa", 
-        description: `Se han actualizado ${migratedCount} registros de usuario.` 
-      });
-    } catch (e) {
-      console.error("Error en migración:", e);
-      toast({ variant: "destructive", title: "Fallo en Migración", description: "Fallo al procesar los IDs de usuario." });
-    } finally {
-      setIsMigrating(false);
-    }
+    toast({
+      title: "Migración no requerida",
+      description: "La gestión de usuarios y sus identificadores ya se realiza mediante Turso."
+    });
   };
+
 
   const createTerminal = () => {
     if (!newTerminalName.trim()) return;
