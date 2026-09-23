@@ -1,7 +1,7 @@
 'use client';
 
 import { db, rtdb } from '@/lib/firebase';
-import { collection, getDocs, setDoc, doc, writeBatch } from 'firebase/firestore';
+import { collection, getDocs, getDoc, setDoc, doc, writeBatch } from 'firebase/firestore';
 import { get as rtdbGet, ref as rtdbRef } from 'firebase/database';
 import { Store } from '@/lib/db-store';
 
@@ -92,19 +92,7 @@ export async function crearRespaldo(): Promise<BackupFile> {
   // Catálogos completos, directamente desde Firestore para no depender del cache.
   for (const k of CATALOG_KEYS) {
     try {
-      const snap = await getDocs(doc(db, 'catalogos', k) as any);
-      // getDocs no acepta DocumentReference; este bloque se sustituye abajo.
-      void snap;
-    } catch {
-      // La lectura real se realiza en el bloque siguiente.
-    }
-  }
-
-  for (const k of CATALOG_KEYS) {
-    try {
-      const snap = await import('firebase/firestore').then(({ getDoc }) =>
-        getDoc(doc(db, 'catalogos', k))
-      );
+      const snap = await getDoc(doc(db, 'catalogos', k));
       const lista = snap.exists() ? (snap.data().lista || []) : [];
       data[k] = lista;
       catalogs[k] = Array.isArray(lista) ? lista.length : 0;
