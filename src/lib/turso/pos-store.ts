@@ -127,6 +127,35 @@ export async function listRecords(
   return result.rows.map(rowFromDb).filter(Boolean);
 }
 
+export async function getAppConfig(): Promise<any> {
+  assertTursoReady();
+  const result = await tursoExecute({ sql: 'SELECT data_json FROM app_config WHERE id=? LIMIT 1', args: ['general'] });
+  if (!result.rows.length) return {};
+  try { return JSON.parse(String(result.rows[0].data_json || '{}')); } catch { return {}; }
+}
+
+export async function patchAppConfig(patch: Record<string, any>): Promise<any> {
+  assertTursoReady();
+  const current = await getAppConfig();
+  const next = { ...current, ...clean(patch) };
+  await tursoExecute({ sql: 'INSERT INTO app_config(id,data_json,updated_at) VALUES(?,?,CURRENT_TIMESTAMP) ON CONFLICT(id) DO UPDATE SET data_json=excluded.data_json, updated_at=CURRENT_TIMESTAMP', args: ['general', JSON.stringify(next)], wantRows: false });
+  return next;
+}
+
+export async function getCatalog(name: string): Promise<any[]> {
+  assertTursoReady();
+  const result = await tursoExecute({ sql: 'SELECT lista_json FROM catalogos WHERE nombre=? LIMIT 1', args: [String(name)] });
+  if (!result.rows.length) return [];
+  try { const value = JSON.parse(String(result.rows[0].lista_json || '[]')); return Array.isArray(value) ? value : []; } catch { return []; }
+}
+
+export async function patchCatalog(name: string, lista: any[]): Promise<any[]> {
+  assertTursoReady();
+  const cleanList = clean(lista);
+  const value = Array.isArray(cleanList) ? cleanList : [];
+  await tursoExecute({ sql: 'INSERT INTO catalogos(nombre,lista_json,data_json,updated_at) VALUES(?,?,?,CURRENT_TIMESTAMP) ON CONFLICT(nombre) DO UPDATE SET lista_json=excluded.lista_json, updated_at=CURRENT_TIMESTAMP', args: [String(name), JSON.stringify(value), '{}'], wantRows: false });
+  return value;
+}
 export async function upsertRecords(table: TursoStoreTable, records: any[]): Promise<{ count: number }> {
   assertTursoReady();
   if (!records.length) return { count: 0 };

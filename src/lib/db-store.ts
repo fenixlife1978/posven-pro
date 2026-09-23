@@ -69,6 +69,18 @@ async function tryTursoOperation(operation: string, payload: any): Promise<any |
   return body;
 }
 
+async function tryTursoSpecialRead(kind: 'config' | 'catalog', name = ''): Promise<any | null> {
+  if (typeof window === 'undefined') return null;
+  const params = new URLSearchParams({ special: kind });
+  if (kind === 'catalog') params.set('name', name);
+  let response: Response;
+  try { response = await fetch('/api/turso/store?' + params.toString(), { credentials: 'include', cache: 'no-store' }); }
+  catch { throw new Error('No se pudo consultar Turso.'); }
+  if (response.status === 503) return null;
+  let body: any = null; try { body = await response.json(); } catch {}
+  if (!response.ok || body?.ok === false) throw new Error(String(body?.error || 'Turso rechazó la lectura.'));
+  return kind === 'config' ? (body.config || {}) : (Array.isArray(body.lista) ? body.lista : []);
+}
 async function tryTursoRead(table: string, options: { limit?: number; terminalId?: string; estado?: string } = {}): Promise<any[] | null> {
   if (typeof window === 'undefined') return null;
   let response: Response;
@@ -869,31 +881,26 @@ function writeCatalogCacheMeta(version: string): void {
 }
 
 async function loadCatalogs(force = false, version = ''): Promise<void> {
-  if (!db) return;
-
   const meta = readCatalogCacheMeta();
   if (!force && meta.ready && (!version || meta.version === version)) return;
-
   const entries = Object.entries(CATALOG_FIELDS);
-  const results = await Promise.all(entries.map(async ([field, catName]) => {
-    try {
-      const snap = await getDoc(doc(db, CATALOGOS_COLLECTION, catName));
-      return [field, snap.exists() ? (snap.data().lista || []) : []] as const;
-    } catch (e) {
-      console.warn("Catálogo " + catName + ":", e);
-      return null;
-    }
-  }));
-
   const patch: any = {};
-  results.forEach(result => {
-    if (result) patch[result[0]] = result[1];
-  });
-
+  let tursoActive = false;
+  for (const [field, catName] of entries) {
+    const list = await tryTursoSpecialRead('catalog', catName);
+    if (list === null) break;
+    tursoActive = true; patch[field] = list;
+  }
+  if (!tursoActive) {
+    const results = await Promise.all(entries.map(async ([field, catName]) => {
+      try { const snap = await getDoc(doc(db, CATALOGOS_COLLECTION, catName)); return [field, snap.exists() ? (snap.data().lista || []) : []] as const; }
+      catch (e) { console.warn('Catálogo ' + catName + ':', e); return null; }
+    }));
+    results.forEach(result => { if (result) patch[result[0]] = result[1]; });
+  }
   if (Object.keys(patch).length > 0) applyPatch(patch);
   writeCatalogCacheMeta(version || meta.version);
 }
-
 // ============================================================
 // INICIALIZACIÓN DE LISTENERS
 // ============================================================
@@ -1070,24 +1077,25 @@ function init() {
   started = true;
   if (!db || typeof window === 'undefined') return;
 
-  // 1) CONFIG (doc pequeño, en vivo)
-  teardownFns.push(onSnapshot(doc(db, CONFIG_COLLECTION, CONFIG_DOC_ID), (snap) => {
-    if (!snap.exists()) return;
-    const val = snap.data();
-    const patch: any = {};
-    for (const f of CONFIG_FIELDS) {
-      if (val[f] !== undefined) patch[f] = sanitizeForFirestore(val[f]);
+  // 1) CONFIG: Turso primero; Firebase queda solo como fallback mientras Turso no esté configurado.
+  void (async () => {
+    const tursoConfig = await tryTursoSpecialRead('config');
+    if (tursoConfig !== null) {
+      const patch: any = {};
+      for (const f of CONFIG_FIELDS) if (tursoConfig[f] !== undefined) patch[f] = sanitizeForFirestore(tursoConfig[f]);
+      if (Object.keys(patch).length) applyPatch(patch);
+      await loadCatalogs(true, String(tursoConfig.catalogosVersion || ''));
+      return;
     }
-    if (Object.keys(patch).length > 0) applyPatch(patch);
-
-    // Los catálogos son relativamente estáticos. Solo se vuelven a leer cuando
-    // su versión cambió en config/general, o cuando esta caja aún no tiene caché.
-    const remoteCatalogVersion = String(val.catalogosVersion || '');
-    const catalogMeta = readCatalogCacheMeta();
-    if (!catalogMeta.ready || (remoteCatalogVersion && catalogMeta.version !== remoteCatalogVersion)) {
-      void loadCatalogs(true, remoteCatalogVersion);
-    }
-  }, (err) => { if (err.code !== 'permission-denied') console.warn("Sync config:", err); }));
+    teardownFns.push(onSnapshot(doc(db, CONFIG_COLLECTION, CONFIG_DOC_ID), (snap) => {
+      if (!snap.exists()) return;
+      const val = snap.data();
+      const patch: any = {};
+      for (const f of CONFIG_FIELDS) if (val[f] !== undefined) patch[f] = sanitizeForFirestore(val[f]);
+      if (Object.keys(patch).length > 0) applyPatch(patch);
+      void loadCatalogs(true, String(val.catalogosVersion || ''));
+    }, (err) => { if (err.code !== 'permission-denied') console.warn('Sync config:', err); }));
+  })();
 
   // 2) PRODUCTOS (tiempo real vía RTDB: el espejo evita re-leer la colección en cada venta).
   bootstrapProductos();
@@ -2799,11 +2807,7 @@ export const Store = {
       }
     }
 
-    // 2) CATÁLOGOS
-    // Los documentos del catálogo y su versión se publican en secuencia:
-    // primero deben persistir los cambios y solo después se actualiza la
-    // versión local/remota. Así una caja no puede marcar una versión como
-    // vigente si el catálogo remoto falló.
+    // 2) CATÁLOGOS: Turso primero; Firebase solo mientras Turso no esté configurado.
     const catalogJobs: Promise<unknown>[] = [];
     let catalogosChanged = false;
     for (const [field, catName] of Object.entries(CATALOG_FIELDS)) {
@@ -2812,42 +2816,35 @@ export const Store = {
       const prevList = (prev as any)[field] || [];
       if (JSON.stringify(prevList) !== JSON.stringify(newList)) {
         catalogosChanged = true;
-        catalogJobs.push(
-          setDoc(doc(db, CATALOGOS_COLLECTION, catName), { lista: sanitizeForFirestore(newList) })
-        );
+        catalogJobs.push((async () => {
+          const result = await tryTursoOperation('catalogPatch', { name: catName, lista: sanitizeForFirestore(newList) });
+          if (!result) await setDoc(doc(db, CATALOGOS_COLLECTION, catName), { lista: sanitizeForFirestore(newList) });
+        })());
       }
     }
-
     if (catalogosChanged) {
       const catalogVersion = new Date().toISOString();
-      jobs.push(
-        Promise.all(catalogJobs)
-          .then(() => setDoc(
-            doc(db, CONFIG_COLLECTION, CONFIG_DOC_ID),
-            { catalogosVersion: catalogVersion },
-            { merge: true }
-          ))
-          .then(() => writeCatalogCacheMeta(catalogVersion))
-          .catch(e => console.error("Error persistiendo catálogo/version:", e))
-      );
+      jobs.push(Promise.all(catalogJobs).then(async () => {
+        const result = await tryTursoOperation('configPatch', { patch: { catalogosVersion: catalogVersion } });
+        if (!result) await setDoc(doc(db, CONFIG_COLLECTION, CONFIG_DOC_ID), { catalogosVersion: catalogVersion }, { merge: true });
+      }).then(() => writeCatalogCacheMeta(catalogVersion)).catch(e => console.error('Error persistiendo catálogo/version:', e)));
     }
 
-    // 3) CONFIG (config/general) — solo campos que cambiaron
+    // 3) CONFIG: Turso primero; Firebase solo mientras Turso no esté configurado.
     const toWrite: Record<string, any> = {};
     for (const f of CONFIG_FIELDS) {
       const key = f as keyof AppState;
       if ((patch as any)[f] === undefined) continue;
       const clean = sanitizeForFirestore((patch as any)[f]);
       if (clean === undefined) continue;
-      if (JSON.stringify(prev[key]) !== JSON.stringify((patch as any)[f])) {
-        toWrite[f] = clean;
-      }
+      if (JSON.stringify(prev[key]) !== JSON.stringify((patch as any)[f])) toWrite[f] = clean;
     }
     if (Object.keys(toWrite).length > 0) {
-      jobs.push(setDoc(doc(db, CONFIG_COLLECTION, CONFIG_DOC_ID), toWrite, { merge: true })
-        .catch(e => console.error("Error persistiendo config:", e)));
+      jobs.push((async () => {
+        const result = await tryTursoOperation('configPatch', { patch: toWrite });
+        if (!result) await setDoc(doc(db, CONFIG_COLLECTION, CONFIG_DOC_ID), toWrite, { merge: true });
+      })().catch(e => console.error('Error persistiendo config:', e)));
     }
-
     await Promise.all(jobs);
   },
 

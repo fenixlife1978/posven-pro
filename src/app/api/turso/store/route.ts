@@ -6,6 +6,10 @@ import {
   getRecord,
   listRecords,
   upsertRecords,
+  getAppConfig,
+  patchAppConfig,
+  getCatalog,
+  patchCatalog,
   createSaleTransaction,
   applyInventoryMovementsTransaction,
   patchTerminalTransaction,
@@ -52,6 +56,9 @@ export async function GET(request: Request) {
     assertTursoReady();
     await requireUser();
     const url = new URL(request.url);
+    const special = url.searchParams.get('special');
+    if (special === 'config') return NextResponse.json({ ok: true, config: await getAppConfig() });
+    if (special === 'catalog') return NextResponse.json({ ok: true, lista: await getCatalog(String(url.searchParams.get('name') || '')) });
     const t = table(url.searchParams.get('table'));
     const id = url.searchParams.get('id');
     if (id) return NextResponse.json({ ok: true, record: await getRecord(t, id) });
@@ -76,6 +83,16 @@ export async function POST(request: Request) {
     const body = await request.json();
 
     switch (String(body?.operation || '')) {
+      case 'configPatch': {
+        if (user.rol !== 'administrador') throw new Error('Se requiere administrador.');
+        const config = await patchAppConfig(body.patch || {});
+        return NextResponse.json({ ok: true, config });
+      }
+      case 'catalogPatch': {
+        if (user.rol !== 'administrador') throw new Error('Se requiere administrador.');
+        const lista = await patchCatalog(String(body.name), Array.isArray(body.lista) ? body.lista : []);
+        return NextResponse.json({ ok: true, name: String(body.name), lista });
+      }
       case 'upsert': {
         if (user.rol !== 'administrador') throw new Error('Se requiere administrador.');
         const result = await upsertRecords(table(body.table), Array.isArray(body.records) ? body.records : []);
