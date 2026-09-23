@@ -33,7 +33,7 @@ import { Store, initialState, Utils } from '@/lib/db-store';
 import { AppState, Terminal, Debt } from '@/lib/types';
 import { auth, db } from '@/lib/firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { doc, onSnapshot, getDoc, collection, query, getDocs, where } from 'firebase/firestore';
+import { doc, onSnapshot, getDoc, collection, query, getDocs, where, setDoc } from 'firebase/firestore';
 import DashboardModule from '@/components/modules/DashboardModule';
 import { InventoryModule } from '@/components/modules/InventoryModule';
 import SalesModule from '@/components/modules/SalesModule';
@@ -61,6 +61,7 @@ export default function LicoreriaPOS() {
   const [userProfile, setUserProfile] = useState<any>(null);
   const [showApertura, setShowApertura] = useState(false);
   const [aperturaData, setAperturaData] = useState({ bs: '', usd: '' });
+  const [recoveryInfo, setRecoveryInfo] = useState<{terminalId: string; detectedAt: string} | null>(null);
   
   // Estados para Notificaciones de CxP
   const [dueDebts, setDueDebts] = useState<Debt[]>([]);
@@ -142,8 +143,6 @@ export default function LicoreriaPOS() {
                 // ✅ FIX: Usar el estado de caja de ESTE terminal (no un estado global).
                 // Así, abrir la caja 2 no muestra la interfaz de la caja 1, y el corte Z
                 // de una caja no borra la información de la otra.
-                const aperturaConfirmada = localStorage.getItem('posven_apertura_done') === 'true';
-
                 if (data.rol === 'cajero') {
                    getDocs(query(collection(db, 'terminales'), where('usuarioId', '==', currentUser.uid))).then(configSnap => {
                       const terminals = configSnap.docs.map(d => d.data()) as Terminal[];
@@ -160,10 +159,39 @@ export default function LicoreriaPOS() {
                       const myTerm = terminals.find((t: Terminal) => t.usuarioId === currentUser.uid);
                       if (myTerm?.id) Store.startTerminalSync(myTerm.id, false, [myTerm]);
                       const cajaEstaAbierta = !!myTerm?.isCashOpen;
-                      // Mostrar apertura solo si la caja de ESTE terminal no está abierta
-                      // O si el flag de localStorage está ausente
-                      const debeMostrarApertura = !cajaEstaAbierta || !aperturaConfirmada;
-                      
+                      // La caja abierta en Firestore es la fuente autoritativa. Nunca
+                      // volver a exigir apertura por la ausencia de un flag local:
+                      // un corte eléctrico/reinicio no debe crear una nueva jornada.
+                      const debeMostrarApertura = !cajaEstaAbierta;
+
+                      // Si existía una marca de ejecución que no pudo limpiarse con
+                      // beforeunload, tratamos el arranque como recuperación de una
+                      // interrupción abrupta. Esto no afirma que fue un corte de luz;
+                      // deja trazabilidad de que el equipo reinició con la caja abierta.
+                      try {
+                        const rawRuntime = localStorage.getItem('posven_runtime_marker');
+                        const previousRuntime = rawRuntime ? JSON.parse(rawRuntime) : null;
+                        if (previousRuntime?.terminalId === myTerm?.id && cajaEstaAbierta) {
+                          const detectedAt = new Date().toISOString();
+                          setRecoveryInfo({ terminalId: String(myTerm.id), detectedAt });
+                          const auditId = `REC-${String(myTerm.id)}-${Date.now()}`;
+                          await setDoc(doc(db, 'auditoriaSistema', auditId), {
+                            id: auditId,
+                            tipo: 'RECUPERACION_INTERRUPCION',
+                            terminalId: myTerm.id,
+                            terminalName: myTerm.nombre || 'S/T',
+                            usuarioId: currentUser.uid,
+                            fecha: detectedAt,
+                            ultimaActividadDetectada: previousRuntime.heartbeatAt || previousRuntime.startedAt || null,
+                            cajaSeguíaAbierta: true,
+                            detalle: 'El sistema inició nuevamente y detectó una caja que permanecía abierta. La jornada fue recuperada sin exigir una nueva apertura.'
+                          }, { merge: false });
+                        }
+                        localStorage.setItem('posven_runtime_marker', JSON.stringify({ terminalId: myTerm?.id || null, startedAt: new Date().toISOString(), heartbeatAt: new Date().toISOString() }));
+                      } catch (auditError) {
+                        console.warn('No se pudo registrar recuperación de jornada:', auditError);
+                      }
+
                       const target = savedModule || 'ventas';
                       setActiveTab(target);
                       setShowApertura(debeMostrarApertura);
@@ -202,6 +230,16 @@ export default function LicoreriaPOS() {
     });
 
     const timerClock = setInterval(() => setCurrentTime(new Date()), 1000);
+    const runtimeHeartbeat = setInterval(() => {
+      try {
+        const raw = localStorage.getItem('posven_runtime_marker');
+        if (!raw) return;
+        const marker = JSON.parse(raw);
+        localStorage.setItem('posven_runtime_marker', JSON.stringify({ ...marker, heartbeatAt: new Date().toISOString() }));
+      } catch {}
+    }, 15000);
+    const clearRuntimeMarker = () => { try { localStorage.removeItem('posven_runtime_marker'); } catch {} };
+    window.addEventListener('beforeunload', clearRuntimeMarker);
 
     if (typeof window !== 'undefined') {
       setIsOnline(navigator.onLine);
@@ -215,6 +253,8 @@ export default function LicoreriaPOS() {
         profileUnsubRef.current = null;
         unsubscribeStore();
         clearInterval(timerClock);
+        clearInterval(runtimeHeartbeat);
+        window.removeEventListener('beforeunload', clearRuntimeMarker);
         clearTimeout(timerSafety);
         document.removeEventListener('click', preventCriticalDoubleClick, true);
     window.removeEventListener('error', captureError);
@@ -230,6 +270,8 @@ export default function LicoreriaPOS() {
       profileUnsubRef.current = null;
       unsubscribeStore();
       clearInterval(timerClock);
+      clearInterval(runtimeHeartbeat);
+      window.removeEventListener('beforeunload', clearRuntimeMarker);
       clearTimeout(timerSafety);
       window.removeEventListener('error', captureError);
       window.removeEventListener('unhandledrejection', captureError);
@@ -492,7 +534,7 @@ export default function LicoreriaPOS() {
                   Store.set({ terminales: updatedTerminals });
                   setState(newState);
                   
-                  localStorage.setItem('posven_apertura_done', 'true'); 
+                  localStorage.removeItem('posven_apertura_done');
                   setShowApertura(false); 
                 }} 
                 className="w-full h-14 bg-brand-gold text-ink font-black text-sm rounded-xl shadow-xl shadow-brand-gold/10 hover:bg-brand-gold-deep hover:text-white transition-all uppercase tracking-widest"
