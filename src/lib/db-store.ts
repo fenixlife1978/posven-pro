@@ -1284,8 +1284,6 @@ export const Store = {
     }
     const tursoResult = await tryTursoOperation('returnOrCancellation', params);
     if (tursoResult) return tursoResult;
-    const tursoResult = await tryTursoOperation('sale', params);
-    if (tursoResult) return tursoResult;
 
     let result: any = null;
     await runTransaction(db, async tx => {
@@ -1966,6 +1964,9 @@ export const Store = {
       }
       return { queuedOffline: true, operationId: opId, sale: provisionalSale, debt: provisionalDebt, nextNumber: fallbackReceiptNumber };
     }
+
+    const tursoResult = await tryTursoOperation('sale', params);
+    if (tursoResult) return tursoResult;
 
     let result: any = null;
     await runTransaction(db, async tx => {
