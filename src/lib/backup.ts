@@ -213,19 +213,95 @@ export async function restaurarRespaldo(backup: BackupFile): Promise<void> {
   }
 }
 
-export async function cargarRespaldoDesdeArchivo(file: File): Promise<void> {
+export async function cargarRespaldoDesdeArchivo(
+  file: File,
+  onProgress?: (progress: { percent: number; stage: string; detail: string }) => void,
+): Promise<void> {
   const backup = await leerArchivoRespaldo(file);
   if (!backup) return;
 
-  const response = await fetch('/api/turso/backup', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify({ backup }),
-  });
+  const TABLES = [
+    'productos','movimientos','ventas','cxc','cxp','clientes','proveedores',
+    'devoluciones','anulaciones','terminales','libroDiario','reportesZ','caja','compras',
+  ] as const;
+  const CATALOGS = [
+    'categorias','departamentos','marcas','presentaciones',
+    'productCategories','productUnits','productColors','productSizes',
+    'brands','groups','subgroups','lines','suppliers',
+  ] as const;
+  const BATCH_SIZE = 450;
 
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok || body?.ok === false) {
-    throw new Error(body?.error || 'No se pudo restaurar el respaldo en Turso.');
+  const totalRows =
+    TABLES.reduce((sum, name) => sum + (Array.isArray(backup.data[name]) ? (backup.data[name] as any[]).length : 0), 0) +
+    CATALOGS.reduce((sum, name) => sum + (Array.isArray(backup.data[name]) ? (backup.data[name] as any[]).length : 0), 0) +
+    1;
+  let completed = 0;
+
+  const report = (stage: string, detail: string) => {
+    const percent = Math.min(99, Math.round((completed / Math.max(totalRows, 1)) * 100));
+    onProgress?.({ percent, stage, detail });
+  };
+
+  const post = async (payload: Record<string, unknown>) => {
+    let response: Response;
+    try {
+      response = await fetch('/api/turso/backup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        cache: 'no-store',
+        body: JSON.stringify(payload),
+      });
+    } catch (error: any) {
+      throw new Error('No se pudo comunicar con el servidor de restauración: ' + String(error?.message || error || 'Failed to fetch'));
+    }
+
+    const raw = await response.text();
+    let body: any = {};
+    try { body = raw ? JSON.parse(raw) : {}; } catch {
+      body = { error: raw || 'El servidor devolvió una respuesta no válida.' };
+    }
+    if (!response.ok || body?.ok === false) {
+      throw new Error(body?.error || `Error HTTP ${response.status} al restaurar el respaldo.`);
+    }
+    return body;
+  };
+
+  report('Preparando', 'Conectando con el servidor de restauración…');
+  await post({ action: 'reset' });
+  report('Preparando', 'Base de datos reiniciada. Iniciando carga…');
+
+  for (const name of TABLES) {
+    const rows = Array.isArray(backup.data[name]) ? (backup.data[name] as any[]) : [];
+    for (let i = 0; i < rows.length; i += BATCH_SIZE) {
+      const batch = rows.slice(i, i + BATCH_SIZE);
+      if (!batch.length) continue;
+      await post({ action: 'table', table: name, rows: batch });
+      completed += batch.length;
+      report('Datos', `${name}: ${Math.min(i + batch.length, rows.length)} de ${rows.length}`);
+    }
+    if (!rows.length) report('Datos', `${name}: sin registros`);
   }
+
+  for (const name of CATALOGS) {
+    const rows = Array.isArray(backup.data[name]) ? (backup.data[name] as any[]) : [];
+    await post({ action: 'catalog', name, rows });
+    completed += rows.length;
+    report('Catálogos', `${name}: ${rows.length} registros`);
+  }
+
+  const config: Record<string, unknown> = {};
+  const configKeys = [
+    'tasa','pinDevolucion','isInitialized','empresa',
+    'proximoRecibo','proximaDevolucion','proximaAnulacion',
+    'ultimoZ','fechaUltimoZ','acumuladoHistorico',
+    'fondoCajaHoyUSD','fondoCajaHoyBS','isCashOpen','cashData','config',
+  ];
+  for (const key of configKeys) {
+    if (backup.data[key] !== undefined) config[key] = backup.data[key];
+  }
+  if (Object.keys(config).length) await post({ action: 'config', config });
+
+  await post({ action: 'finish' });
+  onProgress?.({ percent: 100, stage: 'Completado', detail: 'Restauración finalizada correctamente.' });
 }
