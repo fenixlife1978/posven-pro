@@ -69,6 +69,32 @@ async function tryTursoOperation(operation: string, payload: any): Promise<any |
   return body;
 }
 
+async function tryTursoRead(table: string, options: { limit?: number; terminalId?: string; estado?: string } = {}): Promise<any[] | null> {
+  if (typeof window === 'undefined') return null;
+  let response: Response;
+  try {
+    const params = new URLSearchParams();
+    params.set('table', table);
+    if (options.limit) params.set('limit', String(options.limit));
+    if (options.terminalId) params.set('terminalId', String(options.terminalId));
+    if (options.estado) params.set('estado', String(options.estado));
+    response = await fetch('/api/turso/store?' + params.toString(), {
+      method: 'GET',
+      credentials: 'include',
+      cache: 'no-store',
+    });
+  } catch {
+    throw new Error('No se pudo consultar Turso. No se usará Firebase como respaldo porque Turso está activo.');
+  }
+  if (response.status === 503) return null;
+  let body: any = null;
+  try { body = await response.json(); } catch {}
+  if (!response.ok || body?.ok === false) {
+    throw new Error(String(body?.error || ('Turso rechazó la lectura (' + response.status + ').')));
+  }
+  return Array.isArray(body?.records) ? body.records : [];
+}
+
 
 function operationDocId(prefix: string, operationId: string): string {
   const input = prefix + '|' + operationId;
@@ -556,6 +582,8 @@ const loadedAll: Record<string, boolean> = {};
 const cursors: Record<string, QueryDocumentSnapshot<DocumentData> | null> = {};
 
 async function loadCollection(name: string): Promise<any[]> {
+  const tursoItems = await tryTursoRead(name);
+  if (tursoItems !== null) return tursoItems.map(sanitizeForFirestore).filter(Boolean);
   if (!db) return [];
   const snap = await getDocs(collection(db, name));
   return snap.docs.map(d => sanitizeForFirestore(d.data())).filter(Boolean);
@@ -870,12 +898,27 @@ function stopTerminalSync(): void {
 }
 
 function startTerminalSync(terminalId?: string, all = false, initialItems: Terminal[] = []): () => void {
-  if (!db || typeof window === 'undefined') return () => {};
+  if (typeof window === 'undefined') return () => {};
   stopTerminalSync();
 
   if (initialItems.length > 0) {
     applyPatch({ terminales: mergeById((cache as any).terminales, initialItems) });
   }
+
+  // Cuando Turso está activo, la hidratación inicial sale de Turso y Firebase
+  // deja de ser fuente de lectura para terminales/ventas durante la migración.
+  // El cache local conserva la última vista mientras llega la respuesta.
+  void (async () => {
+    try {
+      const terminals = await tryTursoRead('terminales', all ? {} : { limit: 1, terminalId });
+      if (terminals !== null) {
+        applyPatch({ terminales: all ? terminals : mergeById((cache as any).terminales, terminals) });
+        const sales = await tryTursoRead('ventas', all ? { limit: 500 } : { limit: 500, terminalId });
+        if (sales !== null) applyPatch({ ventas: sales });
+        return;
+      }
+
+      if (!db) return;
 
   const target = all
     ? collection(db, COLLECTIONS.terminales)
@@ -928,6 +971,12 @@ function startTerminalSync(terminalId?: string, all = false, initialItems: Termi
     );
     terminalSyncFns.sales = salesUnsub;
   }
+
+  return stopTerminalSync;
+    } catch (e) {
+      console.error('[db-store] Error hidratando terminal/ventas desde Turso:', e);
+    }
+  })();
 
   return stopTerminalSync;
 }
