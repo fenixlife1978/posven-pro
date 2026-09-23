@@ -36,7 +36,10 @@ type TursoResponse = {
 };
 
 function getConfig() {
-  const url = String(process.env.TURSO_DATABASE_URL || '').trim().replace(/\/$/, '');
+  let url = String(process.env.TURSO_DATABASE_URL || '').trim().replace(/\/$/, '');
+  // Turso suele entregar URLs `libsql://...`; el cliente HTTP nativo de Node
+  // no entiende ese esquema. Para el endpoint SQL sobre HTTP debemos usar HTTPS.
+  if (url.startsWith('libsql://')) url = 'https://' + url.slice('libsql://'.length);
   const token = String(process.env.TURSO_AUTH_TOKEN || '').trim();
   return { url, token };
 }
