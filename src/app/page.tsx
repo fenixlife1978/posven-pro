@@ -61,7 +61,6 @@ export default function LicoreriaPOS() {
   const [userProfile, setUserProfile] = useState<any>(null);
   const [showApertura, setShowApertura] = useState(false);
   const [aperturaData, setAperturaData] = useState({ bs: '', usd: '' });
-  const [recoveryInfo, setRecoveryInfo] = useState<{terminalId: string; detectedAt: string} | null>(null);
   
   // Estados para Notificaciones de CxP
   const [dueDebts, setDueDebts] = useState<Debt[]>([]);
@@ -144,7 +143,7 @@ export default function LicoreriaPOS() {
                 // Así, abrir la caja 2 no muestra la interfaz de la caja 1, y el corte Z
                 // de una caja no borra la información de la otra.
                 if (data.rol === 'cajero') {
-                   getDocs(query(collection(db, 'terminales'), where('usuarioId', '==', currentUser.uid))).then(configSnap => {
+                   getDocs(query(collection(db, 'terminales'), where('usuarioId', '==', currentUser.uid))).then(async configSnap => {
                       const terminals = configSnap.docs.map(d => d.data()) as Terminal[];
                       const hasTerminal = terminals.some((t: Terminal) => t.usuarioId === currentUser.uid);
                       
@@ -173,7 +172,6 @@ export default function LicoreriaPOS() {
                         const previousRuntime = rawRuntime ? JSON.parse(rawRuntime) : null;
                         if (previousRuntime?.terminalId === myTerm?.id && cajaEstaAbierta) {
                           const detectedAt = new Date().toISOString();
-                          setRecoveryInfo({ terminalId: String(myTerm.id), detectedAt });
                           const auditId = `REC-${String(myTerm.id)}-${Date.now()}`;
                           await setDoc(doc(db, 'auditoriaSistema', auditId), {
                             id: auditId,
