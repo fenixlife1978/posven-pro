@@ -127,6 +127,63 @@ export async function listRecords(
   return result.rows.map(rowFromDb).filter(Boolean);
 }
 
+export async function factoryResetTransaction(params: { user: { rol: string } }) {
+  assertTursoReady();
+  if (params.user.rol !== 'administrador') throw new Error('Se requiere administrador.');
+  return tursoInteractiveTransaction(async tx => {
+    const tables = [
+      'productos','movimientos','ventas','cxc','cxp','clientes','proveedores',
+      'devoluciones','anulaciones','terminales','libro_diario','reportes_z','caja',
+      'compras','operaciones','auditoria_sistema','legacy_documents','migration_runs',
+      'catalogos','app_config','user_identity_map','sessions'
+    ];
+    for (const name of tables) {
+      await tx.execute({ sql: 'DELETE FROM ' + name, args: [], wantRows: false });
+    }
+    const seed = await tx.execute({
+      sql: 'SELECT id,username,email,nombre,rol,password_hash,data_json FROM users WHERE is_seed_admin=1 LIMIT 1',
+      args: [],
+    });
+    if (!seed.rows.length) {
+      throw new Error('No se pudo conservar el administrador semilla.');
+    }
+    await tx.execute({
+      sql: "DELETE FROM users WHERE is_seed_admin=0",
+      args: [],
+      wantRows: false,
+    });
+    await tx.execute({
+      sql: "UPDATE users SET acceso_bloqueado=0, rol='administrador', updated_at=CURRENT_TIMESTAMP WHERE is_seed_admin=1",
+      args: [],
+      wantRows: false,
+    });
+    await tx.execute({
+      sql: "INSERT INTO app_config(id,data_json,updated_at) VALUES('general',? ,CURRENT_TIMESTAMP)",
+      args: [JSON.stringify({
+        isInitialized: false,
+        ultimoZ: 0,
+        proximoRecibo: 1,
+        proximaDevolucion: 1,
+        proximaAnulacion: 1,
+        acumuladoHistorico: 0,
+        fechaUltimoZ: '',
+        fondoCajaHoyUSD: 0,
+        fondoCajaHoyBS: 0,
+        tasa: 36.50,
+        pinDevolucion: '000000',
+        empresa: {
+          nombre: 'NOMBRE DE SU NEGOCIO',
+          rif: 'J-00000000-0',
+          direccion: 'DIRECCIÓN FISCAL',
+          telefono: '0000-0000000'
+        }
+      })],
+      wantRows: false,
+    });
+    return { ok: true, seedAdmin: { id: String(seed.rows[0].id), username: String(seed.rows[0].username) } };
+  });
+}
+
 export async function getAppConfig(): Promise<any> {
   assertTursoReady();
   const result = await tursoExecute({ sql: 'SELECT data_json FROM app_config WHERE id=? LIMIT 1', args: ['general'] });

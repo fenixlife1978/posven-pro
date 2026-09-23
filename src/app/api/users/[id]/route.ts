@@ -22,7 +22,6 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
   });
   if (!target.rows[0]) return NextResponse.json({ error: 'Usuario no encontrado.' }, { status: 404 });
 
-  const body = await request.json().catch(() => ({}));
   const hasBlockChange = typeof body?.accesoBloqueado === 'boolean';
 
   if (hasBlockChange) {

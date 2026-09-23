@@ -52,7 +52,7 @@ const OPERATIONS_COLLECTION = 'operaciones';
 // ============================================================
 async function tryTursoOperation(operation: string, payload: any): Promise<any | null> {
   if (typeof window === 'undefined') return null;
-  if (typeof navigator !== 'undefined' && navigator.onLine === false) return null;
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) throw new Error('El dispositivo está sin conexión. La operación no se enviará a Firebase para evitar duplicados.');
   let response: Response;
   try {
     response = await fetch('/api/turso/store', {
@@ -836,26 +836,29 @@ async function kardex(productoId: string, max = 100): Promise<any[]> {
         .slice(0, max);
     }
     if (!db) return [];
-  try {
-    const snap = await getDocs(query(
-      collection(db, 'movimientos'),
-      where('productoId', '==', productoId),
-      orderBy('fecha', 'desc'),
-      limit(max)
-    ));
-    return snap.docs.map(d => sanitizeForFirestore(d.data())).filter(Boolean);
-  } catch (e: any) {
-    if (e?.code === 'failed-precondition' || /index/i.test(String(e?.message || ''))) {
-      await ensureLoaded('movimientos');
-      return (cache.movimientos || [])
-        .filter(m => m.productoId === productoId)
-        .sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)))
-        .slice(0, max);
+    try {
+      const snap = await getDocs(query(
+        collection(db, 'movimientos'),
+        where('productoId', '==', productoId),
+        orderBy('fecha', 'desc'),
+        limit(max)
+      ));
+      return snap.docs.map(d => sanitizeForFirestore(d.data())).filter(Boolean);
+    } catch (e: any) {
+      if (e?.code === 'failed-precondition' || /index/i.test(String(e?.message || ''))) {
+        await ensureLoaded('movimientos');
+        return (cache.movimientos || [])
+          .filter(m => m.productoId === productoId)
+          .sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)))
+          .slice(0, max);
+      }
+      throw e;
     }
-    throw e;
+  } catch (e) {
+    console.error("kardex " + productoId + ":", e);
+    return [];
   }
 }
-
 function readCatalogCacheMeta(): { ready: boolean; version: string } {
   if (typeof window === 'undefined') return { ready: false, version: '' };
   try {
@@ -2826,6 +2829,12 @@ export const Store = {
           }
           await syncProductosRTDB(prevArr, toSync);
         })().catch(e => console.error("Error persistiendo productos:", e)));
+      } else if (k === 'terminales') {
+        // Las terminales se escriben exclusivamente mediante terminalPatch/Upsert/Delete.
+        // Si Turso está activo, no existe una vía genérica que pueda terminar en Firebase.
+        if (navigator.onLine === false) {
+          throw new Error('Sin conexión: no se modificará la terminal para evitar divergencia.');
+        }
       } else if (['clientes', 'proveedores', 'movimientos'].includes(String(k))) {
         const prevById = new Map(prevArr.filter(x => x?.id).map(x => [String(x.id), x]));
         const newById = new Map(newArr.filter(x => x?.id).map(x => [String(x.id), x]));

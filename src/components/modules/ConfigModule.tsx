@@ -154,6 +154,29 @@ export default function ConfigModule({ state, updateState }: { state: AppState, 
 
     setIsFormatting(true);
     try {
+      // En Turso el formateo es una transacción única y conserva el administrador semilla.
+      const tursoResponse = await fetch('/api/turso/store', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ operation: 'factoryReset' })
+      });
+      if (tursoResponse.status !== 503) {
+        const tursoBody = await tursoResponse.json().catch(() => ({}));
+        if (!tursoResponse.ok || tursoBody?.ok === false) throw new Error(tursoBody?.error || 'No fue posible formatear Turso.');
+        if (typeof sessionStorage !== 'undefined') sessionStorage.clear();
+        if (typeof localStorage !== 'undefined') {
+          localStorage.removeItem('posven_apertura_done');
+          localStorage.removeItem('posven_last_cxp_alert');
+        }
+        await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
+        if (auth) await signOut(auth).catch(() => {});
+        toast({ title: "Sistema Formateado", description: "Turso fue reiniciado y el administrador semilla fue conservado." });
+        window.location.href = '/login';
+        return;
+      }
+
+      // Turso no configurado: conserva el formateo Firebase legado.
       // ===== 1. ELIMINAR TODAS LAS COLECCIONES =====
       const colecciones = [
         'productos',

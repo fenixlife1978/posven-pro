@@ -29,22 +29,43 @@ export default function GlobalControlModule({ state, updateState }: { state: App
   const [showAddTerminal, setShowAddTerminal] = useState(false);
 
   useEffect(() => {
-    if (!db) return;
-    
+    let cancelled = false;
+    let unsubscribe: (() => void) | null = null;
     setLoadingUsers(true);
-    const unsubscribe = onSnapshot(collection(db, 'users'), (snapshot) => {
-      const list: any[] = [];
-      snapshot.forEach(doc => {
-        list.push({ id: doc.id, ...doc.data() });
-      });
-      setUsers(list);
-      setLoadingUsers(false);
-    }, (error) => {
-      console.error("Error monitoreando usuarios:", error);
-      setLoadingUsers(false);
-    });
 
-    return () => unsubscribe();
+    (async () => {
+      try {
+        const response = await fetch('/api/users', { credentials: 'include', cache: 'no-store' });
+        if (response.status !== 503) {
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(data?.error || 'No se pudieron cargar los usuarios.');
+          if (!cancelled) {
+            setUsers(Array.isArray(data.users) ? data.users : []);
+            setLoadingUsers(false);
+          }
+          return;
+        }
+
+        if (!db) return;
+        unsubscribe = onSnapshot(collection(db, 'users'), (snapshot) => {
+          const list: any[] = [];
+          snapshot.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
+          setUsers(list);
+          setLoadingUsers(false);
+        }, (error) => {
+          console.error("Error monitoreando usuarios:", error);
+          setLoadingUsers(false);
+        });
+      } catch (error) {
+        console.error("Error cargando usuarios:", error);
+        if (!cancelled) setLoadingUsers(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (unsubscribe) unsubscribe();
+    };
   }, []);
 
   const toggleAccess = async (userId: string, currentStatus: boolean) => {

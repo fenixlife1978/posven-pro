@@ -12,6 +12,7 @@ import {
   patchAppConfig,
   getCatalog,
   patchCatalog,
+  factoryResetTransaction,
   createSaleTransaction,
   applyInventoryMovementsTransaction,
   patchTerminalTransaction,
@@ -94,6 +95,10 @@ export async function POST(request: Request) {
         if (user.rol !== 'administrador') throw new Error('Se requiere administrador.');
         const lista = await patchCatalog(String(body.name), Array.isArray(body.lista) ? body.lista : []);
         return NextResponse.json({ ok: true, name: String(body.name), lista });
+      }
+      case 'factoryReset': {
+        const result = await factoryResetTransaction({ user });
+        return NextResponse.json({ ok: true, ...result });
       }
       case 'productSync': {
         if (user.rol !== 'administrador') throw new Error('Se requiere administrador.');
