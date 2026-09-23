@@ -1,117 +1,50 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { Mail, Lock, Eye, EyeOff, UserPlus, LogIn } from 'lucide-react';
-import { auth, db } from '@/lib/firebase';
-import { 
-  signInWithEmailAndPassword, 
-  createUserWithEmailAndPassword,
-  onAuthStateChanged, 
-  setPersistence, 
-  browserSessionPersistence, 
-  signOut 
-} from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { toast } from '@/hooks/use-toast';
+import React, { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { Mail, Lock, Eye, EyeOff } from "lucide-react";
+import { toast } from "@/hooks/use-toast";
 
 export default function LoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [role, setRole] = useState('');
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [role, setRole] = useState("");
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [isRegistering, setIsRegistering] = useState(false);
-  const [systemEmpty, setSystemEmpty] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
   const [statusMessage, setStatusMessage] = useState("Inicializando Base de Datos Turso...");
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      if (!authChecked) setAuthChecked(true);
-    }, 8000);
+    let cancelled = false;
 
     const checkTursoSession = async () => {
       setStatusMessage("Inicializando Base de Datos Turso...");
       try {
-        const response = await fetch('/api/auth/session', { cache: 'no-store' });
+        const response = await fetch("/api/auth/session", {
+          cache: "no-store",
+          credentials: "same-origin",
+        });
         if (response.ok) {
           setStatusMessage("Sesión Turso encontrada. Ingresando...");
-          router.push('/');
-          return true;
+          router.push("/");
+          return;
         }
-        if (response.status === 503) {
-          setStatusMessage("Turso no está disponible; preparando respaldo Firebase...");
-          return null;
+        if (!cancelled) {
+          setStatusMessage(response.status === 503
+            ? "Turso no está disponible."
+            : "Turso respondió, pero no hay sesión activa.");
         }
-        setStatusMessage("Turso respondió, pero no hay sesión activa.");
-        return false;
-      } catch {}
-
-      return null;
+      } catch {
+        if (!cancelled) setStatusMessage("No fue posible conectar con Turso.");
+      } finally {
+        if (!cancelled) setAuthChecked(true);
+      }
     };
 
-    let unsubscribe = () => {};
-    (async () => {
-      const tursoState = await checkTursoSession();
-      if (tursoState === true) {
-        setAuthChecked(true);
-        return;
-      }
-
-      const checkSystemStatus = async () => {
-        if (!db) return;
-        try {
-          const configDoc = await getDoc(doc(db, 'config', 'general'));
-          if (configDoc.exists()) {
-            const data = configDoc.data();
-            setSystemEmpty(data.isInitialized === false);
-          } else {
-            setSystemEmpty(true);
-          }
-        } catch {
-          setSystemEmpty(false);
-        }
-      };
-      await checkSystemStatus();
-
-      if (!auth) {
-        setAuthChecked(true);
-        return;
-      }
-
-      unsubscribe = onAuthStateChanged(auth, async (user) => {
-        if (user) {
-          try {
-            const userDoc = await getDoc(doc(db, 'users', user.uid));
-            if (userDoc.exists()) {
-              const userData = userDoc.data();
-              if (userData.accesoBloqueado) {
-                await signOut(auth);
-                toast({ variant: "destructive", title: "Acceso Bloqueado", description: "Su cuenta está suspendida." });
-                setAuthChecked(true);
-                return;
-              }
-              router.push('/');
-            } else {
-              setAuthChecked(true);
-            }
-          } catch {
-            setAuthChecked(true);
-          }
-        } else {
-          setAuthChecked(true);
-        }
-      });
-    })();
-
-    return () => {
-      unsubscribe();
-      clearTimeout(timer);
-    };
+    checkTursoSession();
+    return () => { cancelled = true; };
   }, [router]);
-
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -120,106 +53,38 @@ export default function LoginPage() {
       return;
     }
     setLoading(true);
-    setStatusMessage("Inicializando Base de Datos Turso...");
+    setStatusMessage("Conectando con Base de Datos Turso...");
 
     try {
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        cache: "no-store",
         body: JSON.stringify({ identifier: email, password, role }),
       });
 
-      if (response.ok) {
-        setStatusMessage("Turso autenticó correctamente. Ingresando...");
-        const data = await response.json();
-        toast({ title: "Acceso autorizado", description: `Bienvenido, ${data.user?.nombre || email}.` });
-        router.push('/');
-        return;
-      }
-
       const data = await response.json().catch(() => ({}));
 
-      // Mientras la migración no esté activada, conservamos Firebase como respaldo.
-      // Una vez configurado Turso, cualquier error de credenciales/rol viene directamente de Turso.
-      if (response.status !== 503) {
-        throw new Error(data?.error || "Credenciales inválidas o acceso no autorizado.");
+      if (!response.ok) {
+        throw new Error(data?.error || ("Error de autenticación (" + response.status + ")."));
       }
 
-      setStatusMessage("Turso devolvió 503. Intentando respaldo Firebase...");
-      if (!auth || !db) throw new Error("Servicios de acceso no disponibles");
-      setStatusMessage("Conectando con Firebase como respaldo...");
-      await setPersistence(auth, browserSessionPersistence);
-
-      let user;
-      if (isRegistering) {
-        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-        user = userCredential.user;
-      } else {
-        const userCredential = await signInWithEmailAndPassword(auth, email, password);
-        user = userCredential.user;
-      }
-
-      const userDocRef = doc(db, 'users', user.uid);
-      const userDoc = await getDoc(userDocRef);
-
-      if (!userDoc.exists() || isRegistering) {
-        const newUserData = {
-          email: user.email!.toLowerCase(),
-          nombre: email.split('@')[0].toUpperCase(),
-          rol: role,
-          uid: user.uid,
-          fechaCreacion: new Date().toISOString(),
-          accesoBloqueado: false
-        };
-        await setDoc(userDocRef, newUserData);
-
-        if (isRegistering) {
-          const configRef = doc(db, 'config', 'general');
-          await setDoc(configRef, { isInitialized: true }, { merge: true });
-          toast({ title: "¡Configuración Exitosa!", description: "Administrador raíz creado. El sistema se ha inicializado." });
-        }
-      } else {
-        const userData = userDoc.data();
-        if (userData.rol !== role) {
-          await signOut(auth);
-          throw new Error(`Usted está registrado como ${userData.rol.toUpperCase()}.`);
-        }
-      }
-
-      router.push('/');
+      setStatusMessage("Turso autenticó correctamente. Ingresando...");
+      toast({ title: "Acceso autorizado", description: "Bienvenido, " + (data.user?.nombre || email) + "." });
+      router.push("/");
     } catch (err: any) {
-      const message = String(err?.message || '');
-      let mensaje = message || "Credenciales inválidas o fallo de conexión.";
-      const code = typeof err?.code === 'string' ? err.code : '';
-
-      if (code === 'auth/invalid-credential' || code === 'auth/wrong-password' || code === 'auth/user-not-found') {
-        mensaje = "Correo o contraseña incorrectos.";
-      } else if (code === 'auth/invalid-api-key') {
-        mensaje = "Configuración de Firebase inválida: API Key incorrecta o ausente.";
-      } else if (code === 'auth/unauthorized-domain') {
-        mensaje = "Este dominio no está autorizado en Firebase Authentication.";
-      } else if (code === 'auth/operation-not-allowed') {
-        mensaje = "El inicio de sesión por correo y contraseña no está habilitado en Firebase.";
-      } else if (code === 'auth/network-request-failed') {
-        mensaje = "Firebase no pudo conectarse. Verifique la configuración de red y del proyecto.";
-      } else if (code === 'auth/too-many-requests') {
-        mensaje = "Demasiados intentos. Espere unos minutos e inténtelo nuevamente.";
-      } else if (code === 'auth/email-already-in-use') {
-        mensaje = "El correo ya está registrado.";
-      } else if (code === 'auth/weak-password') {
-        mensaje = "La contraseña es muy débil.";
-      } else if (code) {
-        mensaje = `Firebase rechazó el acceso (${code.replace('auth/', '')}).`;
-      }
-
-      toast({ variant: "destructive", title: "Error de Acceso", description: mensaje });
+      toast({
+        variant: "destructive",
+        title: "Error de Acceso",
+        description: String(err?.message || "No fue posible conectar con el servidor."),
+      });
     } finally {
       setLoading(false);
     }
   };
 
-  if (!authChecked) {
-    return (
+  return (
       <div className="min-h-screen bg-surface-warm flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
           <div className="w-10 h-10 border-4 border-brand-gold border-t-transparent rounded-full animate-spin"></div>
