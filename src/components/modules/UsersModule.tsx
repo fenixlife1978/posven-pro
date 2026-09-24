@@ -191,7 +191,7 @@ export default function UsersModule() {
                     <td>
                       <div className="text-ink font-bold text-xs">{u.username || u.email}</div>
                       <div className="text-[9px] text-ink/50">{u.email}</div>
-                      <div className="text-[8px] font-black text-ink/40 mono">ID: {u.firebaseUid || u.id}</div>
+                      <div className="text-[8px] font-black text-ink/40 mono">ID: {u.id}</div>
                     </td>
                     <td>
                       <span className={`badge ${u.rol === 'administrador' ? 'badge-info' : 'badge-neutral'} font-black text-[8px] uppercase px-3`}>{u.rol}</span>
