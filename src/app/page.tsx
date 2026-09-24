@@ -437,7 +437,13 @@ export default function LicoreriaPOS() {
       weekday: 'short', day: '2-digit', month: 'short', year: 'numeric', timeZone: 'America/Caracas'
     }) : '...';
 
-    const terminalActual = state.terminales.find(t => t.usuarioId === user?.uid);
+    const appUser: any = (state as any).user || user || null;
+    const userIds = [
+      appUser?.id,
+      appUser?.uid,
+      appUser?.firebaseUid,
+    ].filter(Boolean).map(String);
+    const terminalActual = state.terminales.find(t => userIds.includes(String(t.usuarioId || '')));
     const nextRecibo = terminalActual?.proximoRecibo || state.proximoRecibo;
     const prefijoRecibo = Utils.prefijoCaja(terminalActual, state.terminales);
 
@@ -500,7 +506,11 @@ export default function LicoreriaPOS() {
                   // ✅ GUARDAR LA APERTURA EN EL TERMINAL (caja) DE ESTE OPERADOR,
                   // no en un estado global. Cada caja abre/cierra su propia jornada.
                   const currentState = Store.get();
-                  const termId = (currentState.terminales || []).find(t => t.usuarioId === user?.uid)?.id;
+                  const currentUser: any = (currentState as any).user || user || null;
+                  const currentIds = [currentUser?.id, currentUser?.uid, currentUser?.firebaseUid]
+                    .filter(Boolean).map(String);
+                  const termId = (currentState.terminales || [])
+                    .find(t => currentIds.includes(String(t.usuarioId || '')))?.id;
                   const terminalActual = (currentState.terminales || []).find(t => t.id === termId);
                   const session: any = {
                     terminalId: termId,
