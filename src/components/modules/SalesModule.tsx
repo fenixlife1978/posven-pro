@@ -140,6 +140,7 @@ function extractDocType(cedula: string): string {
 
 export default function SalesModule({ state, updateState }: { state: AppState, updateState: (s: Partial<AppState>) => void }) {
   const [search, setSearch] = useState('');
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [view, setView] = useState<'pos' | 'history' | 'credits' | 'returns'>('pos');
   const [histPage, setHistPage] = useState(1);
   const [showReportType, setShowReportType] = useState<'REPORT_X' | 'REPORT_Z' | null>(null);
