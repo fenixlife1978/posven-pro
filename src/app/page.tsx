@@ -100,7 +100,7 @@ export default function LicoreriaPOS() {
         if (response.ok) {
           const data = await response.json();
           const currentUser = data.user;
-          const legacyUid = currentUser?.firebaseUid || currentUser?.id;
+          const legacyUid = currentUser?.id;
           const profile = {
             ...currentUser,
             uid: legacyUid,
@@ -112,10 +112,7 @@ export default function LicoreriaPOS() {
           setState(prev => ({ ...prev, user: profile, isAuthenticated: true } as AppState));
 
           if (currentUser.rol === 'cajero') {
-            // Turso es la fuente de verdad cuando la sesión Turso está activa.
-            // El cajero ya no depende de firebaseUid para encontrar su terminal.
-            // Esto permite que usuarios migrados/creados directamente en Turso
-            // puedan abrir caja y entrar al POS sin autenticación Firebase.
+            // Turso es la única fuente de verdad de autenticación, usuarios y terminales.
             const terminalsResponse = await fetch('/api/turso/store?table=terminales&limit=500', {
               credentials: 'include',
               cache: 'no-store',
@@ -126,8 +123,7 @@ export default function LicoreriaPOS() {
             const terminalsBody = await terminalsResponse.json();
             const terminals = Array.isArray(terminalsBody?.records) ? terminalsBody.records as Terminal[] : [];
             const myTerm = terminals.find((t: Terminal) =>
-              String(t?.usuarioId || '') === String(currentUser.id) ||
-              (!!currentUser.firebaseUid && String(t?.usuarioId || '') === String(currentUser.firebaseUid))
+              String(t?.usuarioId || '') === String(currentUser.id)
             );
             if (!myTerm) {
               await fetch('/api/auth/logout', { method: 'POST' });
@@ -378,7 +374,6 @@ export default function LicoreriaPOS() {
     const userIds = [
       appUser?.id,
       appUser?.uid,
-      appUser?.firebaseUid,
     ].filter(Boolean).map(String);
     const terminalActual = state.terminales.find(t => userIds.includes(String(t.usuarioId || '')));
     const nextRecibo = terminalActual?.proximoRecibo || state.proximoRecibo;
