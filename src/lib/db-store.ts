@@ -668,45 +668,40 @@ async function ensureLoaded(name: string): Promise<void> {
 // libroDiario se cargan COMPLETOS: una caja nunca debe perder datos porque
 // otra hizo su corte Z.
 async function loadReportWindow(name: string, terminalId: string, cutoff: string): Promise<void> {
-  if (!db || !COLLECTIONS[name]) return;
   const key = `report:${name}:${terminalId}:${cutoff}`;
   if (SINCE_STAMP[key] === 'done') return;
 
   try {
+    // Turso es la fuente operativa durante la migración. No debemos volver a
+    // consultar Firebase para X/Z porque eso agrega latencia y puede devolver
+    // un estado histórico distinto al de la caja actual.
+    const tursoItems = await tryTursoRead(name, { limit: 2000, terminalId });
+    if (tursoItems !== null) {
+      const items = tursoItems
+        .filter((item: any) => String(item?.fecha || '') > cutoff)
+        .filter((item: any) => name !== 'ventas' && name !== 'libroDiario' || String(item?.terminalId || '') === terminalId);
+      if (items.length) applyPatch({ [name]: mergeById((cache as any)[name], items) });
+      SINCE_STAMP[key] = 'done';
+      console.info("[db-store] Ventana Turso de reporte cargada:", name, items.length, "registros");
+      return;
+    }
+
+    // Fallback únicamente cuando Turso no está configurado (503).
+    if (!db || !COLLECTIONS[name]) return;
     const filters: any[] = [where('fecha', '>', cutoff)];
     if (name === 'ventas' || name === 'libroDiario') {
       filters.push(where('terminalId', '==', terminalId));
     }
 
-    // Carga por páginas para no truncar un reporte si una caja supera 1000
-    // operaciones desde su último Z. Cada página sigue siendo una consulta
-    // acotada al período/terminal; no se descarga el histórico completo.
     let cursor: QueryDocumentSnapshot | null = null;
-    let total = 0;
     while (true) {
       const pageQuery = cursor
-        ? query(
-            collection(db, COLLECTIONS[name]),
-            ...filters,
-            orderBy('fecha', 'asc'),
-            startAfter(cursor),
-            limit(1000)
-          )
-        : query(
-            collection(db, COLLECTIONS[name]),
-            ...filters,
-            orderBy('fecha', 'asc'),
-            limit(1000)
-          );
-
+        ? query(collection(db, COLLECTIONS[name]), ...filters, orderBy('fecha', 'asc'), startAfter(cursor), limit(1000))
+        : query(collection(db, COLLECTIONS[name]), ...filters, orderBy('fecha', 'asc'), limit(1000));
       let snap;
       try {
         snap = await getDocs(pageQuery);
       } catch (e: any) {
-        // Si el índice compuesto aún no fue desplegado en Firebase, no bloqueamos
-        // Reporte X/Z. Reintentamos la misma ventana solo por fecha y filtramos
-        // la terminal en memoria. Este camino es de contingencia; cuando el índice
-        // existe, la consulta optimizada anterior sigue siendo la utilizada.
         if (e?.code !== 'failed-precondition' || name === 'devoluciones') throw e;
         const fallbackFilters: any[] = [where('fecha', '>', cutoff)];
         const fallbackQuery = cursor
@@ -714,21 +709,13 @@ async function loadReportWindow(name: string, terminalId: string, cutoff: string
           : query(collection(db, COLLECTIONS[name]), ...fallbackFilters, orderBy('fecha', 'asc'), limit(1000));
         snap = await getDocs(fallbackQuery);
       }
-      const items = snap.docs
-        .map(d => sanitizeForFirestore(d.data()))
-        .filter(Boolean)
+      const items = snap.docs.map(d => sanitizeForFirestore(d.data())).filter(Boolean)
         .filter((item: any) => name !== 'ventas' && name !== 'libroDiario' || String(item.terminalId || '') === terminalId);
-      if (items.length) {
-        applyPatch({ [name]: mergeById((cache as any)[name], items) });
-        total += items.length;
-      }
-
+      if (items.length) applyPatch({ [name]: mergeById((cache as any)[name], items) });
       if (snap.docs.length < 1000) break;
       cursor = snap.docs[snap.docs.length - 1];
     }
-
     SINCE_STAMP[key] = 'done';
-    console.info("[db-store] Ventana de reporte cargada:", name, total, "registros");
   } catch (e) {
     console.error("Error cargando ventana de reporte " + name + ":", e);
     throw e;
@@ -762,23 +749,35 @@ async function ensureReportData(terminalId?: string, cutoff?: string): Promise<v
 }
 
 async function ensureReportRange(name: string, desde: string, hasta: string, terminalId = 'all'): Promise<void> {
-  if (!db || !COLLECTIONS[name] || !desde || !hasta) return;
-
-  const start = String(desde) + 'T00:00:00.000';
-  const endDate = new Date(String(hasta) + 'T00:00:00.000');
-  endDate.setDate(endDate.getDate() + 1);
-  const end = endDate.toISOString().slice(0, 23);
+  if (!desde || !hasta) return;
   const key = `report-range:${name}:${terminalId}:${desde}:${hasta}`;
   if (SINCE_STAMP[key] === 'done') return;
 
   try {
-    const filters: any[] = [
-      where('fecha', '>=', start),
-      where('fecha', '<', end),
-    ];
-    if (terminalId !== 'all') {
-      filters.push(where('terminalId', '==', terminalId));
+    // En Turso evitamos las consultas compuestas de Firebase para el historial.
+    const tursoItems = await tryTursoRead(name, { limit: 2000, ...(terminalId !== 'all' ? { terminalId } : {}) });
+    if (tursoItems !== null) {
+      const start = String(desde) + 'T00:00:00';
+      const endDate = new Date(String(hasta) + 'T00:00:00');
+      endDate.setDate(endDate.getDate() + 1);
+      const end = endDate.toISOString().slice(0, 19);
+      const items = tursoItems.filter((item: any) => {
+        const fecha = String(item?.fecha || '');
+        const terminalOk = terminalId === 'all' || String(item?.terminalId || '') === terminalId;
+        return fecha >= start && fecha < end && terminalOk;
+      });
+      if (items.length) applyPatch({ [name]: mergeById((cache as any)[name], items) });
+      SINCE_STAMP[key] = 'done';
+      return;
     }
+
+    if (!db || !COLLECTIONS[name]) return;
+    const start = String(desde) + 'T00:00:00.000';
+    const endDate = new Date(String(hasta) + 'T00:00:00.000');
+    endDate.setDate(endDate.getDate() + 1);
+    const end = endDate.toISOString().slice(0, 23);
+    const filters: any[] = [where('fecha', '>=', start), where('fecha', '<', end)];
+    if (terminalId !== 'all') filters.push(where('terminalId', '==', terminalId));
 
     let cursor: QueryDocumentSnapshot | null = null;
     while (true) {
@@ -791,10 +790,9 @@ async function ensureReportRange(name: string, desde: string, hasta: string, ter
       if (snap.docs.length < 1000) break;
       cursor = snap.docs[snap.docs.length - 1];
     }
-
     SINCE_STAMP[key] = 'done';
   } catch (e) {
-    console.error("Error cargando rango de reporte " + name + ":", e);
+    console.error("Error cargando rango de reportes " + name + ":", e);
     throw e;
   }
 }
