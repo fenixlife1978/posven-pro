@@ -101,7 +101,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     const appUser: any = (state as any).user || null;
     const ids = [appUser?.id, appUser?.uid, appUser?.firebaseUid].filter(Boolean).map(String);
     return ids.length ? state.terminales.find(t => ids.includes(String(t.usuarioId || ''))) || null : null;
-  }, [state.terminales]);
+  }, [state.terminales, (state as any).user]);
 
   const getFreshReportData = (windowStart?: string, windowEndExclusive?: string) => {
     // ✅ FIX: Obtener datos frescos del Store para evitar inconsistencias
