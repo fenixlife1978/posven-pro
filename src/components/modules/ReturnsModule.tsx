@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { AppState, Return, Sale, ReturnItem, Movimiento, Anulacion, LibroDiarioEntry } from '@/lib/types';
+import { AppState, Return, Sale, ReturnItem, Movimiento, Anulacion, LibroDiarioEntry, PaymentMethod } from '@/lib/types';
 import { Utils, Store } from '@/lib/db-store';
 import { DateRangeFilter, DateRange } from '@/components/ui/date-range-filter';
 import { 
@@ -33,7 +33,16 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
   const [saleSearch, setSaleSearch] = useState('');
   const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
   const [returnItems, setReturnItems] = useState<ReturnItem[]>([]);
-  const [refundMethod, setRefundMethod] = useState<'EFECTIVO' | 'MISMO_METODO' | 'CREDITO_TIENDA'>('EFECTIVO');
+  type RefundPayment = { metodo: PaymentMethod; montoUSD: number };
+  const REFUND_METHODS: Array<{ value: PaymentMethod; label: string }> = [
+    { value: 'efectivo_usd', label: 'Efectivo USD' }, { value: 'efectivo_bs', label: 'Efectivo BS' },
+    { value: 'punto_venta', label: 'Punto de Venta' }, { value: 'pagomovil', label: 'Pago Móvil' },
+    { value: 'biopago', label: 'Biopago' }, { value: 'transferencia', label: 'Transferencia' },
+    { value: 'zelle', label: 'Zelle' }, { value: 'otros', label: 'Otros' }, { value: 'nota_credito', label: 'Nota de crédito' }
+  ];
+  const [refundPayments, setRefundPayments] = useState<RefundPayment[]>([{ metodo: 'efectivo_usd', montoUSD: 0 }]);
+  const [showCancellationRefund, setShowCancellationRefund] = useState(false);
+  const [pendingCancellation, setPendingCancellation] = useState(false);
   const [reason, setMotivo] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const processingRef = useRef(false);
@@ -46,6 +55,7 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
     
     setSelectedSale(sale);
     setReturnItems([]);
+    setRefundPayments([{ metodo: 'efectivo_usd', montoUSD: 0 }]);
   };
 
   const handleAddItem = (productoId: string, nombre: string, precioUnitUSD: number, maxQty: number) => {
@@ -87,6 +97,9 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
     setIsProcessing(true);
     try {
       const totalDevuelto = returnItems.reduce((s, i) => s + (i.cantidad * i.precioUnitUSD), 0);
+      const refundTotal = refundPayments.reduce((s, p) => s + (Number(p.montoUSD) || 0), 0);
+      if (Math.abs(refundTotal - totalDevuelto) > 0.005) { alert('La distribución del reembolso debe sumar exactamente ' + Utils.fmtUSD(totalDevuelto) + '.'); return; }
+      const refundPaymentsFinal = refundPayments.map(p => ({ ...p, montoUSD: Number(p.montoUSD) || 0, montoBS: (Number(p.montoUSD) || 0) * state.tasa }));
       const terminal = state.terminales.find(t => t.id === terminalId);
       const prefijo = Utils.prefijoCaja(terminal, state.terminales);
       const idDev = 'DEV-OP-' + Store.uid().toUpperCase().slice(0, 10);
@@ -98,7 +111,8 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
         fecha: ahoraStr,
         items: [...returnItems],
         totalUSD: totalDevuelto,
-        metodoReembolso: refundMethod,
+        metodoReembolso: refundPaymentsFinal.length === 1 ? refundPaymentsFinal[0].metodo : 'mixto',
+        refundPayments: refundPaymentsFinal,
         motivo: reason,
         terminalId: terminalId || 'GLOBAL'
       };
@@ -144,8 +158,8 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
         categoria: 'DEVOLUCION',
         concepto: `DEVOLUCIÓN DINERO ${idDev} - REF VENTA ${selectedSale.id}`,
         montoUSD: totalDevuelto,
-        montoBS: totalDevuelto * state.tasa,
-        metodo: refundMethod === 'EFECTIVO' ? 'efectivo_usd' : (refundMethod === 'MISMO_METODO' ? 'otros' : 'nota_credito'),
+        montoBS: refundPaymentsFinal.reduce((s, p) => s + (Number(p.montoBS) || 0), 0),
+        metodo: refundPaymentsFinal.length === 1 ? refundPaymentsFinal[0].metodo : 'mixto',
         referencia: idDev,
         terminalId: terminalId || 'GLOBAL',
         terminalName: terminal?.nombre || 'SISTEMA GLOBAL'
@@ -168,6 +182,7 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
       setView('list');
       setSelectedSale(null);
       setReturnItems([]);
+      setRefundPayments([{ metodo: 'efectivo_usd', montoUSD: 0 }]);
       setMotivo('');
     } finally {
       processingRef.current = false;
@@ -290,7 +305,7 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
   }, [state.devoluciones, state.anulaciones, state.ventas, state.terminales, terminalId, rango]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-h-[calc(100vh-120px)] overflow-y-auto pr-1">
       <div className="flex justify-between items-center bg-white p-4 rounded-xl border border-line shadow-sm">
         <div>
           <h2 className="text-ink font-black uppercase italic tracking-tighter text-xl flex items-center gap-2">
@@ -476,16 +491,20 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
                 </div>
 
                 <div className="form-group">
-                  <label className="text-ink text-[10px] font-black uppercase block mb-1">Método de Reembolso</label>
-                  <select 
-                    className="form-select bg-white text-ink h-11 text-xs font-black uppercase border-line shadow-sm rounded-md w-full px-3"
-                    value={refundMethod}
-                    onChange={e => setRefundMethod(e.target.value as any)}
-                  >
-                    <option value="EFECTIVO">Efectivo de Caja</option>
-                    <option value="MISMO_METODO">Reverso (Mismo Método)</option>
-                    <option value="CREDITO_TIENDA">Crédito / Vale Interno</option>
-                  </select>
+                  <label className="text-ink text-[10px] font-black uppercase block mb-2">Método(s) de Reembolso</label>
+                  <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                    {refundPayments.map((p, idx) => (
+                      <div key={idx} className="grid grid-cols-[1fr_110px_32px] gap-2 items-center">
+                        <select className="form-select bg-white text-ink h-10 text-[10px] font-black uppercase border-line rounded-md px-2" value={p.metodo} onChange={e => setRefundPayments(refundPayments.map((x,i)=>i===idx?{...x,metodo:e.target.value as PaymentMethod}:x))}>
+                          {REFUND_METHODS.map(m=><option key={m.value} value={m.value}>{m.label}</option>)}
+                        </select>
+                        <input type="number" min="0" step="0.01" value={p.montoUSD || ''} placeholder="USD" onChange={e => setRefundPayments(refundPayments.map((x,i)=>i===idx?{...x,montoUSD:Number(e.target.value)||0}:x))} className="form-input h-10 text-xs font-black text-right" />
+                        <button type="button" onClick={()=>setRefundPayments(refundPayments.filter((_,i)=>i!==idx))} disabled={refundPayments.length===1} className="h-9 text-ink/30 hover:text-status-danger disabled:opacity-20"><Trash2 className="w-4 h-4"/></button>
+                      </div>
+                    ))}
+                  </div>
+                  <button type="button" onClick={()=>setRefundPayments([...refundPayments,{metodo:'efectivo_usd',montoUSD:0}])} className="mt-2 text-[9px] font-black uppercase text-status-info">+ Agregar otro método</button>
+                  <div className="mt-2 flex justify-between text-[9px] font-black uppercase"><span>Distribuido: {Utils.fmtUSD(refundPayments.reduce((s,p)=>s+(Number(p.montoUSD)||0),0))}</span><span>Falta: {Utils.fmtUSD(Math.max(0,returnItems.reduce((s,i)=>s+i.cantidad*i.precioUnitUSD,0)-refundPayments.reduce((s,p)=>s+(Number(p.montoUSD)||0),0)))}</span></div>
                 </div>
 
                 <div className="form-group">
