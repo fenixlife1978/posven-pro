@@ -12,7 +12,7 @@ interface UserProfile {
   rol: 'administrador' | 'cajero';
   fechaCreacion: string;
   uid: string;
-    accesoBloqueado?: boolean;
+  accesoBloqueado?: boolean;
   isSeedAdmin?: boolean;
 }
 
@@ -62,59 +62,39 @@ export default function UsersModule() {
 
     setLoading(true);
     try {
-        if (editingId) {
-          const response = await fetch('/api/users/' + encodeURIComponent(editingId), {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ nombre: formData.nombre.trim(), rol: formData.rol })
-          });
-          const data = await response.json().catch(() => ({}));
-          if (!response.ok) throw new Error(data.error || 'No se pudo actualizar el usuario.');
-        } else {
-          const response = await fetch('/api/users', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              username: formData.username.trim(),
-              email: formData.email.trim(),
-              nombre: formData.nombre.trim().toUpperCase(),
-              password: formData.password,
-              rol: formData.rol
-            })
-          });
-          const data = await response.json().catch(() => ({}));
-          if (!response.ok) throw new Error(data.error || 'No se pudo crear el usuario.');
-        }
-        toast({ title: editingId ? 'Perfil actualizado' : 'Usuario creado', description: 'Los datos quedaron guardados en Turso.' });
-      }
-        toast({ title: editingId ? 'Perfil actualizado' : 'Usuario creado', description: 'Los datos quedaron guardados en Turso.' });
-      } else if (editingId) {
-        const userRef = doc(db, 'users', editingId);
-        await updateDoc(userRef, { nombre: formData.nombre, rol: formData.rol });
-        toast({ title: 'Perfil actualizado', description: 'Los cambios se guardaron correctamente.' });
-      } else {
-        secondaryApp = initializeApp(firebaseConfig, 'SecondaryAuthApp_' + Date.now());
-        const secondaryAuth = getAuth(secondaryApp);
-        const userCredential = await createUserWithEmailAndPassword(secondaryAuth, formData.email, formData.password);
-        const newUid = userCredential.user.uid;
-        await setDoc(doc(db, 'users', newUid), {
-          uid: newUid,
-          nombre: formData.nombre.toUpperCase(),
-          email: formData.email.toLowerCase(),
-          rol: formData.rol,
-          fechaCreacion: new Date().toISOString(),
-          accesoBloqueado: false
+      if (editingId) {
+        const response = await fetch('/api/users/' + encodeURIComponent(editingId), {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ nombre: formData.nombre.trim(), rol: formData.rol })
         });
-        toast({ title: 'Usuario creado', description: 'Acceso configurado exitosamente.' });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || 'No se pudo actualizar el usuario.');
+      } else {
+        const response = await fetch('/api/users', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username: formData.username.trim(),
+            email: formData.email.trim(),
+            nombre: formData.nombre.trim().toUpperCase(),
+            password: formData.password,
+            rol: formData.rol
+          })
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || 'No se pudo crear el usuario.');
       }
 
+      toast({
+        title: editingId ? 'Perfil actualizado' : 'Usuario creado',
+        description: 'Los datos quedaron guardados en Turso.'
+      });
       closeModal();
       await cargarUsuarios();
     } catch (error: any) {
       console.error('Error al procesar usuario:', error);
-      let msg = error?.message || 'Error técnico al procesar el registro.';
-      if (error?.code === 'auth/email-already-in-use') msg = 'El correo ya está registrado.';
-      alert(msg);
+      alert(error?.message || 'Error técnico al procesar el registro.');
     } finally {
       setLoading(false);
     }
