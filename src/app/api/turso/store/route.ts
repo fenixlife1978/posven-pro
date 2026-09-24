@@ -89,8 +89,16 @@ export async function POST(request: Request) {
 
     switch (String(body?.operation || '')) {
       case 'configPatch': {
-        if (user.rol !== 'administrador') throw new Error('Se requiere administrador.');
-        const config = await patchAppConfig(body.patch || {});
+        // La tasa BCV es una configuración operativa que los cajeros están
+        // autorizados a actualizar permanentemente. Los demás parámetros de
+        // configuración siguen restringidos al administrador.
+        const patch = body.patch || {};
+        const keys = Object.keys(patch);
+        const onlyRate = keys.length > 0 && keys.every((key) => key === 'tasa');
+        if (user.rol !== 'administrador' && !onlyRate) {
+          throw new Error('Solo la tasa BCV puede ser modificada por un cajero.');
+        }
+        const config = await patchAppConfig(patch);
         return NextResponse.json({ ok: true, config });
       }
       case 'catalogPatch': {
