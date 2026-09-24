@@ -2750,7 +2750,7 @@ export const Store = {
   },
 
   async set(patch: Partial<AppState>) {
-    if (typeof window === 'undefined' || !db) return;
+    if (typeof window === 'undefined') return;
     const prev = Store.get();
     const full = { ...initialState, ...prev, ...patch } as AppState;
 
@@ -2939,6 +2939,21 @@ export const Store = {
       })().catch(e => console.error('Error persistiendo config:', e)));
     }
     await Promise.all(jobs);
+  },
+
+  async patchConfig(patch: Partial<AppState>): Promise<AppState> {
+    if (typeof window === 'undefined') return Store.get();
+    const cleanPatch: Record<string, any> = {};
+    for (const key of CONFIG_FIELDS) {
+      if ((patch as any)[key] !== undefined) cleanPatch[key] = sanitizeForFirestore((patch as any)[key]);
+    }
+    if (Object.keys(cleanPatch).length === 0) return Store.get();
+    const result = await tryTursoOperation('configPatch', { patch: cleanPatch });
+    if (!result?.config) throw new Error('Turso no confirmó la actualización de configuración.');
+    const applied: any = {};
+    for (const key of CONFIG_FIELDS) if (result.config[key] !== undefined) applied[key] = sanitizeForFirestore(result.config[key]);
+    applyPatch(applied);
+    return Store.get();
   },
 
   loadMore,
