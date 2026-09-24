@@ -199,9 +199,11 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
       const cobros = usd ? Number(r.cobrosUSD || 0) : Number(r.cobrosBS || 0);
       const dev = usd ? Number(r.devUSD || 0) : Number(r.devBS || 0);
       const credito = r.metodo === 'credito' ? Number(data?.ventasCreditoUSD || 0) : 0;
-      const sistema = r.metodo === 'credito' ? credito : fondo + ventas + cobros - dev;
+      const movPlus = usd ? Number(r.movPlusUSD || 0) : Number(r.movPlusBS || 0);
+      const movMinus = usd ? Number(r.movMinusUSD || 0) : Number(r.movMinusBS || 0);
+      const sistema = r.metodo === 'credito' ? credito : fondo + ventas + cobros - dev + movPlus - movMinus;
       const real = r.metodo === 'credito' ? sistema : (arqueoReal[r.metodo] === undefined || arqueoReal[r.metodo] === '' ? null : Number(arqueoReal[r.metodo]));
-      return { ...r, usd, fondo, ventas, cobros, dev, credito, sistema, real, dif: real === null ? null : real - sistema };
+      return { ...r, usd, fondo, ventas, cobros, dev, credito, movPlus, movMinus, sistema, real, dif: real === null ? null : real - sistema };
     });
     const difBS = details.filter((r:any)=>!r.usd && r.real !== null).reduce((s:number,r:any)=>s+r.dif,0);
     const difUSD = details.filter((r:any)=>r.usd && r.real !== null).reduce((s:number,r:any)=>s+r.dif,0);
@@ -362,7 +364,7 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
                   <div className="text-[9px] text-center font-bold">LECTURA PARCIAL · CAJA {terminalId}</div>
                   <div className="overflow-x-auto border border-gray-300 rounded-lg">
                     <table className="w-full text-[8px] min-w-[920px] border-collapse">
-                      <thead><tr className="bg-black text-white"><th className="p-2 text-left">CONCEPTO</th><th className="p-2 text-right">FONDO INIC. BS</th><th className="p-2 text-right">FONDO INIC. USD</th><th className="p-2 text-right">VENTAS</th><th className="p-2 text-right">COBROS DE DEUDAS</th><th className="p-2 text-right">DEV./ANU.</th><th className="p-2 text-right">TOTAL MONTO SISTEMA</th><th className="p-2 text-right">MONTO REAL</th><th className="p-2 text-right">DIF. (+ / -)</th></tr></thead>
+                      <thead><tr className="bg-black text-white"><th className="p-2 text-left">CONCEPTO</th><th className="p-2 text-right">FONDO INIC. BS</th><th className="p-2 text-right">FONDO INIC. USD</th><th className="p-2 text-right">VENTAS</th><th className="p-2 text-right">COBROS DE DEUDAS</th><th className="p-2 text-right">DEV./ANU.</th><th className="p-2 text-right">MOV. CAJA (+)</th><th className="p-2 text-right">MOV. CAJA (-)</th><th className="p-2 text-right">TOTAL MONTO SISTEMA</th><th className="p-2 text-right">MONTO REAL</th><th className="p-2 text-right">DIF. (+ / -)</th></tr></thead>
                       <tbody>
                         {arqueoCalc.details.map((r:any) => (
                           <tr key={r.metodo} className="border-b border-gray-200">
@@ -372,6 +374,8 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
                             <td className="p-2 text-right">{r.ventas ? (r.usd ? '$ '+formatUsd(r.ventas) : formatBs(r.ventas)) : '—'}</td>
                             <td className="p-2 text-right">{r.cobros ? (r.usd ? '$ '+formatUsd(r.cobros) : formatBs(r.cobros)) : '—'}</td>
                             <td className="p-2 text-right text-red-600">{r.dev ? (r.usd ? '($ '+formatUsd(r.dev)+')' : '('+formatBs(r.dev)+')') : '—'}</td>
+                            <td className="p-2 text-right text-green-700">{r.movPlus ? (r.usd ? '$ '+formatUsd(r.movPlus) : formatBs(r.movPlus)) : '—'}</td>
+                            <td className="p-2 text-right text-red-600">{r.movMinus ? (r.usd ? '($ '+formatUsd(r.movMinus)+')' : '('+formatBs(r.movMinus)+')') : '—'}</td>
                             <td className="p-2 text-right font-black">{r.usd ? '$ '+formatUsd(r.sistema) : formatBs(r.sistema)}</td>
                             <td className="p-1 text-right">{r.metodo==='credito' ? (r.usd ? '$ '+formatUsd(r.sistema) : formatBs(r.sistema)) : <input value={arqueoReal[r.metodo] ?? ''} onChange={e=>setArqueoReal(prev=>({...prev,[r.metodo]:e.target.value}))} inputMode="decimal" className="w-24 h-7 border border-gray-400 rounded px-1 text-right font-bold bg-white text-black" placeholder={r.usd ? 'USD' : 'Bs.'} />}</td>
                             <td className={(r.dif === null ? 'p-2 text-right font-black text-gray-400' : 'p-2 text-right font-black '+(r.dif >= 0 ? 'text-green-700' : 'text-red-600'))}>{r.dif === null ? '—' : (r.usd ? (r.dif>=0?'+':'')+'$ '+formatUsd(r.dif) : (r.dif>=0?'+':'')+formatBs(r.dif))}</td>
