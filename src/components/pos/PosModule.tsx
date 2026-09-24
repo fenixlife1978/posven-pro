@@ -159,10 +159,19 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     // El libro diario también es por caja: un X/Z de esta terminal nunca
     // debe sumar entradas/salidas/cobros de otra terminal.
     const relevantDiario = allLibroDiario.filter(e => inWindow(e.fecha) && String(e.terminalId || '') === termId);
-    const totalSalidasCaja = relevantDiario.filter(e => e.tipo === 'egreso').reduce((s, e) => s + e.montoUSD, 0);
-    const totalEntradasCaja = relevantDiario.filter(e => e.tipo === 'ingreso' && e.categoria !== 'VENTA' && e.categoria !== 'COBRO_DEUDA').reduce((s, e) => s + e.montoUSD, 0);
-    const cobrosDeudaUSD = relevantDiario.filter(e => e.tipo === 'ingreso' && e.categoria === 'COBRO_DEUDA').reduce((s, e) => s + e.montoUSD, 0);
-    const cobrosDeudaBS = relevantDiario.filter(e => e.tipo === 'ingreso' && e.categoria === 'COBRO_DEUDA').reduce((s, e) => s + e.montoBS, 0);
+    const totalSalidasCaja = relevantDiario.filter(e => e.tipo === 'egreso').reduce((s, e) => s + (Number(e.montoUSD) || 0), 0);
+    const totalEntradasCaja = relevantDiario.filter(e => e.tipo === 'ingreso' && e.categoria !== 'VENTA' && e.categoria !== 'COBRO_DEUDA').reduce((s, e) => s + (Number(e.montoUSD) || 0), 0);
+
+    // Cobros de deuda: se calculan desde los medios de pago reales del comprobante.
+    // USD = únicamente efectivo USD + Zelle. BS = únicamente montos cobrados en BS.
+    // Esto evita confundir el equivalente en USD de un pago en BS con dólares físicos/virtuales.
+    const cobroDeudaVentas = allVentas.filter(v => inWindow(v.fecha) && v.terminalId === termId && esCobroDeuda(v));
+    const cobroDeudaPayments = cobroDeudaVentas.flatMap((v:any) => Array.isArray(v.payments) ? v.payments : []);
+    const cobrosDeudaUSD = cobroDeudaPayments
+      .filter((p:any) => p?.metodo === 'efectivo_usd' || p?.metodo === 'zelle')
+      .reduce((s:number, p:any) => s + (Number(p.montoUSD) || Number(p.usdAmount) || 0), 0);
+    const cobrosDeudaBS = cobroDeudaPayments
+      .reduce((s:number, p:any) => s + (Number(p.montoBS) || ((p?.metodo === 'efectivo_bs' || p?.metodo === 'pagomovil' || p?.metodo === 'punto_venta' || p?.metodo === 'biopago' || p?.metodo === 'transferencia') ? Number(p.amount) || 0 : 0)), 0);
 
     const terminalName = currentTerminal ? currentTerminal.nombre : 'SISTEMA GLOBAL';
 
@@ -464,6 +473,12 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         amountUSD: totalUSD,
         amountBS: totalBS,
         payment: pagoBase,
+        paymentParts: payments.map((p:any) => ({
+          metodo: p.method,
+          montoBS: Number(p.amount) || 0,
+          montoUSD: Number(p.usdAmount) || ((Number(p.amount) || 0) / state.tasa),
+          tasaAplicada: state.tasa
+        })),
         journal,
         terminalId: terminal?.id
       });
