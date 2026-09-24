@@ -402,19 +402,23 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
       <DialogContent className={type === 'REPORT_X' ? "w-[98vw] max-w-[1500px] p-0 bg-transparent border-none overflow-hidden shadow-none" : "sm:max-w-[440px] p-0 bg-transparent border-none overflow-hidden shadow-none"}>
         <DialogHeader className="sr-only"><DialogTitle>{type === 'REPORT_X' ? 'Arqueo de Caja' : 'Impresión Térmica'}</DialogTitle></DialogHeader>
 
-        <div className="bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col border border-gray-200 max-h-[94vh]">
+        <div className="bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col border border-gray-200 h-[96vh] max-h-[96vh] w-full">
           <div className="bg-black p-4 flex justify-between items-center shrink-0">
             <h3 className="text-white font-black text-xs flex items-center gap-2 tracking-widest uppercase">
-              <Printer size={16} className="text-brand-gold" /> VISTA PREVIA (42C)
+              <Printer size={16} className="text-brand-gold" /> {type === 'REPORT_X' ? 'VISTA PREVIA · ARQUEO DE CAJA' : 'VISTA PREVIA (42C)'}
             </h3>
             <button onClick={onClose} className="text-white/40 hover:text-white transition-colors"><X size={20} /></button>
           </div>
 
-          <div className={type === 'REPORT_X' ? "p-5 bg-gray-100 flex justify-center flex-1 min-h-0 overflow-auto custom-scrollbar" : "p-6 bg-gray-100 flex justify-center max-h-[70vh] overflow-y-auto custom-scrollbar"}>
+          <div className={type === 'REPORT_X' ? "p-2 sm:p-4 bg-gray-100 flex justify-center flex-1 min-h-0 overflow-auto custom-scrollbar" : "p-6 bg-gray-100 flex justify-center max-h-[70vh] overflow-y-auto custom-scrollbar"}>
             <div 
               ref={printRef}
-              className="bg-white p-6 shadow-sm text-black font-mono select-none"
-              style={{ width: '72mm', boxSizing: 'border-box', color: '#000', fontSize: '12px', lineHeight: '1.2' }}
+              className={type === 'REPORT_X'
+                ? "bg-white w-full max-w-none p-4 sm:p-6 shadow-sm text-black select-none"
+                : "bg-white p-6 shadow-sm text-black font-mono select-none"}
+              style={type === 'REPORT_X'
+                ? { width: '100%', boxSizing: 'border-box', color: '#000', fontSize: '12px', lineHeight: '1.2' }
+                : { width: '72mm', boxSizing: 'border-box', color: '#000', fontSize: '12px', lineHeight: '1.2' }}
             >
               {/* ENCABEZADO */}
               <div className="text-center pb-1">
@@ -448,7 +452,7 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
                   <div className="text-center font-black text-[15px]">ARQUEO DE CAJA</div>
                   <div className="text-[9px] text-center font-bold">LECTURA PARCIAL · CAJA {terminalId}</div>
                   <div className="overflow-x-auto border border-gray-300 rounded-lg">
-                    <table className="w-full text-[8px] min-w-[920px] border-collapse">
+                    <table className="w-full text-[7px] sm:text-[8px] border-collapse">
                       <thead><tr className="bg-black text-white"><th className="p-2 text-left">CONCEPTO</th><th className="p-2 text-right">FONDO INIC. BS</th><th className="p-2 text-right">FONDO INIC. USD</th><th className="p-2 text-right">VENTAS</th><th className="p-2 text-right">COBROS DE DEUDAS</th><th className="p-2 text-right">DEV./ANU.</th><th className="p-2 text-right">MOV. CAJA (+)</th><th className="p-2 text-right">MOV. CAJA (-)</th><th className="p-2 text-right">TOTAL MONTO SISTEMA</th><th className="p-2 text-right">MONTO REAL</th><th className="p-2 text-right">DIF. (+ / -)</th></tr></thead>
                       <tbody>
                         {arqueoCalc.details.map((r:any) => (
