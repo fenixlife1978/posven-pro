@@ -725,7 +725,6 @@ async function loadReportWindow(name: string, terminalId: string, cutoff: string
 // Reportes X/Z solo necesitan el período posterior al último Z de ESTA caja.
 // No tiene sentido descargar ventas/libroDiario históricos de todas las cajas.
 async function ensureReportData(terminalId?: string, cutoff?: string): Promise<void> {
-  if (!db) return;
 
   const termId = String(terminalId || 'GLOBAL');
   const desde = String(cutoff || '');
@@ -1350,7 +1349,7 @@ export const Store = {
     journal?: any;
     terminalId?: string;
   }): Promise<{ appliedUSD: number; debts: any[]; receiptId?: string }> {
-    if (typeof window === 'undefined' || !db) return { appliedUSD: 0, debts: [] };
+    if (typeof window === 'undefined') return { appliedUSD: 0, debts: [] };
     const { operationId, provider, amountUSD, payment, journal, terminalId } = params;
     if (!(amountUSD > 0)) return { appliedUSD: 0, debts: [] };
     const tursoResult = await tryTursoOperation('globalProviderPayment', params);
@@ -1454,11 +1453,15 @@ export const Store = {
     journal?: any;
     terminalId?: string;
   }): Promise<{ appliedUSD: number; appliedBS: number; debts: any[]; receiptId?: string }> {
-    if (typeof window === 'undefined' || !db) return { appliedUSD: 0, appliedBS: 0, debts: [] };
+    if (typeof window === 'undefined') return { appliedUSD: 0, appliedBS: 0, debts: [] };
     const { operationId, customerName, customerCedula, amountUSD, amountBS, payment, journal, terminalId } = params;
     if (!(amountUSD > 0)) return { appliedUSD: 0, appliedBS: 0, debts: [] };
     const tursoResult = await tryTursoOperation('globalCustomerPayment', params);
-    if (tursoResult) return tursoResult;
+    if (tursoResult) {
+      if (Array.isArray(tursoResult.debts)) applyPatch({ cxc: mergeById(cache.cxc, tursoResult.debts) });
+      if (journal?.id) applyPatch({ libroDiario: mergeById(cache.libroDiario, [{ ...journal, montoUSD: tursoResult.appliedUSD, montoBS: tursoResult.appliedBS, referencia: tursoResult.receiptId, terminalId: terminalId || journal.terminalId }]) });
+      return tursoResult;
+    }
 
     const customerLabel = customerCedula ? `${customerName} [${customerCedula}]` : customerName;
     const q = query(collection(db, 'cxc'), where('cliente', '==', customerLabel));
@@ -1939,7 +1942,7 @@ export const Store = {
     cajeroId?: string;
     fromOfflineQueue?: boolean;
   }): Promise<any> {
-    if (typeof window === 'undefined' || !db) return null;
+    if (typeof window === 'undefined') return null;
     const { operationId, cart, payments, clientName, terminalId, fallbackReceiptNumber, now, tasa, saleType = 'VENTA', credit, cajeroId, fromOfflineQueue } = params;
     if (!cart?.length) throw new Error('La venta no contiene productos.');
     if (!(Number(tasa) > 0)) throw new Error('La tasa de la venta no es válida.');
@@ -1976,7 +1979,17 @@ export const Store = {
     }
 
     const tursoResult = await tryTursoOperation('sale', params);
-    if (tursoResult) return tursoResult;
+    if (tursoResult) {
+      applyPatch({
+        ventas: tursoResult.sale ? mergeById(cache.ventas, [tursoResult.sale]) : cache.ventas,
+        productos: Array.isArray(tursoResult.products) ? mergeById(cache.productos, tursoResult.products) : cache.productos,
+        movimientos: Array.isArray(tursoResult.movements) ? mergeById(cache.movimientos, tursoResult.movements) : cache.movimientos,
+        libroDiario: Array.isArray(tursoResult.journals) ? mergeById(cache.libroDiario, tursoResult.journals) : cache.libroDiario,
+        cxc: tursoResult.debt ? mergeById(cache.cxc, [tursoResult.debt]) : cache.cxc,
+        terminales: tursoResult.terminal ? mergeById(cache.terminales, [tursoResult.terminal]) : cache.terminales,
+      });
+      return tursoResult;
+    }
 
     let result: any = null;
     await runTransaction(db, async tx => {
