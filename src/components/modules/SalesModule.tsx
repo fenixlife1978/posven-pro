@@ -243,6 +243,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
 
     const allVentas = freshState.ventas || [];
     const allDevoluciones = freshState.devoluciones || [];
+    const allAnulaciones = freshState.anulaciones || [];
     const allLibroDiario = freshState.libroDiario || [];
     const inWindow = (fecha:string) => fecha > corteTimestamp;
 
@@ -253,9 +254,10 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     const vActivas = allVentas.filter(v => inWindow(v.fecha) && v.estado !== 'anulada' && String(v.terminalId || '') === termId && !esCobroDeuda(v));
     const vAnuladas = allVentas.filter(v => inWindow(v.fecha) && v.estado === 'anulada' && String(v.terminalId || '') === termId && !esCobroDeuda(v));
     const dHoy = allDevoluciones.filter(d => inWindow(d.fecha) && String(allVentas.find(v => v.id === d.ventaId)?.terminalId || '') === termId);
+    const aHoy = allAnulaciones.filter(a => inWindow(a.fecha) && String(allVentas.find(v => v.id === a.ventaId)?.terminalId || '') === termId);
 
     const brUSD = vActivas.reduce((s,v) => s + (Number(v.totalUSD)||0), 0);
-    const devUSD = dHoy.reduce((s,d) => s + (Number(d.totalUSD)||0), 0);
+    const devUSD = dHoy.reduce((s,d) => s + (Number(d.totalUSD)||0), 0) + aHoy.reduce((s,a) => s + (Number(a.totalUSD)||0), 0);
     const descUSD = vActivas.reduce((s,v) => s + (Number(v.descuentoUSD)||0), 0);
     const netUSD = brUSD - devUSD - descUSD;
     const baseImponibleUSD = vActivas.reduce((s,v) => s + (Number(v.baseImponibleUSD)||0), 0);
@@ -308,16 +310,38 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       pays.forEach((p:any)=>{const x=addPaymentTo(p);const row=ensureArqueo(x.metodo);if(esMetodoUSD(x.metodo))row.cobrosUSD+=x.usd;else row.cobrosBS+=x.bs;});
     });
 
-    vAnuladas.forEach(v=>{
+    // Las anulaciones/devoluciones descuentan del método REAL utilizado para el reintegro.
+    // Se prioriza refundPayments (nuevo formato); los documentos históricos usan el método de venta como fallback.
+    aHoy.forEach((a:any)=>{
+      const sale:any=allVentas.find(v=>v.id===a.ventaId);
+      const pays=Array.isArray(a.refundPayments)&&a.refundPayments.length
+        ? a.refundPayments
+        : (sale&&Array.isArray(sale.payments)&&sale.payments.length
+          ? sale.payments
+          : [{metodo:sale?.metodoPago||'otros',montoUSD:a.totalUSD,montoBS:sale?.totalBS,tasaAplicada:sale?.tasaAplicada}]);
+      pays.forEach((p:any)=>{const x=addPaymentTo(p);const row=ensureArqueo(x.metodo);if(esMetodoUSD(x.metodo))row.devUSD+=x.usd;else row.devBS+=x.bs;});
+    });
+
+    // Evita duplicar anulaciones históricas que todavía no tienen documento en anulaciones.
+    const anulacionIds=new Set(aHoy.map((a:any)=>String(a.ventaId||'')));
+    vAnuladas.filter(v=>!anulacionIds.has(String(v.id))).forEach(v=>{
       const pays=Array.isArray(v.payments)&&v.payments.length?v.payments:[{metodo:v.metodoPago||'otros',montoUSD:v.totalUSD,montoBS:v.totalBS,tasaAplicada:v.tasaAplicada}];
       pays.forEach((p:any)=>{const x=addPaymentTo(p);const row=ensureArqueo(x.metodo);if(esMetodoUSD(x.metodo))row.devUSD+=x.usd;else row.devBS+=x.bs;});
     });
 
     dHoy.forEach(d=>{
       const sale:any=allVentas.find(v=>v.id===d.ventaId);
-      const pays=sale&&Array.isArray(sale.payments)&&sale.payments.length?sale.payments:[{metodo:sale?.metodoPago||'otros',montoUSD:d.totalUSD,montoBS:(Number(d.totalUSD)||0)*(Number(freshState.tasa)||1),tasaAplicada:sale?.tasaAplicada}];
-      const saleTotal=Math.max(Number(sale?.totalUSD)||0.000001,0.000001);
-      pays.forEach((p:any)=>{const x=addPaymentTo(p,(Number(d.totalUSD)||0)/saleTotal);const row=ensureArqueo(x.metodo);if(esMetodoUSD(x.metodo))row.devUSD+=x.usd;else row.devBS+=x.bs;});
+      const pays=Array.isArray(d.refundPayments)&&d.refundPayments.length
+        ? d.refundPayments
+        : (sale&&Array.isArray(sale.payments)&&sale.payments.length
+          ? sale.payments
+          : [{metodo:sale?.metodoPago||'otros',montoUSD:d.totalUSD,montoBS:(Number(d.totalUSD)||0)*(Number(freshState.tasa)||1),tasaAplicada:sale?.tasaAplicada}]);
+      if (Array.isArray(d.refundPayments)&&d.refundPayments.length) {
+        pays.forEach((p:any)=>{const x=addPaymentTo(p);const row=ensureArqueo(x.metodo);if(esMetodoUSD(x.metodo))row.devUSD+=x.usd;else row.devBS+=x.bs;});
+      } else {
+        const saleTotal=Math.max(Number(sale?.totalUSD)||0.000001,0.000001);
+        pays.forEach((p:any)=>{const x=addPaymentTo(p,(Number(d.totalUSD)||0)/saleTotal);const row=ensureArqueo(x.metodo);if(esMetodoUSD(x.metodo))row.devUSD+=x.usd;else row.devBS+=x.bs;});
+      }
     });
 
     relevantDiario.filter(e=>e.categoria!=='VENTA'&&e.categoria!=='COBRO_DEUDA').forEach((e:any)=>{
