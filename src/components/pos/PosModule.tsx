@@ -161,6 +161,11 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     const relevantDiario = allLibroDiario.filter(e => inWindow(e.fecha) && String(e.terminalId || '') === termId);
     const totalSalidasCaja = relevantDiario.filter(e => e.tipo === 'egreso').reduce((s, e) => s + (Number(e.montoUSD) || 0), 0);
     const totalEntradasCaja = relevantDiario.filter(e => e.tipo === 'ingreso' && e.categoria !== 'VENTA' && e.categoria !== 'COBRO_DEUDA').reduce((s, e) => s + (Number(e.montoUSD) || 0), 0);
+    // Movimientos de caja se distribuyen por moneda y método. VENTA y
+    // COBRO_DEUDA ya tienen columnas propias y no se duplican aquí.
+    const movimientosCaja = relevantDiario.filter((e:any) =>
+      e.categoria !== 'VENTA' && e.categoria !== 'COBRO_DEUDA'
+    );
 
     // Cobros de deuda: se calculan desde los medios de pago reales del comprobante.
     // USD = únicamente efectivo USD + Zelle. BS = únicamente montos cobrados en BS.
@@ -175,14 +180,51 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
 
     const esMetodoUSD = (m:any) => m === 'efectivo_usd' || m === 'zelle';
     const esMetodoBS = (m:any) => ['efectivo_bs','pagomovil','punto_venta','biopago','transferencia'].includes(String(m));
-    const addPaymentTo = (p:any, factor=1) => { const metodo=String(p?.metodo || p?.method || 'otros'); const usd=(Number(p?.montoUSD)||Number(p?.usdAmount)||0)*factor; const bs=Number(p?.montoBS)||(esMetodoBS(metodo)?(Number(p?.amount)||usd*(state.tasa||1)):0); return {metodo,usd,bs}; };
+    const addPaymentTo = (p:any, factor=1) => {
+      const metodo=String(p?.metodo || p?.method || 'otros');
+      const usdBase=Number(p?.montoUSD) || Number(p?.usdAmount) || Number(p?.monto) || 0;
+      const bsBase=Number(p?.montoBS) || (esMetodoBS(metodo) ? (Number(p?.amount) || Number(p?.totalBS) || usdBase*(state.tasa||1)) : 0);
+      return {metodo,usd:usdBase*factor,bs:bsBase*factor};
+    };
     const arqueoMap: Record<string, any> = {};
     const ensureArqueo = (metodo:string) => { if (!arqueoMap[metodo]) arqueoMap[metodo]={ventasBS:0,ventasUSD:0,cobrosBS:0,cobrosUSD:0,devBS:0,devUSD:0}; return arqueoMap[metodo]; };
-    vActivas.forEach((v:any) => { const pays=Array.isArray(v.payments)&&v.payments.length?v.payments:[{metodo:v.metodoPago||'otros',montoUSD:v.totalUSD,montoBS:v.totalBS}]; pays.forEach((p:any)=>{const x=addPaymentTo(p); if(x.metodo==='credito') return; const row=ensureArqueo(x.metodo);if(esMetodoUSD(x.metodo))row.ventasUSD+=x.usd;else if(esMetodoBS(x.metodo))row.ventasBS+=x.bs;else row.ventasUSD+=x.usd;}); });
+    vActivas.forEach((v:any) => {
+      const pays=Array.isArray(v.payments)&&v.payments.length
+        ? v.payments
+        : [{metodo:v.metodoPago||'otros',montoUSD:v.totalUSD,montoBS:v.totalBS}];
+      pays.forEach((p:any)=>{
+        const x=addPaymentTo(p);
+        if(x.metodo==='credito') return;
+        const row=ensureArqueo(x.metodo);
+        if(esMetodoUSD(x.metodo)) row.ventasUSD+=x.usd;
+        else if(esMetodoBS(x.metodo)) row.ventasBS+=x.bs;
+        else row.ventasUSD+=x.usd;
+      });
+    });
     cobroDeudaVentas.forEach((v:any) => { const pays=Array.isArray(v.payments)&&v.payments.length?v.payments:[{metodo:v.metodoPago||'otros',montoUSD:v.totalUSD,montoBS:v.totalBS}]; pays.forEach((p:any)=>{const x=addPaymentTo(p);const row=ensureArqueo(x.metodo);if(esMetodoUSD(x.metodo))row.cobrosUSD+=x.usd;else if(esMetodoBS(x.metodo))row.cobrosBS+=x.bs;else row.cobrosUSD+=x.usd;}); });
     vAnuladas.forEach((v:any) => { const pays=Array.isArray(v.payments)&&v.payments.length?v.payments:[{metodo:v.metodoPago||'otros',montoUSD:v.totalUSD,montoBS:v.totalBS}]; pays.forEach((p:any)=>{const x=addPaymentTo(p);const row=ensureArqueo(x.metodo);if(esMetodoUSD(x.metodo))row.devUSD+=x.usd;else if(esMetodoBS(x.metodo))row.devBS+=x.bs;else row.devUSD+=x.usd;}); });
     dHoy.forEach((d:any) => { const sale:any=allVentas.find((v:any)=>v.id===d.ventaId); const pays=sale&&Array.isArray(sale.payments)&&sale.payments.length?sale.payments:[{metodo:sale?.metodoPago||'otros',montoUSD:d.totalUSD,montoBS:(Number(d.totalUSD)||0)*(state.tasa||1)}]; const saleTotal=Math.max(Number(sale?.totalUSD)||0,0.000001); pays.forEach((p:any)=>{const x=addPaymentTo(p,(Number(d.totalUSD)||0)/saleTotal);const row=ensureArqueo(x.metodo);if(esMetodoUSD(x.metodo))row.devUSD+=x.usd;else if(esMetodoBS(x.metodo))row.devBS+=x.bs;else row.devUSD+=x.usd;}); });
-    const metodosArqueo=Object.entries(arqueoMap).map(([metodo,val]:any)=>({metodo,...val,moneda:esMetodoUSD(metodo)?'USD':(esMetodoBS(metodo)?'BS':'USD')}));
+    movimientosCaja.forEach((e:any) => {
+      const metodo = String(e?.metodo || 'otros');
+      const row = ensureArqueo(metodo);
+      const esUSD = esMetodoUSD(metodo);
+      const montoUSD = Number(e?.montoUSD) || 0;
+      const montoBS = Number(e?.montoBS) || (esMetodoBS(metodo) ? montoUSD * (state.tasa || 1) : 0);
+      if (e.tipo === 'ingreso') {
+        if (esUSD) row.movPlusUSD += montoUSD;
+        else if (esMetodoBS(metodo)) row.movPlusBS += montoBS;
+        else row.movPlusUSD += montoUSD;
+      } else if (e.tipo === 'egreso') {
+        if (esUSD) row.movMinusUSD += montoUSD;
+        else if (esMetodoBS(metodo)) row.movMinusBS += montoBS;
+        else row.movMinusUSD += montoUSD;
+      }
+    });
+    const metodosArqueo=Object.entries(arqueoMap).map(([metodo,val]:any)=>({
+      metodo,
+      ...val,
+      moneda:esMetodoUSD(metodo)?'USD':(esMetodoBS(metodo)?'BS':'USD')
+    }));
     const ventasCreditoUSD=vActivas.filter((v:any)=>String(v.metodoPago||'').toLowerCase()==='credito'||(Array.isArray(v.payments)&&v.payments.some((p:any)=>p.metodo==='credito'))).reduce((s:number,v:any)=>s+(Number(v.totalUSD)||0),0);
 
     const terminalName = currentTerminal ? currentTerminal.nombre : 'SISTEMA GLOBAL';
@@ -521,11 +563,22 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   };
 
 
-  const guardarNuevaTasa = () => {
+  const guardarNuevaTasa = async () => {
     const n = parseFloat(nuevaTasa);
     if (isNaN(n) || n <= 0) return alert('Tasa inválida');
-    updateState({ tasa: n });
-    setEditandoTasa(false);
+    try {
+      // La tasa modificada desde el POS debe usar el mismo flujo autoritativo
+      // de configuración que Administración: Turso/app_config/general.
+      const persisted = await Store.patchConfig({ tasa: n });
+      const savedRate = Number(persisted.tasa) || n;
+      updateState({ tasa: savedRate });
+      setNuevaTasa(String(savedRate));
+      setEditandoTasa(false);
+      toast({ title: 'Tasa BCV guardada', description: 'La nueva tasa quedó persistida en Turso.' });
+    } catch (error: any) {
+      console.error('Error guardando tasa BCV desde POS:', error);
+      toast({ variant: 'destructive', title: 'No se pudo guardar la tasa', description: error?.message || 'Turso no confirmó la actualización.' });
+    }
   };
 
   const ejecutarVenta = async (pagosFinales?: PagoRealizado[]) => {
