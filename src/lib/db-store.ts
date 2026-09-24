@@ -62,7 +62,7 @@ async function tryTursoOperation(operation: string, payload: any): Promise<any |
   } catch {
     throw new Error('No se pudo contactar con Turso. La operación no fue enviada a Firebase para evitar duplicados.');
   }
-  if (response.status === 503) return null;
+  if (response.status === 503) throw new Error('Turso no está configurado o no está disponible. Firebase no se utilizará como respaldo.');
   let body: any = null;
   try { body = await response.json(); } catch {}
   if (!response.ok || body?.ok === false) throw new Error(String(body?.error || ('Turso rechazó la operación (' + response.status + ').')));
@@ -76,7 +76,7 @@ async function tryTursoSpecialRead(kind: 'config' | 'catalog', name = ''): Promi
   let response: Response;
   try { response = await fetch('/api/turso/store?' + params.toString(), { credentials: 'include', cache: 'no-store' }); }
   catch { throw new Error('No se pudo consultar Turso.'); }
-  if (response.status === 503) return null;
+  if (response.status === 503) throw new Error('Turso no está configurado o no está disponible. Firebase no se utilizará como respaldo.');
   let body: any = null; try { body = await response.json(); } catch {}
   if (!response.ok || body?.ok === false) throw new Error(String(body?.error || 'Turso rechazó la lectura.'));
   return kind === 'config' ? (body.config || {}) : (Array.isArray(body.lista) ? body.lista : []);
@@ -98,7 +98,7 @@ async function tryTursoRead(table: string, options: { limit?: number; terminalId
   } catch {
     throw new Error('No se pudo consultar Turso. No se usará Firebase como respaldo porque Turso está activo.');
   }
-  if (response.status === 503) return null;
+  if (response.status === 503) throw new Error('Turso no está configurado o no está disponible. Firebase no se utilizará como respaldo.');
   let body: any = null;
   try { body = await response.json(); } catch {}
   if (!response.ok || body?.ok === false) {
