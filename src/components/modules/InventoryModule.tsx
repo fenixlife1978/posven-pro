@@ -47,7 +47,6 @@ import {
   exportarPDFDevoluciones
 } from '@/lib/pdf-generator';
 import { ProductFormModal } from '@/components/inventory/ProductFormModal';
-import { Pagination } from '@/components/ui/pagination';
 import { DateRangeFilter, DateRange } from '@/components/ui/date-range-filter';
 
 export function InventoryModule({ state, updateState }: { state: AppState, updateState: (s: Partial<AppState>) => void }) {
@@ -236,7 +235,6 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
                 </TableBody>
               </Table>
             </div>
-            <Pagination page={safePage} totalPages={totalPages} total={prods.length} pageSize={pageSize} onPageChange={setPage} />
           </Card>
         </div>
       );
