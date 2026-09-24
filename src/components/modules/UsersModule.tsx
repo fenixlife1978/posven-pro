@@ -2,10 +2,6 @@
 
 import React, { useState, useEffect } from 'react';
 import { UserPlus, Trash2, Edit2, Shield, X, Save, Users as UsersIcon, Mail, Lock, User as UserIcon, Ban, CheckCircle2 } from 'lucide-react';
-import { db, firebaseConfig } from '@/lib/firebase';
-import { collection, doc, setDoc, getDocs, deleteDoc, updateDoc } from 'firebase/firestore';
-import { initializeApp, deleteApp } from 'firebase/app';
-import { getAuth, createUserWithEmailAndPassword } from 'firebase/auth';
 import { toast } from '@/hooks/use-toast';
 
 interface UserProfile {
@@ -16,8 +12,7 @@ interface UserProfile {
   rol: 'administrador' | 'cajero';
   fechaCreacion: string;
   uid: string;
-  firebaseUid?: string | null;
-  accesoBloqueado?: boolean;
+    accesoBloqueado?: boolean;
   isSeedAdmin?: boolean;
 }
 
@@ -28,45 +23,18 @@ export default function UsersModule() {
   const [showModal, setShowModal] = useState(false);
   const [loading, setLoading] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [usingTurso, setUsingTurso] = useState(false);
   const [formData, setFormData] = useState(emptyForm);
 
   const cargarUsuarios = async () => {
     const response = await fetch('/api/users', { cache: 'no-store' }).catch(() => null);
     if (response?.ok) {
       const data = await response.json();
-      setUsingTurso(true);
-      setUsuarios((data.usuarios || data.users || []).map((u: any) => ({
-        ...u,
-        uid: u.firebaseUid || u.id,
-        fechaCreacion: u.fechaCreacion || ''
-      })));
+      setUsuarios((data.usuarios || data.users || []).map((u: any) => ({ ...u, uid: u.id, fechaCreacion: u.fechaCreacion || '' })));
       return;
     }
-    if (response && response.status !== 503) {
-      const data = await response.json().catch(() => ({}));
-      throw new Error(data.error || 'No autorizado para gestionar usuarios.');
-    }
-
-    // Turso no configurado: durante la transición conservamos el módulo Firebase.
-    const list: UserProfile[] = [];
-    querySnapshot.forEach((d) => {
-      const data: any = d.data();
-      list.push({
-        id: d.id,
-        uid: data.uid || d.id,
-        username: data.username || data.email?.split('@')[0] || d.id,
-        nombre: data.nombre || '',
-        email: data.email || '',
-        rol: data.rol,
-        fechaCreacion: data.fechaCreacion || '',
-        accesoBloqueado: !!data.accesoBloqueado,
-        isSeedAdmin: false,
-        firebaseUid: data.uid || d.id
-      });
-    });
-    setUsingTurso(false);
-    setUsuarios(list);
+    if (!response) throw new Error('No se pudo conectar con Turso.');
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || 'Turso no está disponible.');
   };
 
   useEffect(() => {
@@ -93,10 +61,7 @@ export default function UsersModule() {
     }
 
     setLoading(true);
-    let secondaryApp: any = null;
-
     try {
-      if (usingTurso) {
         if (editingId) {
           const response = await fetch('/api/users/' + encodeURIComponent(editingId), {
             method: 'PATCH',
@@ -120,6 +85,8 @@ export default function UsersModule() {
           const data = await response.json().catch(() => ({}));
           if (!response.ok) throw new Error(data.error || 'No se pudo crear el usuario.');
         }
+        toast({ title: editingId ? 'Perfil actualizado' : 'Usuario creado', description: 'Los datos quedaron guardados en Turso.' });
+      }
         toast({ title: editingId ? 'Perfil actualizado' : 'Usuario creado', description: 'Los datos quedaron guardados en Turso.' });
       } else if (editingId) {
         const userRef = doc(db, 'users', editingId);
@@ -149,7 +116,6 @@ export default function UsersModule() {
       if (error?.code === 'auth/email-already-in-use') msg = 'El correo ya está registrado.';
       alert(msg);
     } finally {
-      if (secondaryApp) await deleteApp(secondaryApp).catch(() => {});
       setLoading(false);
     }
   };
@@ -167,10 +133,6 @@ export default function UsersModule() {
   };
 
   const handleBlocked = async (u: UserProfile) => {
-    if (!usingTurso) {
-      alert('La activación/desactivación de usuarios se gestionará en Turso durante la migración.');
-      return;
-    }
     const action = u.accesoBloqueado ? 'activar' : 'desactivar';
     if (!confirm('¿Desea ' + action + ' el acceso de ' + u.nombre + '?')) return;
     setLoading(true);
@@ -198,13 +160,9 @@ export default function UsersModule() {
     }
     if (!confirm('¿Está seguro de eliminar este acceso? Esta acción elimina el perfil de usuarios.')) return;
     try {
-      if (usingTurso) {
-        const response = await fetch('/api/users/' + encodeURIComponent(u.id), { method: 'DELETE' });
+      const response = await fetch('/api/users/' + encodeURIComponent(u.id), { method: 'DELETE' });
         const data = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(data.error || 'No se pudo eliminar el usuario.');
-      } else {
-        await deleteDoc(doc(db, 'users', u.id));
-      }
       await cargarUsuarios();
       toast({ title: 'Registro eliminado' });
     } catch (error: any) {
@@ -229,7 +187,7 @@ export default function UsersModule() {
           <h3 className="text-white font-black text-xs uppercase italic tracking-tighter flex items-center gap-2">
             <UsersIcon className="w-5 h-5 text-brand-gold" /> PERSONAL AUTORIZADO
           </h3>
-          <span className="text-[9px] font-black uppercase text-white/50">{usingTurso ? 'TURSO' : 'FIREBASE · TRANSICIÓN'}</span>
+          <span className="text-[9px] font-black uppercase text-white/50">TURSO</span>
         </div>
         <div className="table-wrap">
           <table>
@@ -268,11 +226,10 @@ export default function UsersModule() {
                     <td className="text-center">
                       <div className="flex justify-center gap-1">
                         <button onClick={() => handleEdit(u)} className="btn-icon h-8 w-8 text-ink hover:text-brand-gold" title="Modificar"><Edit2 className="w-4 h-4"/></button>
-                        {usingTurso && (
                           <button onClick={() => handleBlocked(u)} disabled={loading} className={`btn-icon h-8 w-8 ${u.accesoBloqueado ? 'text-status-success' : 'text-status-danger'}`} title={u.accesoBloqueado ? 'Activar' : 'Desactivar'}>
                             {u.accesoBloqueado ? <CheckCircle2 className="w-4 h-4"/> : <Ban className="w-4 h-4"/>}
                           </button>
-                        )}
+                        }
                         <button onClick={() => handleDelete(u)} className="btn-icon h-8 w-8 text-ink hover:text-status-danger" title={u.isSeedAdmin ? 'Protegido' : 'Eliminar'}><Trash2 className="w-4 h-4"/></button>
                       </div>
                     </td>
