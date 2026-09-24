@@ -176,7 +176,11 @@ export default function LicoreriaPOS() {
     initializeFromTurso();
 
     const unsubscribeStore = Store.subscribe((dbUpdate: Partial<AppState>) => {
-      setState(prev => ({ ...prev, ...dbUpdate }) as AppState);
+      // La sesión autenticada por Turso es la autoridad para usuario/terminal.
+      // El cache local del Store puede contener un usuario histórico y no debe
+      // reemplazar el terminalId resuelto al iniciar sesión.
+      const { user: _cachedUser, isAuthenticated: _cachedAuth, ...dbPatch } = dbUpdate as any;
+      setState(prev => ({ ...prev, ...dbPatch }) as AppState);
     });
     const timerClock = setInterval(() => setCurrentTime(new Date()), 1000);
     const runtimeHeartbeat = setInterval(() => {
