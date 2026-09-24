@@ -338,7 +338,11 @@ export default function LicoreriaPOS() {
       case 'ventas': return <SalesModule state={state} updateState={updateState} />;
       case 'compras': return <PurchaseModule state={state} updateState={updateState} />;
       case 'proveedores': return <SuppliersModule state={state} updateState={updateState} />;
-      case 'contabilidad': return <AccountingModule state={state} updateState={updateState} />;
+      case 'contabilidad': {
+        const ids = [user?.id, user?.uid, user?.firebaseUid].filter(Boolean).map(String);
+        const terminal = state.terminales.find(t => ids.includes(String(t.usuarioId || '')));
+        return <AccountingModule state={state} updateState={updateState} terminalId={terminal?.id} terminalName={terminal?.nombre} />;
+      }
       case 'cxc': return <CxCModule state={state} updateState={updateState} terminalId={state.terminales.find(t => t.usuarioId === user?.uid)?.id} />;
       case 'cxp': return <CxPModule state={state} updateState={updateState} terminalId={state.terminales.find(t => t.usuarioId === user?.uid)?.id} />;
       case 'reportes': return <ReportsModule state={state} />;
