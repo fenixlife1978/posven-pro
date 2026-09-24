@@ -5,6 +5,7 @@ import {
   assertTursoReady,
   getRecord,
   listRecords,
+  countRecords,
   upsertRecords,
   syncProductChanges,
   syncRecords,
@@ -63,6 +64,7 @@ export async function GET(request: Request) {
     if (special === 'config') return NextResponse.json({ ok: true, config: await getAppConfig() });
     if (special === 'catalog') return NextResponse.json({ ok: true, lista: await getCatalog(String(url.searchParams.get('name') || '')) });
     const t = table(url.searchParams.get('table'));
+    if (special === 'count') return NextResponse.json({ ok: true, total: await countRecords(t) });
     const id = url.searchParams.get('id');
     if (id) return NextResponse.json({ ok: true, record: await getRecord(t, id) });
     const records = await listRecords(t, {
