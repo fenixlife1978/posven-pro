@@ -200,16 +200,25 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       !esAjusteDevolucionAnulacion(e)
     );
 
-    // Cobros de deuda: se calculan desde los medios de pago reales del comprobante.
-    // USD = únicamente efectivo USD + Zelle. BS = únicamente montos cobrados en BS.
-    // Esto evita confundir el equivalente en USD de un pago en BS con dólares físicos/virtuales.
+    // COBROS DE DEUDA: tomar el monto ORIGINAL registrado en cada medio de pago
+    // del libro diario. Un cobro en BS también conserva montoUSD como equivalente
+    // contable, pero ESE EQUIVALENTE NO puede sumarse al total de cobros en USD.
+    // USD = únicamente efectivo USD + Zelle.
+    // BS = efectivo BS + Pago Móvil + punto de venta + Biopago + transferencia.
+    // Cada pago mixto está guardado como una entrada independiente, por lo que
+    // aquí no se convierte ni se mezcla una moneda con la otra.
     const cobroDeudaVentas = allVentas.filter(v => inWindow(v.fecha) && String(v.terminalId || '') === termId && esCobroDeuda(v));
-    const cobroDeudaPayments = cobroDeudaVentas.flatMap((v:any) => Array.isArray(v.payments) ? v.payments : []);
-    const cobrosDeudaUSD = cobroDeudaPayments
-      .filter((p:any) => p?.metodo === 'efectivo_usd' || p?.metodo === 'zelle')
-      .reduce((s:number, p:any) => s + (Number(p.montoUSD) || Number(p.usdAmount) || 0), 0);
-    const cobrosDeudaBS = cobroDeudaPayments
-      .reduce((s:number, p:any) => s + (Number(p.montoBS) || ((p?.metodo === 'efectivo_bs' || p?.metodo === 'pagomovil' || p?.metodo === 'punto_venta' || p?.metodo === 'biopago' || p?.metodo === 'transferencia') ? Number(p.amount) || 0 : 0)), 0);
+    const cobrosDeudaDiario = relevantDiario.filter((e:any) =>
+      e.tipo === 'ingreso' && String(e.categoria || '').toUpperCase() === 'COBRO_DEUDA'
+    );
+    const metodosUSDDeuda = new Set(['efectivo_usd', 'zelle']);
+    const metodosBSDeuda = new Set(['efectivo_bs', 'pagomovil', 'punto_venta', 'biopago', 'transferencia']);
+    const cobrosDeudaUSD = cobrosDeudaDiario
+      .filter((e:any) => metodosUSDDeuda.has(String(e.metodo || '').toLowerCase()))
+      .reduce((s:number, e:any) => s + (Number(e.montoUSD) || 0), 0);
+    const cobrosDeudaBS = cobrosDeudaDiario
+      .filter((e:any) => metodosBSDeuda.has(String(e.metodo || '').toLowerCase()))
+      .reduce((s:number, e:any) => s + (Number(e.montoBS) || 0), 0);
 
     const esMetodoUSD = (m:any) => m === 'efectivo_usd' || m === 'zelle';
     const esMetodoBS = (m:any) => ['efectivo_bs','pagomovil','punto_venta','biopago','transferencia'].includes(String(m));
