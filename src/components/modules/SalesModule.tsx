@@ -211,10 +211,30 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
 
   const histVentas = useMemo(() => {
     const tc = Utils.getTerminalCash(currentTerminal);
-    return (state.ventas || [])
-      .filter(v => v.terminalId === currentTerminal?.id && v.fecha > (tc.fechaUltimoZ || ''))
-      .sort((a, b) => b.fecha.localeCompare(a.fecha));
-  }, [state.ventas, currentTerminal?.id]);
+    const desde = tc.fechaUltimoZ || '';
+    const ventas = (state.ventas || [])
+      .filter(v => v.terminalId === currentTerminal?.id && v.fecha > desde)
+      .map(v => ({ ...v, esMovimientoCaja: false }));
+    const movimientos = (state.libroDiario || [])
+      .filter(e => e.terminalId === currentTerminal?.id && e.fecha > desde && e.categoria === 'MOVIMIENTO_CAJA')
+      .map(e => ({
+        id: e.id,
+        fecha: e.fecha,
+        cliente: e.concepto,
+        items: [],
+        subtotalUSD: e.montoUSD,
+        descuentoUSD: 0,
+        totalUSD: e.montoUSD,
+        totalBS: e.montoBS,
+        metodoPago: e.metodo,
+        estado: e.tipo,
+        type: 'MOVIMIENTO CAJA',
+        terminalId: e.terminalId,
+        terminalName: e.terminalName,
+        esMovimientoCaja: true
+      } as any));
+    return [...ventas, ...movimientos].sort((a, b) => b.fecha.localeCompare(a.fecha));
+  }, [state.ventas, state.libroDiario, currentTerminal?.id]);
 
   const histPageSize = 10;
   const histTotalPages = Math.max(1, Math.ceil(histVentas.length / histPageSize));
@@ -1107,7 +1127,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                 {histPageVentas.length === 0 ? (
                   <tr><td colSpan={10} className="text-center py-20 text-ink/20 font-black italic uppercase">Sin ventas registradas en esta terminal</td></tr>
                 ) : histPageVentas.map(v => (
-                  <tr key={v.id} className="border-b border-line/40 hover:bg-surface-warm/20"><td className="text-ink font-black text-xs mono">{v.id}</td><td className="text-ink font-bold text-xs">{v.fecha.split('T')[1]?.slice(0, 5)}</td><td className="text-ink font-black text-[10px] uppercase">{v.terminalName || state.terminales.find(t => t.id === v.terminalId)?.nombre || '-'}</td><td className="text-ink font-black text-xs uppercase truncate max-w-[150px]">{v.cliente}</td><td className="text-ink font-black text-[9px] uppercase"><span className={`badge ${v.type === 'COBRO DEUDA' ? 'badge-info' : 'badge-neutral'}`}>{v.type || 'VENTA'}</span></td><td className="text-brand-gold-deep font-black text-xs text-right">{Utils.fmtUSD(getSaleCurrencyTotals(v).usd)}</td><td className="text-ink font-black text-xs text-right">{Utils.fmtBS(getSaleCurrencyTotals(v).bs)}</td><td className="text-ink font-bold text-[10px] uppercase">{Utils.metodoLabel(v.metodoPago)}</td><td className="text-center"><span className={`badge ${v.estado === 'pendiente' ? 'badge-warn' : (v.estado === 'anulada' ? 'badge-err' : 'badge-ok')} font-black text-[9px] uppercase`}>{v.estado}</span></td><td className="text-center"><button onClick={() => setShowSaleDetail(v)} className="w-7 h-7 rounded-full flex items-center justify-center text-status-success hover:bg-status-success/10 transition-colors" title="Ver ítems y detalle de venta"><Eye className="w-4 h-4" /></button></td></tr>
+                  <tr key={v.id} className="border-b border-line/40 hover:bg-surface-warm/20"><td className="text-ink font-black text-xs mono">{v.id}</td><td className="text-ink font-bold text-xs">{v.fecha.split('T')[1]?.slice(0, 5)}</td><td className="text-ink font-black text-[10px] uppercase">{v.terminalName || state.terminales.find(t => t.id === v.terminalId)?.nombre || '-'}</td><td className="text-ink font-black text-xs uppercase truncate max-w-[150px]">{v.cliente}</td><td className="text-ink font-black text-[9px] uppercase"><span className={`badge ${v.esMovimientoCaja ? 'badge-warn' : (v.type === 'COBRO DEUDA' ? 'badge-info' : 'badge-neutral')}`}>{v.type || 'VENTA'}</span></td><td className="text-brand-gold-deep font-black text-xs text-right">{Utils.fmtUSD(getSaleCurrencyTotals(v).usd)}</td><td className="text-ink font-black text-xs text-right">{Utils.fmtBS(getSaleCurrencyTotals(v).bs)}</td><td className="text-ink font-bold text-[10px] uppercase">{Utils.metodoLabel(v.metodoPago)}</td><td className="text-center"><span className={`badge ${v.esMovimientoCaja ? (v.estado === 'egreso' ? 'badge-err' : 'badge-ok') : (v.estado === 'pendiente' ? 'badge-warn' : (v.estado === 'anulada' ? 'badge-err' : 'badge-ok'))} font-black text-[9px] uppercase`}>{v.esMovimientoCaja ? (v.estado === 'egreso' ? 'EGRESO' : 'INGRESO') : v.estado}</span></td><td className="text-center">{v.esMovimientoCaja ? <span className="text-[8px] font-black text-ink/40 uppercase">Caja</span> : <button onClick={() => setShowSaleDetail(v)} className="w-7 h-7 rounded-full flex items-center justify-center text-status-success hover:bg-status-success/10 transition-colors" title="Ver ítems y detalle de venta"><Eye className="w-4 h-4" /></button>}</td></tr>
                 ))}
               </tbody>
             </table>
