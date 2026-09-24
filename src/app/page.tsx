@@ -131,6 +131,16 @@ export default function LicoreriaPOS() {
               router.push('/login');
               return;
             }
+
+            // La identidad operativa de un cajero queda fijada al terminal
+            // resuelto en Turso. No dependemos de un uid heredado/Firebase
+            // para volver a encontrar la caja después de un Z y una nueva
+            // apertura.
+            const profileWithTerminal = { ...profile, terminalId: String(myTerm.id) };
+            setUserProfile(profileWithTerminal);
+            setUser({ uid: legacyUid, email: currentUser.email, ...currentUser, terminalId: String(myTerm.id) });
+            setState(prev => ({ ...prev, user: profileWithTerminal, isAuthenticated: true } as AppState));
+
             if (myTerm.id) Store.startTerminalSync(myTerm.id, false, [myTerm]);
 
             // Regla de continuidad de caja:
@@ -379,7 +389,9 @@ export default function LicoreriaPOS() {
       appUser?.id,
       appUser?.uid,
     ].filter(Boolean).map(String);
-    const terminalActual = state.terminales.find(t => userIds.includes(String(t.usuarioId || '')));
+    const terminalActual = appUser?.terminalId
+      ? state.terminales.find(t => String(t.id) === String(appUser.terminalId))
+      : state.terminales.find(t => userIds.includes(String(t.usuarioId || '')));
     const nextRecibo = terminalActual?.proximoRecibo || state.proximoRecibo;
     const prefijoRecibo = Utils.prefijoCaja(terminalActual, state.terminales);
 
