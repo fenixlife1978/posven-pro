@@ -168,6 +168,20 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
 
   // ===== ESTADOS PARA CREDIT MODAL =====
   const [isCreditModalOpen, setIsCreditModalOpen] = useState(false);
+  const [showCashMovementModal, setShowCashMovementModal] = useState(false);
+  const [cashMovement, setCashMovement] = useState<{
+    tipo: 'ingreso' | 'egreso';
+    metodo: 'efectivo_bs' | 'efectivo_usd';
+    monto: string;
+    concepto: string;
+    observacion: string;
+  }>({
+    tipo: 'egreso',
+    metodo: 'efectivo_usd',
+    monto: '',
+    concepto: '',
+    observacion: ''
+  });
   const [clientSearch, setClientSearch] = useState('');
   const [selectedClient, setSelectedClient] = useState<Customer | null>(null);
   const [showNewClientForm, setShowNewClientForm] = useState(false);
@@ -757,6 +771,60 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     }
   };
 
+  const registrarMovimientoCaja = () => {
+    const terminal = getCurrentTerminal();
+    if (!terminal?.id) {
+      toast({ variant: 'destructive', title: 'Caja no identificada', description: 'No se puede registrar un movimiento sin una caja/terminal activa.' });
+      return;
+    }
+
+    const monto = Number(String(cashMovement.monto).replace(',', '.')) || 0;
+    if (monto <= 0) {
+      toast({ variant: 'destructive', title: 'Monto inválido', description: 'Indique un monto mayor que cero.' });
+      return;
+    }
+    if (!cashMovement.concepto.trim()) {
+      toast({ variant: 'destructive', title: 'Concepto requerido', description: 'Indique el motivo del movimiento de caja.' });
+      return;
+    }
+
+    const tasa = Number(state.tasa) || 1;
+    const montoBS = cashMovement.metodo === 'efectivo_bs' ? monto : monto * tasa;
+    const montoUSD = cashMovement.metodo === 'efectivo_bs' ? monto / tasa : monto;
+    const ahora = Utils.ahora();
+
+    const entry: LibroDiarioEntry = {
+      id: 'MOV-CAJA-' + Store.uid().toUpperCase().slice(0, 8),
+      fecha: ahora,
+      tipo: cashMovement.tipo,
+      categoria: 'MOVIMIENTO_CAJA',
+      concepto: cashMovement.concepto.trim().toUpperCase(),
+      montoUSD: Utils.round(montoUSD),
+      montoBS: Utils.round(montoBS),
+      metodo: cashMovement.metodo,
+      referencia: 'POS-' + String(terminal.id),
+      terminalId: terminal.id,
+      terminalName: terminal.nombre,
+      ...(cashMovement.observacion.trim() ? { observacion: cashMovement.observacion.trim() } : {})
+    } as LibroDiarioEntry;
+
+    updateState({ libroDiario: [entry, ...(state.libroDiario || [])] });
+
+    toast({
+      title: cashMovement.tipo === 'egreso' ? 'Egreso registrado' : 'Ingreso registrado',
+      description: `${cashMovement.tipo === 'egreso' ? 'Salida' : 'Entrada'} de ${cashMovement.metodo === 'efectivo_bs' ? Utils.fmtBS(monto) : Utils.fmtUSD(monto)} registrada en ${terminal.nombre}.`
+    });
+
+    setCashMovement({
+      tipo: 'egreso',
+      metodo: 'efectivo_usd',
+      monto: '',
+      concepto: '',
+      observacion: ''
+    });
+    setShowCashMovementModal(false);
+  };
+
   // ===== CORREGIDO: FUNCIÓN PARA EJECUTAR VENTA A CRÉDITO CON CLIENTE =====
   const ejecutarVentaACredito = async (customer: Customer) => {
     if (state.carrito.length === 0 || isProcessing) return;
@@ -964,9 +1032,14 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                        <div className="p-3 bg-brand-gold-soft/30 border border-brand-gold-soft/30 rounded-xl text-center"><span className="text-[9px] font-black uppercase text-brand-gold-deep block mb-1">EQUIVALENTE EN BOLÍVARES</span><span className="text-2xl font-black text-brand-gold-deep">{Utils.fmtBS(selectedProductDisplay.precioUSD * state.tasa)}</span></div>
                     </div>
                   )}
-                  {state.carrito.length > 0 && (
-                    <button onClick={() => setIsCreditModalOpen(true)} className="w-full h-10 border-2 border-status-info text-status-info hover:bg-status-info-soft font-black uppercase text-[10px] rounded-xl transition-all mt-4">Cargar a Crédito</button>
-                  )}
+                  <div className="grid grid-cols-2 gap-2 mt-4">
+                    {state.carrito.length > 0 && (
+                      <button onClick={() => setIsCreditModalOpen(true)} className="w-full h-10 border-2 border-status-info text-status-info hover:bg-status-info-soft font-black uppercase text-[10px] rounded-xl transition-all">Cargar a Crédito</button>
+                    )}
+                    <button onClick={() => setShowCashMovementModal(true)} className={`w-full h-10 border-2 border-status-success text-status-success hover:bg-status-success/10 font-black uppercase text-[10px] rounded-xl transition-all ${state.carrito.length === 0 ? 'col-span-2' : ''}`}>
+                      Movimiento de Caja
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1212,6 +1285,97 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
             }))); 
           }} 
         />
+      )}
+
+      {showCashMovementModal && (
+        <div className="fixed inset-0 z-[160] bg-black/60 flex items-center justify-center p-4 animate-in fade-in-50">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border-2 border-line">
+            <div className="px-5 py-4 bg-ink text-white flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-black uppercase italic tracking-tight">Movimiento de Caja</h3>
+                <p className="text-[9px] text-white/50 font-bold uppercase mt-1">{currentTerminal?.nombre || 'Caja no identificada'}</p>
+              </div>
+              <button onClick={() => setShowCashMovementModal(false)} className="p-1 text-white/60 hover:text-white"><X className="w-5 h-5" /></button>
+            </div>
+
+            <div className="p-5 space-y-4 max-h-[75vh] overflow-y-auto">
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => setCashMovement(v => ({ ...v, tipo: 'egreso' }))}
+                  className={`h-11 rounded-xl border-2 font-black uppercase text-[10px] flex items-center justify-center gap-2 ${cashMovement.tipo === 'egreso' ? 'border-status-danger bg-status-danger/10 text-status-danger' : 'border-line text-ink/50'}`}
+                >
+                  <ArrowDownCircle className="w-4 h-4" /> Egreso
+                </button>
+                <button
+                  onClick={() => setCashMovement(v => ({ ...v, tipo: 'ingreso' }))}
+                  className={`h-11 rounded-xl border-2 font-black uppercase text-[10px] flex items-center justify-center gap-2 ${cashMovement.tipo === 'ingreso' ? 'border-status-success bg-status-success/10 text-status-success' : 'border-line text-ink/50'}`}
+                >
+                  <ArrowUpCircle className="w-4 h-4" /> Ingreso
+                </button>
+              </div>
+
+              <div>
+                <label className="text-[9px] font-black uppercase text-ink/50 block mb-1">Método de pago</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => setCashMovement(v => ({ ...v, metodo: 'efectivo_bs' }))}
+                    className={`h-12 rounded-xl border-2 font-black uppercase text-[10px] ${cashMovement.metodo === 'efectivo_bs' ? 'border-brand-gold bg-brand-gold-soft text-brand-gold-deep' : 'border-line text-ink/60'}`}
+                  >Efectivo Bs.</button>
+                  <button
+                    onClick={() => setCashMovement(v => ({ ...v, metodo: 'efectivo_usd' }))}
+                    className={`h-12 rounded-xl border-2 font-black uppercase text-[10px] ${cashMovement.metodo === 'efectivo_usd' ? 'border-brand-gold bg-brand-gold-soft text-brand-gold-deep' : 'border-line text-ink/60'}`}
+                  >Efectivo USD</button>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[9px] font-black uppercase text-ink/50 block mb-1">Monto ({cashMovement.metodo === 'efectivo_bs' ? 'Bs.' : 'USD'})</label>
+                <input
+                  autoFocus
+                  inputMode="decimal"
+                  value={cashMovement.monto}
+                  onChange={e => setCashMovement(v => ({ ...v, monto: e.target.value.replace(/[^0-9.,]/g, '') }))}
+                  className="w-full h-12 px-4 bg-surface-soft border border-line rounded-xl text-lg font-black text-right outline-none focus:border-brand-gold"
+                  placeholder={cashMovement.metodo === 'efectivo_bs' ? '0,00' : '0.00'}
+                />
+                <p className="text-[9px] font-bold text-ink/50 mt-1 text-right">
+                  Equiv. {cashMovement.metodo === 'efectivo_bs' ? 'USD' : 'Bs.'}: {
+                    cashMovement.metodo === 'efectivo_bs'
+                      ? Utils.fmtUSD((Number(String(cashMovement.monto).replace(',', '.')) || 0) / (Number(state.tasa) || 1))
+                      : Utils.fmtBS((Number(String(cashMovement.monto).replace(',', '.')) || 0) * (Number(state.tasa) || 1))
+                  }
+                </p>
+              </div>
+
+              <div>
+                <label className="text-[9px] font-black uppercase text-ink/50 block mb-1">Concepto</label>
+                <input
+                  value={cashMovement.concepto}
+                  onChange={e => setCashMovement(v => ({ ...v, concepto: e.target.value }))}
+                  className="w-full h-11 px-4 bg-white border border-line rounded-xl text-xs font-black uppercase outline-none focus:border-brand-gold"
+                  placeholder="Ej.: Entrega al administrador"
+                />
+              </div>
+
+              <div>
+                <label className="text-[9px] font-black uppercase text-ink/50 block mb-1">Observación (opcional)</label>
+                <textarea
+                  value={cashMovement.observacion}
+                  onChange={e => setCashMovement(v => ({ ...v, observacion: e.target.value }))}
+                  className="w-full min-h-[70px] px-4 py-3 bg-white border border-line rounded-xl text-xs font-bold outline-none focus:border-brand-gold resize-none"
+                  placeholder="Detalle adicional del movimiento..."
+                />
+              </div>
+            </div>
+
+            <div className="p-4 bg-surface-soft border-t border-line flex justify-end gap-2">
+              <button onClick={() => setShowCashMovementModal(false)} className="px-5 h-10 rounded-xl font-black uppercase text-[10px] text-ink/60 hover:bg-white">Cancelar</button>
+              <button onClick={registrarMovimientoCaja} className="px-6 h-10 rounded-xl bg-brand-gold text-black font-black uppercase text-[10px] hover:bg-brand-gold-deep shadow-md">
+                Registrar Movimiento
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {showSaleDetail && (
