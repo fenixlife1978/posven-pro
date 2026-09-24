@@ -296,6 +296,8 @@ export interface ReportZ {
   exentoUSD: number;
   igtfUSD: number;
   metodosPago: Record<string, number>;
+  cobrosDeudaUSD?: number;
+  cobrosDeudaBS?: number;
   salidasCajaUSD: number;
   entradasCajaUSD: number;
   fondoAperturaUSD: number;
