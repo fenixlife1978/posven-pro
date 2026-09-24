@@ -106,7 +106,24 @@ function terminalPrefix(terminal: any, terminalId?: string): string {
   return 'GLOBAL';
 }
 
-function terminalSeries(prefix: string, label: string, number: number, width = 6): string {
+// La serie visible pertenece a UNA sola caja. Si una base migrada contiene
+// terminales con el mismo prefijo, no permitimos que ambas cajas compartan
+// la misma serie: añadimos una parte estable del terminalId solo en ese caso.
+// Así no se rompe la numeración de cajas que ya tienen prefijos únicos.
+async function terminalUniquePrefix(tx: any, terminal: any, terminalId?: string): Promise<string> {
+  const base = terminalPrefix(terminal, terminalId);
+  if (!terminalId || base === 'GLOBAL') return base;
+  const duplicate = await tx.execute({
+    sql: "SELECT id FROM terminales WHERE id<>? AND json_extract(data_json,'$.prefijoCaja')=? LIMIT 1",
+    args: [String(terminalId), base],
+  });
+  if (duplicate.rows.length) {
+    return base + '-' + String(terminalId).replace(/[^A-Z0-9]/gi, '').slice(-6).toUpperCase();
+  }
+  return base;
+}
+
+function terminalSeries(prefix: string, label: string, number: number, width = 6) {
   return prefix + '-' + label + '-' + String(number).padStart(width, '0');
 }
 
@@ -345,7 +362,7 @@ export async function createSaleTransaction(params: {
     if (terminalId && !terminal) throw new Error('La caja/terminal ya no existe en Turso.');
 
     const nextNumber = Number(terminal?.proximoRecibo ?? fallbackReceiptNumber ?? 1);
-    const reciboId = terminalSeries(terminalPrefix(terminal, terminalId), 'V', nextNumber, 9);
+    const reciboId = terminalSeries(await terminalUniquePrefix(tx, terminal, terminalId), 'V', nextNumber, 9);
     const existingSale = await tx.execute(txSelect('ventas', reciboId));
     if (existingSale.rows.length) throw new Error('El correlativo de esta venta ya fue utilizado.');
 
@@ -643,7 +660,7 @@ export async function createZClosureTransaction(params: {
       throw new Error('El número Z cambió en otra caja. Actualice y vuelva a generar el corte.');
     }
 
-    const prefix = terminalPrefix(current, params.terminalId);
+    const prefix = await terminalUniquePrefix(tx, current, params.terminalId);
     let report = { ...clean(params.report), terminalId: params.terminalId, numeroZ: expectedNumber };
     const requestedId = String(report.id || '');
     const existing = requestedId ? await tx.execute(txSelect('reportesZ', requestedId)) : { rows: [] } as any;
@@ -684,7 +701,7 @@ export async function applyDebtPaymentTransaction(params: {
     const field = collection==='cxc'?'proximoCobroDeuda':'proximoPagoProveedor';
     const label = collection==='cxc'?'CXC':'CXP';
     const counter=Number(terminal?.[field])||1;
-    const receiptId=terminal?terminalSeries(terminalPrefix(terminal,terminalId),label,counter,6):terminalSeries('GLOBAL',label,Date.now(),6);
+    const receiptId=terminal?terminalSeries(await terminalUniquePrefix(tx,terminal,terminalId),label,counter,6):terminalSeries('GLOBAL',label,Date.now(),6);
     const applied=Math.min(Number(amountUSD),saldo);
     const appliedBS=Number(amountBS)>0?Math.min(Number(amountBS),Number(payment?.montoBS)||Number(amountBS)):(Number(payment?.montoBS)||(applied*(Number(payment?.tasaAplicada)||0)));
     const pago=clean({...payment,id:receiptId,reciboId:receiptId,terminalId:terminalId||payment?.terminalId,montoUSD:applied,montoBS:appliedBS});
@@ -815,7 +832,7 @@ export async function processReturnOrCancellationTransaction(params:any){
     if(terminalId&&!terminal) throw new Error('La terminal de la operación ya no existe.');
     const field=operationType==='DEVOLUCION'?'proximaDevolucion':'proximaAnulacion';
     const label=operationType==='DEVOLUCION'?'DEV':'ANU'; const counter=Number(terminal?.[field])||1;
-    const canonicalId=terminal?terminalSeries(terminalPrefix(terminal,terminalId),label,counter,6):terminalSeries('GLOBAL',label,Date.now(),6);
+    const canonicalId=terminal?terminalSeries(await terminalUniquePrefix(tx,terminal,terminalId),label,counter,6):terminalSeries('GLOBAL',label,Date.now(),6);
     const table=operationType==='DEVOLUCION'?'devoluciones':'anulaciones';
     if((await tx.execute(txSelect(table,canonicalId))).rows.length) throw new Error('Esta operación ya fue registrada.');
     const products=new Map<string,any>();
