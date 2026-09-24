@@ -779,10 +779,56 @@ async function applyGlobalPayment(params:any, collection:'cxc'|'cxp'){
       const customer=rowFromDb(foundCustomer.rows[0]); if(customer) statements.push(rowStatement('clientes',{...customer,debt:Math.max(0,(Number(customer.debt)||0)-appliedUSD)}));
     }
     if(journal?.id) statements.push(rowStatement('libroDiario',{...journal,montoUSD:appliedUSD,montoBS:appliedBS,referencia:receiptId,terminalId:terminalId||journal.terminalId,terminalName:terminal?.nombre||journal.terminalName}));
+
+    // Un cobro de CxC también es una operación visible en el historial del POS,
+    // pero NO es una venta de mercancía. Se guarda como registro de tipo
+    // COBRO DEUDA para trazabilidad; los reportes X/Z lo excluyen del total de
+    // ventas y lo muestran en el renglón específico de cobros.
+    let sale: any = null;
+    if (collection === 'cxc') {
+      sale = {
+        id: receiptId,
+        fecha: String(payment?.fecha || new Date().toISOString()),
+        cliente: String(customerName || 'CLIENTE'),
+        items: [{
+          productoId: 'ABONO',
+          nombre: 'COBRO DE DEUDA',
+          cantidad: 1,
+          precioUnitUSD: appliedUSD,
+          subtotalUSD: appliedUSD,
+        }],
+        subtotalUSD: appliedUSD,
+        descuentoUSD: 0,
+        totalUSD: appliedUSD,
+        totalBS: appliedBS,
+        metodoPago: payment?.metodo || 'mixto',
+        estado: 'completada',
+        type: 'COBRO DEUDA',
+        received: appliedUSD,
+        change: 0,
+        terminalId: terminalId || 'GLOBAL',
+        terminalName: terminal?.nombre || 'SISTEMA GLOBAL',
+        payments: [{
+          ...payment,
+          id: receiptId,
+          reciboId: receiptId,
+          montoUSD: appliedUSD,
+          montoBS: appliedBS,
+          terminalId: terminalId || payment?.terminalId,
+        }],
+        baseImponibleUSD: 0,
+        ivaUSD: 0,
+        exentoUSD: 0,
+        igtfUSD: 0,
+        tasa: Number(payment?.tasaAplicada) || 0,
+      };
+      statements.push(rowStatement('ventas', sale));
+    }
+
     if(terminal) statements.push(rowStatement('terminales',{...terminal,[field]:counter+1}));
     statements.push({sql:'INSERT INTO operaciones(id,prefijo,operation_id,data_json) VALUES(?,?,?,?)',args:[prefix+'-'+opId,prefix,opId,JSON.stringify({tipo:prefix,operationId:opId,referencia:receiptId,terminalId:terminalId||'GLOBAL'})],wantRows:false});
     for(const s of statements) await tx.execute(s);
-    return {appliedUSD,appliedBS,debts,receiptId};
+    return {appliedUSD,appliedBS,debts,receiptId,sale};
   });
 }
 export async function applyGlobalProviderPaymentTransaction(params:any){ return applyGlobalPayment(params,'cxp'); }
