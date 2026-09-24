@@ -209,7 +209,6 @@ export default function UsersModule() {
                           <button onClick={() => handleBlocked(u)} disabled={loading} className={`btn-icon h-8 w-8 ${u.accesoBloqueado ? 'text-status-success' : 'text-status-danger'}`} title={u.accesoBloqueado ? 'Activar' : 'Desactivar'}>
                             {u.accesoBloqueado ? <CheckCircle2 className="w-4 h-4"/> : <Ban className="w-4 h-4"/>}
                           </button>
-                        }
                         <button onClick={() => handleDelete(u)} className="btn-icon h-8 w-8 text-ink hover:text-status-danger" title={u.isSeedAdmin ? 'Protegido' : 'Eliminar'}><Trash2 className="w-4 h-4"/></button>
                       </div>
                     </td>
