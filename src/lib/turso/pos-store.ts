@@ -722,9 +722,28 @@ async function applyGlobalPayment(params:any, collection:'cxc'|'cxp'){
     const counter=Number(terminal?.[field])||1;
     const receiptId=terminal?terminalSeries(terminalPrefix(terminal,terminalId),label,counter,6):terminalSeries('GLOBAL',label,Date.now(),6);
     const matchField=collection==='cxp'?'proveedor':'cliente';
-    const matchValue=collection==='cxp'?String(provider||''):String(customerCedula?customerName+' ['+customerCedula+']':customerName||'');
-    const found=await tx.execute({sql:"SELECT id,data_json FROM "+tableName(collection)+" WHERE json_extract(data_json,'$."+matchField+"')=? ORDER BY COALESCE(fecha,'') ASC,id ASC",args:[matchValue]});
-    const docs=found.rows.map(rowFromDb).filter((d:any)=>(Number(d?.saldoUSD)||0)>0.001&&d?.estado!=='pagada');
+    let docs:any[] = [];
+    if (collection === 'cxc') {
+      // Las deudas históricas pueden estar guardadas con o sin la cédula
+      // embebida en el campo cliente. El cobro debe localizar ambas formas.
+      const candidates = customerCedula
+        ? await tx.execute({
+            sql:"SELECT id,data_json FROM cxc WHERE (json_extract(data_json,'$.cliente')=? OR json_extract(data_json,'$.cliente')=?) ORDER BY COALESCE(fecha,'') ASC,id ASC",
+            args:[String(customerName || ''), String(customerName || '')+' ['+String(customerCedula)+']']
+          })
+        : await tx.execute({
+            sql:"SELECT id,data_json FROM cxc WHERE json_extract(data_json,'$.cliente')=? ORDER BY COALESCE(fecha,'') ASC,id ASC",
+            args:[String(customerName || '')]
+          });
+      docs = candidates.rows.map(rowFromDb);
+    } else {
+      const found=await tx.execute({
+        sql:"SELECT id,data_json FROM "+tableName(collection)+" WHERE json_extract(data_json,'$."+matchField+"')=? ORDER BY COALESCE(fecha,'') ASC,id ASC",
+        args:[matchValue]
+      });
+      docs = found.rows.map(rowFromDb);
+    }
+    docs = docs.filter((d:any)=>(Number(d?.saldoUSD)||0)>0.001&&d?.estado!=='pagada');
     let remUSD=Number(amountUSD), remBS=Number(amountBS)>0?Number(amountBS):Number(amountUSD)*(Number(payment?.tasaAplicada)||0);
     let appliedUSD=0, appliedBS=0; const debts:any[]=[]; const statements:TursoStatement[]=[];
     for(const d of docs){
