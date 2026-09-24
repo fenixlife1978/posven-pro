@@ -36,7 +36,7 @@ export function CashModule({ onStatusChange }: { onStatusChange: (s: boolean) =>
   const currentTerminal = () => {
     const state = Store.get();
     const user: any = state.user || null;
-    const ids = [user?.id, user?.uid, user?.firebaseUid].filter(Boolean).map(String);
+    const ids = [user?.id, user?.uid].filter(Boolean).map(String);
     return state.terminales.find(t => ids.includes(String(t.usuarioId || '')));
   };
 
