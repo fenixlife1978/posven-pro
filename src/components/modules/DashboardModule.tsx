@@ -1,6 +1,6 @@
 "use client";
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { AppState } from '@/lib/types';
 import { Utils } from '@/lib/db-store';
 import { 
@@ -31,6 +31,22 @@ import {
 } from 'recharts';
 
 export default function DashboardModule({ state }: { state: AppState }) {
+  const [historicalSalesCount, setHistoricalSalesCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    fetch('/api/turso/store?special=count&table=ventas', { credentials: 'include', cache: 'no-store' })
+      .then(async response => {
+        if (!response.ok) throw new Error('No se pudo consultar el histórico de ventas en Turso.');
+        const body = await response.json();
+        if (!body?.ok) throw new Error(String(body?.error || 'Turso rechazó la consulta.'));
+        return Number(body.total || 0);
+      })
+      .then(total => { if (active) setHistoricalSalesCount(total); })
+      .catch(error => console.error('[Dashboard] histórico de ventas:', error));
+    return () => { active = false; };
+  }, []);
+
   const hoy = Utils.hoy();
   const ventasHoy = state.ventas.filter(v => v.fecha.startsWith(hoy));
   const totalVentasHoyUSD = ventasHoy.reduce((s, v) => s + v.totalUSD, 0);
