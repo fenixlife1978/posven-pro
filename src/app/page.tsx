@@ -458,12 +458,27 @@ export default function LicoreriaPOS() {
                   // ✅ GUARDAR LA APERTURA EN EL TERMINAL (caja) DE ESTE OPERADOR,
                   // no en un estado global. Cada caja abre/cierra su propia jornada.
                   const currentState = Store.get();
-                  const currentUser: any = (currentState as any).user || user || null;
-                  const currentIds = [currentUser?.id, currentUser?.uid, currentUser?.firebaseUid]
+                  // La identidad de caja viene de la sesión Turso resuelta al iniciar
+                  // sesión. Store puede conservar un usuario cacheado antiguo, por lo
+                  // que nunca debemos usarlo por encima de la identidad React actual.
+                  const currentUser: any = user || (state as any).user || (currentState as any).user || null;
+                  const sessionTerminalId = String(
+                    currentUser?.terminalId ||
+                    (state as any).user?.terminalId ||
+                    (currentState as any).user?.terminalId ||
+                    ''
+                  ).trim();
+                  const currentIds = [currentUser?.id, currentUser?.uid]
                     .filter(Boolean).map(String);
-                  const termId = (currentState.terminales || [])
-                    .find(t => currentIds.includes(String(t.usuarioId || '')))?.id;
-                  const terminalActual = (currentState.terminales || []).find(t => t.id === termId);
+                  const termId = sessionTerminalId || (
+                    (currentState.terminales || [])
+                      .find(t => currentIds.includes(String(t.usuarioId || '')))?.id || ''
+                  );
+                  if (!termId) {
+                    alert('No se pudo identificar la caja asignada en Turso. No se puede abrir una caja global.');
+                    return;
+                  }
+                  const terminalActual = (currentState.terminales || []).find(t => String(t.id) === String(termId));
                   const session: any = {
                     terminalId: termId,
                     terminalName: terminalActual?.nombre || 'S/T',
