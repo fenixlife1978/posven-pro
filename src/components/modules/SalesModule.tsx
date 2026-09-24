@@ -586,97 +586,42 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     setIsProcessing(true);
     try {
       const listadoPagos = pagosFinales || pagos;
-      const totalPagadoRecibido = listadoPagos.reduce((s, p) => s + p.montoUSD, 0);
       const terminal = getCurrentTerminal();
-      const nextNum = terminal?.proximoRecibo || state.proximoRecibo;
-      const prefijo = Utils.prefijoCaja(terminal, state.terminales);
-      const reciboId = prefijo + '-' + String(nextNum).padStart(9, '0');
-      const ahoraStr = Utils.ahora();
-      
-      let vExento = 0, vBase = 0, vIVA = 0;
-      let prodsActualizados = [...state.productos], nuevosMovimientos: Movimiento[] = [];
+      const operationId = 'VENTA-POS-' + Store.uid();
 
-      state.carrito.forEach(item => {
-        const pIdx = prodsActualizados.findIndex(x => x.id === item.productoId);
-        if (pIdx === -1) return;
-        const p = { ...prodsActualizados[pIdx] };
-        if (p.aplicaIVA) { const base = item.subtotalUSD / 1.16; vBase += base; vIVA += (item.subtotalUSD - base); } else { vExento += item.subtotalUSD; }
-        if (p.isKit && p.kitType === 'stock_componentes' && p.kitItems) {
-          p.kitItems.forEach(ki => {
-            const cpIdx = prodsActualizados.findIndex(cp => cp.id === ki.productoId);
-            if (cpIdx !== -1) {
-              const cp = { ...prodsActualizados[cpIdx] };
-              const qty = item.cantidad * ki.cantidad, stockAntes = cp.stock;
-              cp.stock -= qty;
-              nuevosMovimientos.push({ id: Store.uid(), productoId: cp.id, tipo: 'venta', cantidad: -qty, stockAntes, stockDespues: cp.stock, fecha: ahoraStr, referencia: `KIT: ${p.nombre} - VENTA ${reciboId}`, terminalId: terminal?.id || 'GLOBAL' });
-              prodsActualizados[cpIdx] = cp;
-            }
-          });
-        } else {
-          const stockAntes = p.stock;
-          p.stock -= item.cantidad;
-          nuevosMovimientos.push({ id: Store.uid(), productoId: item.productoId, tipo: 'venta', cantidad: -item.cantidad, stockAntes, stockDespues: p.stock, fecha: ahoraStr, referencia: `VENTA ${reciboId}`, terminalId: terminal?.id || 'GLOBAL' });
-          prodsActualizados[pIdx] = p;
-        }
+      // La venta NO se confirma con un simple Store.set() local.
+      // Debe pasar por la transacción atómica de Turso/Firebase para que
+      // venta + stock + kardex + asiento + correlativo queden persistidos
+      // antes de mostrarla como completada.
+      const result = await Store.createSaleTransaction({
+        operationId,
+        cart: state.carrito.map(x => ({ ...x })),
+        payments: listadoPagos.map(x => ({ ...x })),
+        clientName: cliente,
+        terminalId: terminal?.id,
+        fallbackReceiptNumber: terminal?.proximoRecibo || state.proximoRecibo,
+        now: Utils.ahora(),
+        tasa: state.tasa,
+        saleType: 'VENTA',
+        cajeroId: (state as any).user?.id || (state as any).user?.uid || auth?.currentUser?.uid
       });
 
-      const vIgtf = listadoPagos.filter(p => p.metodo === 'efectivo_usd' || p.metodo === 'zelle').reduce((acc, p) => acc + (p.montoUSD * 0.03), 0);
-      
-      const nuevaVenta: Sale = { 
-        id: reciboId, 
-        fecha: ahoraStr, 
-        cliente, 
-        items: [...state.carrito], 
-        subtotalUSD, 
-        descuentoUSD: 0, 
-        totalUSD: subtotalUSD, 
-        totalBS, 
-        metodoPago: listadoPagos.length > 1 ? 'mixto' : (listadoPagos[0]?.metodo || 'efectivo_usd'), 
-        estado: 'completada', 
-        type: 'VENTA', 
-        received: totalPagadoRecibido, 
-        change: Math.max(0, totalPagadoRecibido - subtotalUSD), 
-        payments: [...listadoPagos], 
-        terminalId: terminal?.id, 
-        terminalName: terminal?.nombre || 'SISTEMA GLOBAL', 
-        cajeroId: auth?.currentUser?.uid, 
-        baseImponibleUSD: Utils.round(vBase), 
-        ivaUSD: Utils.round(vIVA), 
-        exentoUSD: Utils.round(vExento), 
-        igtfUSD: Utils.round(vIgtf),
-        tasa: state.tasa
-      };
-      
-      const nuevasEntradasDiario: LibroDiarioEntry[] = listadoPagos.map(p => ({ 
-        id: 'ACC-' + Store.uid().toUpperCase().slice(0, 5), 
-        fecha: ahoraStr, 
-        tipo: 'ingreso', 
-        categoria: 'VENTA', 
-        concepto: `VENTA #${reciboId} - CLIENTE: ${cliente.toUpperCase()}`, 
-        montoUSD: p.montoUSD, 
-        montoBS: p.montoBS, 
-        metodo: p.metodo, 
-        referencia: reciboId + '-' + (terminal?.id || 'GLOBAL'),
-        terminalId: terminal?.id || 'GLOBAL',
-        terminalName: terminal?.nombre || 'SISTEMA GLOBAL'
-      }));
-      
-      await updateState({ 
-        productos: prodsActualizados, 
-        ventas: [...state.ventas, nuevaVenta], 
-        movimientos: [...state.movimientos, ...nuevosMovimientos], 
-        libroDiario: [...nuevasEntradasDiario, ...(state.libroDiario || [])], 
-        carrito: [], 
-        proximoRecibo: state.proximoRecibo + 1, 
-        terminales: state.terminales.map(t => t.id === terminal?.id ? { ...t, proximoRecibo: t.proximoRecibo + 1 } : t) 
-      });
+      if (!result?.sale) throw new Error('La venta no pudo confirmarse en la base de datos.');
+
       if (typeof window !== 'undefined') sessionStorage.removeItem('posven_current_cart');
-      
-      setLastProcessedSale(nuevaVenta); 
-      setShowReceiptModal(true); 
-      setPagos([]); 
-      setCliente('Consumidor final'); 
+
+      setLastProcessedSale(result.sale);
+      setShowReceiptModal(true);
+      setPagos([]);
+      setCliente('Consumidor final');
       setSelectedProductDisplay(null);
+      updateState({ carrito: [] });
+    } catch (e: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Venta no registrada',
+        description: e?.message || 'No se pudo completar la venta. No se modificó el stock.'
+      });
     } finally {
       setIsProcessing(false);
     }
