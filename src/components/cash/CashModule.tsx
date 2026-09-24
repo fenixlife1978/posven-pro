@@ -8,7 +8,6 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Store, Utils } from '@/lib/db-store';
-import { auth } from '@/lib/firebase';
 import { toast } from '@/hooks/use-toast';
 import {
   Table,
@@ -35,9 +34,10 @@ export function CashModule({ onStatusChange }: { onStatusChange: (s: boolean) =>
   const [closeNotes, setCloseNotes] = useState('');
 
   const currentTerminal = () => {
-    if (!auth?.currentUser) return undefined;
     const state = Store.get();
-    return state.terminales.find(t => t.usuarioId === auth.currentUser!.uid);
+    const user: any = state.user || null;
+    const ids = [user?.id, user?.uid, user?.firebaseUid].filter(Boolean).map(String);
+    return state.terminales.find(t => ids.includes(String(t.usuarioId || '')));
   };
 
   useEffect(() => {
