@@ -27,6 +27,30 @@ interface Props {
 export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SALE', storeInfo }: Props) {
   const state = Store.get();
   const printRef = useRef<HTMLDivElement>(null);
+  const [arqueoReal, setArqueoReal] = React.useState<Record<string, string>>({});
+  const arqueoRows = React.useMemo(() => {
+    const rows = Array.isArray(data?.metodosArqueo) ? data.metodosArqueo : [];
+    const base = ['efectivo_bs','efectivo_usd','pagomovil','punto_venta','biopago','transferencia','zelle','credito','otros'];
+    const map = new Map<string, any>();
+    [...base, ...rows.map((r:any) => r.metodo)].forEach((metodo) => { if (metodo) map.set(metodo, rows.find((r:any)=>r.metodo===metodo) || {metodo,ventasBS:0,ventasUSD:0,cobrosBS:0,cobrosUSD:0,devBS:0,devUSD:0,moneda: isUsdPayment(metodo) ? 'USD' : 'BS'}); });
+    return Array.from(map.values());
+  }, [data?.metodosArqueo]);
+  const arqueoCalc = React.useMemo(() => {
+    const details = arqueoRows.map((r:any) => {
+      const usd = r.moneda === 'USD';
+      const fondo = r.metodo === 'efectivo_bs' ? Number(data?.fondoAperturaBS || 0) : r.metodo === 'efectivo_usd' ? Number(data?.fondoAperturaUSD || 0) : 0;
+      const ventas = usd ? Number(r.ventasUSD || 0) : Number(r.ventasBS || 0);
+      const cobros = usd ? Number(r.cobrosUSD || 0) : Number(r.cobrosBS || 0);
+      const dev = usd ? Number(r.devUSD || 0) : Number(r.devBS || 0);
+      const credito = r.metodo === 'credito' ? Number(data?.ventasCreditoUSD || 0) : 0;
+      const sistema = r.metodo === 'credito' ? credito : fondo + ventas + cobros - dev;
+      const real = r.metodo === 'credito' ? sistema : (arqueoReal[r.metodo] === undefined || arqueoReal[r.metodo] === '' ? null : Number(arqueoReal[r.metodo]));
+      return { ...r, usd, fondo, ventas, cobros, dev, credito, sistema, real, dif: real === null ? null : real - sistema };
+    });
+    const difBS = details.filter((r:any)=>!r.usd && r.real !== null).reduce((s:number,r:any)=>s+r.dif,0);
+    const difUSD = details.filter((r:any)=>r.usd && r.real !== null).reduce((s:number,r:any)=>s+r.dif,0);
+    return {details,difBS,difUSD,conciliado:Math.abs(difBS)<0.005 && Math.abs(difUSD)<0.005};
+  }, [arqueoRows, arqueoReal, data?.fondoAperturaBS, data?.fondoAperturaUSD, data?.ventasCreditoUSD]);
 
   const isReport = type === 'REPORT_X' || type === 'REPORT_Z';
   const data = isReport ? reportData : saleData;
@@ -75,7 +99,7 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
 
   const getReportTitle = () => {
     if (type === 'REPORT_Z') return '*** REPORTE Z ***';
-    if (type === 'REPORT_X') return '*** REPORTE X - ARQUEO ***';
+    if (type === 'REPORT_X') return '*** ARQUEO DE CAJA ***';
     return data.type || 'RECIBO DE VENTA';
   };
 
@@ -332,7 +356,38 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
               <div className="separator-dashed"></div>
 
               {/* CONTENIDO REPORTES X/Z */}
-              {isReport && (
+              {isReport && (type === 'REPORT_X' ? (
+                <div className="space-y-3">
+                  <div className="text-center font-black text-[15px]">ARQUEO DE CAJA</div>
+                  <div className="text-[9px] text-center font-bold">LECTURA PARCIAL · CAJA {terminalId}</div>
+                  <div className="overflow-x-auto border border-gray-300 rounded-lg">
+                    <table className="w-full text-[8px] min-w-[920px] border-collapse">
+                      <thead><tr className="bg-black text-white"><th className="p-2 text-left">CONCEPTO</th><th className="p-2 text-right">FONDO INIC. BS</th><th className="p-2 text-right">FONDO INIC. USD</th><th className="p-2 text-right">VENTAS</th><th className="p-2 text-right">COBROS DE DEUDAS</th><th className="p-2 text-right">DEV./ANU.</th><th className="p-2 text-right">TOTAL MONTO SISTEMA</th><th className="p-2 text-right">MONTO REAL</th><th className="p-2 text-right">DIF. (+ / -)</th></tr></thead>
+                      <tbody>
+                        {arqueoCalc.details.map((r:any) => (
+                          <tr key={r.metodo} className="border-b border-gray-200">
+                            <td className="p-2 font-bold">{formatPaymentMethod(r.metodo)}</td>
+                            <td className="p-2 text-right">{r.metodo==='efectivo_bs' ? formatBs(r.fondo) : '—'}</td>
+                            <td className="p-2 text-right">{r.metodo==='efectivo_usd' ? '$ '+formatUsd(r.fondo) : '—'}</td>
+                            <td className="p-2 text-right">{r.ventas ? (r.usd ? '$ '+formatUsd(r.ventas) : formatBs(r.ventas)) : '—'}</td>
+                            <td className="p-2 text-right">{r.cobros ? (r.usd ? '$ '+formatUsd(r.cobros) : formatBs(r.cobros)) : '—'}</td>
+                            <td className="p-2 text-right text-red-600">{r.dev ? (r.usd ? '($ '+formatUsd(r.dev)+')' : '('+formatBs(r.dev)+')') : '—'}</td>
+                            <td className="p-2 text-right font-black">{r.usd ? '$ '+formatUsd(r.sistema) : formatBs(r.sistema)}</td>
+                            <td className="p-1 text-right">{r.metodo==='credito' ? (r.usd ? '$ '+formatUsd(r.sistema) : formatBs(r.sistema)) : <input value={arqueoReal[r.metodo] ?? ''} onChange={e=>setArqueoReal(prev=>({...prev,[r.metodo]:e.target.value}))} inputMode="decimal" className="w-24 h-7 border border-gray-400 rounded px-1 text-right font-bold bg-white text-black" placeholder={r.usd ? 'USD' : 'Bs.'} />}</td>
+                            <td className={(r.dif === null ? 'p-2 text-right font-black text-gray-400' : 'p-2 text-right font-black '+(r.dif >= 0 ? 'text-green-700' : 'text-red-600'))}>{r.dif === null ? '—' : (r.usd ? (r.dif>=0?'+':'')+'$ '+formatUsd(r.dif) : (r.dif>=0?'+':'')+formatBs(r.dif))}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="border-t-2 border-black pt-3 space-y-2">
+                    <div className="font-black text-center text-[12px]">RESULTADO FINAL GLOBAL</div>
+                    <div className={'text-center font-black text-[14px] '+(arqueoCalc.conciliado ? 'text-green-700' : 'text-red-600')}>{arqueoCalc.conciliado ? 'CONCILIADO' : 'DIFERENCIA (+ / -)'}</div>
+                    {!arqueoCalc.conciliado && <div className="text-center font-black text-[10px]">BS: {arqueoCalc.difBS>=0?'+':''}{formatBs(arqueoCalc.difBS)} · USD: {arqueoCalc.difUSD>=0?'+$ ':'-$ '}{formatUsd(Math.abs(arqueoCalc.difUSD))}</div>}
+                  </div>
+                  <div className="text-center font-bold text-[8px]">DOCUMENTO NO VÁLIDO COMO CIERRE FISCAL</div>
+                </div>
+              ) : (
                 <div className="space-y-1">
                    {type === 'REPORT_Z' && (
                      <>
