@@ -1231,6 +1231,16 @@ function init() {
   // cuando el módulo correspondiente los necesita.
 
 
+  // 4.5) LIBRO DIARIO: movimientos de caja y asientos deben hidratarse desde Turso
+  void (async () => {
+    try {
+      const tursoItems = await tryTursoRead('libroDiario', { limit: 2000 });
+      if (tursoItems !== null) applyPatch({ libroDiario: tursoItems });
+    } catch (e) {
+      console.error('[db-store] Error cargando libro diario desde Turso:', e);
+    }
+  })();
+
   // 5) CATÁLOGOS
   // Se hidratan desde la caché local. Si config/general detecta una versión
   // nueva, el listener anterior ejecuta loadCatalogs() de forma controlada.
@@ -2883,7 +2893,7 @@ export const Store = {
         if (navigator.onLine === false) {
           throw new Error('Sin conexión: no se modificará la terminal para evitar divergencia.');
         }
-      } else if (['clientes', 'proveedores', 'movimientos'].includes(String(k))) {
+      } else if (['clientes', 'proveedores', 'movimientos', 'libroDiario'].includes(String(k))) {
         const prevById = new Map(prevArr.filter(x => x?.id).map(x => [String(x.id), x]));
         const newById = new Map(newArr.filter(x => x?.id).map(x => [String(x.id), x]));
         const records = [...newById.values()].filter((after: any) => {

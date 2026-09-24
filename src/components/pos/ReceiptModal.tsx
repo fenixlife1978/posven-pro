@@ -634,10 +634,10 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
                       const cobrosDeudaUsd = data.cobrosDeudaUSD ?? data.cobrosDeudaUsd ?? 0;
 
                       // ===== SALIDAS / ENTRADAS EXTRA DE CAJA =====
-                      const salidasCajaUsd = data.manualSalidas ?? data.salidasCajaUSD ?? 0;
-                      const entradasCajaUsd = data.manualEntradas ?? data.entradasCajaUSD ?? 0;
-                      const salidasCajaBs = salidasCajaUsd * (state.tasa || 1);
-                      const entradasCajaBs = entradasCajaUsd * (state.tasa || 1);
+                      const salidasCajaBs = Number(data.manualSalidasBS ?? data.salidasCajaBS ?? 0);
+                      const salidasCajaUsd = Number(data.manualSalidasUSD ?? data.salidasCajaUSD ?? 0);
+                      const entradasCajaBs = Number(data.manualEntradasBS ?? data.entradasCajaBS ?? 0);
+                      const entradasCajaUsd = Number(data.manualEntradasUSD ?? data.entradasCajaUSD ?? 0);
 
                       // Sumar cobros de deuda a las ventas del período
                       const totalVentasEfectivoBs = ventasEfectivoBs + cobrosDeudaBs;

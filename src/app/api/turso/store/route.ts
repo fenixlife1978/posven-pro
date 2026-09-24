@@ -119,7 +119,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: true, ...result });
       }
       case 'recordsSync': {
-        const allowed = new Set(['clientes', 'proveedores', 'movimientos']);
+        const allowed = new Set(['clientes', 'proveedores', 'movimientos', 'libroDiario']);
         const target = String(body.table || '');
         if (!allowed.has(target)) throw new Error('Tabla no permitida para sincronización general.');
         if (target === 'proveedores' && user.rol !== 'administrador') throw new Error('Se requiere administrador.');

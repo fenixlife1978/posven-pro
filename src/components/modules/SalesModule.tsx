@@ -317,6 +317,10 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     const relevantDiario=allLibroDiario.filter(e=>inWindow(e.fecha)&&String(e.terminalId||'')===termId);
     const totalSalidasCaja=relevantDiario.filter(e=>e.tipo==='egreso').reduce((s,e)=>s+(Number(e.montoUSD)||0),0);
     const totalEntradasCaja=relevantDiario.filter(e=>e.tipo==='ingreso'&&e.categoria!=='VENTA'&&e.categoria!=='COBRO_DEUDA').reduce((s,e)=>s+(Number(e.montoUSD)||0),0);
+    const totalSalidasCajaBS=relevantDiario.filter(e=>e.tipo==='egreso'&&String(e.categoria||'')==='MOVIMIENTO_CAJA'&&String(e.metodo||'')==='efectivo_bs').reduce((s,e)=>s+(Number(e.montoBS)||0),0);
+    const totalSalidasCajaUSD=relevantDiario.filter(e=>e.tipo==='egreso'&&String(e.categoria||'')==='MOVIMIENTO_CAJA'&&String(e.metodo||'')==='efectivo_usd').reduce((s,e)=>s+(Number(e.montoUSD)||0),0);
+    const totalEntradasCajaBS=relevantDiario.filter(e=>e.tipo==='ingreso'&&String(e.categoria||'')==='MOVIMIENTO_CAJA'&&String(e.metodo||'')==='efectivo_bs').reduce((s,e)=>s+(Number(e.montoBS)||0),0);
+    const totalEntradasCajaUSD=relevantDiario.filter(e=>e.tipo==='ingreso'&&String(e.categoria||'')==='MOVIMIENTO_CAJA'&&String(e.metodo||'')==='efectivo_usd').reduce((s,e)=>s+(Number(e.montoUSD)||0),0);
 
     const esMetodoUSD=(m:string)=>m==='efectivo_usd'||m==='zelle';
     const esMetodoBS=(m:string)=>['efectivo_bs','pagomovil','punto_venta','biopago','transferencia'].includes(m);
@@ -394,7 +398,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     const cobrosDeudaBS=cobroDeudaVentas.reduce((s,v)=>s+getSaleCurrencyTotals(v).bs,0);
     const terminalName=resolvedTerminal?.nombre||'CAJA NO IDENTIFICADA';
 
-    return {brUSD,devUSD,descUSD,netUSD,igtfUSD,ivaUSD,baseImponibleUSD,exentoUSD,paymentMethods:paymentMethodsMap,manualSalidas:totalSalidasCaja,manualEntradas:totalEntradasCaja,cobrosDeudaUSD,cobrosDeudaBS,fondoAperturaUSD:tc.fondoCajaHoyUSD||0,fondoAperturaBS:tc.fondoCajaHoyBS||0,desdeFactura,hastaFactura,desdeNC,hastaNC,stats:{facturas:vActivas.length,devoluciones:dHoy.length,anulaciones:vAnuladas.length,ticketPromedio:vActivas.length?(netUSD/vActivas.length):0},fecha:Utils.ahora(),terminalName,terminalId:termId,numeroZ:(tc.ultimoZ||0)+1,acumuladoHistoricoUSD:(tc.acumuladoHistorico||0)+netUSD,totalVentasUSD:brUSD,metodosArqueo,ventasCreditoUSD,tasaBCV:freshState.tasa||0};
+    return {brUSD,devUSD,descUSD,netUSD,igtfUSD,ivaUSD,baseImponibleUSD,exentoUSD,paymentMethods:paymentMethodsMap,manualSalidas:totalSalidasCaja,manualEntradas:totalEntradasCaja,manualSalidasBS:totalSalidasCajaBS,manualSalidasUSD:totalSalidasCajaUSD,manualEntradasBS:totalEntradasCajaBS,manualEntradasUSD:totalEntradasCajaUSD,cobrosDeudaUSD,cobrosDeudaBS,fondoAperturaUSD:tc.fondoCajaHoyUSD||0,fondoAperturaBS:tc.fondoCajaHoyBS||0,desdeFactura,hastaFactura,desdeNC,hastaNC,stats:{facturas:vActivas.length,devoluciones:dHoy.length,anulaciones:vAnuladas.length,ticketPromedio:vActivas.length?(netUSD/vActivas.length):0},fecha:Utils.ahora(),terminalName,terminalId:termId,numeroZ:(tc.ultimoZ||0)+1,acumuladoHistoricoUSD:(tc.acumuladoHistorico||0)+netUSD,totalVentasUSD:brUSD,metodosArqueo,ventasCreditoUSD,tasaBCV:freshState.tasa||0};
   };
 
   const handleOpenReport = async (type: 'REPORT_X' | 'REPORT_Z') => {
