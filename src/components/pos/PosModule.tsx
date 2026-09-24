@@ -118,14 +118,21 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   const getFreshReportData = (windowStart?: string, windowEndExclusive?: string) => {
     // ✅ FIX: Obtener datos frescos del Store para evitar inconsistencias
     const freshState = Store.get();
-    const corteTimestamp = windowStart ?? (Utils.getTerminalCash(currentTerminal).fechaUltimoZ || freshState.fechaUltimoZ || '');
-    const termId = currentTerminal?.id || 'GLOBAL';
-    
+
+    // La terminal debe salir de la identidad Turso fresca, no de una
+    // referencia React que pudo quedar obsoleta después del login/Z.
+    const sessionTerminalId = String((freshState as any).user?.terminalId || '').trim();
+    const resolvedTerminal = sessionTerminalId
+      ? (freshState.terminales || []).find((t:any) => String(t?.id || '') === sessionTerminalId) || currentTerminal
+      : currentTerminal;
+    const termId = String(resolvedTerminal?.id || '');
+    const corteTimestamp = windowStart ?? (Utils.getTerminalCash(resolvedTerminal).fechaUltimoZ || freshState.fechaUltimoZ || '');
+
     // Usar datos frescos del Store en lugar del state del componente
     const allVentas = freshState.ventas || [];
     const allDevoluciones = freshState.devoluciones || [];
     const allLibroDiario = freshState.libroDiario || [];
-    const terminalCash = Utils.getTerminalCash(currentTerminal);
+    const terminalCash = Utils.getTerminalCash(resolvedTerminal);
     
     const inWindow = (fecha: string) => fecha > corteTimestamp && (!windowEndExclusive || fecha < windowEndExclusive);
     // Los cobros CxC aparecen en el historial del POS como operaciones
@@ -135,9 +142,9 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       const tipo = String(v?.type || '').trim().toUpperCase();
       return tipo === 'COBRO DEUDA' || tipo === 'ABONO DEUDA' || tipo === 'COBRO_DEUDA';
     };
-    const vActivas = allVentas.filter(v => inWindow(v.fecha) && v.estado !== 'anulada' && v.terminalId === termId && !esCobroDeuda(v));
-    const vAnuladas = allVentas.filter(v => inWindow(v.fecha) && v.estado === 'anulada' && v.terminalId === termId && !esCobroDeuda(v));
-    const dHoy = allDevoluciones.filter(d => inWindow(d.fecha) && (allVentas.find(v => v.id === d.ventaId)?.terminalId === termId));
+    const vActivas = allVentas.filter(v => inWindow(v.fecha) && v.estado !== 'anulada' && String(v.terminalId || '') === termId && !esCobroDeuda(v));
+    const vAnuladas = allVentas.filter(v => inWindow(v.fecha) && v.estado === 'anulada' && String(v.terminalId || '') === termId && !esCobroDeuda(v));
+    const dHoy = allDevoluciones.filter(d => inWindow(d.fecha) && (String(allVentas.find(v => v.id === d.ventaId)?.terminalId || '') === termId));
     
     const brUSD = vActivas.reduce((s, v) => s + v.totalUSD, 0);
     const devUSD = dHoy.reduce((s, d) => s + d.totalUSD, 0);
@@ -182,7 +189,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     // Cobros de deuda: se calculan desde los medios de pago reales del comprobante.
     // USD = únicamente efectivo USD + Zelle. BS = únicamente montos cobrados en BS.
     // Esto evita confundir el equivalente en USD de un pago en BS con dólares físicos/virtuales.
-    const cobroDeudaVentas = allVentas.filter(v => inWindow(v.fecha) && v.terminalId === termId && esCobroDeuda(v));
+    const cobroDeudaVentas = allVentas.filter(v => inWindow(v.fecha) && String(v.terminalId || '') === termId && esCobroDeuda(v));
     const cobroDeudaPayments = cobroDeudaVentas.flatMap((v:any) => Array.isArray(v.payments) ? v.payments : []);
     const cobrosDeudaUSD = cobroDeudaPayments
       .filter((p:any) => p?.metodo === 'efectivo_usd' || p?.metodo === 'zelle')
@@ -239,7 +246,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     }));
     const ventasCreditoUSD=vActivas.filter((v:any)=>String(v.metodoPago||'').toLowerCase()==='credito'||(Array.isArray(v.payments)&&v.payments.some((p:any)=>p.metodo==='credito'))).reduce((s:number,v:any)=>s+(Number(v.totalUSD)||0),0);
 
-    const terminalName = currentTerminal?.nombre || 'CAJA NO IDENTIFICADA';
+    const terminalName = resolvedTerminal?.nombre || 'CAJA NO IDENTIFICADA';
 
     return { 
       brUSD, devUSD, descUSD, netUSD, igtfUSD, ivaUSD, baseImponibleUSD, exentoUSD,
