@@ -328,7 +328,7 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
 
       {showConteoFisico && (
         <ModalConteoFisico
-          productos={prods}
+          productos={(state.productos || []).filter(p => p.activo)}
           departamentos={cleanDepartamentos}
           departamentoInicial={deptFilter}
           onClose={() => setShowConteoFisico(false)}
