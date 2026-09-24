@@ -38,6 +38,25 @@ export default function ReportsModule({ state }: { state: AppState }) {
   });
 
   const totalVentasUSD = ventasFiltradas.reduce((s, v) => s + v.totalUSD, 0);
+
+  // En el historial se conserva la moneda original del pago. Para pagos
+  // originados en BS mostramos su equivalencia BS; para USD (Zelle/Efectivo
+  // USD) la columna BS queda neutra porque no corresponde a una conversión.
+  const metodosBS = new Set(['efectivo_bs', 'punto_venta', 'biopago', 'pagomovil', 'transferencia']);
+  const metodosUSD = new Set(['efectivo_usd', 'zelle']);
+  const getEquivalenciaBS = (v: any): number | null => {
+    const pagos = Array.isArray(v.payments) ? v.payments : [];
+    if (pagos.length > 0) {
+      const pagosBS = pagos.filter((p: any) => metodosBS.has(String(p?.metodo)));
+      if (pagosBS.length > 0) {
+        return pagosBS.reduce((s: number, p: any) => s + (Number(p?.montoBS) || 0), 0);
+      }
+      if (pagos.every((p: any) => metodosUSD.has(String(p?.metodo)))) return null;
+    }
+    if (metodosBS.has(String(v.metodoPago))) return Number(v.totalBS) || 0;
+    if (metodosUSD.has(String(v.metodoPago))) return null;
+    return Number(v.totalBS) > 0 ? Number(v.totalBS) : null;
+  };
   
   // Rentabilidad
   const totalCostoVentas = ventasFiltradas.reduce((s, v) => {
@@ -194,7 +213,7 @@ export default function ReportsModule({ state }: { state: AppState }) {
                         </span>
                       </td>
                       <td className="text-brand-gold-deep font-black text-sm text-right py-4">{Utils.fmtUSD(v.totalUSD)}</td>
-                      <td className="text-ink font-bold text-xs text-right py-4 px-6">{Utils.fmtBS(v.totalBS)}</td>
+                      <td className="text-ink font-bold text-xs text-right py-4 px-6">{(() => { const bs = getEquivalenciaBS(v); return bs === null ? '—' : Utils.fmtBS(bs); })()}</td>
                     </tr>
                   ))}
                   {ventasFiltradas.length === 0 && (
