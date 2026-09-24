@@ -17,8 +17,6 @@ import {
   RefreshCw,
   Database
 } from 'lucide-react';
-import { db } from '@/lib/firebase';
-import { collection, doc, updateDoc, onSnapshot, getDocs, setDoc, deleteDoc } from 'firebase/firestore';
 import { toast } from '@/hooks/use-toast';
 
 export default function GlobalControlModule({ state, updateState }: { state: AppState, updateState: (s: Partial<AppState>) => void }) {
@@ -36,28 +34,14 @@ export default function GlobalControlModule({ state, updateState }: { state: App
     (async () => {
       try {
         const response = await fetch('/api/users', { credentials: 'include', cache: 'no-store' });
-        if (response.status !== 503) {
-          const data = await response.json().catch(() => ({}));
-          if (!response.ok) throw new Error(data?.error || 'No se pudieron cargar los usuarios.');
-          if (!cancelled) {
-            setUsers(Array.isArray(data.usuarios) ? data.usuarios : (Array.isArray(data.users) ? data.users : []));
-            setLoadingUsers(false);
-          }
-          return;
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data?.error || 'No se pudieron cargar los usuarios desde Turso.');
+        if (!cancelled) {
+          setUsers(Array.isArray(data.usuarios) ? data.usuarios : (Array.isArray(data.users) ? data.users : []));
+          setLoadingUsers(false);
         }
-
-        if (!db) return;
-        unsubscribe = onSnapshot(collection(db, 'users'), (snapshot) => {
-          const list: any[] = [];
-          snapshot.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
-          setUsers(list);
-          setLoadingUsers(false);
-        }, (error) => {
-          console.error("Error monitoreando usuarios:", error);
-          setLoadingUsers(false);
-        });
       } catch (error) {
-        console.error("Error cargando usuarios:", error);
+        console.error("Error cargando usuarios desde Turso:", error);
         if (!cancelled) setLoadingUsers(false);
       }
     })();
