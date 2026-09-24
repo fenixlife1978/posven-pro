@@ -2225,9 +2225,15 @@ export const Store = {
     // Las colecciones autoritativas se actualizan por sus snapshots. Solo
     // parcheamos libroDiario para que el asiento aparezca inmediatamente.
     if (result?.products?.length) {
-      // Productos: Firestore sigue siendo la fuente de verdad y RTDB es su espejo.
+      // Productos: la transacción ya los confirmó en la fuente de verdad.
+      // Reflejarlos inmediatamente evita que la UI espere al listener.
       await syncProductosRTDB(cache.productos || [], result.products);
       applyPatch({ productos: mergeById(cache.productos || [], result.products) });
+    }
+    if (result?.sale?.id) {
+      // La venta también debe quedar inmediatamente en el cache local.
+      // La persistencia real ya ocurrió dentro de la transacción.
+      applyPatch({ ventas: mergeById(cache.ventas || [], [result.sale]) });
     }
     if (result?.journals?.length) {
       applyPatch({ libroDiario: mergeById(cache.libroDiario, result.journals) });
