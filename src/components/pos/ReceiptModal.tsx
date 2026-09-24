@@ -5,6 +5,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Printer, X, Zap, Share2, Monitor } from 'lucide-react';
 import { Store, Utils } from '@/lib/db-store';
 import { formatBs, formatUsd } from '@/lib/currency-formatter';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 declare global {
   interface Window {
@@ -217,48 +219,131 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
 
+    const isArqueo = type === 'REPORT_X';
     printWindow.document.write(`
       <html>
         <head>
           <meta charset="UTF-8">
-          <title>Impresion_PosVEN_Pro</title>
+          <title>${isArqueo ? 'Arqueo_de_Caja_PosVEN_Pro' : 'Impresion_PosVEN_Pro'}</title>
           <style>
-            @page { size: 80mm auto; margin: 0; }
+            @page { size: ${isArqueo ? 'A4 landscape' : '80mm auto'}; margin: ${isArqueo ? '10mm' : '0'}; }
             body {
-              font-family: monospace;
-              width: 72mm;
+              font-family: Arial, Helvetica, sans-serif;
+              width: ${isArqueo ? '100%' : '72mm'};
               margin: 0 auto;
-              padding: 4mm;
-              font-size: 12px;
+              padding: ${isArqueo ? '0' : '4mm'};
+              font-size: ${isArqueo ? '9px' : '12px'};
               color: #000;
               background: #fff;
               line-height: 1.2;
-              letter-spacing: normal;
             }
-            table { width: 100%; border-collapse: collapse; margin-bottom: 2px; }
-            td { vertical-align: top; padding: 1px 0; }
+            table { width: 100%; border-collapse: collapse; margin-bottom: 4px; }
+            th, td { vertical-align: middle; padding: ${isArqueo ? '4px 5px' : '1px 0'}; }
+            th { background: #111; color: #fff; }
             .text-center { text-align: center; }
             .text-right { text-align: right; }
             .bold { font-weight: bold; }
             .separator-dashed { border-top: 1px dashed #000; margin: 4px 0; }
             .separator-solid { border-top: 1px solid #000; margin: 4px 0; }
             .spacer { height: 6px; }
+            input { border: 1px solid #999; background: #fff; color: #000; }
+            .overflow-x-auto { overflow: visible !important; }
+            .min-w-\\[920px\\] { min-width: 0 !important; width: 100% !important; }
+            @media print { input { border: 0; font-weight: bold; text-align: right; } }
           </style>
         </head>
         <body>
           ${printContent}
           <script>
             window.onload = function() {
+              window.focus();
               window.print();
               window.onafterprint = function() { window.close(); };
-              setTimeout(function() { window.close(); }, 1500);
             };
           <\/script>
         </body>
       </html>
     `);
     printWindow.document.close();
-    setTimeout(onClose, 1000);
+  };
+
+  const generateArqueoPdf = async (): Promise<Blob> => {
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+    const empresa = state.empresa?.nombre || 'POSVEN PRO';
+    const subtitle = `Caja: ${terminalId} · Fecha: ${transactionDate}`;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(16);
+    doc.text(empresa, 14, 14);
+    doc.setFontSize(13);
+    doc.text('ARQUEO DE CAJA', 14, 22);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.text(subtitle, 14, 28);
+    doc.text(`Cajero: ${cajeroNombre}`, 14, 33);
+
+    const money = (v:number, usd:boolean) => usd ? `$ ${formatUsd(v)}` : formatBs(v);
+    const body = arqueoCalc.details.map((r:any) => [
+      formatPaymentMethod(r.metodo),
+      r.metodo === 'efectivo_bs' ? formatBs(r.fondo) : '—',
+      r.metodo === 'efectivo_usd' ? '$ ' + formatUsd(r.fondo) : '—',
+      money(r.ventas, r.usd),
+      money(r.cobros, r.usd),
+      r.dev ? '(' + money(r.dev, r.usd) + ')' : '—',
+      r.movPlus ? money(r.movPlus, r.usd) : '—',
+      r.movMinus ? '(' + money(r.movMinus, r.usd) + ')' : '—',
+      money(r.sistema, r.usd),
+      r.real === null ? 'PENDIENTE' : money(r.real, r.usd),
+      r.dif === null ? '—' : ((r.dif >= 0 ? '+' : '') + money(r.dif, r.usd))
+    ]);
+
+    autoTable(doc, {
+      startY: 38,
+      head: [['CONCEPTO','FONDO INIC. BS','FONDO INIC. USD','VENTAS','COBROS DE DEUDAS','DEV./ANU.','MOV. CAJA (+)','MOV. CAJA (-)','TOTAL MONTO SISTEMA','MONTO REAL','DIF. (+ / -)']],
+      body,
+      theme: 'grid',
+      styles: { font: 'helvetica', fontSize: 6.5, cellPadding: 2, valign: 'middle' },
+      headStyles: { fillColor: [20,20,20], textColor: [255,255,255], fontStyle: 'bold', fontSize: 6.5 },
+      columnStyles: { 0: { cellWidth: 34 }, 1: { cellWidth: 22 }, 2: { cellWidth: 22 }, 3: { cellWidth: 22 }, 4: { cellWidth: 25 }, 5: { cellWidth: 20 }, 6: { cellWidth: 22 }, 7: { cellWidth: 22 }, 8: { cellWidth: 27 }, 9: { cellWidth: 25 }, 10: { cellWidth: 23 } },
+      didParseCell: (hook:any) => {
+        if (hook.section === 'body' && (hook.column.index === 5 || hook.column.index === 7)) hook.cell.styles.textColor = [190, 30, 30];
+        if (hook.section === 'body' && hook.column.index === 6) hook.cell.styles.textColor = [20, 120, 60];
+      }
+    });
+
+    const finalY = (doc as any).lastAutoTable?.finalY || 80;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.text('RESULTADO FINAL GLOBAL', 14, finalY + 10);
+    doc.setFontSize(11);
+    doc.text(arqueoCalc.conciliado ? 'CONCILIADO' : 'DIFERENCIA (+ / -)', 14, finalY + 17);
+    doc.setFontSize(8);
+    doc.text(`Diferencia Bs.: ${arqueoCalc.difBS >= 0 ? '+' : ''}${formatBs(arqueoCalc.difBS)}    Diferencia USD: ${arqueoCalc.difUSD >= 0 ? '+$ ' : '-$ '}${formatUsd(Math.abs(arqueoCalc.difUSD))}`, 14, finalY + 23);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.text('Documento de control interno. No válido como cierre fiscal.', 14, finalY + 30);
+    return doc.output('blob');
+  };
+
+  const handleDownloadArqueoPdf = async () => {
+    const blob = await generateArqueoPdf();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Arqueo-Caja-${terminalId}-${new Date().toISOString().slice(0,10)}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleShareArqueoPdf = async () => {
+    const blob = await generateArqueoPdf();
+    const file = new File([blob], `Arqueo-Caja-${terminalId}.pdf`, { type: 'application/pdf' });
+    if (navigator.share && (!navigator.canShare || navigator.canShare({ files: [file] }))) {
+      await navigator.share({ title: 'Arqueo de Caja', text: `Arqueo de Caja · ${terminalId}`, files: [file] });
+      return;
+    }
+    await handleDownloadArqueoPdf();
   };
 
   const handleNativePrint = async () => {
@@ -314,18 +399,18 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[440px] p-0 bg-transparent border-none overflow-hidden shadow-none">
-        <DialogHeader className="sr-only"><DialogTitle>Impresión Térmica Font A</DialogTitle></DialogHeader>
+      <DialogContent className={type === 'REPORT_X' ? "w-[98vw] max-w-[1500px] p-0 bg-transparent border-none overflow-hidden shadow-none" : "sm:max-w-[440px] p-0 bg-transparent border-none overflow-hidden shadow-none"}>
+        <DialogHeader className="sr-only"><DialogTitle>{type === 'REPORT_X' ? 'Arqueo de Caja' : 'Impresión Térmica'}</DialogTitle></DialogHeader>
 
-        <div className="bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col border border-gray-200">
-          <div className="bg-black p-4 flex justify-between items-center">
+        <div className="bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col border border-gray-200 max-h-[94vh]">
+          <div className="bg-black p-4 flex justify-between items-center shrink-0">
             <h3 className="text-white font-black text-xs flex items-center gap-2 tracking-widest uppercase">
               <Printer size={16} className="text-brand-gold" /> VISTA PREVIA (42C)
             </h3>
             <button onClick={onClose} className="text-white/40 hover:text-white transition-colors"><X size={20} /></button>
           </div>
 
-          <div className="p-6 bg-gray-100 flex justify-center max-h-[70vh] overflow-y-auto custom-scrollbar">
+          <div className={type === 'REPORT_X' ? "p-5 bg-gray-100 flex justify-center flex-1 min-h-0 overflow-auto custom-scrollbar" : "p-6 bg-gray-100 flex justify-center max-h-[70vh] overflow-y-auto custom-scrollbar"}>
             <div 
               ref={printRef}
               className="bg-white p-6 shadow-sm text-black font-mono select-none"
@@ -698,11 +783,25 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
             </div>
           </div>
 
-          <div className="p-4 bg-white border-t border-gray-100 grid grid-cols-2 gap-3">
+          <div className={type === 'REPORT_X' ? "p-4 bg-white border-t border-gray-100 grid grid-cols-4 gap-3 shrink-0" : "p-4 bg-white border-t border-gray-100 grid grid-cols-2 gap-3"}>
              <button onClick={onClose} className="py-3 bg-gray-200 text-ink font-black text-xs rounded-xl uppercase">Cerrar</button>
-             <button onClick={handleNativePrint} className="py-3 bg-brand-gold text-black font-black text-xs rounded-xl flex items-center justify-center gap-2 uppercase shadow-lg">
-                <Zap size={14} className="fill-current" /> Impresión 80mm
-             </button>
+             {type === 'REPORT_X' ? (
+               <>
+                 <button onClick={handlePrint} className="py-3 bg-brand-gold text-black font-black text-xs rounded-xl flex items-center justify-center gap-2 uppercase shadow-lg">
+                   <Printer size={14} /> Imprimir PC
+                 </button>
+                 <button onClick={() => { void handleShareArqueoPdf(); }} className="py-3 bg-ink text-white font-black text-xs rounded-xl flex items-center justify-center gap-2 uppercase shadow-lg">
+                   <Share2 size={14} /> Compartir PDF
+                 </button>
+                 <button onClick={() => { void handleDownloadArqueoPdf(); }} className="py-3 bg-white border-2 border-ink text-ink font-black text-xs rounded-xl flex items-center justify-center gap-2 uppercase">
+                   <Monitor size={14} /> Descargar PDF
+                 </button>
+               </>
+             ) : (
+               <button onClick={handleNativePrint} className="py-3 bg-brand-gold text-black font-black text-xs rounded-xl flex items-center justify-center gap-2 uppercase shadow-lg">
+                  <Zap size={14} className="fill-current" /> Impresión 80mm
+               </button>
+             )}
           </div>
         </div>
       </DialogContent>
