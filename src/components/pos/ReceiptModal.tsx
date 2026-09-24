@@ -5,7 +5,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Printer, X, Zap, Share2, Monitor } from 'lucide-react';
 import { Store, Utils } from '@/lib/db-store';
 import { formatBs, formatUsd } from '@/lib/currency-formatter';
-import { auth } from '@/lib/firebase';
 
 declare global {
   interface Window {
@@ -116,10 +115,8 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
     if (data.cajeroNombre) return data.cajeroNombre;
     if (data.cajero) return data.cajero;
     if (data.cashier) return data.cashier;
-    const currentUser = auth.currentUser;
-    if (currentUser) {
-      return currentUser.displayName || currentUser.email || 'Administrador';
-    }
+    const currentUser = (state as any).user;
+    if (currentUser) return currentUser.nombre || currentUser.email || 'Administrador';
     return 'Administrador';
   }, [data.cajeroNombre, data.cajero, data.cashier]);
 
