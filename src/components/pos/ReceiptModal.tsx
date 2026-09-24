@@ -636,7 +636,7 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
                      <div className="text-center font-bold mt-2">DOCUMENTO NO VÁLIDO COMO<br/>CIERRE FISCAL</div>
                    )}
                 </div>
-              )}
+              ))}
 
               {/* CONTENIDO VENTA (RECIBO) */}
               {!isReport && (
