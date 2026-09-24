@@ -99,8 +99,20 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
 
   const currentTerminal = useMemo(() => {
     const appUser: any = (state as any).user || null;
-    const ids = [appUser?.id, appUser?.uid, appUser?.firebaseUid].filter(Boolean).map(String);
-    return ids.length ? state.terminales.find(t => ids.includes(String(t.usuarioId || ''))) || null : null;
+
+    // La caja del POS se resuelve primero por terminalId, que fue asignado
+    // por la sesión autenticada de Turso. El usuario/uid queda solo como
+    // compatibilidad para datos antiguos; nunca debe convertir una caja
+    // válida en "SISTEMA GLOBAL" después de un Corte Z.
+    const explicitTerminalId = String(appUser?.terminalId || '').trim();
+    if (explicitTerminalId) {
+      return state.terminales.find(t => String(t.id) === explicitTerminalId) || null;
+    }
+
+    const ids = [appUser?.id, appUser?.uid].filter(Boolean).map(String);
+    return ids.length
+      ? state.terminales.find(t => ids.includes(String(t.usuarioId || ''))) || null
+      : null;
   }, [state.terminales, (state as any).user]);
 
   const getFreshReportData = (windowStart?: string, windowEndExclusive?: string) => {
@@ -227,7 +239,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     }));
     const ventasCreditoUSD=vActivas.filter((v:any)=>String(v.metodoPago||'').toLowerCase()==='credito'||(Array.isArray(v.payments)&&v.payments.some((p:any)=>p.metodo==='credito'))).reduce((s:number,v:any)=>s+(Number(v.totalUSD)||0),0);
 
-    const terminalName = currentTerminal ? currentTerminal.nombre : 'SISTEMA GLOBAL';
+    const terminalName = currentTerminal?.nombre || 'CAJA NO IDENTIFICADA';
 
     return { 
       brUSD, devUSD, descUSD, netUSD, igtfUSD, ivaUSD, baseImponibleUSD, exentoUSD,
