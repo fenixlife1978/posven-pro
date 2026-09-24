@@ -187,7 +187,6 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     const ids = [
       appUser?.id,
       appUser?.uid,
-      appUser?.firebaseUid,
       
     ].filter(Boolean).map(String);
     if (!ids.length) return null;
@@ -606,7 +605,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       const operationId = 'VENTA-POS-' + Store.uid();
 
       // La venta NO se confirma con un simple Store.set() local.
-      // Debe pasar por la transacción atómica de Turso/Firebase para que
+      // Debe pasar por la transacción atómica de Turso para que
       // venta + stock + kardex + asiento + correlativo queden persistidos
       // antes de mostrarla como completada.
       const result = await Store.createSaleTransaction({
