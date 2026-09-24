@@ -74,6 +74,7 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
   
   const [showAjuste, setShowAjuste] = useState<string | null>(null);
   const [showProducto, setShowProducto] = useState<string | null | 'nuevo'>(null);
+  const [showConteoFisico, setShowConteoFisico] = useState(false);
 
   // ✅ CORRECCIÓN: Limpiar departamentos y categorías para evitar duplicados
   const cleanDepartamentos = useMemo(() => {
@@ -171,6 +172,9 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
             <div className="flex gap-2 w-full md:w-auto">
               <Button variant="secondary" className="flex-1 md:flex-none h-11 font-black uppercase text-[10px]" onClick={() => generarPDFInventarioSimple(prods, state.empresa)}>
                 <FileText className="w-4 h-4" /> PDF Simple
+              </Button>
+              <Button variant="secondary" className="flex-1 md:flex-none h-11 font-black uppercase text-[10px]" onClick={() => setShowConteoFisico(true)}>
+                <Boxes className="w-4 h-4" /> Conteo Físico
               </Button>
               <Button className="flex-1 md:flex-none h-11 bg-brand-gold hover:bg-brand-gold-deep text-ink font-black uppercase text-[10px] shadow-lg" onClick={() => setShowProducto('nuevo')}>
                 <Plus className="w-4 h-4" /> Nuevo Ítem
@@ -318,6 +322,45 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
               updateState({ productos: nuevosProds });
             }
             setShowProducto(null);
+          }}
+        />
+      )}
+
+      {showConteoFisico && (
+        <ModalConteoFisico
+          productos={prods}
+          departamentos={cleanDepartamentos}
+          departamentoInicial={deptFilter}
+          onClose={() => setShowConteoFisico(false)}
+          onSave={async (ajustes) => {
+            const movimientos = ajustes.map(a => {
+              const producto = state.productos.find(p => p.id === a.productoId);
+              if (!producto) return null;
+              const stockAntes = Number(producto.stock) || 0;
+              const nuevoStock = Math.max(0, Number(a.nuevoStock) || 0);
+              const diferencia = nuevoStock - stockAntes;
+              if (diferencia === 0) return null;
+              return {
+                id: Store.uid(), productoId: a.productoId,
+                tipo: diferencia > 0 ? 'ajuste_entrada' : 'ajuste_salida',
+                cantidad: diferencia, stockAntes, stockDespues: nuevoStock,
+                fecha: Utils.ahora(),
+                referencia: `CONTEO FISICO | ${a.motivo}`,
+                terminalId: 'ADMIN'
+              } as Movimiento;
+            }).filter((m): m is Movimiento => Boolean(m));
+            if (!movimientos.length) { setShowConteoFisico(false); return; }
+            try {
+              await Store.applyInventoryMovementsTransaction({
+                operationId: 'CONTEO-' + Store.uid(),
+                operationType: 'AJUSTE_INVENTARIO',
+                movements: movimientos,
+                productPatches: {}
+              });
+              setShowConteoFisico(false);
+            } catch (e: any) {
+              alert(e?.message || 'No fue posible guardar el conteo físico. La operación no fue aplicada.');
+            }
           }}
         />
       )}
@@ -1030,6 +1073,87 @@ function ReporteKardex({ state, selectedId, onSelect }: { state: AppState, selec
           </div>
         </Card>
       )}
+    </div>
+  );
+}
+
+type ConteoFisicoAjuste = { productoId: string; nuevoStock: number; motivo: string };
+
+function ModalConteoFisico({ productos, departamentos, departamentoInicial, onClose, onSave }: {
+  productos: Product[]; departamentos: string[]; departamentoInicial: string;
+  onClose: () => void; onSave: (ajustes: ConteoFisicoAjuste[]) => Promise<void>;
+}) {
+  const [departamento, setDepartamento] = useState(departamentoInicial);
+  const [drafts, setDrafts] = useState<Record<string, { nuevoStock: string; motivo: string }>>({});
+  const disponibles = useMemo(() => (productos || [])
+    .filter(p => p.activo && (departamento ? p.departamento === departamento : true))
+    .sort((a, b) => (a.nombre || '').localeCompare(b.nombre || '')), [productos, departamento]);
+  const updateDraft = (id: string, field: 'nuevoStock' | 'motivo', value: string) => setDrafts(prev => ({
+    ...prev, [id]: { ...(prev[id] || { nuevoStock: '', motivo: 'Ajuste por Conteo / Inventario Físico' }), [field]: value }
+  }));
+  const pendientes = disponibles.map(p => ({ p, d: drafts[p.id] }))
+    .filter(({ p, d }) => d && d.nuevoStock !== '' && Number(d.nuevoStock) !== (Number(p.stock) || 0));
+  const guardar = async () => {
+    const ajustes = pendientes.map(({ p, d }) => ({
+      productoId: p.id, nuevoStock: Math.max(0, Number(d!.nuevoStock)),
+      motivo: d!.motivo || 'Ajuste por Conteo / Inventario Físico'
+    }));
+    if (ajustes.some(a => !Number.isFinite(a.nuevoStock))) { alert('Revise los valores de Nuevo Stock.'); return; }
+    await onSave(ajustes);
+  };
+  return (
+    <div className="modal show">
+      <div className="modal-bg" onClick={onClose}></div>
+      <div className="modal-box bg-white max-w-6xl w-[96vw] border-2 border-line rounded-xl overflow-hidden shadow-2xl">
+        <div className="modal-head px-5 py-4 border-b border-line bg-ink text-white flex items-center justify-between">
+          <div><h3 className="font-black uppercase text-sm">Inventario físico por departamento</h3>
+          <p className="text-[10px] text-white/60 font-bold uppercase mt-1">Ingrese el Nuevo Stock contado físicamente. La diferencia se calcula automáticamente.</p></div>
+          <button onClick={onClose}><X className="w-5 h-5" /></button>
+        </div>
+        <div className="p-5 space-y-4 bg-white">
+          <div className="flex flex-col md:flex-row gap-3 items-end">
+            <div className="form-group mb-0 w-full md:w-80">
+              <Label className="text-[10px] font-black uppercase text-ink/60 mb-1 block">Departamento</Label>
+              <select className="form-select h-10 text-xs font-black uppercase w-full" value={departamento} onChange={e => setDepartamento(e.target.value)}>
+                <option value="">TODOS LOS DEPARTAMENTOS</option>
+                {departamentos.map(d => <option key={d} value={d}>{d}</option>)}
+              </select>
+            </div>
+            <div className="text-[10px] font-black uppercase text-ink/40">{disponibles.length} productos · {pendientes.length} ajustes pendientes</div>
+          </div>
+          <div className="max-h-[55vh] overflow-auto border border-line rounded-lg">
+            <Table><TableHeader><TableRow className="bg-surface-soft sticky top-0 z-10">
+              <TableHead className="font-black text-ink uppercase text-[10px]">Código</TableHead>
+              <TableHead className="font-black text-ink uppercase text-[10px]">Producto</TableHead>
+              <TableHead className="font-black text-ink uppercase text-[10px] text-center">Stock Actual</TableHead>
+              <TableHead className="font-black text-ink uppercase text-[10px] text-center">Nuevo Stock</TableHead>
+              <TableHead className="font-black text-ink uppercase text-[10px] text-center">Variación</TableHead>
+              <TableHead className="font-black text-ink uppercase text-[10px]">Motivo</TableHead>
+            </TableRow></TableHeader><TableBody>
+              {disponibles.map(p => {
+                const d = drafts[p.id], actual = Number(p.stock) || 0;
+                const nuevo = d?.nuevoStock === '' || d?.nuevoStock == null ? actual : Number(d.nuevoStock);
+                const diferencia = Number.isFinite(nuevo) ? nuevo - actual : 0;
+                return <TableRow key={p.id} className="border-b border-line/30">
+                  <TableCell className="mono text-xs font-black">{p.codigo}</TableCell>
+                  <TableCell className="font-bold uppercase text-xs">{p.nombre}</TableCell>
+                  <TableCell className="text-center font-black">{actual}</TableCell>
+                  <TableCell className="w-36"><Input type="number" min="0" step="1" className="h-9 text-center font-black bg-white" placeholder={String(actual)} value={d?.nuevoStock ?? ''} onChange={e => updateDraft(p.id, 'nuevoStock', e.target.value)} /></TableCell>
+                  <TableCell className={`text-center font-black ${diferencia > 0 ? 'text-status-success' : diferencia < 0 ? 'text-status-danger' : 'text-ink/30'}`}>{diferencia === 0 ? 'Sin cambio' : `${diferencia > 0 ? '+' : ''}${diferencia} unid.`}</TableCell>
+                  <TableCell className="min-w-64"><select className="form-select h-9 text-[10px] font-bold uppercase w-full" value={d?.motivo || 'Ajuste por Conteo / Inventario Físico'} onChange={e => updateDraft(p.id, 'motivo', e.target.value)}>
+                    <option>Ajuste por Conteo / Inventario Físico</option><option>Merma / Pérdida</option><option>Faltante / Robo</option><option>Sobrante</option><option>Consumo Interno / Uso Operativo</option><option>Entrada de Proveedor / Devolución</option>
+                  </select></TableCell>
+                </TableRow>;
+              })}
+              {disponibles.length === 0 && <TableRow><TableCell colSpan={6} className="py-16 text-center text-ink/30 font-black uppercase">No hay productos en este departamento</TableCell></TableRow>}
+            </TableBody></Table>
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="secondary" onClick={onClose} className="font-black uppercase text-[10px]">Cancelar</Button>
+            <Button onClick={guardar} disabled={pendientes.length === 0} className="font-black uppercase text-[10px] bg-brand-gold hover:bg-brand-gold-deep text-ink"><Check className="w-4 h-4" /> Guardar Ajustes de Conteo</Button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
