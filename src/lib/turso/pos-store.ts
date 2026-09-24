@@ -661,16 +661,12 @@ export async function createZClosureTransaction(params: {
     }
 
     const prefix = await terminalUniquePrefix(tx, current, params.terminalId);
-    let report = { ...clean(params.report), terminalId: params.terminalId, numeroZ: expectedNumber };
-    const requestedId = String(report.id || '');
-    const existing = requestedId ? await tx.execute(txSelect('reportesZ', requestedId)) : { rows: [] } as any;
-    if (existing.rows.length) {
-      report.id = terminalSeries(prefix, 'Z', expectedNumber, 6);
-      const canonical = await tx.execute(txSelect('reportesZ', report.id));
-      if (canonical.rows.length) throw new Error('El corte Z de esta terminal ya fue registrado.');
-    } else if (!requestedId) {
-      report.id = terminalSeries(prefix, 'Z', expectedNumber, 6);
-    }
+    // El servidor es la autoridad final del correlativo Z. Ignoramos cualquier
+    // ID provisional enviado por el navegador y construimos uno exclusivo de
+    // esta terminal para evitar que dos cajas puedan sobrescribirse.
+    let report = { ...clean(params.report), id: terminalSeries(prefix, 'Z', expectedNumber, 6), terminalId: params.terminalId, numeroZ: expectedNumber };
+    const canonical = await tx.execute(txSelect('reportesZ', report.id));
+    if (canonical.rows.length) throw new Error('El corte Z de esta terminal ya fue registrado.');
 
     const updatedTerminal = { ...current, ...clean(params.terminalPatch), ultimoZ: expectedNumber, id: params.terminalId };
     await tx.execute(rowStatement('reportesZ', report));
