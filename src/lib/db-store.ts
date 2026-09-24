@@ -1599,11 +1599,17 @@ export const Store = {
     customerCedula?: string;
     terminalId?: string;
   }): Promise<any | null> {
-    if (typeof window === 'undefined' || !db) return null;
+    if (typeof window === 'undefined') return null;
     const { operationId, collection: collectionName, debtId, amountUSD, amountBS, payment, journal, sale, customerCedula, terminalId } = params;
     if (!(amountUSD > 0)) return null;
     const tursoResult = await tryTursoOperation('debtPayment', params);
-    if (tursoResult) return tursoResult;
+    if (tursoResult) {
+      if (tursoResult.id) applyPatch({ cxc: mergeById(cache.cxc, [tursoResult]) });
+      if (tursoResult.sale?.id) applyPatch({ ventas: mergeById(cache.ventas, [tursoResult.sale]) });
+      if (Array.isArray(tursoResult.journal)) applyPatch({ libroDiario: mergeById(cache.libroDiario, tursoResult.journal) });
+      if (tursoResult.terminal) applyPatch({ terminales: mergeById(cache.terminales, [tursoResult.terminal]) });
+      return tursoResult;
+    }
     const debtRef = doc(db, collectionName, debtId);
     let result: any = null;
     const opId = String(operationId || payment?.id || (collectionName + '|' + debtId + '|' + amountUSD + '|' + payment?.metodo + '|' + payment?.fecha));
