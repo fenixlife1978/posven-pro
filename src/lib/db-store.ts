@@ -669,7 +669,6 @@ async function ensureLoaded(name: string): Promise<void> {
 // otra hizo su corte Z.
 async function loadReportWindow(name: string, terminalId: string, cutoff: string): Promise<void> {
   const key = `report:${name}:${terminalId}:${cutoff}`;
-  if (SINCE_STAMP[key] === 'done') return;
 
   try {
     // Turso es la fuente operativa durante la migración. No debemos volver a
