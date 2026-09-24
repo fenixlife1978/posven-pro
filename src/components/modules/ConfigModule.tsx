@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { AppState } from '@/lib/types';
+import { Store } from '@/lib/db-store';
 import { Save, AlertTriangle, RefreshCw, Database, Activity, BookOpen, PenLine, Trash2 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { db, auth } from '@/lib/firebase';
@@ -30,11 +31,16 @@ export default function ConfigModule({ state, updateState }: { state: AppState, 
     setPinDevolucion(state.pinDevolucion || '000000');
   }, [state.tasa, state.empresa, state.pinDevolucion]);
 
-  const guardarTasa = () => {
+  const guardarTasa = async () => {
     const n = parseFloat(tasa.toString());
-    if (isNaN(n)) return alert('Tasa inválida');
-    updateState({ tasa: n });
-    toast({ title: "Sincronizado", description: "Tasa de cambio actualizada en todos los terminales." });
+    if (isNaN(n) || n <= 0) return alert('Tasa inválida');
+    try {
+      await Store.patchConfig({ tasa: n });
+      toast({ title: "Sincronizado", description: "Tasa de cambio guardada en Turso y disponible después de recargar." });
+    } catch (error: any) {
+      console.error('Error guardando tasa en Turso:', error);
+      toast({ variant: 'destructive', title: 'No se guardó la tasa', description: error?.message || 'Turso no confirmó el cambio.' });
+    }
   };
 
   const guardarEmpresa = () => {
