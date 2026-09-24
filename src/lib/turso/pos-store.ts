@@ -740,7 +740,7 @@ export async function applyDebtPaymentTransaction(params: {
 
 async function applyGlobalPayment(params:any, collection:'cxc'|'cxp'){
   assertTursoReady();
-  const {operationId,provider,customerName,customerCedula,amountUSD,amountBS,payment,journal,terminalId}=params;
+  const {operationId,provider,customerName,customerCedula,amountUSD,amountBS,payment,paymentParts,journal,terminalId}=params;
   if(!(Number(amountUSD)>0)) return {appliedUSD:0,appliedBS:0,debts:[]};
   return tursoInteractiveTransaction(async tx=>{
     const opId=String(operationId||payment?.id||((collection==='cxp'?'CXP-GLOBAL':'CXC-GLOBAL')+'|'+(provider||customerName)+'|'+amountUSD+'|'+payment?.fecha+'|'+payment?.metodo));
@@ -828,11 +828,13 @@ async function applyGlobalPayment(params:any, collection:'cxc'|'cxp'){
           const ratio = requestedUSD > 0 ? Math.min(1, appliedUSD / requestedUSD) : 1;
           return paymentParts.map((p:any) => ({
             ...p,
+            id: receiptId + '-' + String(p?.metodo || 'OTROS'),
             terminalId: terminalId || p?.terminalId,
             reciboId: receiptId,
             montoUSD: (Number(p.montoUSD) || 0) * ratio,
             montoBS: (Number(p.montoBS) || 0) * ratio,
-          }));
+            tasaAplicada: Number(p?.tasaAplicada) || Number(payment?.tasaAplicada) || 0,
+          })).filter((p:any) => p.montoUSD > 0.000001 || p.montoBS > 0.000001);
         })() : [{...payment, id: receiptId, reciboId: receiptId, montoUSD: appliedUSD, montoBS: appliedBS, terminalId: terminalId || payment?.terminalId}],
         baseImponibleUSD: 0,
         ivaUSD: 0,
