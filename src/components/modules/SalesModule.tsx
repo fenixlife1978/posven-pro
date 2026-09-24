@@ -29,6 +29,8 @@ import {
   Check,
   RotateCcw,
   HandCoins,
+  ArrowDownCircle,
+  ArrowUpCircle,
   Calculator,
   TrendingUp,
   BarChart3,
