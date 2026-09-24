@@ -41,7 +41,6 @@ import {
   Loader2,
   Hash
 } from 'lucide-react';
-import { auth } from '@/lib/firebase';
 import { ReceiptModal } from '@/components/pos/ReceiptModal';
 import { CreditModal } from '@/components/pos/CreditSaleModal';
 import FloatingPaymentModal from '@/components/pos/FloatingPaymentModal';
@@ -189,7 +188,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       appUser?.id,
       appUser?.uid,
       appUser?.firebaseUid,
-      auth?.currentUser?.uid,
+      
     ].filter(Boolean).map(String);
     if (!ids.length) return null;
     return state.terminales.find(t => ids.includes(String(t.usuarioId || ''))) || null;
@@ -620,7 +619,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         now: Utils.ahora(),
         tasa: state.tasa,
         saleType: 'VENTA',
-        cajeroId: (state as any).user?.id || (state as any).user?.uid || auth?.currentUser?.uid
+        cajeroId: (state as any).user?.id || (state as any).user?.uid
       });
 
       if (!result?.sale) throw new Error('La venta no pudo confirmarse en la base de datos.');
@@ -762,7 +761,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         change: 0, 
         terminalId: terminal?.id, 
         terminalName: terminal?.nombre || 'SISTEMA GLOBAL', 
-        cajeroId: auth?.currentUser?.uid, 
+        cajeroId: (state as any).user?.id || (state as any).user?.uid, 
         baseImponibleUSD: Utils.round(vBase), 
         ivaUSD: Utils.round(vIVA), 
         exentoUSD: Utils.round(vExento), 
