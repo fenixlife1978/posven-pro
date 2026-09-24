@@ -1459,6 +1459,11 @@ export const Store = {
     const tursoResult = await tryTursoOperation('globalCustomerPayment', params);
     if (tursoResult) {
       if (Array.isArray(tursoResult.debts)) applyPatch({ cxc: mergeById(cache.cxc, tursoResult.debts) });
+      // Un pago global puede liquidar varias facturas. Volver a leer CxC desde
+      // Turso garantiza que todas las facturas afectadas y sus historiales
+      // queden visibles inmediatamente en la interfaz.
+      const refreshedCxc = await tryTursoRead('cxc', { limit: 2000 });
+      if (refreshedCxc !== null) applyPatch({ cxc: refreshedCxc });
       if (journal?.id) applyPatch({ libroDiario: mergeById(cache.libroDiario, [{ ...journal, montoUSD: tursoResult.appliedUSD, montoBS: tursoResult.appliedBS, referencia: tursoResult.receiptId, terminalId: terminalId || journal.terminalId }]) });
       return tursoResult;
     }
@@ -1605,6 +1610,11 @@ export const Store = {
     const tursoResult = await tryTursoOperation('debtPayment', params);
     if (tursoResult) {
       if (tursoResult.id) applyPatch({ cxc: mergeById(cache.cxc, [tursoResult]) });
+      // Tras un cobro, hidratar CxC completa desde Turso para que el historial
+      // de cada pago/abono aparezca inmediatamente, incluso cuando la deuda
+      // pasó de activa a pagada y dejó de pertenecer al listado realtime activo.
+      const refreshedCxc = await tryTursoRead('cxc', { limit: 2000 });
+      if (refreshedCxc !== null) applyPatch({ cxc: refreshedCxc });
       if (tursoResult.sale?.id) applyPatch({ ventas: mergeById(cache.ventas, [tursoResult.sale]) });
       if (Array.isArray(tursoResult.journal)) applyPatch({ libroDiario: mergeById(cache.libroDiario, tursoResult.journal) });
       if (tursoResult.terminal) applyPatch({ terminales: mergeById(cache.terminales, [tursoResult.terminal]) });
