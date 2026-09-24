@@ -267,8 +267,16 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       const freshBeforeReport = Store.get();
       const terminalCashBeforeReport = Utils.getTerminalCash(currentTerminal);
       const lastZBeforeReport = terminalCashBeforeReport.fechaUltimoZ || freshBeforeReport.fechaUltimoZ || '';
-      let reportWindowStart = lastZBeforeReport;
+      const aperturaActual = String(terminalCashBeforeReport.cashData?.openDate || '');
+      let reportWindowStart = type === 'REPORT_X'
+        ? (aperturaActual || lastZBeforeReport)
+        : lastZBeforeReport;
       let reportWindowEndExclusive = '';
+
+      // El Arqueo X representa EXCLUSIVAMENTE la jornada/caja actualmente
+      // abierta. No debe usar una fechaUltimoZ antigua si la apertura actual
+      // comenzó después de ella (ni quedar en blanco por un corte Z futuro).
+      // El Z, en cambio, sigue tomando como inicio el último Z de esta caja.
       
       // Recuperación de jornada omitida: si esta caja no tiene fecha de último Z,
       // el Z debe poder cerrar la jornada calendario anterior sin tragarse las ventas de hoy.
