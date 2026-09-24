@@ -31,9 +31,6 @@ import {
 } from 'lucide-react';
 import { Store, initialState, Utils } from '@/lib/db-store';
 import { AppState, Terminal, Debt } from '@/lib/types';
-import { auth, db } from '@/lib/firebase';
-import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { doc, onSnapshot, getDoc, collection, query, getDocs, where, setDoc } from 'firebase/firestore';
 import DashboardModule from '@/components/modules/DashboardModule';
 import { InventoryModule } from '@/components/modules/InventoryModule';
 import SalesModule from '@/components/modules/SalesModule';
@@ -67,7 +64,6 @@ export default function LicoreriaPOS() {
   const [showCxPAlert, setShowCxPAlert] = useState(false);
   
   const moduleInitialized = useRef(false);
-  const profileUnsubRef = useRef<(() => void) | null>(null);
   const criticalClickRef = useRef<{ target: Element | null; time: number }>({ target: null, time: 0 });
 
   useEffect(() => {
@@ -168,60 +164,7 @@ export default function LicoreriaPOS() {
         }
       } catch {}
 
-      // Fallback Firebase durante la migración.
-      if (!auth || !db) {
-        setLoading(false);
-        return;
-      }
 
-      const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
-        if (!currentUser) {
-          router.push('/login');
-          return;
-        }
-        try {
-          const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
-          if (!userDoc.exists()) {
-            await signOut(auth);
-            router.push('/login');
-            return;
-          }
-          const data = userDoc.data();
-          if (data.accesoBloqueado) {
-            await signOut(auth);
-            router.push('/login');
-            return;
-          }
-          setUserRole(data.rol);
-          setUserProfile(data);
-          setUser(currentUser);
-          setState(prev => ({ ...prev, user: { ...data, uid: currentUser.uid }, isAuthenticated: true } as AppState));
-
-          if (data.rol === 'cajero') {
-            const configSnap = await getDocs(query(collection(db, 'terminales'), where('usuarioId', '==', currentUser.uid)));
-            const terminals = configSnap.docs.map(d => d.data()) as Terminal[];
-            const myTerm = terminals.find((t: Terminal) => t.usuarioId === currentUser.uid);
-            if (!myTerm) {
-              await signOut(auth);
-              alert("ACCESO RESTRINGIDO: Su usuario no tiene un terminal asignado.");
-              router.push('/login');
-              return;
-            }
-            if (myTerm.id) Store.startTerminalSync(myTerm.id, false, [myTerm]);
-            setShowApertura(!myTerm.isCashOpen);
-            setActiveTab(sessionStorage.getItem('posven_active_module') || 'ventas');
-          } else {
-            Store.startTerminalSync(undefined, true);
-            setShowApertura(false);
-            setActiveTab(sessionStorage.getItem('posven_active_module') || 'dashboard');
-          }
-          setLoading(false);
-        } catch {
-          setLoading(false);
-        }
-      });
-
-      (window as any).__posvenFirebaseUnsubscribe = unsubscribeAuth;
     };
 
     initializeFromTurso();
@@ -248,8 +191,6 @@ export default function LicoreriaPOS() {
       window.addEventListener('online', hOnline);
       window.addEventListener('offline', hOffline);
       return () => {
-        const unsub = (window as any).__posvenFirebaseUnsubscribe;
-        if (unsub) unsub();
         unsubscribeStore();
         clearInterval(timerClock);
         clearInterval(runtimeHeartbeat);
@@ -263,8 +204,6 @@ export default function LicoreriaPOS() {
     }
 
     return () => {
-      const unsub = (window as any).__posvenFirebaseUnsubscribe;
-      if (unsub) unsub();
       unsubscribeStore();
       clearInterval(timerClock);
       clearInterval(runtimeHeartbeat);
@@ -337,10 +276,8 @@ export default function LicoreriaPOS() {
       try {
         if (typeof sessionStorage !== 'undefined') sessionStorage.clear();
         await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
-        if (auth) await signOut(auth).catch(() => {});
         router.push('/login');
       } catch (e) {
-        if (auth) await signOut(auth);
         router.push('/login');
       }
     }
