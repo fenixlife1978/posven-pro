@@ -1093,26 +1093,24 @@ function cleanup() {
 function init() {
   if (started) return;
   started = true;
-  if (!db || typeof window === 'undefined') return;
+  if (typeof window === 'undefined') return;
 
-  // 1) CONFIG: Turso primero; Firebase queda solo como fallback mientras Turso no esté configurado.
+  // 1) CONFIG: Turso es la única fuente de verdad operacional.
+  // No condicionamos esta carga a Firebase: la tasa BCV y el resto de la
+  // configuración deben hidratarse directamente desde app_config/general
+  // aunque el cliente Firebase no exista o no esté inicializado.
   void (async () => {
-    const tursoConfig = await tryTursoSpecialRead('config');
-    if (tursoConfig !== null) {
+    try {
+      const tursoConfig = await tryTursoSpecialRead('config');
       const patch: any = {};
-      for (const f of CONFIG_FIELDS) if (tursoConfig[f] !== undefined) patch[f] = sanitizeForFirestore(tursoConfig[f]);
+      for (const f of CONFIG_FIELDS) if (tursoConfig?.[f] !== undefined) {
+        patch[f] = sanitizeForFirestore(tursoConfig[f]);
+      }
       if (Object.keys(patch).length) applyPatch(patch);
-      await loadCatalogs(true, String(tursoConfig.catalogosVersion || ''));
-      return;
+      await loadCatalogs(true, String(tursoConfig?.catalogosVersion || ''));
+    } catch (error) {
+      console.error('[db-store] Error cargando configuración desde Turso:', error);
     }
-    teardownFns.push(onSnapshot(doc(db, CONFIG_COLLECTION, CONFIG_DOC_ID), (snap) => {
-      if (!snap.exists()) return;
-      const val = snap.data();
-      const patch: any = {};
-      for (const f of CONFIG_FIELDS) if (val[f] !== undefined) patch[f] = sanitizeForFirestore(val[f]);
-      if (Object.keys(patch).length > 0) applyPatch(patch);
-      void loadCatalogs(true, String(val.catalogosVersion || ''));
-    }, (err) => { if (err.code !== 'permission-denied') console.warn('Sync config:', err); }));
   })();
 
   // 2) PRODUCTOS: Turso es la fuente cuando está activo. RTDB solo se usa como fallback.
