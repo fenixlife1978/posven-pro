@@ -160,6 +160,15 @@ export async function listRecords(
   return result.rows.map(rowFromDb).filter(Boolean);
 }
 
+export async function countRecords(table: TursoStoreTable): Promise<number> {
+  assertTursoReady();
+  const result = await tursoExecute({
+    sql: \`SELECT COUNT(*) AS total FROM \${tableName(table)}\`,
+    args: [],
+  });
+  return Number(result.rows[0]?.total ?? 0);
+}
+
 export async function factoryResetTransaction(params: { user: { rol: string } }) {
   assertTursoReady();
   if (params.user.rol !== 'administrador') throw new Error('Se requiere administrador.');
