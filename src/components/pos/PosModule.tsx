@@ -41,7 +41,6 @@ import {
   Loader2,
   Hash
 } from 'lucide-react';
-import { auth } from '@/lib/firebase';
 import { ReceiptModal } from '@/components/pos/ReceiptModal';
 import FloatingPaymentModal from '@/components/pos/FloatingPaymentModal';
 import { toast } from '@/hooks/use-toast';
@@ -99,7 +98,9 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   };
 
   const currentTerminal = useMemo(() => {
-    return auth?.currentUser ? state.terminales.find(t => t.usuarioId === auth.currentUser!.uid) : null;
+    const appUser: any = (state as any).user || null;
+    const ids = [appUser?.id, appUser?.uid, appUser?.firebaseUid].filter(Boolean).map(String);
+    return ids.length ? state.terminales.find(t => ids.includes(String(t.usuarioId || ''))) || null : null;
   }, [state.terminales]);
 
   const getFreshReportData = (windowStart?: string, windowEndExclusive?: string) => {
@@ -506,7 +507,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         now: ahoraStr,
         tasa: state.tasa,
         saleType: 'VENTA',
-        cajeroId: auth?.currentUser?.uid
+        cajeroId: (state as any).user?.id || (state as any).user?.uid
       });
 
       if (!resultado?.sale) throw new Error('No se pudo registrar la venta.');
@@ -654,7 +655,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         now: ahoraStr,
         tasa: state.tasa,
         saleType: 'VENTA CRÉDITO',
-        cajeroId: auth?.currentUser?.uid,
+        cajeroId: (state as any).user?.id || (state as any).user?.uid,
         credit: {
           customer: targetClient,
           debtId
