@@ -365,13 +365,30 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     // El corte Z solo resetea la ventana/caja de ESTE terminal, nunca de las demás.
     updateState({
       reportesZ: [...(state.reportesZ || []), nuevoZ],
-      terminales: Utils.patchTerminal(state.terminales, termId, {
-        ultimoZ: numeroZ,
-        fechaUltimoZ: ahora,
-        acumuladoHistorico: data.acumuladoHistoricoUSD,
-        fondoCajaHoyBS: 0,
-        fondoCajaHoyUSD: 0,
-      })
+      terminales: Utils.patchTerminal(state.terminales, termId, (() => {
+        const terminal = state.terminales.find(t => t.id === termId);
+        const sesion = terminal?.cashData;
+        const historial = Array.isArray(terminal?.cashHistory) ? terminal.cashHistory : [];
+        const cierreSesion = sesion
+          ? {
+              ...sesion,
+              closeDate: ahora,
+              closeNotes: 'Cierre por Corte Z ' + nuevoZ.id,
+            }
+          : null;
+        return {
+          ultimoZ: numeroZ,
+          fechaUltimoZ: ahora,
+          acumuladoHistorico: data.acumuladoHistoricoUSD,
+          fondoCajaHoyBS: 0,
+          fondoCajaHoyUSD: 0,
+          // El Z es el evento que cierra la jornada. La siguiente entrada
+          // del cajero debe volver a mostrar Apertura de Caja.
+          isCashOpen: false,
+          cashData: null,
+          cashHistory: cierreSesion ? [cierreSesion, ...historial] : historial,
+        };
+      })())
     });
     toast({ title: `Cierre Fiscal ${nuevoZ.id} Exitoso` });
     setShowReportType(null);
