@@ -308,11 +308,16 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         reportWindowEndExclusive = todayStart.toISOString();
       }
       
-      await Store.ensureReportData(currentTerminal?.id || 'GLOBAL', reportWindowStart || undefined);
+      const freshSession = Store.get();
+      const reportTerminalId = String((freshSession as any).user?.terminalId || currentTerminal?.id || '').trim();
+      if (!reportTerminalId) {
+        throw new Error('La sesión no tiene una terminal/caja Turso asignada.');
+      }
+      await Store.ensureReportData(reportTerminalId, reportWindowStart || undefined);
       
       // Verificar que los datos se cargaron correctamente
       const state = Store.get();
-      const ventasDelDia = (state.ventas || []).filter(v => v.estado !== 'anulada' && v.terminalId === (currentTerminal?.id || 'GLOBAL'));
+      const ventasDelDia = (state.ventas || []).filter(v => v.estado !== 'anulada' && String(v.terminalId || '') === reportTerminalId);
       
       // Si no hay ventas pero isCashOpen es true, mostrar advertencia
       if (ventasDelDia.length === 0 && state.isCashOpen) {
