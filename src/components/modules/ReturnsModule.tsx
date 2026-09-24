@@ -464,6 +464,9 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
                   <p className="text-3xl font-black text-status-danger">
                     {Utils.fmtUSD(returnItems.reduce((s, i) => s + (i.cantidad * i.precioUnitUSD), 0))}
                   </p>
+                  <p className="text-sm font-black text-ink/60 mt-1">
+                    Equiv. BS: {Utils.fmtBS(returnItems.reduce((s, i) => s + (i.cantidad * i.precioUnitUSD), 0) * (Number(state.tasa) || 1))}
+                  </p>
                 </div>
 
                 <div className="form-group">
@@ -474,7 +477,11 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
                         <select className="form-select bg-white text-ink h-10 text-[10px] font-black uppercase border-line rounded-md px-2" value={p.metodo} onChange={e => setRefundPayments(refundPayments.map((x,i)=>i===idx?{...x,metodo:e.target.value as PaymentMethod}:x))}>
                           {REFUND_METHODS.map(m=><option key={m.value} value={m.value}>{m.label}</option>)}
                         </select>
-                        <input type="number" min="0" step="0.01" value={(refundMethodCurrency(p.metodo) === 'BS' ? p.montoBS : p.montoUSD) || ''} placeholder={refundMethodCurrency(p.metodo) === 'BS' ? 'BS' : 'USD'} onChange={e => setRefundPayments(refundPayments.map((x,i)=>i===idx?{...x,montoUSD:Number(e.target.value)||0}:x))} className="form-input h-10 text-xs font-black text-right" />
+                        <input type="number" min="0" step="0.01" value={(refundMethodCurrency(p.metodo) === 'BS' ? p.montoBS : p.montoUSD) || ''} placeholder={refundMethodCurrency(p.metodo) === 'BS' ? 'BS' : 'USD'} onChange={e => setRefundPayments(refundPayments.map((x,i)=>i===idx
+                          ? (refundMethodCurrency(x.metodo) === 'BS'
+                            ? {...x,montoBS:Number(e.target.value)||0,montoUSD:(Number(e.target.value)||0)/(Number(state.tasa)||1)}
+                            : {...x,montoUSD:Number(e.target.value)||0,montoBS:(Number(e.target.value)||0)*(Number(state.tasa)||1)})
+                          : x))} className="form-input h-10 text-xs font-black text-right" />
                         <button type="button" onClick={()=>setRefundPayments(refundPayments.filter((_,i)=>i!==idx))} disabled={refundPayments.length===1} className="h-9 text-ink/30 hover:text-status-danger disabled:opacity-20"><Trash2 className="w-4 h-4"/></button>
                       </div>
                     ))}
@@ -519,7 +526,15 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
               <button type="button" onClick={() => { setShowCancellationRefund(false); setPendingCancellation(false); }} className="text-ink/40 hover:text-status-danger"><X className="w-5 h-5" /></button>
             </div>
             <div className="p-6 space-y-5">
-              <div className="p-4 rounded-lg bg-surface-soft border border-line flex items-center justify-between"><span className="text-[10px] font-black uppercase text-ink/60">Total a reintegrar</span><span className="text-2xl font-black text-status-danger">{Utils.fmtUSD(selectedSale.totalUSD)}</span></div>
+              <div className="p-4 rounded-lg bg-surface-soft border border-line">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-black uppercase text-ink/60">Total a reintegrar</span>
+                  <span className="text-2xl font-black text-status-danger">{Utils.fmtUSD(selectedSale.totalUSD)}</span>
+                </div>
+                <div className="text-right text-sm font-black text-ink/60 mt-1">
+                  Equiv. BS: {Utils.fmtBS((Number(selectedSale.totalUSD) || 0) * (Number(state.tasa) || 1))}
+                </div>
+              </div>
               <div className="space-y-2 max-h-[42vh] overflow-y-auto pr-1">
                 {refundPayments.map((p, idx) => (
                   <div key={idx} className="grid grid-cols-[1fr_120px_36px] gap-2 items-center">
