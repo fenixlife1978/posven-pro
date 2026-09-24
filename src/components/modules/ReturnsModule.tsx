@@ -190,97 +190,72 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
     }
   };
 
-  const anularFacturaCompleta = async () => {
+  const ejecutarAnulacion = async (refundFinal: Array<{ metodo: PaymentMethod; montoUSD: number; montoBS: number }>) => {
     if (!selectedSale || isProcessing || processingRef.current) return;
-    const pin = prompt('AUTORIZACIÓN REQUERIDA: Ingrese PIN de Seguridad:');
-    if (pin !== state.pinDevolucion) return alert('PIN Incorrecto');
-
-    if (!confirm(`¿ESTÁ SEGURO DE ANULAR LA FACTURA ${selectedSale.id}?\nEsta acción devolverá todo el stock al inventario.`)) return;
-
-    const representaEgreso = confirm("¿Esta anulación requiere el REINTEGRO DE DINERO físico al cliente?\n(Si confirma, se generará un asiento de EGRESO en contabilidad)");
-
     processingRef.current = true;
     setIsProcessing(true);
     try {
       const ahoraStr = Utils.ahora();
       const nuevosProductos = [...state.productos];
       const nuevosMovimientos: Movimiento[] = [];
-
       selectedSale.items.forEach(item => {
         const pIdx = nuevosProductos.findIndex(p => p.id === item.productoId);
         if (pIdx >= 0) {
           const p = nuevosProductos[pIdx];
           const stockAntes = p.stock;
           nuevosProductos[pIdx] = { ...p, stock: p.stock + item.cantidad };
-          
-          nuevosMovimientos.push({
-            id: Store.uid(),
-            productoId: item.productoId,
-            tipo: 'anulacion',
-            cantidad: item.cantidad,
-            stockAntes,
-            stockDespues: nuevosProductos[pIdx].stock,
-            fecha: ahoraStr,
-            referencia: `ANULACIÓN TOTAL FACTURA #${selectedSale.id}`,
-            terminalId: terminalId || 'GLOBAL'
-          });
+          nuevosMovimientos.push({ id: Store.uid(), productoId: item.productoId, tipo: 'anulacion', cantidad: item.cantidad, stockAntes, stockDespues: nuevosProductos[pIdx].stock, fecha: ahoraStr, referencia: `ANULACIÓN TOTAL FACTURA #${selectedSale.id}`, terminalId: terminalId || 'GLOBAL' });
         }
       });
-
-      const nuevasVentas = state.ventas.map(v => 
-        v.id === selectedSale.id ? { ...v, estado: 'anulada' } : v
-      );
-
+      const nuevasVentas = state.ventas.map(v => v.id === selectedSale.id ? { ...v, estado: 'anulada' } : v);
       const terminal = state.terminales.find(t => t.id === terminalId);
-      const prefijo = Utils.prefijoCaja(terminal, state.terminales);
       const idAnu = 'ANU-OP-' + Store.uid().toUpperCase().slice(0, 10);
       const nuevaAnulacion: Anulacion = {
-        id: idAnu,
-        ventaId: selectedSale.id,
-        fecha: ahoraStr,
-        totalUSD: selectedSale.totalUSD,
-        motivo: 'ANULACIÓN TOTAL DE FACTURA POR OPERADOR',
-        items: [...selectedSale.items],
-        terminalId: terminalId || 'GLOBAL'
+        id: idAnu, ventaId: selectedSale.id, fecha: ahoraStr, totalUSD: selectedSale.totalUSD,
+        motivo: 'ANULACIÓN TOTAL DE FACTURA POR OPERADOR', items: [...selectedSale.items], terminalId: terminalId || 'GLOBAL',
+        ...(refundFinal.length ? { refundPayments: refundFinal, metodoReembolso: refundFinal.length === 1 ? refundFinal[0].metodo : 'mixto' } : {})
       };
-
-      let nuevosAsientosDiario: LibroDiarioEntry[] = [];
-      if (representaEgreso) {
-        nuevosAsientosDiario.push({
-          id: 'ACC-' + Store.uid().toUpperCase().slice(0, 5),
-          fecha: ahoraStr,
-          tipo: 'egreso',
-          categoria: 'ANULACION',
-          concepto: `REINTEGRO POR ANULACIÓN FACTURA #${selectedSale.id}`,
-          montoUSD: selectedSale.totalUSD,
-          montoBS: selectedSale.totalBS,
-          metodo: selectedSale.metodoPago || 'otros',
-          referencia: idAnu,
-          terminalId: terminalId || 'GLOBAL',
-          terminalName: terminal?.nombre || 'SISTEMA GLOBAL'
-        });
+      const nuevosAsientosDiario: LibroDiarioEntry[] = refundFinal.length ? [{
+        id: 'ACC-' + Store.uid().toUpperCase().slice(0, 5), fecha: ahoraStr, tipo: 'egreso', categoria: 'ANULACION',
+        concepto: `REINTEGRO POR ANULACIÓN FACTURA #${selectedSale.id}`,
+        montoUSD: refundFinal.reduce((s, p) => s + p.montoUSD, 0),
+        montoBS: refundFinal.reduce((s, p) => s + p.montoBS, 0),
+        metodo: refundFinal.length === 1 ? refundFinal[0].metodo : 'mixto', referencia: idAnu,
+        terminalId: terminalId || 'GLOBAL', terminalName: terminal?.nombre || 'SISTEMA GLOBAL'
+      }] : [];
+      const resultadoAnu = await Store.processReturnOrCancellationTransaction({
+        operationId: idAnu, operationType: 'ANULACION', saleId: selectedSale.id, operationDoc: nuevaAnulacion,
+        movements: nuevosMovimientos, journal: nuevosAsientosDiario[0], fullCancellation: true
+      });
+      if (resultadoAnu?.queuedOffline) {
+        toast({ title: 'Anulación guardada sin conexión', description: 'Quedó pendiente de sincronización automática.' });
+        setView('list'); setSelectedSale(null); return;
       }
-
-      const resultadoAnu = await Store.processReturnOrCancellationTransaction({ operationId: idAnu, operationType: 'ANULACION', saleId: selectedSale.id, operationDoc: nuevaAnulacion, movements: nuevosMovimientos, journal: nuevosAsientosDiario[0], fullCancellation: true });
-      if (resultadoAnu?.queuedOffline) { toast({ title: 'Anulación guardada sin conexión', description: 'Quedó pendiente de sincronización automática.' }); setView('list'); setSelectedSale(null); return; }
-
       const anulacionFinal = resultadoAnu?.operationDoc || nuevaAnulacion;
       updateState({
-        ventas: nuevasVentas,
-        anulaciones: [anulacionFinal, ...(state.anulaciones || [])],
-        terminales: resultadoAnu?.terminal?.id
-          ? Utils.patchTerminal(state.terminales, resultadoAnu.terminal.id, resultadoAnu.terminal)
-          : state.terminales,
-        libroDiario: representaEgreso ? [...nuevosAsientosDiario, ...(state.libroDiario || [])] : state.libroDiario
+        ventas: nuevasVentas, anulaciones: [anulacionFinal, ...(state.anulaciones || [])],
+        terminales: resultadoAnu?.terminal?.id ? Utils.patchTerminal(state.terminales, resultadoAnu.terminal.id, resultadoAnu.terminal) : state.terminales,
+        libroDiario: refundFinal.length ? [...nuevosAsientosDiario, ...(state.libroDiario || [])] : state.libroDiario
       });
-
       toast({ title: "Factura Anulada", description: `El documento ${selectedSale.id} ha sido invalidado bajo el registro ${idAnu}.` });
-      setView('list');
-      setSelectedSale(null);
+      setView('list'); setSelectedSale(null); setRefundPayments([{ metodo: 'efectivo_usd', montoUSD: 0 }]);
+      setShowCancellationRefund(false); setPendingCancellation(false);
     } finally {
-      processingRef.current = false;
-      setIsProcessing(false);
+      processingRef.current = false; setIsProcessing(false);
     }
+  };
+
+  const anularFacturaCompleta = async () => {
+    if (!selectedSale || isProcessing || processingRef.current) return;
+    const pin = prompt('AUTORIZACIÓN REQUERIDA: Ingrese PIN de Seguridad:');
+    if (pin !== state.pinDevolucion) return alert('PIN Incorrecto');
+    if (!confirm(`¿ESTÁ SEGURO DE ANULAR LA FACTURA ${selectedSale.id}?\nEsta acción devolverá todo el stock al inventario.`)) return;
+    const representaEgreso = confirm("¿Esta anulación requiere el REINTEGRO DE DINERO físico al cliente?\n(Si confirma, se solicitará la distribución por método de pago)");
+    if (representaEgreso) {
+      setRefundPayments([{ metodo: (selectedSale.metodoPago || 'efectivo_usd') as PaymentMethod, montoUSD: Number(selectedSale.totalUSD) || 0 }]);
+      setPendingCancellation(true); setShowCancellationRefund(true); return;
+    }
+    await ejecutarAnulacion([]);
   };
 
   const historialUnificado = useMemo(() => {
@@ -336,7 +311,7 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
             <label className="text-[10px] font-black uppercase text-ink/40 block mb-2">CONSULTAR POR PERÍODO</label>
             <DateRangeFilter value={rango} onChange={setRango} />
           </div>
-          <div className="table-wrap">
+          <div className="table-wrap max-h-[38vh] overflow-y-auto">
             <table>
               <thead>
                 <tr className="bg-surface-soft">
@@ -402,7 +377,7 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
                        <button onClick={() => setSelectedSale(null)} className="text-ink/40 hover:text-ink"><X className="w-4 h-4"/></button>
                     </div>
                   </div>
-                  <div className="table-wrap">
+                  <div className="table-wrap max-h-[38vh] overflow-y-auto">
                     <table>
                       <thead>
                         <tr className="bg-surface-soft">
@@ -439,7 +414,7 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
                       <Undo2 className="w-4 h-4"/> Ítems en la Devolución Actual
                     </h3>
                   </div>
-                  <div className="table-wrap">
+                  <div className="table-wrap max-h-[38vh] overflow-y-auto">
                     <table>
                       <thead>
                         <tr className="bg-surface-soft">
@@ -535,6 +510,35 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
           </div>
         </div>
       )}
+      {showCancellationRefund && pendingCancellation && selectedSale && (
+        <div className="fixed inset-0 z-[100] bg-black/50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="w-full max-w-2xl bg-white rounded-xl shadow-2xl border border-line max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 z-10 bg-white border-b border-line px-6 py-4 flex items-center justify-between">
+              <div><h3 className="text-ink font-black uppercase text-sm">Reintegro por Anulación</h3><p className="text-[10px] text-ink/50 font-bold uppercase mt-1">Factura {selectedSale.id} · Seleccione uno o varios métodos</p></div>
+              <button type="button" onClick={() => { setShowCancellationRefund(false); setPendingCancellation(false); }} className="text-ink/40 hover:text-status-danger"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-6 space-y-5">
+              <div className="p-4 rounded-lg bg-surface-soft border border-line flex items-center justify-between"><span className="text-[10px] font-black uppercase text-ink/60">Total a reintegrar</span><span className="text-2xl font-black text-status-danger">{Utils.fmtUSD(selectedSale.totalUSD)}</span></div>
+              <div className="space-y-2 max-h-[42vh] overflow-y-auto pr-1">
+                {refundPayments.map((p, idx) => (
+                  <div key={idx} className="grid grid-cols-[1fr_120px_36px] gap-2 items-center">
+                    <select className="form-select bg-white text-ink h-10 text-[10px] font-black uppercase border-line rounded-md px-2" value={p.metodo} onChange={e => setRefundPayments(refundPayments.map((x,i)=>i===idx?{...x,metodo:e.target.value as PaymentMethod}:x))}>{REFUND_METHODS.map(m=><option key={m.value} value={m.value}>{m.label}</option>)}</select>
+                    <input type="number" min="0" step="0.01" value={p.montoUSD || ''} onChange={e => setRefundPayments(refundPayments.map((x,i)=>i===idx?{...x,montoUSD:Number(e.target.value)||0}:x))} className="form-input h-10 text-xs font-black text-right" placeholder="USD" />
+                    <button type="button" onClick={()=>setRefundPayments(refundPayments.filter((_,i)=>i!==idx))} disabled={refundPayments.length===1} className="h-9 text-ink/30 hover:text-status-danger disabled:opacity-20"><Trash2 className="w-4 h-4" /></button>
+                  </div>
+                ))}
+              </div>
+              <button type="button" onClick={()=>setRefundPayments([...refundPayments,{metodo:'efectivo_usd',montoUSD:0}])} className="text-[9px] font-black uppercase text-status-info">+ Agregar otro método</button>
+              <div className="flex justify-between text-[9px] font-black uppercase border-t border-line pt-3"><span>Distribuido: {Utils.fmtUSD(refundPayments.reduce((s,p)=>s+(Number(p.montoUSD)||0),0))}</span><span className={Math.abs(refundPayments.reduce((s,p)=>s+(Number(p.montoUSD)||0),0)-(Number(selectedSale.totalUSD)||0))<0.005 ? 'text-status-ok' : 'text-status-danger'}>Falta: {Utils.fmtUSD(Math.max(0,(Number(selectedSale.totalUSD)||0)-refundPayments.reduce((s,p)=>s+(Number(p.montoUSD)||0),0)))}</span></div>
+              <div className="flex gap-2 justify-end">
+                <button type="button" onClick={()=>{setShowCancellationRefund(false);setPendingCancellation(false)}} className="btn btn-secondary h-10 px-5 font-black uppercase text-[10px]">Cancelar</button>
+                <button type="button" disabled={isProcessing || Math.abs(refundPayments.reduce((s,p)=>s+(Number(p.montoUSD)||0),0)-(Number(selectedSale.totalUSD)||0))>0.005} onClick={()=>ejecutarAnulacion(refundPayments.map(p=>({...p,montoUSD:Number(p.montoUSD)||0,montoBS:(Number(p.montoUSD)||0)*state.tasa})))} className="btn btn-danger h-10 px-5 font-black uppercase text-[10px] disabled:opacity-30">{isProcessing?'PROCESANDO...':'CONFIRMAR ANULACIÓN Y REINTEGRO'}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
