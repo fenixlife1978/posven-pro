@@ -27,31 +27,6 @@ interface Props {
 export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SALE', storeInfo }: Props) {
   const state = Store.get();
   const printRef = useRef<HTMLDivElement>(null);
-  const [arqueoReal, setArqueoReal] = React.useState<Record<string, string>>({});
-  const arqueoRows = React.useMemo(() => {
-    const rows = Array.isArray(data?.metodosArqueo) ? data.metodosArqueo : [];
-    const base = ['efectivo_bs','efectivo_usd','pagomovil','punto_venta','biopago','transferencia','zelle','credito','otros'];
-    const map = new Map<string, any>();
-    [...base, ...rows.map((r:any) => r.metodo)].forEach((metodo) => { if (metodo) map.set(metodo, rows.find((r:any)=>r.metodo===metodo) || {metodo,ventasBS:0,ventasUSD:0,cobrosBS:0,cobrosUSD:0,devBS:0,devUSD:0,moneda: isUsdPayment(metodo) ? 'USD' : 'BS'}); });
-    return Array.from(map.values());
-  }, [data?.metodosArqueo]);
-  const arqueoCalc = React.useMemo(() => {
-    const details = arqueoRows.map((r:any) => {
-      const usd = r.moneda === 'USD';
-      const fondo = r.metodo === 'efectivo_bs' ? Number(data?.fondoAperturaBS || 0) : r.metodo === 'efectivo_usd' ? Number(data?.fondoAperturaUSD || 0) : 0;
-      const ventas = usd ? Number(r.ventasUSD || 0) : Number(r.ventasBS || 0);
-      const cobros = usd ? Number(r.cobrosUSD || 0) : Number(r.cobrosBS || 0);
-      const dev = usd ? Number(r.devUSD || 0) : Number(r.devBS || 0);
-      const credito = r.metodo === 'credito' ? Number(data?.ventasCreditoUSD || 0) : 0;
-      const sistema = r.metodo === 'credito' ? credito : fondo + ventas + cobros - dev;
-      const real = r.metodo === 'credito' ? sistema : (arqueoReal[r.metodo] === undefined || arqueoReal[r.metodo] === '' ? null : Number(arqueoReal[r.metodo]));
-      return { ...r, usd, fondo, ventas, cobros, dev, credito, sistema, real, dif: real === null ? null : real - sistema };
-    });
-    const difBS = details.filter((r:any)=>!r.usd && r.real !== null).reduce((s:number,r:any)=>s+r.dif,0);
-    const difUSD = details.filter((r:any)=>r.usd && r.real !== null).reduce((s:number,r:any)=>s+r.dif,0);
-    return {details,difBS,difUSD,conciliado:Math.abs(difBS)<0.005 && Math.abs(difUSD)<0.005};
-  }, [arqueoRows, arqueoReal, data?.fondoAperturaBS, data?.fondoAperturaUSD, data?.ventasCreditoUSD]);
-
   const isReport = type === 'REPORT_X' || type === 'REPORT_Z';
   const data = isReport ? reportData : saleData;
   
@@ -207,6 +182,31 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
     const usdMethods = ['efectivo_usd', 'efectivo usd', 'usd', 'dolar', 'zelle'];
     return usdMethods.some(m => method.toLowerCase().includes(m));
   };
+
+  const [arqueoReal, setArqueoReal] = React.useState<Record<string, string>>({});
+  const arqueoRows = React.useMemo(() => {
+    const rows = Array.isArray(data?.metodosArqueo) ? data.metodosArqueo : [];
+    const base = ['efectivo_bs','efectivo_usd','pagomovil','punto_venta','biopago','transferencia','zelle','credito','otros'];
+    const map = new Map<string, any>();
+    [...base, ...rows.map((r:any) => r.metodo)].forEach((metodo) => { if (metodo) map.set(metodo, rows.find((r:any)=>r.metodo===metodo) || {metodo,ventasBS:0,ventasUSD:0,cobrosBS:0,cobrosUSD:0,devBS:0,devUSD:0,moneda: isUsdPayment(metodo) ? 'USD' : 'BS'}); });
+    return Array.from(map.values());
+  }, [data?.metodosArqueo]);
+  const arqueoCalc = React.useMemo(() => {
+    const details = arqueoRows.map((r:any) => {
+      const usd = r.moneda === 'USD';
+      const fondo = r.metodo === 'efectivo_bs' ? Number(data?.fondoAperturaBS || 0) : r.metodo === 'efectivo_usd' ? Number(data?.fondoAperturaUSD || 0) : 0;
+      const ventas = usd ? Number(r.ventasUSD || 0) : Number(r.ventasBS || 0);
+      const cobros = usd ? Number(r.cobrosUSD || 0) : Number(r.cobrosBS || 0);
+      const dev = usd ? Number(r.devUSD || 0) : Number(r.devBS || 0);
+      const credito = r.metodo === 'credito' ? Number(data?.ventasCreditoUSD || 0) : 0;
+      const sistema = r.metodo === 'credito' ? credito : fondo + ventas + cobros - dev;
+      const real = r.metodo === 'credito' ? sistema : (arqueoReal[r.metodo] === undefined || arqueoReal[r.metodo] === '' ? null : Number(arqueoReal[r.metodo]));
+      return { ...r, usd, fondo, ventas, cobros, dev, credito, sistema, real, dif: real === null ? null : real - sistema };
+    });
+    const difBS = details.filter((r:any)=>!r.usd && r.real !== null).reduce((s:number,r:any)=>s+r.dif,0);
+    const difUSD = details.filter((r:any)=>r.usd && r.real !== null).reduce((s:number,r:any)=>s+r.dif,0);
+    return {details,difBS,difUSD,conciliado:Math.abs(difBS)<0.005 && Math.abs(difUSD)<0.005};
+  }, [arqueoRows, arqueoReal, data?.fondoAperturaBS, data?.fondoAperturaUSD, data?.ventasCreditoUSD]);
 
   const handlePrint = () => {
     const printContent = printRef.current?.innerHTML;
