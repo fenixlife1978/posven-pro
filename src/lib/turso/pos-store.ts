@@ -361,10 +361,20 @@ export async function createSaleTransaction(params: {
       : null;
     if (terminalId && !terminal) throw new Error('La caja/terminal ya no existe en Turso.');
 
-    const nextNumber = Number(terminal?.proximoRecibo ?? fallbackReceiptNumber ?? 1);
-    const reciboId = terminalSeries(await terminalUniquePrefix(tx, terminal, terminalId), 'V', nextNumber, 9);
-    const existingSale = await tx.execute(txSelect('ventas', reciboId));
-    if (existingSale.rows.length) throw new Error('El correlativo de esta venta ya fue utilizado.');
+    let nextNumber = Math.max(1, Number(terminal?.proximoRecibo ?? fallbackReceiptNumber ?? 1));
+    const salePrefix = await terminalUniquePrefix(tx, terminal, terminalId);
+    // Recuperación segura para bases migradas: si el contador de una caja quedó
+    // atrasado respecto de sus ventas ya existentes, avanzamos SOLO el contador
+    // de esa caja hasta encontrar el siguiente correlativo libre. No se toca la
+    // serie ni el contador de ninguna otra terminal.
+    let reciboId = terminalSeries(salePrefix, 'V', nextNumber, 9);
+    for (let guard = 0; guard < 100000; guard++) {
+      const existingSale = await tx.execute(txSelect('ventas', reciboId));
+      if (!existingSale.rows.length) break;
+      nextNumber += 1;
+      reciboId = terminalSeries(salePrefix, 'V', nextNumber, 9);
+      if (guard === 99999) throw new Error('No se pudo obtener un correlativo libre para esta caja.');
+    }
 
     const products = new Map<string, any>();
     const productIds = [...new Set(cart.map(i => String(i.productoId || '')).filter(Boolean))];
