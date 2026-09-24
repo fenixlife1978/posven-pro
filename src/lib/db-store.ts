@@ -2932,7 +2932,7 @@ export const Store = {
       }).then(() => writeCatalogCacheMeta(catalogVersion)).catch(e => console.error('Error persistiendo catálogo/version:', e)));
     }
 
-    // 3) CONFIG: Turso primero; Firebase solo mientras Turso no esté configurado.
+    // 3) CONFIG: Turso es la única fuente de verdad. No se replica ni cae en Firebase.
     const toWrite: Record<string, any> = {};
     for (const f of CONFIG_FIELDS) {
       const key = f as keyof AppState;
@@ -2944,7 +2944,7 @@ export const Store = {
     if (Object.keys(toWrite).length > 0) {
       jobs.push((async () => {
         const result = await tryTursoOperation('configPatch', { patch: toWrite });
-        if (!result) await setDoc(doc(db, CONFIG_COLLECTION, CONFIG_DOC_ID), toWrite, { merge: true });
+        if (!result) throw new Error('Turso no confirmó la actualización de configuración.');
       })().catch(e => console.error('Error persistiendo config:', e)));
     }
     await Promise.all(jobs);
