@@ -163,7 +163,7 @@ export async function listRecords(
 export async function countRecords(table: TursoStoreTable): Promise<number> {
   assertTursoReady();
   const result = await tursoExecute({
-    sql: \`SELECT COUNT(*) AS total FROM \${tableName(table)}\`,
+    sql: `SELECT COUNT(*) AS total FROM ${tableName(table)}`,
     args: [],
   });
   return Number(result.rows[0]?.total ?? 0);
