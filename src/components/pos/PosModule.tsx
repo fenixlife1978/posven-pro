@@ -178,12 +178,26 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     // El libro diario también es por caja: un X/Z de esta terminal nunca
     // debe sumar entradas/salidas/cobros de otra terminal.
     const relevantDiario = allLibroDiario.filter(e => inWindow(e.fecha) && String(e.terminalId || '') === termId);
-    const totalSalidasCaja = relevantDiario.filter(e => e.tipo === 'egreso').reduce((s, e) => s + (Number(e.montoUSD) || 0), 0);
-    const totalEntradasCaja = relevantDiario.filter(e => e.tipo === 'ingreso' && e.categoria !== 'VENTA' && e.categoria !== 'COBRO_DEUDA').reduce((s, e) => s + (Number(e.montoUSD) || 0), 0);
-    // Movimientos de caja se distribuyen por moneda y método. VENTA y
-    // COBRO_DEUDA ya tienen columnas propias y no se duplican aquí.
+    // DEVOLUCION/ANULACION ya se reflejan exclusivamente en la columna
+    // DEV./ANU. del Arqueo/Z mediante los documentos de devolución/anulación.
+    // Nunca deben volver a entrar como egreso de "Movimiento de Caja".
+    const esAjusteDevolucionAnulacion = (e:any) => {
+      const categoria = String(e?.categoria || '').trim().toUpperCase();
+      return categoria === 'DEVOLUCION' || categoria === 'ANULACION' || categoria === 'ANULACIÓN';
+    };
+    const totalSalidasCaja = relevantDiario
+      .filter(e => e.tipo === 'egreso' && !esAjusteDevolucionAnulacion(e))
+      .reduce((s, e) => s + (Number(e.montoUSD) || 0), 0);
+    const totalEntradasCaja = relevantDiario
+      .filter(e => e.tipo === 'ingreso' && e.categoria !== 'VENTA' && e.categoria !== 'COBRO_DEUDA' && !esAjusteDevolucionAnulacion(e))
+      .reduce((s, e) => s + (Number(e.montoUSD) || 0), 0);
+    // Movimientos de caja se distribuyen por moneda y método. VENTA,
+    // COBRO_DEUDA y DEVOLUCION/ANULACION ya tienen columnas propias y
+    // no se duplican aquí.
     const movimientosCaja = relevantDiario.filter((e:any) =>
-      e.categoria !== 'VENTA' && e.categoria !== 'COBRO_DEUDA'
+      e.categoria !== 'VENTA' &&
+      e.categoria !== 'COBRO_DEUDA' &&
+      !esAjusteDevolucionAnulacion(e)
     );
 
     // Cobros de deuda: se calculan desde los medios de pago reales del comprobante.
