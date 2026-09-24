@@ -195,9 +195,9 @@ export default function DashboardModule({ state }: { state: AppState }) {
           </div>
           <div className="mt-5">
             <div className="text-[0.74rem] font-bold text-ink-subtle uppercase tracking-wider">Total Facturado</div>
-            <div className="font-display text-[1.7rem] font-[800] text-ink mt-0.5">{state.ventas.length}</div>
+            <div className="font-display text-[1.7rem] font-[800] text-ink mt-0.5">{historicalSalesCount ?? state.ventas.length}</div>
           </div>
-          <div className="mt-2.5 pt-3 border-t border-line text-[0.74rem] font-medium text-ink-subtle/80 uppercase">Histórico del Sistema</div>
+          <div className="mt-2.5 pt-3 border-t border-line text-[0.74rem] font-medium text-ink-subtle/80 uppercase">Histórico real de ventas en Turso</div>
         </div>
 
         <div className="bg-white border border-line rounded-[20px] p-6 shadow-sm-card group hover:shadow-card transition-all">
