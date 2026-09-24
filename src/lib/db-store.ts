@@ -1464,7 +1464,9 @@ export const Store = {
       // queden visibles inmediatamente en la interfaz.
       const refreshedCxc = await tryTursoRead('cxc', { limit: 2000 });
       if (refreshedCxc !== null) applyPatch({ cxc: refreshedCxc });
+      if (tursoResult.sale?.id) applyPatch({ ventas: mergeById(cache.ventas, [tursoResult.sale]) });
       if (journal?.id) applyPatch({ libroDiario: mergeById(cache.libroDiario, [{ ...journal, montoUSD: tursoResult.appliedUSD, montoBS: tursoResult.appliedBS, referencia: tursoResult.receiptId, terminalId: terminalId || journal.terminalId }]) });
+      if (tursoResult.terminal?.id) applyPatch({ terminales: mergeById(cache.terminales || [], [tursoResult.terminal]) });
       return tursoResult;
     }
 
