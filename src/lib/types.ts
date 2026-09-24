@@ -264,6 +264,8 @@ export interface Return {
   items: ReturnItem[];
   totalUSD: number;
   metodoReembolso: string;
+  /** Distribución real del reintegro por método de pago. */
+  refundPayments?: Array<{ metodo: PaymentMethod; montoUSD: number; montoBS?: number }>;
   motivo: string;
   terminalId?: string;
 }
@@ -273,6 +275,8 @@ export interface Anulacion {
   ventaId: string;
   fecha: string;
   totalUSD: number;
+  /** Distribución real del reintegro cuando la anulación devuelve dinero. */
+  refundPayments?: Array<{ metodo: PaymentMethod; montoUSD: number; montoBS?: number }>;
   motivo: string;
   items: any[];
   terminalId?: string;
