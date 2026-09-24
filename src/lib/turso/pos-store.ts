@@ -814,7 +814,17 @@ async function applyGlobalPayment(params:any, collection:'cxc'|'cxp'){
         change: 0,
         terminalId: terminalId || 'GLOBAL',
         terminalName: terminal?.nombre || 'SISTEMA GLOBAL',
-        payments: Array.isArray(paymentParts) && paymentParts.length ? paymentParts.map((p:any) => ({...p, terminalId: terminalId || p?.terminalId, reciboId: receiptId})) : [{...payment, id: receiptId, reciboId: receiptId, montoUSD: appliedUSD, montoBS: appliedBS, terminalId: terminalId || payment?.terminalId}],
+        payments: Array.isArray(paymentParts) && paymentParts.length ? (() => {
+          const requestedUSD = paymentParts.reduce((s:number,p:any) => s + (Number(p.montoUSD) || 0), 0);
+          const ratio = requestedUSD > 0 ? Math.min(1, appliedUSD / requestedUSD) : 1;
+          return paymentParts.map((p:any) => ({
+            ...p,
+            terminalId: terminalId || p?.terminalId,
+            reciboId: receiptId,
+            montoUSD: (Number(p.montoUSD) || 0) * ratio,
+            montoBS: (Number(p.montoBS) || 0) * ratio,
+          }));
+        })() : [{...payment, id: receiptId, reciboId: receiptId, montoUSD: appliedUSD, montoBS: appliedBS, terminalId: terminalId || payment?.terminalId}],
         baseImponibleUSD: 0,
         ivaUSD: 0,
         exentoUSD: 0,
