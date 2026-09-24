@@ -113,10 +113,18 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     const allVentas = freshState.ventas || [];
     const allDevoluciones = freshState.devoluciones || [];
     const allLibroDiario = freshState.libroDiario || [];
+    const terminalCash = Utils.getTerminalCash(currentTerminal);
     
     const inWindow = (fecha: string) => fecha > corteTimestamp && (!windowEndExclusive || fecha < windowEndExclusive);
-    const vActivas = allVentas.filter(v => inWindow(v.fecha) && v.estado !== 'anulada' && v.terminalId === termId);
-    const vAnuladas = allVentas.filter(v => inWindow(v.fecha) && v.estado === 'anulada' && v.terminalId === termId);
+    // Los cobros CxC aparecen en el historial del POS como operaciones
+    // financieras, pero NO son ventas de mercancía y no pueden inflar el
+    // total bruto/neto del Reporte X/Z.
+    const esCobroDeuda = (v: any) => {
+      const tipo = String(v?.type || '').trim().toUpperCase();
+      return tipo === 'COBRO DEUDA' || tipo === 'ABONO DEUDA' || tipo === 'COBRO_DEUDA';
+    };
+    const vActivas = allVentas.filter(v => inWindow(v.fecha) && v.estado !== 'anulada' && v.terminalId === termId && !esCobroDeuda(v));
+    const vAnuladas = allVentas.filter(v => inWindow(v.fecha) && v.estado === 'anulada' && v.terminalId === termId && !esCobroDeuda(v));
     const dHoy = allDevoluciones.filter(d => inWindow(d.fecha) && (allVentas.find(v => v.id === d.ventaId)?.terminalId === termId));
     
     const brUSD = vActivas.reduce((s, v) => s + v.totalUSD, 0);
@@ -148,7 +156,9 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     const desdeNC = sortedDevs.length > 0 ? sortedDevs[0].id : 'N/A';
     const hastaNC = sortedDevs.length > 0 ? sortedDevs[sortedDevs.length - 1].id : 'N/A';
 
-    const relevantDiario = allLibroDiario.filter(e => inWindow(e.fecha));
+    // El libro diario también es por caja: un X/Z de esta terminal nunca
+    // debe sumar entradas/salidas/cobros de otra terminal.
+    const relevantDiario = allLibroDiario.filter(e => inWindow(e.fecha) && String(e.terminalId || '') === termId);
     const totalSalidasCaja = relevantDiario.filter(e => e.tipo === 'egreso').reduce((s, e) => s + e.montoUSD, 0);
     const totalEntradasCaja = relevantDiario.filter(e => e.tipo === 'ingreso' && e.categoria !== 'VENTA' && e.categoria !== 'COBRO_DEUDA').reduce((s, e) => s + e.montoUSD, 0);
     const cobrosDeudaUSD = relevantDiario.filter(e => e.tipo === 'ingreso' && e.categoria === 'COBRO_DEUDA').reduce((s, e) => s + e.montoUSD, 0);
@@ -163,11 +173,11 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       manualEntradas: totalEntradasCaja,
       cobrosDeudaUSD,
       cobrosDeudaBS,
-      fondoAperturaUSD: freshState.fondoCajaHoyUSD || 0,
-      fondoAperturaBS: freshState.fondoCajaHoyBS || 0,
+      fondoAperturaUSD: terminalCash.fondoCajaHoyUSD || 0,
+      fondoAperturaBS: terminalCash.fondoCajaHoyBS || 0,
       desdeFactura, hastaFactura, desdeNC, hastaNC,
       stats: { facturas: vActivas.length, devoluciones: dHoy.length, anulaciones: vAnuladas.length, ticketPromedio: vActivas.length > 0 ? (netUSD / vActivas.length) : 0 },
-      fecha: Utils.ahora(), terminalName, terminalId: termId, numeroZ: freshState.ultimoZ + 1, acumuladoHistoricoUSD: freshState.acumuladoHistorico + netUSD,
+      fecha: Utils.ahora(), terminalName, terminalId: termId, numeroZ: (terminalCash.ultimoZ || 0) + 1, acumuladoHistoricoUSD: (terminalCash.acumuladoHistorico || 0) + netUSD,
       // Total explícito en USD del día (ventas brutas, antes de descuentos/devoluciones).
       // Se calcula como suma de v.totalUSD: cada venta ya tiene su total en USD
       // (los pagos en BS se convierten internamente con la tasa del momento).
@@ -239,9 +249,11 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     const data = reportSnapshot;
     if (!data) return;
     const ahora = Utils.ahora();
-    const numeroZ = state.ultimoZ + 1;
+    const terminalCash = Utils.getTerminalCash(currentTerminal);
+    const numeroZ = (terminalCash.ultimoZ || 0) + 1;
+    const prefijo = Utils.prefijoCaja(currentTerminal, state.terminales);
     const nuevoZ: ReportZ = {
-      id: 'Z-' + String(numeroZ).padStart(6, '0'), fecha: ahora, numeroZ, terminalName: data.terminalName,
+      id: prefijo + '-Z-' + String(numeroZ).padStart(6, '0'), fecha: ahora, numeroZ, terminalId: currentTerminal?.id, terminalName: data.terminalName,
       desdeFactura: data.desdeFactura, hastaFactura: data.hastaFactura, desdeNotaCredito: data.desdeNC, hastaNotaCredito: data.hastaNC,
       cantidadAnuladas: data.stats.anulaciones, ventaBrutaUSD: data.brUSD, descuentoUSD: data.descUSD, devolucionesUSD: data.devUSD,
       ventaNetaUSD: data.netUSD, baseImponibleUSD: data.baseImponibleUSD, ivaUSD: data.ivaUSD, exentoUSD: data.exentoUSD,
