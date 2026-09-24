@@ -184,13 +184,14 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
 
   const currentTerminal = useMemo(() => {
     const appUser: any = (state as any).user || null;
-    const ids = [
-      appUser?.id,
-      appUser?.uid,
-      
-    ].filter(Boolean).map(String);
-    if (!ids.length) return null;
-    return state.terminales.find(t => ids.includes(String(t.usuarioId || ''))) || null;
+    const explicitTerminalId = String(appUser?.terminalId || '').trim();
+    if (explicitTerminalId) {
+      return state.terminales.find(t => String(t.id) === explicitTerminalId) || null;
+    }
+    const ids = [appUser?.id, appUser?.uid].filter(Boolean).map(String);
+    return ids.length
+      ? state.terminales.find(t => ids.includes(String(t.usuarioId || ''))) || null
+      : null;
   }, [state.terminales, (state as any).user]);
 
   const histVentas = useMemo(() => {
@@ -205,107 +206,134 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   const histSafePage = Math.min(histPage, histTotalPages);
   const histPageVentas = histVentas.slice((histSafePage - 1) * histPageSize, histSafePage * histPageSize);
 
-  const searchInputRef = useRef<HTMLInputElement>(null);
-
-  // ===== CORREGIDO: Formato de cédula según tipo =====
-  const formatCedulaByType = (val: string, type: string) => {
-    if (type !== 'V' && type !== 'E') {
-      return val.replace(/\D/g, '');
-    }
-    const digits = val.replace(/\D/g, '');
-    if (digits.length <= 2) return digits;
-    if (digits.length <= 5) return digits.slice(0, 2) + '.' + digits.slice(2);
-    if (digits.length <= 8) return digits.slice(0, 2) + '.' + digits.slice(2, 5) + '.' + digits.slice(5);
-    return digits.slice(0, 2) + '.' + digits.slice(2, 5) + '.' + digits.slice(5, 8);
-  };
-
-  const handleNewClientCedulaChange = (val: string) => {
-    const formatted = formatCedulaByType(val, newClient.tipoDoc);
-    setNewClient({ ...newClient, cedula: formatted });
-  };
-
-  const handleNewClientTipoDocChange = (tipo: string) => {
-    const cleanNumber = newClient.cedula.replace(/\./g, '');
-    const formatted = formatCedulaByType(cleanNumber, tipo);
-    setNewClient({ ...newClient, tipoDoc: tipo, cedula: formatted });
+  const getSaleCurrencyTotals = (v: any) => {
+    const rate = Number(v?.tasaAplicada || v?.tasa || state.tasa || 1) || 1;
+    const pays = Array.isArray(v?.payments) && v.payments.length
+      ? v.payments
+      : [{ metodo: v?.metodoPago || 'otros', montoUSD: v?.totalUSD || 0, montoBS: v?.totalBS }];
+    let usd = 0;
+    let bs = 0;
+    pays.forEach((p:any) => {
+      const method = String(p?.metodo || p?.method || '').toLowerCase();
+      const pUsd = Number(p?.montoUSD) || Number(p?.usdAmount) || (
+        ['efectivo_bs','pagomovil','punto_venta','biopago','transferencia'].includes(method)
+          ? (Number(p?.amount) || Number(p?.totalBS) || 0) / rate
+          : 0
+      );
+      const pBs = Number(p?.montoBS) || Number(p?.totalBS) || (
+        Number(p?.amount) || (
+          ['efectivo_usd','zelle'].includes(method) ? pUsd * rate : 0
+        )
+      );
+      usd += pUsd;
+      bs += pBs;
+    });
+    return { usd, bs };
   };
 
   const getFreshReportData = () => {
-    // ✅ FIX: Obtener datos frescos del Store para evitar inconsistencias
     const freshState = Store.get();
-    // Cada caja usa SU PROPIO corte Z / fondo de apertura / correlativo Z.
-    const tc = Utils.getTerminalCash(currentTerminal);
-    const corteTimestamp = tc.fechaUltimoZ || '';
-    const termId = currentTerminal?.id || 'GLOBAL';
-    
-    // Usar datos frescos del Store en lugar del state del componente
+    const freshUser: any = (freshState as any).user || (state as any).user || null;
+    const sessionTerminalId = String(freshUser?.terminalId || currentTerminal?.id || '').trim();
+    const resolvedTerminal = (freshState.terminales || []).find((t:any) => String(t?.id || '') === sessionTerminalId) || currentTerminal;
+    const termId = String(resolvedTerminal?.id || '');
+    const tc = Utils.getTerminalCash(resolvedTerminal);
+    const corteTimestamp = tc.fechaUltimoZ || freshState.fechaUltimoZ || '';
+
     const allVentas = freshState.ventas || [];
     const allDevoluciones = freshState.devoluciones || [];
     const allLibroDiario = freshState.libroDiario || [];
-    
-    const vActivas = allVentas.filter(v => v.fecha > corteTimestamp && v.estado !== 'anulada' && v.terminalId === termId);
-    const vAnuladas = allVentas.filter(v => v.fecha > corteTimestamp && v.estado === 'anulada' && v.terminalId === termId);
-    const dHoy = allDevoluciones.filter(d => d.fecha > corteTimestamp && (allVentas.find(v => v.id === d.ventaId)?.terminalId === termId));
-    
-    const brUSD = vActivas.reduce((s, v) => s + v.totalUSD, 0);
-    const devUSD = dHoy.reduce((s, d) => s + d.totalUSD, 0);
-    const descUSD = vActivas.reduce((s, v) => s + (v.descuentoUSD || 0), 0);
-    const netUSD = brUSD - devUSD - descUSD;
+    const inWindow = (fecha:string) => fecha > corteTimestamp;
 
-    const baseImponibleUSD = vActivas.reduce((s, v) => s + (v.baseImponibleUSD || 0), 0);
-    const ivaUSD = vActivas.reduce((s, v) => s + (v.ivaUSD || 0), 0);
-    const exentoUSD = vActivas.reduce((s, v) => s + (v.exentoUSD || 0), 0);
-    const igtfUSD = vActivas.reduce((s, v) => s + (v.igtfUSD || 0), 0);
+    const esCobroDeuda = (v:any) => {
+      const tipo = String(v?.type || '').trim().toUpperCase();
+      return tipo === 'COBRO DEUDA' || tipo === 'ABONO DEUDA' || tipo === 'COBRO_DEUDA';
+    };
+    const vActivas = allVentas.filter(v => inWindow(v.fecha) && v.estado !== 'anulada' && String(v.terminalId || '') === termId && !esCobroDeuda(v));
+    const vAnuladas = allVentas.filter(v => inWindow(v.fecha) && v.estado === 'anulada' && String(v.terminalId || '') === termId && !esCobroDeuda(v));
+    const dHoy = allDevoluciones.filter(d => inWindow(d.fecha) && String(allVentas.find(v => v.id === d.ventaId)?.terminalId || '') === termId);
+
+    const brUSD = vActivas.reduce((s,v) => s + (Number(v.totalUSD)||0), 0);
+    const devUSD = dHoy.reduce((s,d) => s + (Number(d.totalUSD)||0), 0);
+    const descUSD = vActivas.reduce((s,v) => s + (Number(v.descuentoUSD)||0), 0);
+    const netUSD = brUSD - devUSD - descUSD;
+    const baseImponibleUSD = vActivas.reduce((s,v) => s + (Number(v.baseImponibleUSD)||0), 0);
+    const ivaUSD = vActivas.reduce((s,v) => s + (Number(v.ivaUSD)||0), 0);
+    const exentoUSD = vActivas.reduce((s,v) => s + (Number(v.exentoUSD)||0), 0);
+    const igtfUSD = vActivas.reduce((s,v) => s + (Number(v.igtfUSD)||0), 0);
 
     const paymentMethodsMap: Record<string, number> = {};
-    vActivas.forEach(v => {
-      if (v.payments && v.payments.length > 0) {
-        v.payments.forEach(p => {
-          paymentMethodsMap[p.metodo] = (paymentMethodsMap[p.metodo] || 0) + p.montoUSD;
-        });
-      } else if (v.metodoPago) {
-        paymentMethodsMap[v.metodoPago] = (paymentMethodsMap[v.metodoPago] || 0) + v.totalUSD;
-      }
+    vActivas.forEach(v => (Array.isArray(v.payments) && v.payments.length ? v.payments : [{metodo:v.metodoPago||'otros',montoUSD:v.totalUSD}]).forEach((p:any) => {
+      const m=String(p.metodo||'otros');
+      paymentMethodsMap[m]=(paymentMethodsMap[m]||0)+(Number(p.montoUSD)||Number(p.usdAmount)||0);
+    }));
+
+    const sortedVentas=[...vActivas].sort((a,b)=>a.fecha.localeCompare(b.fecha));
+    const sortedDevs=[...dHoy].sort((a,b)=>a.fecha.localeCompare(b.fecha));
+    const desdeFactura=sortedVentas[0]?.id||'N/A';
+    const hastaFactura=sortedVentas[sortedVentas.length-1]?.id||'N/A';
+    const desdeNC=sortedDevs[0]?.id||'N/A';
+    const hastaNC=sortedDevs[sortedDevs.length-1]?.id||'N/A';
+
+    const relevantDiario=allLibroDiario.filter(e=>inWindow(e.fecha)&&String(e.terminalId||'')===termId);
+    const totalSalidasCaja=relevantDiario.filter(e=>e.tipo==='egreso').reduce((s,e)=>s+(Number(e.montoUSD)||0),0);
+    const totalEntradasCaja=relevantDiario.filter(e=>e.tipo==='ingreso'&&e.categoria!=='VENTA'&&e.categoria!=='COBRO_DEUDA').reduce((s,e)=>s+(Number(e.montoUSD)||0),0);
+
+    const esMetodoUSD=(m:string)=>m==='efectivo_usd'||m==='zelle';
+    const esMetodoBS=(m:string)=>['efectivo_bs','pagomovil','punto_venta','biopago','transferencia'].includes(m);
+    const addPaymentTo=(p:any,factor=1)=>{
+      const metodo=String(p?.metodo||p?.method||'otros');
+      const usd=Number(p?.montoUSD)||Number(p?.usdAmount)||Number(p?.monto)||0;
+      const bs=Number(p?.montoBS)||Number(p?.totalBS)||(
+        esMetodoBS(metodo) ? (Number(p?.amount)||usd*(Number(freshState.tasa)||1)) :
+        esMetodoUSD(metodo) ? usd*(Number(p?.tasaAplicada)||Number(p?.tasa)||Number(freshState.tasa)||1) : 0
+      );
+      return {metodo,usd:usd*factor,bs:bs*factor};
+    };
+    const arqueoMap:Record<string,any>={};
+    const ensureArqueo=(metodo:string)=>{
+      if(!arqueoMap[metodo]) arqueoMap[metodo]={ventasBS:0,ventasUSD:0,cobrosBS:0,cobrosUSD:0,devBS:0,devUSD:0,movPlusBS:0,movPlusUSD:0,movMinusBS:0,movMinusUSD:0};
+      return arqueoMap[metodo];
+    };
+
+    vActivas.forEach(v=>{
+      const pays=Array.isArray(v.payments)&&v.payments.length?v.payments:[{metodo:v.metodoPago||'otros',montoUSD:v.totalUSD,montoBS:v.totalBS,tasaAplicada:v.tasaAplicada}];
+      pays.forEach((p:any)=>{const x=addPaymentTo(p);if(x.metodo==='credito')return;const row=ensureArqueo(x.metodo);if(esMetodoUSD(x.metodo))row.ventasUSD+=x.usd;else row.ventasBS+=x.bs;});
     });
 
-    const sortedVentas = vActivas.sort((a,b) => a.fecha.localeCompare(b.fecha));
-    const desdeFactura = sortedVentas.length > 0 ? sortedVentas[0].id : 'N/A';
-    const hastaFactura = sortedVentas.length > 0 ? sortedVentas[sortedVentas.length - 1].id : 'N/A';
-    
-    const sortedDevs = dHoy.sort((a,b) => a.fecha.localeCompare(b.fecha));
-    const desdeNC = sortedDevs.length > 0 ? sortedDevs[0].id : 'N/A';
-    const hastaNC = sortedDevs.length > 0 ? sortedDevs[sortedDevs.length - 1].id : 'N/A';
+    const cobroDeudaVentas=allVentas.filter(v=>inWindow(v.fecha)&&String(v.terminalId||'')===termId&&esCobroDeuda(v));
+    cobroDeudaVentas.forEach(v=>{
+      const pays=Array.isArray(v.payments)&&v.payments.length?v.payments:[{metodo:v.metodoPago||'otros',montoUSD:v.totalUSD,montoBS:v.totalBS,tasaAplicada:v.tasaAplicada}];
+      pays.forEach((p:any)=>{const x=addPaymentTo(p);const row=ensureArqueo(x.metodo);if(esMetodoUSD(x.metodo))row.cobrosUSD+=x.usd;else row.cobrosBS+=x.bs;});
+    });
 
-    // Movimientos de caja del periodo SOLO de ESTA caja. Cada asiento generado
-    // por el POS lleva su terminalId, así ninguna caja ve las entradas/salidas
-    // de otra. Los asientos manuales (contabilidad) se registran por terminal si
-    // el operador tiene uno asignado; si no, quedan como globales.
-    const relevantDiario = allLibroDiario.filter(e => e.fecha > corteTimestamp && e.terminalId === termId);
-    const totalSalidasCaja = relevantDiario.filter(e => e.tipo === 'egreso').reduce((s, e) => s + e.montoUSD, 0);
-    const totalEntradasCaja = relevantDiario.filter(e => e.tipo === 'ingreso' && e.categoria !== 'VENTA' && e.categoria !== 'COBRO_DEUDA').reduce((s, e) => s + e.montoUSD, 0);
-    // Cobros de deuda (ingresos de caja por cobros de créditos).
-    const cobrosDeudaUSD = relevantDiario.filter(e => e.tipo === 'ingreso' && e.categoria === 'COBRO_DEUDA').reduce((s, e) => s + e.montoUSD, 0);
-    const cobrosDeudaBS = relevantDiario.filter(e => e.tipo === 'ingreso' && e.categoria === 'COBRO_DEUDA').reduce((s, e) => s + e.montoBS, 0);
+    vAnuladas.forEach(v=>{
+      const pays=Array.isArray(v.payments)&&v.payments.length?v.payments:[{metodo:v.metodoPago||'otros',montoUSD:v.totalUSD,montoBS:v.totalBS,tasaAplicada:v.tasaAplicada}];
+      pays.forEach((p:any)=>{const x=addPaymentTo(p);const row=ensureArqueo(x.metodo);if(esMetodoUSD(x.metodo))row.devUSD+=x.usd;else row.devBS+=x.bs;});
+    });
 
-    const terminalName = currentTerminal ? currentTerminal.nombre : 'SISTEMA GLOBAL';
+    dHoy.forEach(d=>{
+      const sale:any=allVentas.find(v=>v.id===d.ventaId);
+      const pays=sale&&Array.isArray(sale.payments)&&sale.payments.length?sale.payments:[{metodo:sale?.metodoPago||'otros',montoUSD:d.totalUSD,montoBS:(Number(d.totalUSD)||0)*(Number(freshState.tasa)||1),tasaAplicada:sale?.tasaAplicada}];
+      const saleTotal=Math.max(Number(sale?.totalUSD)||0.000001,0.000001);
+      pays.forEach((p:any)=>{const x=addPaymentTo(p,(Number(d.totalUSD)||0)/saleTotal);const row=ensureArqueo(x.metodo);if(esMetodoUSD(x.metodo))row.devUSD+=x.usd;else row.devBS+=x.bs;});
+    });
 
-    return { 
-      brUSD, devUSD, descUSD, netUSD, igtfUSD, ivaUSD, baseImponibleUSD, exentoUSD,
-      paymentMethods: paymentMethodsMap,
-      manualSalidas: totalSalidasCaja,
-      manualEntradas: totalEntradasCaja,
-      cobrosDeudaUSD,
-      cobrosDeudaBS,
-      fondoAperturaUSD: tc.fondoCajaHoyUSD || 0,
-      fondoAperturaBS: tc.fondoCajaHoyBS || 0,
-      desdeFactura, hastaFactura, desdeNC, hastaNC,
-      stats: { facturas: vActivas.length, devoluciones: dHoy.length, anulaciones: vAnuladas.length, ticketPromedio: vActivas.length > 0 ? (netUSD / vActivas.length) : 0 },
-      fecha: Utils.ahora(), terminalName, terminalId: termId, numeroZ: tc.ultimoZ + 1, acumuladoHistoricoUSD: tc.acumuladoHistorico + netUSD,
-      // Total explícito en USD del día (ventas brutas, antes de descuentos/devoluciones).
-      // Suma de v.totalUSD: ya incluye conversión BS→USD por la tasa de la venta.
-      totalVentasUSD: brUSD,
-      tasaBCV: freshState.tasa || 0
-    };
+    relevantDiario.filter(e=>e.categoria!=='VENTA'&&e.categoria!=='COBRO_DEUDA').forEach((e:any)=>{
+      const metodo=String(e?.metodo||'otros');const row=ensureArqueo(metodo);
+      const montoUSD=Number(e?.montoUSD)||0;
+      const montoBS=Number(e?.montoBS)||((esMetodoBS(metodo)?montoUSD*(Number(freshState.tasa)||1):0));
+      if(e.tipo==='ingreso'){if(esMetodoUSD(metodo))row.movPlusUSD+=montoUSD;else row.movPlusBS+=montoBS;}
+      if(e.tipo==='egreso'){if(esMetodoUSD(metodo))row.movMinusUSD+=montoUSD;else row.movMinusBS+=montoBS;}
+    });
+
+    const metodosArqueo=Object.entries(arqueoMap).map(([metodo,val]:any)=>({metodo,...val,moneda:esMetodoUSD(metodo)?'USD':esMetodoBS(metodo)?'BS':'USD'}));
+    const ventasCreditoUSD=vActivas.filter(v=>String(v.metodoPago||'').toLowerCase()==='credito'||(Array.isArray(v.payments)&&v.payments.some((p:any)=>p.metodo==='credito'))).reduce((s,v)=>s+(Number(v.totalUSD)||0),0);
+    const cobrosDeudaUSD=cobroDeudaVentas.reduce((s,v)=>s+getSaleCurrencyTotals(v).usd,0);
+    const cobrosDeudaBS=cobroDeudaVentas.reduce((s,v)=>s+getSaleCurrencyTotals(v).bs,0);
+    const terminalName=resolvedTerminal?.nombre||'CAJA NO IDENTIFICADA';
+
+    return {brUSD,devUSD,descUSD,netUSD,igtfUSD,ivaUSD,baseImponibleUSD,exentoUSD,paymentMethods:paymentMethodsMap,manualSalidas:totalSalidasCaja,manualEntradas:totalEntradasCaja,cobrosDeudaUSD,cobrosDeudaBS,fondoAperturaUSD:tc.fondoCajaHoyUSD||0,fondoAperturaBS:tc.fondoCajaHoyBS||0,desdeFactura,hastaFactura,desdeNC,hastaNC,stats:{facturas:vActivas.length,devoluciones:dHoy.length,anulaciones:vAnuladas.length,ticketPromedio:vActivas.length?(netUSD/vActivas.length):0},fecha:Utils.ahora(),terminalName,terminalId:termId,numeroZ:(tc.ultimoZ||0)+1,acumuladoHistoricoUSD:(tc.acumuladoHistorico||0)+netUSD,totalVentasUSD:brUSD,metodosArqueo,ventasCreditoUSD,tasaBCV:freshState.tasa||0};
   };
 
   const handleOpenReport = async (type: 'REPORT_X' | 'REPORT_Z') => {
@@ -976,12 +1004,12 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
           <div className="card-head px-6 py-4 bg-ink border-b border-white/10 flex justify-between items-center"><h3 className="text-white font-black uppercase italic tracking-tighter flex items-center gap-2 text-xs"><History className="w-5 h-5 text-brand-gold" /> HISTORIAL TERMINAL: {currentTerminal?.nombre || 'S/T'}</h3><button onClick={() => setView('pos')} className="btn btn-sm bg-white text-ink hover:bg-surface-soft flex items-center gap-2 font-black uppercase text-[10px] rounded-lg border-none px-4"><ArrowLeft className="w-3.5 h-3.5"/> Volver al POS</button></div>
           <div className="table-wrap flex-1 overflow-y-auto">
             <table>
-              <thead><tr><th>Recibo</th><th>Hora</th><th>Terminal</th><th>Cliente</th><th>Tipo</th><th className="text-right">Monto USD</th><th>Método</th><th className="text-center">Estado</th><th className="text-center">Acciones</th></tr></thead>
+              <thead><tr><th>Recibo</th><th>Hora</th><th>Terminal</th><th>Cliente</th><th>Tipo</th><th className="text-right">Monto USD</th><th className="text-right">Equiv. BS</th><th>Método</th><th className="text-center">Estado</th><th className="text-center">Acciones</th></tr></thead>
               <tbody>
                 {histPageVentas.length === 0 ? (
-                  <tr><td colSpan={9} className="text-center py-20 text-ink/20 font-black italic uppercase">Sin ventas registradas en esta terminal</td></tr>
+                  <tr><td colSpan={10} className="text-center py-20 text-ink/20 font-black italic uppercase">Sin ventas registradas en esta terminal</td></tr>
                 ) : histPageVentas.map(v => (
-                  <tr key={v.id} className="border-b border-line/40 hover:bg-surface-warm/20"><td className="text-ink font-black text-xs mono">{v.id}</td><td className="text-ink font-bold text-xs">{v.fecha.split('T')[1]?.slice(0, 5)}</td><td className="text-ink font-black text-[10px] uppercase">{v.terminalName || state.terminales.find(t => t.id === v.terminalId)?.nombre || '-'}</td><td className="text-ink font-black text-xs uppercase truncate max-w-[150px]">{v.cliente}</td><td className="text-ink font-black text-[9px] uppercase"><span className={`badge ${v.type === 'COBRO DEUDA' ? 'badge-info' : 'badge-neutral'}`}>{v.type || 'VENTA'}</span></td><td className="text-brand-gold-deep font-black text-xs text-right">{Utils.fmtUSD(v.totalUSD)}</td><td className="text-ink font-bold text-[10px] uppercase">{Utils.metodoLabel(v.metodoPago)}</td><td className="text-center"><span className={`badge ${v.estado === 'pendiente' ? 'badge-warn' : (v.estado === 'anulada' ? 'badge-err' : 'badge-ok')} font-black text-[9px] uppercase`}>{v.estado}</span></td><td className="text-center"><button onClick={() => setShowSaleDetail(v)} className="w-7 h-7 rounded-full flex items-center justify-center text-status-success hover:bg-status-success/10 transition-colors" title="Ver ítems y detalle de venta"><Eye className="w-4 h-4" /></button></td></tr>
+                  <tr key={v.id} className="border-b border-line/40 hover:bg-surface-warm/20"><td className="text-ink font-black text-xs mono">{v.id}</td><td className="text-ink font-bold text-xs">{v.fecha.split('T')[1]?.slice(0, 5)}</td><td className="text-ink font-black text-[10px] uppercase">{v.terminalName || state.terminales.find(t => t.id === v.terminalId)?.nombre || '-'}</td><td className="text-ink font-black text-xs uppercase truncate max-w-[150px]">{v.cliente}</td><td className="text-ink font-black text-[9px] uppercase"><span className={`badge ${v.type === 'COBRO DEUDA' ? 'badge-info' : 'badge-neutral'}`}>{v.type || 'VENTA'}</span></td><td className="text-brand-gold-deep font-black text-xs text-right">{Utils.fmtUSD(getSaleCurrencyTotals(v).usd)}</td><td className="text-ink font-black text-xs text-right">{Utils.fmtBS(getSaleCurrencyTotals(v).bs)}</td><td className="text-ink font-bold text-[10px] uppercase">{Utils.metodoLabel(v.metodoPago)}</td><td className="text-center"><span className={`badge ${v.estado === 'pendiente' ? 'badge-warn' : (v.estado === 'anulada' ? 'badge-err' : 'badge-ok')} font-black text-[9px] uppercase`}>{v.estado}</span></td><td className="text-center"><button onClick={() => setShowSaleDetail(v)} className="w-7 h-7 rounded-full flex items-center justify-center text-status-success hover:bg-status-success/10 transition-colors" title="Ver ítems y detalle de venta"><Eye className="w-4 h-4" /></button></td></tr>
                 ))}
               </tbody>
             </table>
