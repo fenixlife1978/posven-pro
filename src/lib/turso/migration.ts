@@ -175,6 +175,32 @@ export async function importarRespaldoFirebase(
       }
     }
 
+    // CxC debe conservar la misma factura que originó la deuda.
+    // Respaldos antiguos pueden traer ventaId pero no los items dentro de la deuda.
+    // Las ventas ya fueron importadas arriba, así que enlazamos cada deuda con su
+    // venta original y guardamos un snapshot de items/montos para Consultar Créditos.
+    for (const debt of asRows(data.cxc)) {
+      const debtId = rowId(debt, 0);
+      const ventaId = String(debt?.ventaId || '').trim();
+      if (!ventaId) continue;
+      const saleResult = await tursoExecute({ sql: 'SELECT id,data_json FROM ventas WHERE id=? LIMIT 1', args: [ventaId] });
+      if (!saleResult.rows.length) continue;
+      let sale:any = null;
+      try { sale = JSON.parse(String(saleResult.rows[0].data_json || '{}')); } catch { sale = null; }
+      if (!sale || !Array.isArray(sale.items)) continue;
+      const enrichedDebt = {
+        ...debt,
+        ventaId,
+        facturaId: String(debt?.facturaId || ventaId),
+        items: sale.items.map((item:any) => ({ ...item })),
+        subtotalUSD: Number(debt?.subtotalUSD ?? sale.subtotalUSD ?? sale.totalUSD ?? 0),
+        totalUSD: Number(debt?.totalUSD ?? sale.totalUSD ?? debt?.montoUSD ?? 0),
+        totalBS: Number(debt?.totalBS ?? sale.totalBS ?? 0),
+        tasa: Number(debt?.tasa ?? sale.tasa ?? 0),
+      };
+      await tursoExecute({ sql: 'UPDATE cxc SET data_json=?, fecha=?, updated_at=CURRENT_TIMESTAMP WHERE id=?', args: [safeJson(enrichedDebt), extractFecha(enrichedDebt), debtId], wantRows: false });
+    }
+
     for (const key of CATALOG_KEYS) {
       const rows = asRows(data[key]);
       await tursoExecute({
