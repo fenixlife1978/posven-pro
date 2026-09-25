@@ -211,7 +211,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     );
 
     const normalizarMetodo = (m:any) => String(m || '').trim().toLowerCase()
-      .normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').replace(/\\s+/g, '_');
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, '_');
     const esMetodoUSD = (m:any) => ['efectivo_usd','usd','dolar','dolares','zelle'].includes(normalizarMetodo(m));
     const esMetodoBS = (m:any) => [
       'efectivo_bs','efectivo','bs','bolivares','tarjeta','tarjeta_debito','tarjeta_credito',
