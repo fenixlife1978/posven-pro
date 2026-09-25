@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { AppState, Product, Movimiento, KitItem, Supplier, Return } from '@/lib/types';
 import { Utils, Store } from '@/lib/db-store';
 import { 
@@ -58,14 +58,20 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
   const [selectedCPPId, setSelectedCPPId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
 
+  const stockKardexSyncDone = useRef(false);
+
   useEffect(() => {
-    if (activeTab === 'productos' || activeTab === 'reporte_general') {
-      // Kardex es la fuente de verdad del stock. Al entrar a Productos/CPP
-      // sincronizamos el stock persistido en Turso antes de mostrarlo.
+    // La reconciliación con Kardex se ejecuta una sola vez al montar el módulo.
+    // Si se ejecutara cada vez que volvemos a Productos/CPP, el updateState
+    // provoca un rerender mientras el usuario abre un <select>, haciendo que
+    // el menú nativo se cierre/intermitente.
+    if (!stockKardexSyncDone.current) {
+      stockKardexSyncDone.current = true;
       void Store.syncProductsStockFromKardex().catch((error: any) => {
         console.error('No fue posible sincronizar stock desde Kardex:', error);
       });
     }
+
     if (activeTab !== 'productos') {
       void Store.ensureLoaded('movimientos');
     }
