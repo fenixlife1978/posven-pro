@@ -585,129 +585,54 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
 
                    <div className="separator-dashed"></div>
 
-                   {/* ===== MOVIMIENTO DE CAJA CORREGIDO - INCLUYE COBROS DE DEUDA ===== */}
+                   {/* ===== MOVIMIENTO DE CAJA ===== */}
                    <div className="text-center font-bold">MOVIMIENTO DE CAJA</div>
                    <div className="separator-dashed"></div>
                    {(() => {
-                     const fondoBs = data.fondoAperturaBS || data.fondoAperturaBs || 0;
-                     const fondoUsd = data.fondoAperturaUSD || data.fondoAperturaUsd || 0;
-                     
-// Calcular ventas por moneda desde TODOS los métodos de pago:
-                      // total USD = suma de métodos con moneda USD
-                      // total Bs  = suma de métodos con moneda Bs (convertidos a Bs)
-                      let ventasEfectivoBs = 0;
-                      let ventasEfectivoUsd = 0;
-                      const paymentMethods = getPaymentMethods();
-                      
-                      if (Object.keys(paymentMethods).length > 0) {
-                        if (Array.isArray(paymentMethods)) {
-                          paymentMethods.forEach((p: any) => {
-                            const method = p.metodo || p.method || 'efectivo';
-                            const amountUSD = p.montoUSD || p.amountUSD || p.monto || p.amount || 0;
-                            const amountBS = p.montoBS || p.amountBS || (amountUSD * state.tasa) || 0;
-                            const isUsd = isUsdPayment(method);
-                            
-                            if (isUsd) {
-                              ventasEfectivoUsd += amountUSD;
-                            } else {
-                              ventasEfectivoBs += amountBS;
-                            }
-                          });
-                        } else {
-                          Object.entries(paymentMethods).forEach(([method, amount]) => {
-                            const amountNum = typeof amount === 'number' ? amount : 0;
-                            const amountUSD = amountNum;
-                            const amountBS = amountNum * state.tasa;
-                            const isUsd = isUsdPayment(method);
-                            
-                            if (isUsd) {
-                              ventasEfectivoUsd += amountUSD;
-                            } else {
-                              ventasEfectivoBs += amountBS;
-                            }
-                          });
-                        }
-                      }
-                      
- // ===== COBROS DE DEUDA (provistos por el reporte) =====
-                      const cobrosDeudaBs = data.cobrosDeudaBS ?? data.cobrosDeudaBs ?? 0;
-                      const cobrosDeudaUsd = data.cobrosDeudaUSD ?? data.cobrosDeudaUsd ?? 0;
+                     const fondoBs = Number(data.fondoAperturaBS ?? data.fondoAperturaBs ?? 0);
+                     const fondoUsd = Number(data.fondoAperturaUSD ?? data.fondoAperturaUsd ?? 0);
+                     const estimadoBS = data.estimadoEfectivoBS || {};
+                     const estimadoUSD = data.estimadoEfectivoUSD || {};
+                     const entradasBs = Number(estimadoBS.entradas) || 0;
+                     const entradasUsd = Number(estimadoUSD.entradas) || 0;
+                     const egresosBs = Number(estimadoBS.egresos) || 0;
+                     const egresosUsd = Number(estimadoUSD.egresos) || 0;
 
-                      // ===== SALIDAS / ENTRADAS EXTRA DE CAJA =====
-                      const salidasCajaBs = Number(data.manualSalidasBS ?? data.salidasCajaBS ?? 0);
-                      const salidasCajaUsd = Number(data.manualSalidasUSD ?? data.salidasCajaUSD ?? 0);
-                      const entradasCajaBs = Number(data.manualEntradasBS ?? data.entradasCajaBS ?? 0);
-                      const entradasCajaUsd = Number(data.manualEntradasUSD ?? data.entradasCajaUSD ?? 0);
-
-                      // Sumar cobros de deuda a las ventas del período
-                      const totalVentasEfectivoBs = ventasEfectivoBs + cobrosDeudaBs;
-                      const totalVentasEfectivoUsd = ventasEfectivoUsd + cobrosDeudaUsd;
-
-                      // Total estimado = fondo + ventas + cobros + entradas extra − salidas
-                      const totalEstimadoBs = fondoBs + totalVentasEfectivoBs + entradasCajaBs - salidasCajaBs;
-                      const totalEstimadoUsd = fondoUsd + totalVentasEfectivoUsd + entradasCajaUsd - salidasCajaUsd;
-
-                      // Total real de ventas del período: solo ventas, sin fondos de apertura,
-                      // entradas/salidas extraordinarias ni cobros de deudas.
-                      const totalVentasDiaUsd = (ventasEfectivoBs / (state.tasa || 1)) + ventasEfectivoUsd;
-
-                      return (
-                        <>
-                        <table><tbody>
-                          <tr><td>FONDO APERTURA Bs.:</td><td className="text-right">{formatBs(fondoBs)}</td></tr>
-                          <tr><td>FONDO APERTURA USD:</td><td className="text-right">$ {formatUsd(fondoUsd)}</td></tr>
-                          <tr><td>TOTAL VENTAS MÉTODOS Bs.:</td><td className="text-right">{formatBs(totalVentasEfectivoBs)}</td></tr>
-                          <tr><td>TOTAL VENTAS MÉTODOS USD:</td><td className="text-right">$ {formatUsd(totalVentasEfectivoUsd)}</td></tr>
-                          {cobrosDeudaBs > 0 && (
-                            <tr className="text-[10px] text-gray-600">
-                              <td>└ COBROS DE DEUDA Bs.:</td>
-                              <td className="text-right">{formatBs(cobrosDeudaBs)}</td>
-                            </tr>
-                          )}
-                          {cobrosDeudaUsd > 0 && (
-                            <tr className="text-[10px] text-gray-600">
-                              <td>└ COBROS DE DEUDA USD:</td>
-                              <td className="text-right">$ {formatUsd(cobrosDeudaUsd)}</td>
-                            </tr>
-                          )}
-                          {entradasCajaUsd > 0 && (
-                            <tr className="text-[10px] text-green-700">
-                              <td>ENTRADAS EXTRA Bs.:</td>
-                              <td className="text-right">{formatBs(entradasCajaBs)}</td>
-                            </tr>
-                          )}
-                          {salidasCajaUsd > 0 && (
-                            <>
-                              <tr className="text-[10px] text-red-600">
-                                <td>SALIDAS DE CAJA Bs.:</td>
-                                <td className="text-right">({formatBs(salidasCajaBs)})</td>
-                              </tr>
-                              <tr className="text-[10px] text-red-600">
-                                <td>SALIDAS DE CAJA USD:</td>
-                                <td className="text-right">($ {formatUsd(salidasCajaUsd)})</td>
-                              </tr>
-                            </>
-                          )}
-<tr className="bold"><td>TOTAL ESTIMADO Bs.:</td><td className="text-right">{formatBs(totalEstimadoBs)}</td></tr>
-                          <tr className="bold"><td>TOTAL ESTIMADO USD:</td><td className="text-right">$ {formatUsd(totalEstimadoUsd)}</td></tr>
-                        </tbody></table>
-
-                        </>
-                      );
+                     return (
+                       <table><tbody>
+                         <tr><td>FONDO APERTURA Bs.:</td><td className="text-right">{formatBs(fondoBs)}</td></tr>
+                         <tr><td>FONDO APERTURA USD:</td><td className="text-right">$ {formatUsd(fondoUsd)}</td></tr>
+                         {entradasBs > 0 && (
+                           <tr className="text-[10px] text-green-700">
+                             <td>ENTRADAS EXTRA EFECTIVO BS:</td>
+                             <td className="text-right">{formatBs(entradasBs)}</td>
+                           </tr>
+                         )}
+                         {entradasUsd > 0 && (
+                           <tr className="text-[10px] text-green-700">
+                             <td>ENTRADAS EXTRA EFECTIVO USD:</td>
+                             <td className="text-right">$ {formatUsd(entradasUsd)}</td>
+                           </tr>
+                         )}
+                         {egresosBs > 0 && (
+                           <tr className="text-[10px] text-red-600">
+                             <td>EGRESO DE CAJA EFECTIVO BS:</td>
+                             <td className="text-right">({formatBs(egresosBs)})</td>
+                           </tr>
+                         )}
+                         {egresosUsd > 0 && (
+                           <tr className="text-[10px] text-red-600">
+                             <td>EGRESO DE CAJA EFECTIVO USD:</td>
+                             <td className="text-right">($ {formatUsd(egresosUsd)})</td>
+                           </tr>
+                         )}
+                       </tbody></table>
+                     );
                    })()}
 
                    <div className="separator-dashed"></div>
                    {type === 'REPORT_Z' && (
                      <>
-                        <div className="separator-dashed"></div>
-                        <div className="text-center font-bold">TOTAL DE VENTAS DEL DÍA EN USD</div>
-                        <div className="separator-dashed"></div>
-                        <table><tbody>
-                          <tr className="bold">
-                            <td>TOTAL VENTAS DEL DÍA:</td>
-                            <td className="text-right">$ {formatUsd(Number(data.totalVentasUSD) || 0)}</td>
-                          </tr>
-                        </tbody></table>
                         <div className="separator-dashed"></div>
                         <div className="text-center font-bold">COBROS DE DEUDAS</div>
                         <div className="separator-dashed"></div>
@@ -719,6 +644,20 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
                           <tr>
                             <td>TOTAL USD POR COBRO DE DEUDAS:</td>
                             <td className="text-right">$ {formatUsd(data.cobrosDeudaUSD ?? data.cobrosDeudaUsd ?? 0)}</td>
+                          </tr>
+                        </tbody></table>
+
+                        <div className="separator-dashed"></div>
+                        <div className="text-center font-bold">ESTIMADOS EN EFECTIVO BS/USD AL FINAL DE JORNADA</div>
+                        <div className="separator-dashed"></div>
+                        <table><tbody>
+                          <tr className="bold">
+                            <td>TOTAL EFECTIVO BS:</td>
+                            <td className="text-right">{formatBs(Number(data.estimadoEfectivoBS?.total) || 0)}</td>
+                          </tr>
+                          <tr className="bold">
+                            <td>TOTAL EFECTIVO USD:</td>
+                            <td className="text-right">$ {formatUsd(Number(data.estimadoEfectivoUSD?.total) || 0)}</td>
                           </tr>
                         </tbody></table>
                         <div className="separator-dashed"></div>
