@@ -951,6 +951,12 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       setIsCreditModalOpen(false);
       setSelectedClient(null);
       updateState({ carrito: [] });
+    } catch (e: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Venta a crédito no registrada',
+        description: e?.message || 'No se pudo confirmar la venta en Turso.'
+      });
     } finally {
       setIsProcessing(false);
     }
