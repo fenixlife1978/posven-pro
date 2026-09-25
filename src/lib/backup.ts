@@ -1,41 +1,21 @@
 'use client';
 
-import { db, rtdb } from '@/lib/firebase';
-import { collection, getDocs, getDoc, setDoc, doc, writeBatch } from 'firebase/firestore';
-import { get as rtdbGet, ref as rtdbRef } from 'firebase/database';
-import { Store } from '@/lib/db-store';
-
-// Fuentes persistentes actuales de Firestore.
-// IMPORTANTE: operaciones y auditoriaSistema no forman parte de AppState,
-// pero sí contienen información persistida que debe sobrevivir a una migración.
 const COLLECTION_KEYS = [
   'productos', 'movimientos', 'ventas', 'cxc', 'cxp', 'clientes', 'proveedores',
   'devoluciones', 'anulaciones', 'terminales', 'libroDiario', 'reportesZ',
   'cashHistory', 'compras',
 ] as const;
 
-const AUXILIARY_COLLECTIONS = [
-  'users',
-  'operaciones',
-  'auditoriaSistema',
-] as const;
+const TABLE_MAP: Record<string, string> = {
+  cashHistory: 'caja',
+};
 
-// Fuentes históricas/compatibilidad detectadas en el repositorio.
-// Se respaldan aunque el código operativo actual ya no las use.
-const LEGACY_DOCUMENTS = [
-  ['pos_system_data', 'state'],
-  ['data', 'state'],
-] as const;
-
-// Catálogos: catalogos/{nombre} con { lista }.
 const CATALOG_KEYS = [
   'categorias', 'departamentos', 'marcas', 'presentaciones',
   'productCategories', 'productUnits', 'productColors', 'productSizes',
   'brands', 'groups', 'subgroups', 'lines', 'suppliers',
 ] as const;
 
-// Configuración: config/general.
-// Parte del antiguo estado de caja se conserva además en terminales.
 const CONFIG_KEYS = [
   'tasa', 'pinDevolucion', 'isInitialized', 'empresa',
   'proximoRecibo', 'proximaDevolucion', 'proximaAnulacion',
@@ -43,131 +23,86 @@ const CONFIG_KEYS = [
   'fondoCajaHoyUSD', 'fondoCajaHoyBS', 'isCashOpen', 'cashData', 'config',
 ] as const;
 
-// RTDB: espejo de productos detectado en db-store.ts.
-const RTDB_PRODUCTS_PATH = 'pos_system_data/productos';
-
 export interface BackupFile {
   app: 'posven-pro';
   version: number;
   createdAt: string;
   data: Record<string, unknown>;
   meta?: {
-    firestoreCollections: Record<string, number>;
+    tursoTables: Record<string, number>;
     catalogs: Record<string, number>;
-    legacyDocuments: Record<string, boolean>;
-    rtdbProductsPresent: boolean;
-    firebaseAuth: {
-      provider: 'firebase-auth';
-      credentialsIncluded: false;
-      note: string;
-    };
+    source: 'turso';
   };
 }
 
-async function leerColeccion(nombre: string): Promise<any[]> {
-  const snap = await getDocs(collection(db, nombre));
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+async function readTursoTable(table: string, limit = 10000): Promise<any[]> {
+  const response = await fetch('/api/turso/store?table=' + encodeURIComponent(table) + '&limit=' + limit, {
+    credentials: 'include',
+    cache: 'no-store',
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok || body?.ok === false) {
+    throw new Error(body?.error || 'No se pudo leer la tabla ' + table + ' desde Turso.');
+  }
+  return Array.isArray(body?.records) ? body.records : [];
 }
 
-// Fuerza la carga completa de las colecciones operativas administradas por Store.
-async function hidratarTodo(): Promise<void> {
-  const jobs = COLLECTION_KEYS.map((k) => Store.ensureLoaded(k).catch(() => {}));
-  await Promise.all(jobs);
+async function readTursoSpecial(kind: 'config' | 'catalog', name = ''): Promise<any> {
+  const params = new URLSearchParams({ special: kind });
+  if (name) params.set('name', name);
+  const response = await fetch('/api/turso/store?' + params.toString(), {
+    credentials: 'include',
+    cache: 'no-store',
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok || body?.ok === false) {
+    throw new Error(body?.error || 'No se pudo leer ' + kind + ' desde Turso.');
+  }
+  return kind === 'config' ? (body.config || {}) : (Array.isArray(body.lista) ? body.lista : []);
 }
 
 export async function crearRespaldo(): Promise<BackupFile> {
-  await hidratarTodo();
-  const state = Store.get() as Record<string, any>;
   const data: Record<string, unknown> = {};
-  const firestoreCollections: Record<string, number> = {};
+  const tursoTables: Record<string, number> = {};
   const catalogs: Record<string, number> = {};
-  const legacyDocuments: Record<string, boolean> = {};
 
-  // Colecciones operativas completas.
-  for (const k of COLLECTION_KEYS) {
-    data[k] = state[k] ?? [];
-    firestoreCollections[k] = Array.isArray(data[k]) ? (data[k] as any[]).length : 0;
+  for (const key of COLLECTION_KEYS) {
+    const table = TABLE_MAP[key] || key;
+    const rows = await readTursoTable(table);
+    data[key] = rows;
+    tursoTables[table] = rows.length;
   }
 
-  // Catálogos completos, directamente desde Firestore para no depender del cache.
-  for (const k of CATALOG_KEYS) {
-    try {
-      const snap = await getDoc(doc(db, 'catalogos', k));
-      const lista = snap.exists() ? (snap.data().lista || []) : [];
-      data[k] = lista;
-      catalogs[k] = Array.isArray(lista) ? lista.length : 0;
-    } catch (e) {
-      console.error('backup: no se pudo leer catálogo', k, e);
-      data[k] = state[k] ?? [];
-      catalogs[k] = Array.isArray(data[k]) ? (data[k] as any[]).length : 0;
-    }
+  for (const key of CATALOG_KEYS) {
+    const rows = await readTursoSpecial('catalog', key);
+    data[key] = rows;
+    catalogs[key] = rows.length;
   }
 
-  for (const k of CONFIG_KEYS) data[k] = state[k];
-
-  // Fuentes auxiliares que no forman parte de AppState.
-  for (const k of AUXILIARY_COLLECTIONS) {
-    try {
-      const rows = await leerColeccion(k);
-      data[k] = rows;
-      if (k !== 'users') firestoreCollections[k] = rows.length;
-      else firestoreCollections.users = rows.length;
-    } catch (e) {
-      console.error('backup: no se pudo leer colección auxiliar', k, e);
-      data[k] = [];
-      firestoreCollections[k] = 0;
-    }
+  const config = await readTursoSpecial('config');
+  for (const key of CONFIG_KEYS) {
+    if (config[key] !== undefined) data[key] = config[key];
   }
 
-  // Rutas legacy: se conservan para garantizar que ninguna migración pierda
-  // información que todavía pueda existir en el proyecto Firebase.
-  for (const [collectionName, docId] of LEGACY_DOCUMENTS) {
-    const key = `${collectionName}/${docId}`;
-    try {
-      const { getDoc } = await import('firebase/firestore');
-      const snap = await getDoc(doc(db, collectionName, docId));
-      legacyDocuments[key] = snap.exists();
-      if (snap.exists()) data[key] = { id: snap.id, ...snap.data() };
-    } catch (e) {
-      legacyDocuments[key] = false;
-      console.error('backup: no se pudo leer documento legacy', key, e);
-    }
-  }
-
-  // Espejo RTDB de productos. Se conserva para auditoría/reconstrucción,
-  // aunque la fuente operativa actual es Firestore.
-  let rtdbProductsPresent = false;
-  try {
-    const snap = await rtdbGet(rtdbRef(rtdb, RTDB_PRODUCTS_PATH));
-    if (snap.exists()) {
-      rtdbProductsPresent = true;
-      data.rtdb_productos = snap.val();
-    }
-  } catch (e) {
-    console.error('backup: no se pudo leer RTDB productos', e);
+  const usersResponse = await fetch('/api/users', { credentials: 'include', cache: 'no-store' });
+  const usersBody = await usersResponse.json().catch(() => ({}));
+  if (usersResponse.ok) {
+    const users = Array.isArray(usersBody?.usuarios) ? usersBody.usuarios : (Array.isArray(usersBody?.users) ? usersBody.users : []);
+    data.users = users;
+    tursoTables.users = users.length;
   }
 
   return {
     app: 'posven-pro',
-    version: 2,
+    version: 3,
     createdAt: new Date().toISOString(),
     data,
-    meta: {
-      firestoreCollections,
-      catalogs,
-      legacyDocuments,
-      rtdbProductsPresent,
-      firebaseAuth: {
-        provider: 'firebase-auth',
-        credentialsIncluded: false,
-        note: 'El respaldo contiene perfiles Firestore (users), pero no contraseñas ni credenciales de Firebase Authentication. La migración de autenticación debe resolverse por separado antes de retirar Firebase.',
-      },
-    },
+    meta: { tursoTables, catalogs, source: 'turso' },
   };
 }
 
 export function descargarRespaldo(backup: BackupFile) {
-  const nombre = `Respaldo_POSVEN_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.json`;
+  const nombre = 'Respaldo_POSVEN_' + new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-') + '.json';
   const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -189,64 +124,24 @@ export async function leerArchivoRespaldo(file: File): Promise<BackupFile | null
   return parsed;
 }
 
-export async function restaurarRespaldo(backup: BackupFile): Promise<void> {
-  const d = backup.data || {};
-  const patch: Record<string, any> = {};
-
-  for (const k of COLLECTION_KEYS) patch[k] = (d[k] as any[]) ?? [];
-  for (const k of CATALOG_KEYS) patch[k] = (d[k] as any[]) ?? [];
-  for (const k of CONFIG_KEYS) patch[k] = d[k];
-
-  await Store.set(patch as any);
-
-  // Auxiliares Firestore.
-  for (const k of ['users', 'operaciones', 'auditoriaSistema'] as const) {
-    const rows = (d[k] as any[]) || [];
-    if (!rows.length) continue;
-    const batch = writeBatch(db);
-    for (const row of rows) {
-      const { id, ...payload } = row;
-      const rowId = String(id || payload.uid || '');
-      if (rowId) batch.set(doc(db, k, rowId), payload, { merge: true });
-    }
-    await batch.commit();
-  }
-}
-
-export async function cargarRespaldoDesdeArchivo(
-  file: File,
+async function restaurarBackupTurso(
+  backup: BackupFile,
   onProgress?: (progress: { percent: number; stage: string; detail: string }) => void,
 ): Promise<void> {
-  const backup = await leerArchivoRespaldo(file);
-  if (!backup) return;
-
   const TABLES = [
     'productos','movimientos','ventas','cxc','cxp','clientes','proveedores',
     'devoluciones','anulaciones','terminales','libroDiario','reportesZ','caja','compras',
   ] as const;
-  const CATALOGS = [
-    'categorias','departamentos','marcas','presentaciones',
-    'productCategories','productUnits','productColors','productSizes',
-    'brands','groups','subgroups','lines','suppliers',
-  ] as const;
+  const CATALOGS = CATALOG_KEYS;
   const BATCH_SIZE = 450;
 
-  // En Firebase el historial de caja se guarda como "cashHistory";
-  // en Turso su tabla equivalente es "caja". Ambos deben usar la misma
-  // fuente durante la migración para no perder cierres/movimientos de caja.
   const backupRowsForTable = (name: typeof TABLES[number]): any[] => {
-    if (name === 'caja') {
-      return Array.isArray(backup.data.cashHistory)
-        ? (backup.data.cashHistory as any[])
-        : (Array.isArray(backup.data.caja) ? (backup.data.caja as any[]) : []);
-    }
-    return Array.isArray(backup.data[name]) ? (backup.data[name] as any[]) : [];
+    const source = name === 'caja' ? backup.data.cashHistory ?? backup.data.caja : backup.data[name];
+    return Array.isArray(source) ? source as any[] : [];
   };
 
-  const totalRows =
-    TABLES.reduce((sum, name) => sum + backupRowsForTable(name).length, 0) +
-    CATALOGS.reduce((sum, name) => sum + (Array.isArray(backup.data[name]) ? (backup.data[name] as any[]).length : 0), 0) +
-    1;
+  const totalRows = TABLES.reduce((sum, name) => sum + backupRowsForTable(name).length, 0)
+    + CATALOGS.reduce((sum, name) => sum + (Array.isArray(backup.data[name]) ? (backup.data[name] as any[]).length : 0), 0) + 1;
   let completed = 0;
 
   const report = (stage: string, detail: string) => {
@@ -255,33 +150,22 @@ export async function cargarRespaldoDesdeArchivo(
   };
 
   const post = async (payload: Record<string, unknown>) => {
-    let response: Response;
-    try {
-      response = await fetch('/api/turso/backup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        cache: 'no-store',
-        body: JSON.stringify(payload),
-      });
-    } catch (error: any) {
-      throw new Error('No se pudo comunicar con el servidor de restauración: ' + String(error?.message || error || 'Failed to fetch'));
-    }
-
+    const response = await fetch('/api/turso/backup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      cache: 'no-store',
+      body: JSON.stringify(payload),
+    });
     const raw = await response.text();
     let body: any = {};
-    try { body = raw ? JSON.parse(raw) : {}; } catch {
-      body = { error: raw || 'El servidor devolvió una respuesta no válida.' };
-    }
-    if (!response.ok || body?.ok === false) {
-      throw new Error(body?.error || `Error HTTP ${response.status} al restaurar el respaldo.`);
-    }
+    try { body = raw ? JSON.parse(raw) : {}; } catch { body = { error: raw || 'Respuesta no válida.' }; }
+    if (!response.ok || body?.ok === false) throw new Error(body?.error || ('Error HTTP ' + response.status + ' al restaurar el respaldo.'));
     return body;
   };
 
-  report('Preparando', 'Conectando con el servidor de restauración…');
+  report('Preparando', 'Conectando con Turso…');
   await post({ action: 'reset' });
-  report('Preparando', 'Base de datos reiniciada. Iniciando carga…');
 
   for (const name of TABLES) {
     const rows = backupRowsForTable(name);
@@ -290,30 +174,33 @@ export async function cargarRespaldoDesdeArchivo(
       if (!batch.length) continue;
       await post({ action: 'table', table: name, rows: batch });
       completed += batch.length;
-      report('Datos', `${name}: ${Math.min(i + batch.length, rows.length)} de ${rows.length}`);
+      report('Datos', name + ': ' + Math.min(i + batch.length, rows.length) + ' de ' + rows.length);
     }
-    if (!rows.length) report('Datos', `${name}: sin registros`);
   }
 
   for (const name of CATALOGS) {
-    const rows = Array.isArray(backup.data[name]) ? (backup.data[name] as any[]) : [];
+    const rows = Array.isArray(backup.data[name]) ? backup.data[name] as any[] : [];
     await post({ action: 'catalog', name, rows });
     completed += rows.length;
-    report('Catálogos', `${name}: ${rows.length} registros`);
+    report('Catálogos', name + ': ' + rows.length + ' registros');
   }
 
   const config: Record<string, unknown> = {};
-  const configKeys = [
-    'tasa','pinDevolucion','isInitialized','empresa',
-    'proximoRecibo','proximaDevolucion','proximaAnulacion',
-    'ultimoZ','fechaUltimoZ','acumuladoHistorico',
-    'fondoCajaHoyUSD','fondoCajaHoyBS','isCashOpen','cashData','config',
-  ];
-  for (const key of configKeys) {
-    if (backup.data[key] !== undefined) config[key] = backup.data[key];
-  }
+  for (const key of CONFIG_KEYS) if (backup.data[key] !== undefined) config[key] = backup.data[key];
   if (Object.keys(config).length) await post({ action: 'config', config });
-
   await post({ action: 'finish' });
-  onProgress?.({ percent: 100, stage: 'Completado', detail: 'Restauración finalizada correctamente.' });
+  onProgress?.({ percent: 100, stage: 'Completado', detail: 'Restauración finalizada correctamente en Turso.' });
+}
+
+export async function restaurarRespaldo(backup: BackupFile): Promise<void> {
+  await restaurarBackupTurso(backup);
+}
+
+export async function cargarRespaldoDesdeArchivo(
+  file: File,
+  onProgress?: (progress: { percent: number; stage: string; detail: string }) => void,
+): Promise<void> {
+  const backup = await leerArchivoRespaldo(file);
+  if (!backup) return;
+  await restaurarBackupTurso(backup, onProgress);
 }
