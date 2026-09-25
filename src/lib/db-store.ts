@@ -2,13 +2,32 @@
 
 import { AppState, Terminal, Movimiento } from './types';
 import { enqueueOfflineOperation, registerOfflineProcessor } from './offline-queue';
-import { db, rtdb } from './firebase';
-import {
-  collection, doc, getDoc, getDocs, onSnapshot, orderBy, limit, query, setDoc, where,
-  writeBatch, runTransaction, startAfter
-} from "firebase/firestore";
-import type { DocumentData, QueryDocumentSnapshot } from "firebase/firestore";
-import { onValue, ref, update, get as rtdbGet } from "firebase/database";
+// Turso es la única base de datos operativa. Estos nombres se conservan únicamente
+// para que los caminos legacy de sincronización no vuelvan a escribir en Firebase.
+// Cualquier intento de alcanzar esos caminos falla explícitamente.
+type DocumentData = any;
+type QueryDocumentSnapshot<T = any> = any;
+const db: any = null;
+const rtdb: any = null;
+const firebaseRetirado = (..._args: any[]): never => {
+  throw new Error('Firebase fue retirado del flujo operativo. Turso es la única fuente de datos.');
+};
+const collection: any = firebaseRetirado;
+const doc: any = firebaseRetirado;
+const getDoc: any = firebaseRetirado;
+const getDocs: any = firebaseRetirado;
+const onSnapshot: any = firebaseRetirado;
+const orderBy: any = firebaseRetirado;
+const limit: any = firebaseRetirado;
+const query: any = firebaseRetirado;
+const setDoc: any = firebaseRetirado;
+const where: any = firebaseRetirado;
+const runTransaction: any = firebaseRetirado;
+const startAfter: any = firebaseRetirado;
+const onValue: any = firebaseRetirado;
+const ref: any = firebaseRetirado;
+const update: any = firebaseRetirado;
+const rtdbGet: any = firebaseRetirado;
 
 const STORAGE_KEY = 'posven_pro_session_data_cache';
 const PAGE_SIZE = 50;
