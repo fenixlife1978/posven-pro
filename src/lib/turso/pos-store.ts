@@ -760,7 +760,7 @@ export async function applyDebtPaymentTransaction(params: {
     const receiptId=terminal?terminalSeries(await terminalUniquePrefix(tx,terminal,terminalId),label,counter,6):terminalSeries('GLOBAL',label,Date.now(),6);
     const applied=Math.min(Number(amountUSD),saldo);
     const appliedBS=Number(amountBS)>0?Math.min(Number(amountBS),Number(payment?.montoBS)||Number(amountBS)):(Number(payment?.montoBS)||(applied*(Number(payment?.tasaAplicada)||0)));
-    const pago=clean({...payment,id:receiptId,reciboId:receiptId,terminalId:terminalId||payment?.terminalId,montoUSD:applied,montoBS:appliedBS});
+    const pago=clean({...payment,id:receiptId,reciboId:receiptId,terminalId:terminalForOperation||payment?.terminalId,montoUSD:applied,montoBS:appliedBS});
     const updated={...debt,abonadoUSD:(Number(debt.abonadoUSD)||0)+applied,saldoUSD:Math.max(0,saldo-applied),estado:saldo-applied<=0.001?'pagada':'parcial',historialPagos:[...(Array.isArray(debt.historialPagos)?debt.historialPagos:[]),pago]};
     const statements:TursoStatement[]=[rowStatement(collection,updated)];
     if(collection==='cxc'&&customerCedula){
@@ -783,18 +783,22 @@ async function applyGlobalPayment(params:any, collection:'cxc'|'cxp'){
   assertTursoReady();
   const {operationId,provider,customerName,customerCedula,amountUSD,amountBS,payment,paymentParts,journal,terminalId}=params;
   if(!(Number(amountUSD)>0)) return {appliedUSD:0,appliedBS:0,debts:[]};
+  // Los pagos globales a proveedores se originan en Administración → CxP
+  // y son administrativos: no dependen de ninguna Caja/Terminal.
+  const terminalForOperation = collection === 'cxc' ? terminalId : undefined;
   return tursoInteractiveTransaction(async tx=>{
     const opId=String(operationId||payment?.id||((collection==='cxp'?'CXP-GLOBAL':'CXC-GLOBAL')+'|'+(provider||customerName)+'|'+amountUSD+'|'+payment?.fecha+'|'+payment?.metodo));
     const prefix=collection==='cxp'?'PAGO-CXP-GLOBAL':'PAGO-CXC-GLOBAL';
     const check=await tx.execute({sql:'SELECT id FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',args:[prefix,opId]});
     if(check.rows.length) throw new Error('Esta operación ya fue procesada. No se registrará nuevamente.');
-    const terminal=terminalId?rowFromDb((await tx.execute(txSelect('terminales',terminalId))).rows[0]):null;
-    if(terminalId&&!terminal) throw new Error('La caja/terminal ya no existe en Turso.');
+    const terminal=terminalForOperation?rowFromDb((await tx.execute(txSelect('terminales',terminalForOperation))).rows[0]):null;
+    if(terminalForOperation&&!terminal) throw new Error('La caja/terminal ya no existe en Turso.');
     const field=collection==='cxp'?'proximoPagoProveedor':'proximoCobroDeuda';
     const label=collection==='cxp'?'CXP':'CXC';
     const counter=Number(terminal?.[field])||1;
     const receiptId=terminal?terminalSeries(terminalPrefix(terminal,terminalId),label,counter,6):terminalSeries('GLOBAL',label,Date.now(),6);
     const matchField=collection==='cxp'?'proveedor':'cliente';
+    const matchValue=collection==='cxp'?String(provider||''):String(customerName||'');
     let docs:any[] = [];
     if (collection === 'cxc') {
       // Las deudas históricas pueden estar guardadas con o sin la cédula
@@ -825,7 +829,7 @@ async function applyGlobalPayment(params:any, collection:'cxc'|'cxp'){
       const tasa=Number(payment?.tasaAplicada)||0; const pagoBS=Math.min(remBS,pago*tasa);
       remUSD=Math.max(0,remUSD-pago); remBS=Math.max(0,remBS-pagoBS);
       const h=[...(Array.isArray(d.historialPagos)?d.historialPagos:[])];
-      h.push(clean({...payment,id:receiptId,reciboId:receiptId,terminalId:terminalId||payment?.terminalId,montoUSD:pago,montoBS:pagoBS}));
+      h.push(clean({...payment,id:receiptId,reciboId:receiptId,terminalId:terminalForOperation||payment?.terminalId,montoUSD:pago,montoBS:pagoBS}));
       const updated={...d,abonadoUSD:(Number(d.abonadoUSD)||0)+pago,saldoUSD:Math.max(0,(Number(d.saldoUSD)||0)-pago),estado:(Number(d.saldoUSD)-pago)<=0.001?'pagada':'parcial',historialPagos:h};
       statements.push(rowStatement(collection,updated)); debts.push({...updated,appliedUSD:pago,appliedBS:pagoBS}); appliedUSD+=pago; appliedBS+=pagoBS;
     }
@@ -834,7 +838,7 @@ async function applyGlobalPayment(params:any, collection:'cxc'|'cxp'){
       const foundCustomer=await tx.execute({sql:"SELECT id,data_json FROM clientes WHERE json_extract(data_json,'$.cedula')=? LIMIT 1",args:[String(customerCedula)]});
       const customer=rowFromDb(foundCustomer.rows[0]); if(customer) statements.push(rowStatement('clientes',{...customer,debt:Math.max(0,(Number(customer.debt)||0)-appliedUSD)}));
     }
-    if(journal?.id) statements.push(rowStatement('libroDiario',{...journal,montoUSD:appliedUSD,montoBS:appliedBS,referencia:receiptId,terminalId:terminalId||journal.terminalId,terminalName:terminal?.nombre||journal.terminalName}));
+    if(journal?.id) statements.push(rowStatement('libroDiario',{...journal,montoUSD:appliedUSD,montoBS:appliedBS,referencia:receiptId,terminalId:terminalForOperation||journal.terminalId,terminalName:terminal?.nombre||journal.terminalName}));
 
     // Un cobro de CxC también es una operación visible en el historial del POS,
     // pero NO es una venta de mercancía. Se guarda como registro de tipo
@@ -887,7 +891,7 @@ async function applyGlobalPayment(params:any, collection:'cxc'|'cxp'){
     }
 
     if(terminal) statements.push(rowStatement('terminales',{...terminal,[field]:counter+1}));
-    statements.push({sql:'INSERT INTO operaciones(id,prefijo,operation_id,data_json) VALUES(?,?,?,?)',args:[prefix+'-'+opId,prefix,opId,JSON.stringify({tipo:prefix,operationId:opId,referencia:receiptId,terminalId:terminalId||'GLOBAL'})],wantRows:false});
+    statements.push({sql:'INSERT INTO operaciones(id,prefijo,operation_id,data_json) VALUES(?,?,?,?)',args:[prefix+'-'+opId,prefix,opId,JSON.stringify({tipo:prefix,operationId:opId,referencia:receiptId,terminalId:terminalForOperation||'GLOBAL'})],wantRows:false});
     for(const s of statements) await tx.execute(s);
     return {appliedUSD,appliedBS,debts,receiptId,sale};
   });
@@ -963,9 +967,9 @@ export async function processReturnOrCancellationTransaction(params:any){
     for(const p of products.values()) statements.push(rowStatement('productos',p));
     statements.push(rowStatement(table,{...operationDoc,id:canonicalId,terminalId:terminalId||operationDoc?.terminalId,terminalName:terminal?.nombre||operationDoc?.terminalName}));
     statements.push(rowStatement('ventas',{...sale,estado:operationType==='ANULACION'?'anulada':'parcialmente_devuelta'}));
-    if(journal?.id) statements.push(rowStatement('libroDiario',{...journal,referencia:canonicalId,terminalId:terminalId||journal.terminalId,terminalName:terminal?.nombre||journal.terminalName}));
+    if(journal?.id) statements.push(rowStatement('libroDiario',{...journal,referencia:canonicalId,terminalId:terminalForOperation||journal.terminalId,terminalName:terminal?.nombre||journal.terminalName}));
     if(terminal) statements.push(rowStatement('terminales',{...terminal,[field]:counter+1}));
-    statements.push({sql:'INSERT INTO operaciones(id,prefijo,operation_id,data_json) VALUES(?,?,?,?)',args:[operationType+'-'+operationId,operationType,operationId,JSON.stringify({tipo:operationType,operationId,referencia:canonicalId,terminalId:terminalId||'GLOBAL'})],wantRows:false});
+    statements.push({sql:'INSERT INTO operaciones(id,prefijo,operation_id,data_json) VALUES(?,?,?,?)',args:[operationType+'-'+operationId,operationType,operationId,JSON.stringify({tipo:operationType,operationId,referencia:canonicalId,terminalId:terminalForOperation||'GLOBAL'})],wantRows:false});
     for(const s of statements) await tx.execute(s);
     return {operationId,operationType,receiptId:canonicalId,operationDoc:{...operationDoc,id:canonicalId},products:[...products.values()],terminal:terminal?{...terminal,id:terminalId,[field]:counter+1}:null};
   });
