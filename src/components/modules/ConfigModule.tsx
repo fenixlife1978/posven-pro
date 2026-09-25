@@ -17,6 +17,8 @@ export default function ConfigModule({ state, updateState }: { state: AppState, 
   const [pinDevolucion, setPinDevolucion] = useState(state.pinDevolucion || '');
   const [isFormatting, setIsFormatting] = useState(false);
   const [isMigrating, setIsMigrating] = useState(false);
+  const [isRepairingCxc, setIsRepairingCxc] = useState(false);
+  const [reparacionCxcResultado, setReparacionCxcResultado] = useState<any>(null);
   const [migracionResultado, setMigracionResultado] = useState<any>(null);
   const [showMigracionResultado, setShowMigracionResultado] = useState(false);
   const [isBackingUp, setIsBackingUp] = useState(false);
@@ -152,6 +154,42 @@ export default function ConfigModule({ state, updateState }: { state: AppState, 
       });
     } finally {
       setIsMigrating(false);
+    }
+  };
+
+  const handleRepararCxcMigrado = async () => {
+    const confirmar = window.confirm(
+      'REPARAR CxC MIGRADO\n\n' +
+      'Se revisarán las cuentas por cobrar existentes en Turso y se sincronizarán con la venta/factura original cuando exista.\n\n' +
+      'La reparación NO modifica pagos, abonos ni saldo pendiente.\n\n' +
+      '¿Desea continuar?'
+    );
+    if (!confirmar) return;
+
+    setIsRepairingCxc(true);
+    setReparacionCxcResultado(null);
+    try {
+      const response = await fetch('/api/migration/firebase', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ action: 'repair-cxc', confirm: 'REPARAR_CXC_MIGRADO' })
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || result?.ok === false) {
+        throw new Error(result?.error || 'No fue posible reparar las cuentas por cobrar migradas.');
+      }
+      setReparacionCxcResultado(result);
+      toast({
+        title: 'CxC migrado revisado',
+        description: 'Revisadas: ' + (result.revisadas || 0) + '. Corregidas: ' + (result.corregidas || 0) + '.'
+      });
+    } catch (error: any) {
+      console.error('Error reparando CxC migrado:', error);
+      setReparacionCxcResultado({ error: error?.message || 'No se pudo ejecutar la reparación.' });
+      toast({ variant: 'destructive', title: 'Error en reparación CxC', description: error?.message || 'No se pudo ejecutar la reparación.' });
+    } finally {
+      setIsRepairingCxc(false);
     }
   };
 
@@ -401,6 +439,39 @@ export default function ConfigModule({ state, updateState }: { state: AppState, 
               {isMigrating ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Database className="w-4 h-4" />}
               {isMigrating ? 'MIGRANDO DATOS...' : 'Migrar Estructura de Datos'}
             </button>
+
+            <div className="mt-5 pt-5 border-t border-blue-500/20">
+              <p className="text-xs text-ink font-bold mb-3">
+                Si ya realizó una migración anterior, use esta herramienta para sincronizar los detalles de las deudas con sus facturas originales en Turso. No necesita volver a cargar el archivo JSON.
+              </p>
+              <button
+                className="btn bg-amber-600 hover:bg-amber-700 text-white h-12 px-8 font-black uppercase text-xs shadow-xl flex items-center gap-2"
+                onClick={handleRepararCxcMigrado}
+                disabled={isRepairingCxc}
+              >
+                {isRepairingCxc ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Database className="w-4 h-4" />}
+                {isRepairingCxc ? 'REPARANDO CxC...' : 'REPARAR CxC MIGRADO'}
+              </button>
+              {reparacionCxcResultado && (
+                <div className={reparacionCxcResultado.error ? 'mt-3 p-4 rounded-lg border bg-red-50 border-red-500' : 'mt-3 p-4 rounded-lg border bg-amber-50 border-amber-400'}>
+                  {reparacionCxcResultado.error ? (
+                    <p className="text-xs text-red-700 font-bold">{reparacionCxcResultado.error}</p>
+                  ) : (
+                    <>
+                      <h4 className="font-black uppercase text-xs text-amber-800 mb-2">Resultado de reparación CxC</h4>
+                      <div className="grid grid-cols-2 gap-2 text-xs text-ink">
+                        <div className="flex justify-between"><span className="font-bold">Revisadas:</span><span>{reparacionCxcResultado.revisadas || 0}</span></div>
+                        <div className="flex justify-between"><span className="font-bold">Corregidas:</span><span>{reparacionCxcResultado.corregidas || 0}</span></div>
+                        <div className="flex justify-between"><span className="font-bold">Sin venta:</span><span>{reparacionCxcResultado.sinVenta || 0}</span></div>
+                        <div className="flex justify-between"><span className="font-bold">Sin items en venta:</span><span>{reparacionCxcResultado.sinItemsVenta || 0}</span></div>
+                        <div className="flex justify-between"><span className="font-bold">Sin cambios:</span><span>{reparacionCxcResultado.sinCambios || 0}</span></div>
+                      </div>
+                      <p className="text-[10px] text-ink/70 mt-3 font-bold">La reparación solo sincroniza factura, items y totales desde la venta original. No modifica pagos, abonos ni saldo pendiente.</p>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
 
             {showMigracionResultado && migracionResultado && (
               <div className={`mt-4 p-4 rounded-lg border ${migracionResultado.success ? 'bg-green-50 border-green-500' : 'bg-red-50 border-red-500'}`}>
