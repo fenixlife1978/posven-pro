@@ -194,9 +194,11 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
 
   const [expandedClient, setExpandedClient] = useState<string | null>(null);
   const [showClientHistory, setShowClientHistory] = useState<string | null>(null);
+  const [creditSearch, setCreditSearch] = useState('');
 
   useEffect(() => {
     setHistPage(1);
+    if (view !== 'credits') setCreditSearch('');
   }, [view]);
 
   const currentTerminal = useMemo(() => {
@@ -222,7 +224,9 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       .map(e => ({
         id: e.id,
         fecha: e.fecha,
-        cliente: e.concepto,
+        cliente: e.concepto || e.descripcion || e.motivo || 'MOVIMIENTO DE CAJA',
+        concepto: e.concepto || e.descripcion || e.motivo || 'MOVIMIENTO DE CAJA',
+        observacion: e.observacion || e.nota || '',
         items: [],
         subtotalUSD: e.montoUSD,
         descuentoUSD: 0,
@@ -546,11 +550,46 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     (state.cxc || []).filter(x => x.estado !== 'pagada' && (x.saldoUSD || 0) > 0.001).forEach(debt => {
       const name = debt.cliente || 'DESCONOCIDO';
       if (!groups[name]) groups[name] = { totalUSD: 0, debts: [] };
-      groups[name].totalUSD += debt.saldoUSD;
+      groups[name].totalUSD += Number(debt.saldoUSD) || 0;
       groups[name].debts.push(debt);
     });
     return groups;
   }, [state.cxc]);
+
+  const normalizeCreditSearch = (value: unknown) =>
+    String(value || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim();
+
+  const filteredGroupedCredits = useMemo(() => {
+    const term = normalizeCreditSearch(creditSearch);
+    if (!term) return groupedCredits;
+    const result: Record<string, { totalUSD: number; debts: Debt[] }> = {};
+    Object.entries(groupedCredits).forEach(([clientName, group]) => {
+      const customer = (state.clientes || []).find((c: any) =>
+        normalizeCreditSearch(c?.name) === normalizeCreditSearch(clientName) ||
+        normalizeCreditSearch(c?.cedula) === normalizeCreditSearch(clientName)
+      );
+      const haystack = [
+        clientName,
+        customer?.name,
+        customer?.cedula,
+        customer?.phone,
+        customer?.address,
+        ...group.debts.flatMap((d: any) => [
+          d?.cliente,
+          d?.id,
+          d?.motivo,
+          d?.facturaId,
+          d?.ventaId
+        ])
+      ].map(normalizeCreditSearch).join(' ');
+      if (haystack.includes(term)) result[clientName] = group;
+    });
+    return result;
+  }, [groupedCredits, state.clientes, creditSearch]);
 
   const getStockDisponible = (p: Product) => {
     let avail = p.stock || 0;
@@ -1133,7 +1172,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                 {histPageVentas.length === 0 ? (
                   <tr><td colSpan={10} className="text-center py-20 text-ink/20 font-black italic uppercase">Sin ventas registradas en esta terminal</td></tr>
                 ) : histPageVentas.map(v => (
-                  <tr key={v.id} className="border-b border-line/40 hover:bg-surface-warm/20"><td className="text-ink font-black text-xs mono">{v.id}</td><td className="text-ink font-bold text-xs">{v.fecha.split('T')[1]?.slice(0, 5)}</td><td className="text-ink font-black text-[10px] uppercase">{v.terminalName || state.terminales.find(t => t.id === v.terminalId)?.nombre || '-'}</td><td className="text-ink font-black text-xs uppercase truncate max-w-[150px]">{v.cliente}</td><td className="text-ink font-black text-[9px] uppercase"><span className={`badge ${v.esMovimientoCaja ? 'badge-warn' : (v.type === 'COBRO DEUDA' ? 'badge-info' : 'badge-neutral')}`}>{v.type || 'VENTA'}</span></td><td className="text-brand-gold-deep font-black text-xs text-right">{Utils.fmtUSD(getSaleCurrencyTotals(v).usd)}</td><td className="text-ink font-black text-xs text-right">{Utils.fmtBS(getSaleCurrencyTotals(v).bs)}</td><td className="text-ink font-bold text-[10px] uppercase">{Utils.metodoLabel(v.metodoPago)}</td><td className="text-center"><span className={`badge ${v.esMovimientoCaja ? (v.estado === 'egreso' ? 'badge-err' : 'badge-ok') : (v.estado === 'pendiente' ? 'badge-warn' : (v.estado === 'anulada' ? 'badge-err' : 'badge-ok'))} font-black text-[9px] uppercase`}>{v.esMovimientoCaja ? (v.estado === 'egreso' ? 'EGRESO' : 'INGRESO') : v.estado}</span></td><td className="text-center">{v.esMovimientoCaja ? <button onClick={() => alert(`Motivo del movimiento:\n\n${v.concepto || 'Sin motivo registrado'}${v.observacion ? `\n\nObservación:\n${v.observacion}` : ''}`)} className="w-7 h-7 rounded-full flex items-center justify-center text-status-success hover:bg-status-success/10 transition-colors" title="Ver motivo del movimiento"><Eye className="w-4 h-4" /></button> : <button onClick={() => setShowSaleDetail(v)} className="w-7 h-7 rounded-full flex items-center justify-center text-status-success hover:bg-status-success/10 transition-colors" title="Ver ítems y detalle de venta"><Eye className="w-4 h-4" /></button>}</td></tr>
+                  <tr key={v.id} className="border-b border-line/40 hover:bg-surface-warm/20"><td className="text-ink font-black text-xs mono">{v.id}</td><td className="text-ink font-bold text-xs">{v.fecha.split('T')[1]?.slice(0, 5)}</td><td className="text-ink font-black text-[10px] uppercase">{v.terminalName || state.terminales.find(t => t.id === v.terminalId)?.nombre || '-'}</td><td className="text-ink font-black text-xs uppercase truncate max-w-[150px]">{v.cliente}</td><td className="text-ink font-black text-[9px] uppercase"><span className={`badge ${v.esMovimientoCaja ? 'badge-warn' : (v.type === 'COBRO DEUDA' ? 'badge-info' : 'badge-neutral')}`}>{v.type || 'VENTA'}</span></td><td className="text-brand-gold-deep font-black text-xs text-right">{Utils.fmtUSD(getSaleCurrencyTotals(v).usd)}</td><td className="text-ink font-black text-xs text-right">{Utils.fmtBS(getSaleCurrencyTotals(v).bs)}</td><td className="text-ink font-bold text-[10px] uppercase">{Utils.metodoLabel(v.metodoPago)}</td><td className="text-center"><span className={`badge ${v.esMovimientoCaja ? (v.estado === 'egreso' ? 'badge-err' : 'badge-ok') : (v.estado === 'pendiente' ? 'badge-warn' : (v.estado === 'anulada' ? 'badge-err' : 'badge-ok'))} font-black text-[9px] uppercase`}>{v.esMovimientoCaja ? (v.estado === 'egreso' ? 'EGRESO' : 'INGRESO') : v.estado}</span></td><td className="text-center">{v.esMovimientoCaja ? <button onClick={() => alert(`Concepto del movimiento:\n\n${v.concepto || v.cliente || v.descripcion || v.motivo || 'Sin concepto registrado'}${v.observacion ? `\n\nObservación:\n${v.observacion}` : ''}`)} className="w-7 h-7 rounded-full flex items-center justify-center text-status-success hover:bg-status-success/10 transition-colors" title="Ver motivo del movimiento"><Eye className="w-4 h-4" /></button> : <button onClick={() => setShowSaleDetail(v)} className="w-7 h-7 rounded-full flex items-center justify-center text-status-success hover:bg-status-success/10 transition-colors" title="Ver ítems y detalle de venta"><Eye className="w-4 h-4" /></button>}</td></tr>
                 ))}
               </tbody>
             </table>
@@ -1143,6 +1182,23 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       ) : view === 'credits' ? (
         <div className="card flex-1 bg-white flex flex-col overflow-hidden animate-in slide-in-from-bottom-2 duration-300 rounded-xl">
           <div className="card-head px-6 py-4 bg-ink border-b border-white/10 flex justify-between items-center"><h3 className="text-white font-black uppercase italic tracking-tighter flex items-center gap-2 text-xs"><ClipboardList className="w-5 h-5 text-brand-gold" /> CONSULTA CRÉDITOS Y COBRANZA (GLOBAL)</h3><button onClick={() => setView('pos')} className="btn btn-sm bg-white text-ink hover:bg-surface-soft flex items-center gap-2 font-black uppercase text-[10px] rounded-lg border-none px-4"><ArrowLeft className="w-3.5 h-3.5"/> Volver al POS</button></div>
+          <div className="px-5 py-3 bg-white border-b border-line">
+            <div className="relative max-w-xl">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink/40" />
+              <input
+                value={creditSearch}
+                onChange={e => setCreditSearch(e.target.value)}
+                className="w-full h-10 pl-10 pr-10 bg-surface-soft border border-line rounded-xl text-xs font-black uppercase text-ink outline-none focus:border-brand-gold"
+                placeholder="BUSCAR CLIENTE: NOMBRE, PALABRA CLAVE O CÉDULA..."
+                aria-label="Buscar cliente con deuda por nombre, palabra clave o cédula"
+              />
+              {creditSearch && (
+                <button onClick={() => setCreditSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-ink/40 hover:text-ink" aria-label="Limpiar búsqueda">
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          </div>
           <div className="table-wrap flex-1 overflow-y-auto">
             <table className="w-full">
               <thead>
@@ -1156,10 +1212,10 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                 </tr>
               </thead>
               <tbody>
-                {Object.entries(groupedCredits).length === 0 ? (
+                {Object.entries(filteredGroupedCredits).length === 0 ? (
                   <tr><td colSpan={6} className="text-center py-20 text-ink font-black uppercase italic">No hay deudas registradas</td></tr>
                 ) : (
-                  Object.entries(groupedCredits).map(([clientName, group]) => (
+                  Object.entries(filteredGroupedCredits).map(([clientName, group]) => (
                     <React.Fragment key={clientName}>
                       <tr className="border-b border-line hover:bg-surface-warm/20 transition-colors">
                         <td className="px-6 py-4">
