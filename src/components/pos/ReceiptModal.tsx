@@ -634,6 +634,20 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
                         </tbody></table>
 
                         <div className="separator-dashed"></div>
+                        <div className="text-center font-bold">TOTAL NETO EFECTIVO FÍSICO</div>
+                        <div className="separator-dashed"></div>
+                        <table><tbody>
+                          <tr className="bold">
+                            <td>TOTAL NETO EFECTIVO BS (FÍSICOS):</td>
+                            <td className="text-right">{formatBs(Number(data.totalNetoEfectivoBS) || 0)}</td>
+                          </tr>
+                          <tr className="bold">
+                            <td>TOTAL NETO EFECTIVO USD (FÍSICOS):</td>
+                            <td className="text-right">$ {formatUsd(Number(data.totalNetoEfectivoUSD) || 0)}</td>
+                          </tr>
+                        </tbody></table>
+
+                        <div className="separator-dashed"></div>
                         <div className="text-center font-bold">CIERRE DE JORNADA EXITOSO</div>
                      </>
                    )}
