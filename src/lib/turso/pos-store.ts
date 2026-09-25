@@ -753,18 +753,20 @@ export async function applyDebtPaymentTransaction(params: {
     const debt = rowFromDb((await tx.execute(txSelect(collection,debtId))).rows[0]);
     if (!debt) throw new Error('La deuda ya no existe.');
     const saldo = Number(debt.saldoUSD)||0;
-    if (saldo <= 0.001) throw new Error('La deuda ya está pagada en otra caja.');
-    if (Number(amountUSD) > saldo + 0.001) throw new Error('El saldo cambió en otra caja. Actualice y vuelva a intentar.');
+    const saldoCents = Math.round(saldo * 100);
+    const amountCents = Math.round(Number(amountUSD) * 100);
+    if (saldoCents <= 0) throw new Error('La deuda ya está pagada.');
+    if (amountCents > saldoCents) throw new Error('El monto a pagar no puede ser mayor al saldo pendiente.');
     const terminal = terminalForOperation ? rowFromDb((await tx.execute(txSelect('terminales',terminalForOperation))).rows[0]) : null;
     if (terminalForOperation && !terminal) throw new Error('La caja/terminal ya no existe en Turso.');
     const field = collection==='cxc'?'proximoCobroDeuda':'proximoPagoProveedor';
     const label = collection==='cxc'?'CXC':'CXP';
     const counter=Number(terminal?.[field])||1;
     const receiptId=terminal?terminalSeries(await terminalUniquePrefix(tx,terminal,terminalForOperation),label,counter,6):terminalSeries('GLOBAL',label,Date.now(),6);
-    const applied=Math.min(Number(amountUSD),saldo);
+    const applied=Math.min(amountCents, saldoCents) / 100;
     const appliedBS=Number(amountBS)>0?Math.min(Number(amountBS),Number(payment?.montoBS)||Number(amountBS)):(Number(payment?.montoBS)||(applied*(Number(payment?.tasaAplicada)||0)));
     const pago=clean({...payment,id:receiptId,reciboId:receiptId,terminalForOperation:terminalForOperation||payment?.terminalForOperation,montoUSD:applied,montoBS:appliedBS});
-    const updated={...debt,abonadoUSD:(Number(debt.abonadoUSD)||0)+applied,saldoUSD:Math.max(0,saldo-applied),estado:saldo-applied<=0.001?'pagada':'parcial',historialPagos:[...(Array.isArray(debt.historialPagos)?debt.historialPagos:[]),pago]};
+    const updated={...debt,abonadoUSD:(Number(debt.abonadoUSD)||0)+applied,saldoUSD:Math.max(0,saldo-applied),estado:Math.round((saldo-applied)*100)<=0?'pagada':'parcial',historialPagos:[...(Array.isArray(debt.historialPagos)?debt.historialPagos:[]),pago]};
     const statements:TursoStatement[]=[rowStatement(collection,updated)];
     if(collection==='cxc'&&customerCedula){
       const found=await tx.execute({sql:"SELECT id,data_json FROM clientes WHERE json_extract(data_json,'$.cedula')=? LIMIT 1",args:[String(customerCedula)]});
