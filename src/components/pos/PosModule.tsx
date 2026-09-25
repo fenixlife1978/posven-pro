@@ -658,7 +658,15 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         metodo: pagoBase.metodo,
         referencia: reciboProvisional,
         terminalId: terminal?.id,
-        terminalName: terminal?.nombre || 'SISTEMA GLOBAL'
+        terminalName: terminal?.nombre || 'SISTEMA GLOBAL',
+        // Conservar el desglose ORIGINAL de cada medio/moneda para que el
+        // Corte Z no tenga que interpretar un total mixto como USD o Bs.
+        paymentParts: payments.map((p:any) => ({
+          metodo: p.method,
+          montoBS: Number(p.amount) || 0,
+          montoUSD: Number(p.usdAmount) || 0,
+          tasaAplicada: state.tasa
+        }))
       };
 
       const resultado = await Store.applyGlobalCustomerPaymentTransaction({
