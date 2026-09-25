@@ -350,8 +350,6 @@ async function syncArrayToCollection(name: string, prevArr: any[] | undefined, n
 }
 
 // Stock y movimientos se gestionan exclusivamente mediante operaciones transaccionales de Turso.
- entre cajas (transacciones): calcula deltas por producto y los aplica contra el
-// stock REAL de Firestore para que dos cajas no se pisen el inventario.
 function syncProductosTransactional(_prevArr: any[] | undefined, _newArr: any[] | undefined): Promise<Map<string, number> | undefined> {
   throw new Error('La persistencia de productos está gestionada exclusivamente por Turso.');
 }
@@ -365,8 +363,6 @@ async function applyInventoryMovementsTransaction(params: {
   productPatches?: Record<string, any>;
   fromOfflineQueue?: boolean;
 }): Promise<any> {
-  if (!db) return null;
-
   const tursoResult = await tryTursoOperation('inventory', params);
   if (tursoResult) {
     if (Array.isArray(tursoResult.products) && tursoResult.products.length) applyPatch({ productos: mergeById(cache.productos, tursoResult.products) });
