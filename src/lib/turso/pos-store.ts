@@ -826,13 +826,16 @@ async function applyGlobalPayment(params:any, collection:'cxc'|'cxp'){
       docs = found.rows.map(rowFromDb);
     }
     docs = docs.filter((d:any)=>(Number(d?.saldoUSD)||0)>0.001&&d?.estado!=='pagada');
-    let remUSD=Number(amountUSD), remBS=Number(amountBS)>0?Number(amountBS):Number(amountUSD)*(Number(payment?.tasaAplicada)||0);
+    let remCents=Math.max(0,Math.round(Number(amountUSD)*100));
+    let remBS=Number(amountBS)>0?Number(amountBS):Number(amountUSD)*(Number(payment?.tasaAplicada)||0);
     let appliedUSD=0, appliedBS=0; const debts:any[]=[]; const statements:TursoStatement[]=[];
     for(const d of docs){
-      if(remUSD<=0.000001) break;
-      const pago=Math.min(Number(d.saldoUSD)||0,remUSD); if(pago<=0) continue;
+      if(remCents<=0) break;
+      const debtCents=Math.max(0,Math.round((Number(d.saldoUSD)||0)*100));
+      const pagoCents=Math.min(debtCents,remCents); if(pagoCents<=0) continue;
+      const pago=pagoCents/100;
       const tasa=Number(payment?.tasaAplicada)||0; const pagoBS=Math.min(remBS,pago*tasa);
-      remUSD=Math.max(0,remUSD-pago); remBS=Math.max(0,remBS-pagoBS);
+      remCents-=pagoCents; remBS=Math.max(0,remBS-pagoBS);
       const h=[...(Array.isArray(d.historialPagos)?d.historialPagos:[])];
       h.push(clean({...payment,id:receiptId,reciboId:receiptId,terminalId:collection==='cxc'?(terminalForOperation||payment?.terminalId):undefined,montoUSD:pago,montoBS:pagoBS}));
       const updated={...d,abonadoUSD:(Number(d.abonadoUSD)||0)+pago,saldoUSD:Math.max(0,(Number(d.saldoUSD)||0)-pago),estado:(Number(d.saldoUSD)-pago)<=0.001?'pagada':'parcial',historialPagos:h};
