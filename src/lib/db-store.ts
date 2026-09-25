@@ -320,116 +320,17 @@ function mergeById<T extends { id?: any }>(existing: T[] | undefined, incoming: 
 // transacción que Firestore siga teniendo exactamente la versión que esta
 // caja leyó. Si otra caja lo cambió entretanto, abortamos en lugar de
 // pisar silenciosamente su modificación con un array local antiguo.
-async function syncArrayToCollection(name: string, prevArr: any[] | undefined, newArr: any[] | undefined): Promise<void> {
-  if (!db) return;
-  const prevList = prevArr || [];
-  const newList = newArr || [];
-  const prevById = new Map(prevList.filter(x => x && x.id).map(x => [String(x.id), x]));
-  const newById = new Map(newList.filter(x => x && x.id).map(x => [String(x.id), x]));
-  const changed: Array<{id:string; before:any; after:any|null}> = [];
-
-  newById.forEach((after, id) => {
-    const before = prevById.get(id);
-    if (!before || JSON.stringify(sanitizeForFirestore(before)) !== JSON.stringify(sanitizeForFirestore(after))) {
-      changed.push({ id, before: before ?? null, after });
-    }
-  });
-  prevById.forEach((before, id) => {
-    if (!newById.has(id)) changed.push({ id, before, after: null });
-  });
-
-  // Agrupamos cambios en transacciones para reducir round-trips. Cada lote
-  // mantiene la validación optimista: primero lee todas las versiones remotas
-  // y solo después escribe, sin sobrepasar el límite de la transacción.
-  const CHUNK_SIZE = 450;
-  for (let offset = 0; offset < changed.length; offset += CHUNK_SIZE) {
-    const chunk = changed.slice(offset, offset + CHUNK_SIZE);
-    await runTransaction(db, async tx => {
-      const snapshots = new Map<string, any>();
-      for (const item of chunk) {
-        const ref = doc(db, name, item.id);
-        const snap = await tx.get(ref);
-        snapshots.set(item.id, snap);
-      }
-
-      for (const item of chunk) {
-        const ref = doc(db, name, item.id);
-        const snap = snapshots.get(item.id);
-        const remote = snap.exists() ? sanitizeForFirestore(snap.data()) : null;
-        const expected = item.before ? sanitizeForFirestore(item.before) : null;
-
-        if (!item.before) {
-          if (snap.exists()) {
-            throw new Error('Conflicto de sincronización: el registro ' + item.id + ' ya existe en Firestore.');
-          }
-          tx.set(ref, sanitizeForFirestore(item.after), { merge: true });
-          continue;
-        }
-
-        if (!snap.exists() || JSON.stringify(remote) !== JSON.stringify(expected)) {
-          throw new Error('Conflicto de sincronización en ' + name + '/' + item.id + '. Otro terminal modificó el registro. Se conserva la versión remota.');
-        }
-
-        if (item.after === null) {
-          tx.delete(ref);
-        } else {
-          tx.set(ref, sanitizeForFirestore(item.after), { merge: true });
-        }
-      }
-    });
-  }
+async function syncArrayToCollection(name: string, _prevArr: any[] | undefined, newArr: any[] | undefined): Promise<void> {
+  const records = (newArr || []).filter(x => x && x.id).map(sanitizeForFirestore);
+  const result = await tryTursoOperation('recordsSync', { table: name, records, deletedIds: [] });
+  if (result && Array.isArray(result.records)) applyPatch({ [name]: mergeById(newArr, result.records) });
 }
 
-// Stock atómico entre cajas (transacciones): calcula deltas por producto y los aplica contra el
+// Stock y movimientos se gestionan exclusivamente mediante operaciones transaccionales de Turso.
+ entre cajas (transacciones): calcula deltas por producto y los aplica contra el
 // stock REAL de Firestore para que dos cajas no se pisen el inventario.
-function syncProductosTransactional(prevArr: any[] | undefined, newArr: any[] | undefined): Promise<Map<string, number> | undefined> {
-  if (!db) return Promise.resolve(undefined);
-  const prevList = prevArr || [];
-  const newList = newArr || [];
-  const prevById = new Map(prevList.filter(x => x && x.id).map(x => [String(x.id), x]));
-  const newById = new Map(newList.filter(x => x && x.id).map(x => [String(x.id), x]));
-
-  const createdIds = [...newById.keys()].filter(id => !prevById.has(id));
-  const changedIds = [...newById.keys()].filter(id =>
-    prevById.has(id) &&
-    JSON.stringify(sanitizeForFirestore(prevById.get(id))) !== JSON.stringify(sanitizeForFirestore(newById.get(id)))
-  );
-  const removedIds = [...prevById.keys()].filter(id => !newById.has(id));
-
-  if (createdIds.length === 0 && changedIds.length === 0 && removedIds.length === 0) return Promise.resolve(new Map());
-
-  return runTransaction(db, async (tx) => {
-    const finalStocks = new Map<string, number>();
-    for (const id of createdIds) {
-      const prod = newById.get(id) || {};
-      tx.set(doc(db, 'productos', id), sanitizeForFirestore(prod), { merge: true });
-      finalStocks.set(id, typeof prod.stock === 'number' ? prod.stock : 0);
-    }
-    for (const id of changedIds) {
-      const prevP = prevById.get(id) || {};
-      const newP = newById.get(id) || {};
-      const prevStock = typeof prevP.stock === 'number' ? prevP.stock : 0;
-      const newStock = typeof newP.stock === 'number' ? newP.stock : 0;
-      const delta = newStock - prevStock;
-      const ref = doc(db, 'productos', id);
-      const snap = await tx.get(ref);
-      const remote = snap.exists() ? snap.data() : null;
-      const baseStock = remote && typeof remote.stock === 'number' ? remote.stock : (delta === 0 ? newStock : 0);
-      const finalStock = baseStock + delta;
-      tx.set(ref, sanitizeForFirestore({ ...newP, stock: finalStock }), { merge: true });
-      finalStocks.set(id, finalStock);
-    }
-    for (const id of removedIds) {
-      tx.delete(doc(db, 'productos', id));
-    }
-    return finalStocks;
-  }).catch((e) => {
-    // No hacemos fallback a escrituras por fuera de la transacción:
-    // si la transacción falla por concurrencia, repetir la escritura con el
-    // array local podría pisar cambios hechos por otra caja.
-    console.error("Error transaccional productos:", e);
-    throw e;
-  });
+function syncProductosTransactional(_prevArr: any[] | undefined, _newArr: any[] | undefined): Promise<Map<string, number> | undefined> {
+  throw new Error('La persistencia de productos está gestionada exclusivamente por Turso.');
 }
 
 // Movimiento de inventario atómico: toma el stock REAL de Firestore y registra
@@ -1292,7 +1193,6 @@ export const Store = {
    * evitando que dos cajas trabajen sobre el mismo saldo antiguo.
    */
   async processReturnOrCancellationTransaction(params: { operationId: string; operationType: 'DEVOLUCION' | 'ANULACION'; saleId: string; operationDoc: any; movements: any[]; journal?: any; refundItems?: any[]; fullCancellation?: boolean; fromOfflineQueue?: boolean; }): Promise<any> {
-    if (!db) return null;
     const { operationId, operationType, saleId, operationDoc, movements, journal, refundItems = [], fullCancellation = false } = params;
     if (!params.fromOfflineQueue && typeof window !== 'undefined' && navigator.onLine === false) {
       enqueueOfflineOperation(operationType, { ...params }, operationId);
