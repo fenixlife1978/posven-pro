@@ -381,7 +381,7 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
       });
 
       if (resultCompra?.queuedOffline) { toast({ title: 'Compra guardada sin conexión', description: 'Quedó pendiente y se sincronizará automáticamente al regresar Internet.' }); return; }
-      toast({ title: "Compra Registrada ✅", description: `Factura ${numeroFactura} guardada en Firestore de forma transaccional.` });
+      toast({ title: "Compra Registrada ✅", description: `Factura ${numeroFactura} guardada en Turso de forma transaccional.` });
       
       setProveedor('');
       setNumeroFactura('');
@@ -390,7 +390,7 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
       setCondicion('contado');
     } catch (err: any) {
       console.error('❌ Error procesando compra:', err);
-      toast({ title: "Error al guardar compra", description: err?.message || 'No se pudo persistir en Firestore', variant: "destructive", duration: 8000 });
+      toast({ title: "Error al guardar compra", description: err?.message || 'Turso no confirmó la persistencia de la compra', variant: "destructive", duration: 8000 });
       // NO limpiar formulario: usuario puede reintentar
     } finally {
       processingRef.current = false;
