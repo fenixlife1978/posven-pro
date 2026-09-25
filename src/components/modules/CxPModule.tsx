@@ -281,8 +281,7 @@ export default function CxPModule({ state, updateState, terminalId }: CxPModuleP
         provider: globalProvider.proveedor,
         amountUSD: amount,
         payment: pagoBase,
-        journal: nuevoAsiento,
-        terminalId
+        journal: nuevoAsiento
       });
 
       if (resultadoPago.queuedOffline) { toast({ title: 'Pago global guardado sin conexión', description: 'Quedó pendiente y se sincronizará automáticamente al regresar Internet.' }); return; }
