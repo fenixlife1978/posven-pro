@@ -892,6 +892,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         subtotalUSD: totalAbonado, descuentoUSD: 0, totalUSD: totalAbonado, totalBS: totalAbonado * state.tasa,
         metodoPago: pagosAbono.length > 1 ? 'mixto' : pagosAbono[0].metodo,
         estado: 'completada', type: 'COBRO DEUDA', payments: [...pagosAbono],
+        cajeroId: (state as any).user?.id || (state as any).user?.uid,
+        cajeroNombre: String((state as any).user?.nombre || (state as any).user?.name || (state as any).user?.displayName || (state as any).user?.email || '').trim() || undefined,
         terminalId: terminal?.id, terminalName: terminal?.nombre || 'SISTEMA GLOBAL', tasa: state.tasa
       };
 
@@ -965,6 +967,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         tasa: state.tasa,
         saleType: 'VENTA CRÉDITO',
         cajeroId: (state as any).user?.id || (state as any).user?.uid,
+        cajeroNombre: String((state as any).user?.nombre || (state as any).user?.name || (state as any).user?.displayName || (state as any).user?.email || '').trim() || undefined,
         credit: {
           customer: targetClient,
           debtId
