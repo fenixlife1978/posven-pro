@@ -45,6 +45,7 @@ export default function CxCModule({ state, updateState }: CxCModuleProps) {
   const [expandedClient, setExpandedClient] = useState<string | null>(null);
   const [showClientHistory, setShowClientHistory] = useState<string | null>(null);
   const [filterEstado, setFilterEstado] = useState<'todos' | 'pendiente' | 'pagada' | 'parcial'>('todos');
+  const [searchClient, setSearchClient] = useState('');
   const [page, setPage] = useState(1);
   const [isProcessing, setIsProcessing] = useState(false);
   const processingRef = useRef(false);
@@ -52,7 +53,7 @@ export default function CxCModule({ state, updateState }: CxCModuleProps) {
 
   useEffect(() => {
     setPage(1);
-  }, [filterEstado]);
+  }, [filterEstado, searchClient]);
 
   const [nuevaDeuda, setNuevaDeuda] = useState({
     cliente: '',
@@ -180,7 +181,24 @@ export default function CxCModule({ state, updateState }: CxCModuleProps) {
     return sortedGroups;
   }, [todasLasDeudas, allCustomers, filterEstado]);
 
-  const creditEntries = Object.entries(groupedCredits);
+  const normalizedSearch = searchClient.trim().toLocaleLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '');
+  const filteredCreditEntries = useMemo(() => {
+    if (!normalizedSearch) return Object.entries(groupedCredits);
+    return Object.entries(groupedCredits).filter(([name, group]) => {
+      const customer = group.customer || ({} as Customer);
+      const haystack = [
+        name,
+        customer.name,
+        customer.cedula,
+        customer.phone,
+        customer.address,
+        ...group.debts.map((d: Debt) => d.cliente),
+      ].filter(Boolean).join(' ').toLocaleLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '');
+      return haystack.includes(normalizedSearch);
+    });
+  }, [groupedCredits, normalizedSearch]);
+
+  const creditEntries = filteredCreditEntries;
   const creditTotalPages = Math.max(1, Math.ceil(creditEntries.length / pageSize));
   const creditSafePage = Math.min(page, creditTotalPages);
   const pageCreditEntries = creditEntries.slice((creditSafePage - 1) * pageSize, creditSafePage * pageSize);
@@ -363,6 +381,32 @@ export default function CxCModule({ state, updateState }: CxCModuleProps) {
             <Plus className="w-4 h-4" /> Cargar Deuda Inicial
           </button>
         </div>
+      </div>
+
+      {/* BÚSQUEDA INTELIGENTE */}
+      <div className="bg-white p-4 rounded-xl border border-line shadow-sm">
+        <div className="flex items-center gap-3">
+          <div className="relative flex-1">
+            <User className="absolute left-3 top-3 w-4 h-4 text-ink/40" />
+            <input
+              type="search"
+              value={searchClient}
+              onChange={e => setSearchClient(e.target.value)}
+              placeholder="BUSCAR CLIENTE POR NOMBRE, PALABRA O CÉDULA..."
+              className="form-input h-11 pl-10 text-sm font-black text-ink w-full uppercase"
+            />
+          </div>
+          {searchClient && (
+            <button type="button" onClick={() => setSearchClient('')} className="btn btn-secondary h-11 px-4 font-black uppercase text-xs">
+              <X className="w-4 h-4 mr-1" /> Limpiar
+            </button>
+          )}
+        </div>
+        {searchClient && (
+          <div className="text-[9px] font-black uppercase text-ink/60 mt-2">
+            {creditEntries.length} cliente(s) encontrado(s)
+          </div>
+        )}
       </div>
 
       {/* FILTROS */}
