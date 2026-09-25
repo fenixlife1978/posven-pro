@@ -3,31 +3,31 @@
 import { AppState, Terminal, Movimiento } from './types';
 import { enqueueOfflineOperation, registerOfflineProcessor } from './offline-queue';
 // Turso es la única base de datos operativa. Estos nombres se conservan únicamente
-// para que los caminos legacy de sincronización no vuelvan a escribir en Firebase.
+// para que los caminos legacy de sincronización no vuelvan a escribir en servidor Turso.
 // Cualquier intento de alcanzar esos caminos falla explícitamente.
 type DocumentData = any;
 type QueryDocumentSnapshot<T = any> = any;
 const db: any = null;
 const rtdb: any = null;
-const firebaseRetirado = (..._args: any[]): never => {
-  throw new Error('Firebase fue retirado del flujo operativo. Turso es la única fuente de datos.');
+const servidorTursoRetirado = (..._args: any[]): never => {
+  throw new Error('servidor Turso fue retirado del flujo operativo. Turso es la única fuente de datos.');
 };
-const collection: any = firebaseRetirado;
-const doc: any = firebaseRetirado;
-const getDoc: any = firebaseRetirado;
-const getDocs: any = firebaseRetirado;
-const onSnapshot: any = firebaseRetirado;
-const orderBy: any = firebaseRetirado;
-const limit: any = firebaseRetirado;
-const query: any = firebaseRetirado;
-const setDoc: any = firebaseRetirado;
-const where: any = firebaseRetirado;
-const runTransaction: any = firebaseRetirado;
-const startAfter: any = firebaseRetirado;
-const onValue: any = firebaseRetirado;
-const ref: any = firebaseRetirado;
-const update: any = firebaseRetirado;
-const rtdbGet: any = firebaseRetirado;
+const collection: any = servidorTursoRetirado;
+const doc: any = servidorTursoRetirado;
+const getDoc: any = servidorTursoRetirado;
+const getDocs: any = servidorTursoRetirado;
+const onSnapshot: any = servidorTursoRetirado;
+const orderBy: any = servidorTursoRetirado;
+const limit: any = servidorTursoRetirado;
+const query: any = servidorTursoRetirado;
+const setDoc: any = servidorTursoRetirado;
+const where: any = servidorTursoRetirado;
+const runTransaction: any = servidorTursoRetirado;
+const startAfter: any = servidorTursoRetirado;
+const onValue: any = servidorTursoRetirado;
+const ref: any = servidorTursoRetirado;
+const update: any = servidorTursoRetirado;
+const rtdbGet: any = servidorTursoRetirado;
 
 const STORAGE_KEY = 'posven_pro_session_data_cache';
 const PAGE_SIZE = 50;
@@ -65,13 +65,13 @@ const OPERATIONS_COLLECTION = 'operaciones';
 // PUENTE DE OPERACIONES CRÍTICAS A TURSO
 // ------------------------------------------------------------
 // Turso solo toma el control cuando sus credenciales existen en el servidor.
-// Si no está configurado (HTTP 503), el flujo existente de Firebase continúa.
+// Si no está configurado (HTTP 503), el flujo existente de servidor Turso continúa.
 // Si Turso sí está configurado pero falla por otra causa, NO hacemos fallback
-// a Firebase: evitar dos fuentes de verdad es obligatorio durante la migración.
+// a servidor Turso: evitar dos fuentes de verdad es obligatorio durante la migración.
 // ============================================================
 async function tryTursoOperation(operation: string, payload: any): Promise<any | null> {
   if (typeof window === 'undefined') return null;
-  if (typeof navigator !== 'undefined' && navigator.onLine === false) throw new Error('El dispositivo está sin conexión. La operación no se enviará a Firebase para evitar duplicados.');
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) throw new Error('El dispositivo está sin conexión. La operación no se enviará a servidor Turso para evitar duplicados.');
   let response: Response;
   try {
     response = await fetch('/api/turso/store', {
@@ -79,9 +79,9 @@ async function tryTursoOperation(operation: string, payload: any): Promise<any |
       body: JSON.stringify({ operation, ...payload }),
     });
   } catch {
-    throw new Error('No se pudo contactar con Turso. La operación no fue enviada a Firebase para evitar duplicados.');
+    throw new Error('No se pudo contactar con Turso. La operación no fue enviada a servidor Turso para evitar duplicados.');
   }
-  if (response.status === 503) throw new Error('Turso no está configurado o no está disponible. Firebase no se utilizará como respaldo.');
+  if (response.status === 503) throw new Error('Turso no está configurado o no está disponible. servidor Turso no se utilizará como respaldo.');
   let body: any = null;
   try { body = await response.json(); } catch {}
   if (!response.ok || body?.ok === false) throw new Error(String(body?.error || ('Turso rechazó la operación (' + response.status + ').')));
@@ -95,7 +95,7 @@ async function tryTursoSpecialRead(kind: 'config' | 'catalog', name = ''): Promi
   let response: Response;
   try { response = await fetch('/api/turso/store?' + params.toString(), { credentials: 'include', cache: 'no-store' }); }
   catch { throw new Error('No se pudo consultar Turso.'); }
-  if (response.status === 503) throw new Error('Turso no está configurado o no está disponible. Firebase no se utilizará como respaldo.');
+  if (response.status === 503) throw new Error('Turso no está configurado o no está disponible. servidor Turso no se utilizará como respaldo.');
   let body: any = null; try { body = await response.json(); } catch {}
   if (!response.ok || body?.ok === false) throw new Error(String(body?.error || 'Turso rechazó la lectura.'));
   return kind === 'config' ? (body.config || {}) : (Array.isArray(body.lista) ? body.lista : []);
@@ -115,9 +115,9 @@ async function tryTursoRead(table: string, options: { limit?: number; terminalId
       cache: 'no-store',
     });
   } catch {
-    throw new Error('No se pudo consultar Turso. No se usará Firebase como respaldo porque Turso está activo.');
+    throw new Error('No se pudo consultar Turso. No se usará servidor Turso como respaldo porque Turso está activo.');
   }
-  if (response.status === 503) throw new Error('Turso no está configurado o no está disponible. Firebase no se utilizará como respaldo.');
+  if (response.status === 503) throw new Error('Turso no está configurado o no está disponible. servidor Turso no se utilizará como respaldo.');
   let body: any = null;
   try { body = await response.json(); } catch {}
   if (!response.ok || body?.ok === false) {
@@ -579,7 +579,7 @@ async function loadReportWindow(name: string, terminalId: string, cutoff: string
 
   try {
     // Turso es la fuente operativa durante la migración. No debemos volver a
-    // consultar Firebase para X/Z porque eso agrega latencia y puede devolver
+    // consultar servidor Turso para X/Z porque eso agrega latencia y puede devolver
     // un estado histórico distinto al de la caja actual.
     const tursoItems = await tryTursoRead(name, { limit: 2000, terminalId });
     if (tursoItems !== null) {
@@ -659,7 +659,7 @@ async function ensureReportRange(name: string, desde: string, hasta: string, ter
   if (SINCE_STAMP[key] === 'done') return;
 
   try {
-    // En Turso evitamos las consultas compuestas de Firebase para el historial.
+    // En Turso evitamos las consultas compuestas de servidor Turso para el historial.
     const tursoItems = await tryTursoRead(name, { limit: 2000, ...(terminalId !== 'all' ? { terminalId } : {}) });
     if (tursoItems !== null) {
       const start = String(desde) + 'T00:00:00';
@@ -839,7 +839,7 @@ function startTerminalSync(terminalId?: string, all = false, initialItems: Termi
     applyPatch({ terminales: mergeById((cache as any).terminales, initialItems) });
   }
 
-  // Cuando Turso está activo, la hidratación inicial sale de Turso y Firebase
+  // Cuando Turso está activo, la hidratación inicial sale de Turso y servidor Turso
   // deja de ser fuente de lectura para terminales/ventas durante la migración.
   // El cache local conserva la última vista mientras llega la respuesta.
   void (async () => {
@@ -937,7 +937,7 @@ function startMasterSync(name: string): () => void {
   if (masterSyncFns[name]) return () => stopMasterSync(name);
 
   // Con Turso activo, clientes/proveedores deben salir de Turso. El listener
-  // Firebase se conserva únicamente como fallback cuando Turso no está configurado.
+  // servidor Turso se conserva únicamente como fallback cuando Turso no está configurado.
   void (async () => {
     try {
       const tursoItems = await tryTursoRead(name, { limit: 2000 });
@@ -1002,9 +1002,9 @@ function init() {
   if (typeof window === 'undefined') return;
 
   // 1) CONFIG: Turso es la única fuente de verdad operacional.
-  // No condicionamos esta carga a Firebase: la tasa BCV y el resto de la
+  // No condicionamos esta carga a servidor Turso: la tasa BCV y el resto de la
   // configuración deben hidratarse directamente desde app_config/general
-  // aunque el cliente Firebase no exista o no esté inicializado.
+  // aunque el cliente servidor Turso no exista o no esté inicializado.
   void (async () => {
     try {
       const tursoConfig = await tryTursoSpecialRead('config');
@@ -1035,7 +1035,7 @@ function init() {
   // miles de deudas ya pagadas conectadas en cada terminal genera lecturas
   // iniciales innecesarias. El histórico completo se hidrata únicamente
   // cuando se entra al módulo que lo necesita.
-  // CxC/CxP: Turso es la fuente de lectura cuando está activo. Firebase
+  // CxC/CxP: Turso es la fuente de lectura cuando está activo. servidor Turso
   // conserva el listener únicamente como fallback mientras Turso no esté configurado.
   void (async () => {
     for (const name of ['cxc', 'cxp']) {
@@ -1108,7 +1108,7 @@ function init() {
   })();
 
   // Históricos operativos: Turso es la única fuente de movimientos.
-  // No se instala ningún listener Firebase/Firestore porque Firebase fue retirado.
+  // No se instala ningún listener servidor Turso/Firestore porque servidor Turso fue retirado.
   void (async () => {
     try {
       const tursoItems = await tryTursoRead('movimientos', { limit: 50 });
@@ -1898,7 +1898,7 @@ export const Store = {
 
     const opId = String(operationId || (effectiveTerminalId || 'GLOBAL') + '|' + saleType + '|' + JSON.stringify({ cart, payments, client: clientName, credit: credit ? { customerId: credit.customer?.id, cedula: credit.customer?.cedula } : null }));
 
-    // Las ventas pueden quedar en cola local cuando Turso/Firebase no están disponibles.
+    // Las ventas pueden quedar en cola local cuando Turso/servidor Turso no están disponibles.
     // La cola se procesa posteriormente cuando vuelve la conexión.
     // Si estamos offline, dejamos la venta en la cola local antes de intentar Turso.
     // persistimos la INTENCIÓN de venta en una cola local que sobrevive al reinicio.
@@ -2723,7 +2723,7 @@ export const Store = {
     applyPatch(patch);
 
     // Cuando Turso está activo, las operaciones críticas de terminal/caja no
-    // deben pasar por Firebase. La comparación se hace contra el cache anterior
+    // deben pasar por servidor Turso. La comparación se hace contra el cache anterior
     // y solo se envían los campos que realmente cambiaron.
     if (patch.terminales !== undefined) {
       const prevTerminals = (prev.terminales || []) as any[];
@@ -2820,7 +2820,7 @@ export const Store = {
             return;
           }
 
-          // Turso no configurado: conserva el comportamiento Firebase existente.
+          // Turso no configurado: conserva el comportamiento servidor Turso existente.
           const stocks = await syncProductosTransactional(prevArr, newArr);
           let toSync = newArr;
           if (stocks && stocks.size > 0) {
@@ -2835,7 +2835,7 @@ export const Store = {
         })().catch(e => console.error("Error persistiendo productos:", e)));
       } else if (k === 'terminales') {
         // Las terminales se escriben exclusivamente mediante terminalPatch/Upsert/Delete.
-        // Si Turso está activo, no existe una vía genérica que pueda terminar en Firebase.
+        // Si Turso está activo, no existe una vía genérica que pueda terminar en servidor Turso.
         if (navigator.onLine === false) {
           throw new Error('Sin conexión: no se modificará la terminal para evitar divergencia.');
         }
@@ -2865,7 +2865,7 @@ export const Store = {
       }
     }
 
-    // 2) CATÁLOGOS: Turso primero; Firebase solo mientras Turso no esté configurado.
+    // 2) CATÁLOGOS: Turso primero; servidor Turso solo mientras Turso no esté configurado.
     const catalogJobs: Promise<unknown>[] = [];
     let catalogosChanged = false;
     for (const [field, catName] of Object.entries(CATALOG_FIELDS)) {
@@ -2888,7 +2888,7 @@ export const Store = {
       }).then(() => writeCatalogCacheMeta(catalogVersion)).catch(e => console.error('Error persistiendo catálogo/version:', e)));
     }
 
-    // 3) CONFIG: Turso es la única fuente de verdad. No se replica ni cae en Firebase.
+    // 3) CONFIG: Turso es la única fuente de verdad. No se replica ni cae en servidor Turso.
     const toWrite: Record<string, any> = {};
     for (const f of CONFIG_FIELDS) {
       const key = f as keyof AppState;
