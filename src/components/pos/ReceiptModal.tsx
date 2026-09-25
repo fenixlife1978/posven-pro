@@ -630,6 +630,14 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
 
                         <div className="separator-dashed"></div>
                         <div className="text-center font-bold">COBROS DE DEUDAS</div>
+                        <div className="separator-dashed"></div>
+                        <table><tbody>
+                          <tr className="bold">
+                            <td>TOTAL USD POR COBRO DE DEUDAS:</td>
+                            <td className="text-right">$ {formatUsd(data.cobrosDeudaUSD ?? data.cobrosDeudaUsd ?? 0)}</td>
+                          </tr>
+                        </tbody></table>
+                        <div className="separator-dashed"></div>
                         <div className="text-center font-bold">TOTAL NETO EFECTIVO FÍSICO</div>
                         <div className="separator-dashed"></div>
                         <table><tbody>
