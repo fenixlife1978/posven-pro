@@ -1243,7 +1243,24 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                               <div className="card border-line bg-white shadow-inner rounded-xl overflow-hidden">
                                  <table className="w-full">
                                     <thead className="bg-ink/5"><tr><th className="text-[9px] font-black uppercase p-2 text-left">Emisión</th><th className="text-[9px] font-black uppercase p-2 text-left">Vencimiento</th><th className="text-[9px] font-black uppercase p-2 text-right">Saldo USD</th><th className="text-[9px] font-black uppercase p-2 text-center">Acciones</th></tr></thead>
-                                    <tbody>{group.debts.map(d => (<tr key={d.id} className="border-b border-line/20"><td className="text-[10px] font-black p-2">{Utils.fmtFecha(d.fecha)}</td><td className={`text-[10px] font-black p-2 ${d.fechaVencimiento < Utils.hoy() ? 'text-status-danger' : 'text-ink'}`}>{d.fechaVencimiento === '2099-12-31' ? 'ABIERTA' : Utils.fmtFecha(d.fechaVencimiento)}</td><td className="text-[10px] font-black p-2 text-right text-brand-gold-deep">{Utils.fmtUSD(saldoActualDeuda(d))}</td><td className="p-2 text-center"><div className="flex justify-center gap-2"><button onClick={() => setShowDetails(d)} className="w-8 h-8 rounded-full flex items-center justify-center text-status-success hover:bg-status-success/10"><Eye className="w-4 h-4"/></button><button onClick={() => { setShowAbonoModal(d); }} className="btn btn-sm btn-primary h-7 px-3 text-[8px] uppercase">Abonar</button></div></td></tr>))}</tbody>
+                                    <tbody>{group.debts.map(d => (<tr key={d.id} className="border-b border-line/20"><td className="text-[10px] font-black p-2">{Utils.fmtFecha(d.fecha)}</td><td className={`text-[10px] font-black p-2 ${d.fechaVencimiento < Utils.hoy() ? 'text-status-danger' : 'text-ink'}`}>{d.fechaVencimiento === '2099-12-31' ? 'ABIERTA' : Utils.fmtFecha(d.fechaVencimiento)}</td><td className="text-[10px] font-black p-2 text-right text-brand-gold-deep">{Utils.fmtUSD(saldoActualDeuda(d))}</td><td className="p-2 text-center"><div className="flex justify-center gap-2"><button onClick={async () => {
+  let sale: any = null;
+  const ventaId = String((d as any)?.ventaId || (d as any)?.facturaId || '').trim();
+  if (ventaId) sale = await Store.getSaleById(ventaId);
+  const debtItems = Array.isArray((d as any)?.items) ? (d as any).items : [];
+  if ((!sale || !Array.isArray(sale.items) || sale.items.length === 0) && debtItems.length) {
+    sale = {
+      id: ventaId || String((d as any)?.id || ''),
+      fecha: String((d as any)?.fecha || ''),
+      items: debtItems.map((it: any) => ({ ...it })),
+      subtotalUSD: Number((d as any)?.subtotalUSD ?? (d as any)?.totalUSD ?? (d as any)?.montoUSD ?? 0),
+      totalUSD: Number((d as any)?.totalUSD ?? (d as any)?.montoUSD ?? 0),
+      totalBS: Number((d as any)?.totalBS ?? 0),
+      tasa: Number((d as any)?.tasa ?? 0),
+    };
+  }
+  setShowDetails({ ...(d as any), ventaDetalle: sale });
+}} className="w-8 h-8 rounded-full flex items-center justify-center text-status-success hover:bg-status-success/10"><Eye className="w-4 h-4"/></button><button onClick={() => { setShowAbonoModal(d); }} className="btn btn-sm btn-primary h-7 px-3 text-[8px] uppercase">Abonar</button></div></td></tr>))}</tbody>
                                  </table>
                               </div>
                            </td>
@@ -1341,8 +1358,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
               </div>
 
               {(() => {
-                const sale = state.ventas.find(v => v.id === showDetails.ventaId || v.id === showDetails.id);
-                if (!sale) return null;
+                const sale = showDetails.ventaDetalle || state.ventas.find(v => v.id === showDetails.ventaId || v.id === showDetails.id);
+                if (!sale || !Array.isArray(sale.items) || sale.items.length === 0) return null;
                 return (
                   <div className="space-y-3 animate-in slide-in-from-top-2 duration-300">
                     <div className="flex justify-between items-center border-b border-line pb-2">
