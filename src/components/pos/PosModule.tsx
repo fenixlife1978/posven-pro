@@ -507,6 +507,9 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       ventaNetaUSD: data.netUSD, baseImponibleUSD: data.baseImponibleUSD, ivaUSD: data.ivaUSD, exentoUSD: data.exentoUSD,
       igtfUSD: data.igtfUSD, metodosPago: { ...data.paymentMethods }, salidasCajaUSD: data.manualSalidas, entradasCajaUSD: data.manualEntradas,
       cobrosDeudaUSD: data.cobrosDeudaUSD, cobrosDeudaBS: data.cobrosDeudaBS,
+      cobrosDeudaPorMetodo: data.cobrosDeudaPorMetodo,
+      totalNetoEfectivoBS: data.totalNetoEfectivoBS,
+      totalNetoEfectivoUSD: data.totalNetoEfectivoUSD,
       fondoAperturaUSD: data.fondoAperturaUSD, fondoAperturaBS: data.fondoAperturaBS, acumuladoHistoricoUSD: data.acumuladoHistoricoUSD, stats: { ...data.stats }
     };
     
