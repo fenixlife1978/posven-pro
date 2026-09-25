@@ -2,7 +2,6 @@
 
 import { AppState, Terminal, Movimiento } from './types';
 import { enqueueOfflineOperation, registerOfflineProcessor } from './offline-queue';
-import { createCashMovementTransaction } from './turso/pos-store';
 // Turso es la única base de datos operativa. Estos nombres se conservan únicamente
 // para que los caminos legacy de sincronización no vuelvan a escribir en Firebase.
 // Cualquier intento de alcanzar esos caminos falla explícitamente.
@@ -1169,7 +1168,16 @@ async function getSaleById(saleId: string): Promise<any | null> {
 
 export const Store = {
   applyInventoryMovementsTransaction,
-  createCashMovementTransaction,
+  async createCashMovementTransaction(params: {
+    operationId: string;
+    movement: any;
+    terminalId?: string;
+  }): Promise<any> {
+    if (typeof window === 'undefined') throw new Error('La operación de caja debe ejecutarse desde el POS.');
+    const result = await tryTursoOperation('cashMovement', params);
+    if (!result?.movement) throw new Error('Turso no confirmó el movimiento de caja.');
+    return result;
+  },
   subscribe(callback: (state: Partial<AppState>) => void): () => void {
     listeners.add(callback);
     init();
