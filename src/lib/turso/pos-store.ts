@@ -420,7 +420,23 @@ export async function createSaleTransaction(params: {
         });
         customer = rowFromDb(found.rows[0]);
       }
-      if (!customer) throw new Error('No se pudo resolver el cliente para la venta a crédito.');
+      // Un cliente recién creado puede existir todavía solo en el navegador.
+      // Turso debe crearlo dentro de la MISMA transacción de venta + CxC.
+      if (!customer && credit.customer) {
+        const incoming = clean(credit.customer);
+        customer = {
+          id: String(incoming.id || crypto.randomUUID()),
+          name: String(incoming.name || '').trim().toUpperCase(),
+          cedula: String(incoming.cedula || '').trim(),
+          phone: String(incoming.phone || ''),
+          address: String(incoming.address || ''),
+          debt: Number(incoming.debt) || 0,
+        };
+        if (!customer.name || !customer.cedula) {
+          throw new Error('El cliente nuevo requiere nombre y cédula.');
+        }
+      }
+      if (!customer) throw new Error('No se pudo resolver el cliente para la venta a crédito.')
     }
 
     const totals = cart.reduce((acc: any, item: any) => {
