@@ -542,7 +542,38 @@ export default function CxCModule({ state, updateState }: CxCModuleProps) {
                                              </td>
                                              <td className="p-2 text-center">
                                                 <div className="flex justify-center gap-1">
-                                                  <button onClick={async () => { setShowDetailsSale(null); setShowDetails(d); if (d?.ventaId || d?.id) setShowDetailsSale(await Store.getSaleById(d.ventaId || d.id)); }} className="text-ink hover:text-brand-gold p-1 transition-colors"><Eye className="w-3.5 h-3.5"/></button>
+                                                  <button onClick={async () => {
+                                                    setShowDetailsSale(null);
+                                                    setShowDetails(d);
+                                                    const ventaId = String(d?.ventaId || d?.facturaId || '').trim();
+                                                    let sale = ventaId ? await Store.getSaleById(ventaId) : null;
+                                                    // La deuda migrada puede conservar un snapshot de la factura original.
+                                                    // Si la venta enlazada no coincide con ese snapshot, nunca mostramos
+                                                    // items de otra factura: usamos la copia autoritativa de CxC.
+                                                    const debtItems = Array.isArray(d?.items) ? d.items : [];
+                                                    const sameItems = (a:any[], b:any[]) => {
+                                                      if (!a.length || !b.length || a.length !== b.length) return false;
+                                                      return a.every((x:any, i:number) => {
+                                                        const y=b[i] || {};
+                                                        return String(x?.productoId || '') === String(y?.productoId || '') &&
+                                                          Number(x?.cantidad || 0) === Number(y?.cantidad || 0) &&
+                                                          Math.abs((Number(x?.subtotalUSD) || 0) - (Number(y?.subtotalUSD) || 0)) < 0.001;
+                                                      });
+                                                    };
+                                                    if (debtItems.length && (!sale || !sameItems(debtItems, Array.isArray(sale.items) ? sale.items : []))) {
+                                                      sale = {
+                                                        id: ventaId || String(d?.id || ''),
+                                                        fecha: String(d?.fecha || ''),
+                                                        cliente: d?.cliente || '',
+                                                        items: debtItems.map((x:any) => ({ ...x })),
+                                                        subtotalUSD: Number(d?.subtotalUSD ?? d?.totalUSD ?? d?.montoUSD ?? 0),
+                                                        totalUSD: Number(d?.totalUSD ?? d?.montoUSD ?? 0),
+                                                        totalBS: Number(d?.totalBS ?? 0),
+                                                        tasa: Number(d?.tasa ?? 0),
+                                                      };
+                                                    }
+                                                    setShowDetailsSale(sale);
+                                                  }} className="text-ink hover:text-brand-gold p-1 transition-colors"><Eye className="w-3.5 h-3.5"/></button>
                                                   {d.estado !== 'pagada' && (
                                                     <button onClick={() => eliminarDeuda(d)} disabled={isProcessing} className="text-ink hover:text-status-danger p-1"><Trash2 className="w-3.5 h-3.5" /></button>
                                                   )}
