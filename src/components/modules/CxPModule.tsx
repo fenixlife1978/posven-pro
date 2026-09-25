@@ -188,7 +188,7 @@ export default function CxPModule({ state, updateState, terminalId }: CxPModuleP
       id: asientoId, fecha: ahoraStr, tipo: 'egreso',
       categoria: 'PAGO_PROVEEDOR' as any,
       concepto: `PAGO DEUDA A: ${showPaymentModal.proveedor.toUpperCase()} - REF FACT: ${showPaymentModal.numeroFactura || 'S/N'}`,
-      montoUSD: amount, montoBS, metodo: paymentMethod, referencia: showPaymentModal.id
+      montoUSD: amountNormalizado, montoBS, metodo: paymentMethod, referencia: showPaymentModal.id
     };
 
     try {
@@ -197,12 +197,11 @@ export default function CxPModule({ state, updateState, terminalId }: CxPModuleP
         debtId: showPaymentModal.id,
         amountUSD: amountNormalizado,
         payment: { ...pago, montoUSD: amountNormalizado },
-        journal: nuevoAsiento,
-        terminalId
+        journal: nuevoAsiento
       });
       if (!resultadoPago) throw new Error('No se pudo registrar el pago al proveedor.');
       if (resultadoPago.queuedOffline) { toast({ title: 'Pago guardado sin conexión', description: 'Quedó pendiente y se sincronizará automáticamente al regresar Internet.' }); setShowPaymentModal(null); setPaymentAmount(''); return; }
-      toast({ title: "Pago registrado", description: `Se abonó ${Utils.fmtUSD(amount)}${esMetodoBS ? ' (' + Utils.fmtBS(rawMonto) + ')' : ''} a ${showPaymentModal.proveedor.toUpperCase()}` });
+      toast({ title: "Pago registrado", description: `Se abonó ${Utils.fmtUSD(amountNormalizado)}${esMetodoBS ? ' (' + Utils.fmtBS(rawMonto) + ')' : ''} a ${showPaymentModal.proveedor.toUpperCase()}` });
       setShowPaymentModal(null);
       setPaymentAmount('');
     } catch (e: any) {
