@@ -738,10 +738,13 @@ export async function createZClosureTransaction(params: {
 
 export async function applyDebtPaymentTransaction(params: {
   operationId?: string; collection: 'cxc' | 'cxp'; debtId: string; amountUSD: number;
-  amountBS?: number; payment: any; journal?: any | any[]; sale?: any; customerCedula?: string; terminalId?: string;
+  amountBS?: number; payment: any; journal?: any | any[]; sale?: any; customerCedula?: string; terminalForOperation?: string;
 }) {
   assertTursoReady();
   const { operationId, collection, debtId, amountUSD, amountBS, payment, journal, sale, customerCedula, terminalId } = params;
+  // CxP se procesa desde Administración y no depende de ninguna Caja/Terminal.
+  // Solo CxC conserva la relación con la caja del cajero.
+  const terminalForOperation = collection === 'cxc' ? terminalId : undefined;
   if (!(Number(amountUSD) > 0)) return null;
   return tursoInteractiveTransaction(async tx => {
     const opId = String(operationId || payment?.id || (collection+'|'+debtId+'|'+amountUSD+'|'+payment?.metodo+'|'+payment?.fecha));
@@ -752,15 +755,15 @@ export async function applyDebtPaymentTransaction(params: {
     const saldo = Number(debt.saldoUSD)||0;
     if (saldo <= 0.001) throw new Error('La deuda ya está pagada en otra caja.');
     if (Number(amountUSD) > saldo + 0.001) throw new Error('El saldo cambió en otra caja. Actualice y vuelva a intentar.');
-    const terminal = terminalId ? rowFromDb((await tx.execute(txSelect('terminales',terminalId))).rows[0]) : null;
-    if (terminalId && !terminal) throw new Error('La caja/terminal ya no existe en Turso.');
+    const terminal = terminalForOperation ? rowFromDb((await tx.execute(txSelect('terminales',terminalForOperation))).rows[0]) : null;
+    if (terminalForOperation && !terminal) throw new Error('La caja/terminal ya no existe en Turso.');
     const field = collection==='cxc'?'proximoCobroDeuda':'proximoPagoProveedor';
     const label = collection==='cxc'?'CXC':'CXP';
     const counter=Number(terminal?.[field])||1;
-    const receiptId=terminal?terminalSeries(await terminalUniquePrefix(tx,terminal,terminalId),label,counter,6):terminalSeries('GLOBAL',label,Date.now(),6);
+    const receiptId=terminal?terminalSeries(await terminalUniquePrefix(tx,terminal,terminalForOperation),label,counter,6):terminalSeries('GLOBAL',label,Date.now(),6);
     const applied=Math.min(Number(amountUSD),saldo);
     const appliedBS=Number(amountBS)>0?Math.min(Number(amountBS),Number(payment?.montoBS)||Number(amountBS)):(Number(payment?.montoBS)||(applied*(Number(payment?.tasaAplicada)||0)));
-    const pago=clean({...payment,id:receiptId,reciboId:receiptId,terminalId:terminalId||payment?.terminalId,montoUSD:applied,montoBS:appliedBS});
+    const pago=clean({...payment,id:receiptId,reciboId:receiptId,terminalForOperation:terminalForOperation||payment?.terminalForOperation,montoUSD:applied,montoBS:appliedBS});
     const updated={...debt,abonadoUSD:(Number(debt.abonadoUSD)||0)+applied,saldoUSD:Math.max(0,saldo-applied),estado:saldo-applied<=0.001?'pagada':'parcial',historialPagos:[...(Array.isArray(debt.historialPagos)?debt.historialPagos:[]),pago]};
     const statements:TursoStatement[]=[rowStatement(collection,updated)];
     if(collection==='cxc'&&customerCedula){
@@ -769,13 +772,13 @@ export async function applyDebtPaymentTransaction(params: {
       if(customer) statements.push(rowStatement('clientes',{...customer,debt:Math.max(0,(Number(customer.debt)||0)-applied)}));
     }
     const journals=Array.isArray(journal)?journal:(journal?[journal]:[]);
-    for(const entry of journals) if(entry?.id) statements.push(rowStatement('libroDiario',{...entry,referencia:receiptId,terminalId:terminalId||entry.terminalId,terminalName:terminal?.nombre||entry.terminalName}));
-    const persistedSale=sale?.id?{...sale,id:receiptId,terminalId:terminalId||sale.terminalId,terminalName:terminal?.nombre||sale.terminalName}:null;
+    for(const entry of journals) if(entry?.id) statements.push(rowStatement('libroDiario',{...entry,referencia:receiptId,terminalForOperation:terminalForOperation||entry.terminalForOperation,terminalName:terminal?.nombre||entry.terminalName}));
+    const persistedSale=sale?.id?{...sale,id:receiptId,terminalForOperation:terminalForOperation||sale.terminalForOperation,terminalName:terminal?.nombre||sale.terminalName}:null;
     if(persistedSale) statements.push(rowStatement('ventas',persistedSale));
     if(terminal) statements.push(rowStatement('terminales',{...terminal,[field]:counter+1}));
     statements.push({sql:'INSERT INTO operaciones(id,prefijo,operation_id,data_json) VALUES(?,?,?,?)',args:['PAGO-DEUDA-'+opId,'PAGO-DEUDA',opId,JSON.stringify({tipo:'PAGO-DEUDA',operationId:opId,referencia:debtId})],wantRows:false});
     for(const s of statements) await tx.execute(s);
-    return {...updated,appliedUSD:applied,appliedBS,receiptId,payment:pago,journal:journals,sale:persistedSale,terminal:terminal?{...terminal,id:terminalId,[field]:counter+1}:null};
+    return {...updated,appliedUSD:applied,appliedBS,receiptId,payment:pago,journal:journals,sale:persistedSale,terminal:terminal?{...terminal,id:terminalForOperation,[field]:counter+1}:null};
   });
 }
 
@@ -829,7 +832,7 @@ async function applyGlobalPayment(params:any, collection:'cxc'|'cxp'){
       const tasa=Number(payment?.tasaAplicada)||0; const pagoBS=Math.min(remBS,pago*tasa);
       remUSD=Math.max(0,remUSD-pago); remBS=Math.max(0,remBS-pagoBS);
       const h=[...(Array.isArray(d.historialPagos)?d.historialPagos:[])];
-      h.push(clean({...payment,id:receiptId,reciboId:receiptId,terminalId:terminalForOperation||payment?.terminalId,montoUSD:pago,montoBS:pagoBS}));
+      h.push(clean({...payment,id:receiptId,reciboId:receiptId,terminalId:collection==='cxc'?(terminalForOperation||payment?.terminalId):undefined,montoUSD:pago,montoBS:pagoBS}));
       const updated={...d,abonadoUSD:(Number(d.abonadoUSD)||0)+pago,saldoUSD:Math.max(0,(Number(d.saldoUSD)||0)-pago),estado:(Number(d.saldoUSD)-pago)<=0.001?'pagada':'parcial',historialPagos:h};
       statements.push(rowStatement(collection,updated)); debts.push({...updated,appliedUSD:pago,appliedBS:pagoBS}); appliedUSD+=pago; appliedBS+=pagoBS;
     }
@@ -838,7 +841,7 @@ async function applyGlobalPayment(params:any, collection:'cxc'|'cxp'){
       const foundCustomer=await tx.execute({sql:"SELECT id,data_json FROM clientes WHERE json_extract(data_json,'$.cedula')=? LIMIT 1",args:[String(customerCedula)]});
       const customer=rowFromDb(foundCustomer.rows[0]); if(customer) statements.push(rowStatement('clientes',{...customer,debt:Math.max(0,(Number(customer.debt)||0)-appliedUSD)}));
     }
-    if(journal?.id) statements.push(rowStatement('libroDiario',{...journal,montoUSD:appliedUSD,montoBS:appliedBS,referencia:receiptId,terminalId:terminalForOperation||journal.terminalId,terminalName:terminal?.nombre||journal.terminalName}));
+    if(journal?.id) statements.push(rowStatement('libroDiario',{...journal,montoUSD:appliedUSD,montoBS:appliedBS,referencia:receiptId,terminalId:collection==='cxc'?(terminalForOperation||journal.terminalId):undefined,terminalName:collection==='cxc'?(terminal?.nombre||journal.terminalName):undefined}));
 
     // Un cobro de CxC también es una operación visible en el historial del POS,
     // pero NO es una venta de mercancía. Se guarda como registro de tipo
@@ -891,7 +894,7 @@ async function applyGlobalPayment(params:any, collection:'cxc'|'cxp'){
     }
 
     if(terminal) statements.push(rowStatement('terminales',{...terminal,[field]:counter+1}));
-    statements.push({sql:'INSERT INTO operaciones(id,prefijo,operation_id,data_json) VALUES(?,?,?,?)',args:[prefix+'-'+opId,prefix,opId,JSON.stringify({tipo:prefix,operationId:opId,referencia:receiptId,terminalId:terminalForOperation||'GLOBAL'})],wantRows:false});
+    statements.push({sql:'INSERT INTO operaciones(id,prefijo,operation_id,data_json) VALUES(?,?,?,?)',args:[prefix+'-'+opId,prefix,opId,JSON.stringify({tipo:prefix,operationId:opId,referencia:receiptId,terminalId:collection==='cxc'?(terminalForOperation||'GLOBAL'):undefined})],wantRows:false});
     for(const s of statements) await tx.execute(s);
     return {appliedUSD,appliedBS,debts,receiptId,sale};
   });
