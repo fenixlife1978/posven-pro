@@ -1143,6 +1143,26 @@ function init() {
   // nueva, el listener anterior ejecuta loadCatalogs() de forma controlada.
 }
 
+async function ensurePurchaseHistory(): Promise<void> {
+  if (typeof window === 'undefined') return;
+  try {
+    // Historial de compras: cargar directamente desde Turso un bloque amplio.
+    // Las compras migradas pueden ser anteriores a las primeras 500 operaciones
+    // del cache inicial y no deben desaparecer del módulo por ese límite.
+    const [compras, movimientos, cxp] = await Promise.all([
+      tryTursoRead('compras', { limit: 2000 }),
+      tryTursoRead('movimientos', { limit: 2000 }),
+      tryTursoRead('cxp', { limit: 2000 }),
+    ]);
+    if (compras !== null) applyPatch({ compras: mergeById((cache as any).compras, compras) });
+    if (movimientos !== null) applyPatch({ movimientos: mergeById((cache as any).movimientos, movimientos) });
+    if (cxp !== null) applyPatch({ cxp: mergeById((cache as any).cxp, cxp) });
+  } catch (e) {
+    console.error('[db-store] Error cargando historial de compras desde Turso:', e);
+    throw e;
+  }
+}
+
 // ============================================================
 // API PÚBLICA
 // ============================================================
@@ -1174,6 +1194,7 @@ async function getSaleById(saleId: string): Promise<any | null> {
 }
 
 export const Store = {
+  ensurePurchaseHistory,
   applyInventoryMovementsTransaction,
   async createCashMovementTransaction(params: {
     operationId: string;
