@@ -267,6 +267,39 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       ...val,
       moneda:esMetodoUSD(metodo)?'USD':(esMetodoBS(metodo)?'BS':'USD')
     }));
+
+    // EFECTIVO FÍSICO: estos totales son exclusivamente de efectivo original,
+    // nunca equivalentes convertidos ni otros métodos de pago.
+    const efectivoBS = ensureArqueo('efectivo_bs');
+    const efectivoUSD = ensureArqueo('efectivo_usd');
+    const estimadoEfectivoBS = {
+      ventas: Number(efectivoBS.ventasBS) || 0,
+      cobrosDeuda: Number(efectivoBS.cobrosBS) || 0,
+      entradas: Number(efectivoBS.movPlusBS) || 0,
+      fondo: Number(terminalCash.fondoCajaHoyBS) || 0,
+      devolucionesAnulaciones: Number(efectivoBS.devBS) || 0,
+      egresos: Number(efectivoBS.movMinusBS) || 0,
+      total: (Number(terminalCash.fondoCajaHoyBS) || 0) +
+        (Number(efectivoBS.ventasBS) || 0) +
+        (Number(efectivoBS.cobrosBS) || 0) +
+        (Number(efectivoBS.movPlusBS) || 0) -
+        (Number(efectivoBS.devBS) || 0) -
+        (Number(efectivoBS.movMinusBS) || 0)
+    };
+    const estimadoEfectivoUSD = {
+      ventas: Number(efectivoUSD.ventasUSD) || 0,
+      cobrosDeuda: Number(efectivoUSD.cobrosUSD) || 0,
+      entradas: Number(efectivoUSD.movPlusUSD) || 0,
+      fondo: Number(terminalCash.fondoCajaHoyUSD) || 0,
+      devolucionesAnulaciones: Number(efectivoUSD.devUSD) || 0,
+      egresos: Number(efectivoUSD.movMinusUSD) || 0,
+      total: (Number(terminalCash.fondoCajaHoyUSD) || 0) +
+        (Number(efectivoUSD.ventasUSD) || 0) +
+        (Number(efectivoUSD.cobrosUSD) || 0) +
+        (Number(efectivoUSD.movPlusUSD) || 0) -
+        (Number(efectivoUSD.devUSD) || 0) -
+        (Number(efectivoUSD.movMinusUSD) || 0)
+    };
     const ventasCreditoUSD=vActivas.filter((v:any)=>String(v.metodoPago||'').toLowerCase()==='credito'||(Array.isArray(v.payments)&&v.payments.some((p:any)=>p.metodo==='credito'))).reduce((s:number,v:any)=>s+(Number(v.totalUSD)||0),0);
 
     const terminalName = resolvedTerminal?.nombre || 'CAJA NO IDENTIFICADA';
@@ -290,6 +323,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       totalVentasUSD: brUSD,
       metodosArqueo,
       ventasCreditoUSD,
+      estimadoEfectivoBS,
+      estimadoEfectivoUSD,
       tasaBCV: state.tasa || 0
     };
   };
