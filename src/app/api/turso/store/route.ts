@@ -16,6 +16,7 @@ import {
   factoryResetTransaction,
   createSaleTransaction,
   applyInventoryMovementsTransaction,
+  syncProductsStockFromKardex,
   patchTerminalTransaction,
   upsertTerminalTransaction,
   deleteTerminalTransaction,
@@ -134,6 +135,10 @@ export async function POST(request: Request) {
       case 'upsert': {
         if (user.rol !== 'administrador') throw new Error('Se requiere administrador.');
         const result = await upsertRecords(table(body.table), Array.isArray(body.records) ? body.records : []);
+        return NextResponse.json({ ok: true, ...result });
+      }
+      case 'inventoryStockSync': {
+        const result = await syncProductsStockFromKardex();
         return NextResponse.json({ ok: true, ...result });
       }
       case 'inventory': {
