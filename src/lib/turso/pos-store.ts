@@ -451,10 +451,19 @@ export async function createSaleTransaction(params: {
       return acc;
     }, { total: 0, base: 0, iva: 0, exento: 0 });
 
-    const totalPaid = payments.reduce((s, p) => s + (Number(p.montoUSD) || 0), 0);
-    if (!credit && totalPaid + 0.001 < totals.total) {
+    // Validar el pago en céntimos USD. Esto es especialmente importante
+    // cuando una venta combina efectivo BS + un método USD: la conversión
+    // puede producir valores decimales como 2.339999... aunque visualmente
+    // sean $2,34.
+    const totalCentsUsd = Math.round((Number(totals.total) || 0) * 100);
+    const totalPaidCentsUsd = payments.reduce(
+      (s, p) => s + Math.round((Number(p.montoUSD) || 0) * 100),
+      0
+    );
+    if (!credit && totalPaidCentsUsd < totalCentsUsd) {
       throw new Error('El pago recibido es menor al total de la venta.');
     }
+    const totalPaid = totalPaidCentsUsd / 100;
 
     const deductions = new Map<string, { qty: number; references: string[] }>();
     for (const item of cart) {
