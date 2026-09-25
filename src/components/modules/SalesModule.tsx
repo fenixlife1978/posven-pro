@@ -318,22 +318,6 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     const desdeNC=sortedDevs[0]?.id||'N/A';
     const hastaNC=sortedDevs[sortedDevs.length-1]?.id||'N/A';
 
-    const relevantDiario=allLibroDiario.filter(e=>inWindow(e.fecha)&&String(e.terminalId||'')===termId);
-    const totalSalidasCaja=relevantDiario.filter(e=>e.tipo==='egreso').reduce((s,e)=>s+(Number(e.montoUSD)||0),0);
-    const totalEntradasCaja=relevantDiario.filter(e=>e.tipo==='ingreso'&&e.categoria!=='VENTA'&&e.categoria!=='COBRO_DEUDA').reduce((s,e)=>s+(Number(e.montoUSD)||0),0);
-    const esMovimientoCaja=(e:any)=>{
-      const categoria=String(e?.categoria||'').trim().toUpperCase().replace(/Á/g,'A');
-      return categoria==='MOVIMIENTO_CAJA' || categoria==='MOVIMIENTO DE CAJA' || String(e?.type||'').toUpperCase()==='MOVIMIENTO CAJA';
-    };
-    const movimientosCaja=relevantDiario.filter((e:any)=>
-      esMovimientoCaja(e) &&
-      (e.tipo==='ingreso'||e.tipo==='egreso')
-    );
-    const totalSalidasCajaBS=movimientosCaja.filter(e=>e.tipo==='egreso'&&normalizarMetodo(e.metodo)==='efectivo_bs').reduce((s,e)=>s+(Number(e.montoBS)||0),0);
-    const totalSalidasCajaUSD=movimientosCaja.filter(e=>e.tipo==='egreso'&&normalizarMetodo(e.metodo)==='efectivo_usd').reduce((s,e)=>s+(Number(e.montoUSD)||0),0);
-    const totalEntradasCajaBS=movimientosCaja.filter(e=>e.tipo==='ingreso'&&normalizarMetodo(e.metodo)==='efectivo_bs').reduce((s,e)=>s+(Number(e.montoBS)||0),0);
-    const totalEntradasCajaUSD=movimientosCaja.filter(e=>e.tipo==='ingreso'&&normalizarMetodo(e.metodo)==='efectivo_usd').reduce((s,e)=>s+(Number(e.montoUSD)||0),0);
-
     // Todos los métodos se normalizan antes de alimentar el arqueo. Esto evita
     // que TARJETA/PUNTO DE VENTA terminen en filas distintas.
     const normalizarMetodo=(m:any)=>{
@@ -354,6 +338,22 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       );
       return {metodo,usd:usd*factor,bs:bs*factor};
     };
+    const relevantDiario=allLibroDiario.filter(e=>inWindow(e.fecha)&&String(e.terminalId||'')===termId);
+    const totalSalidasCaja=relevantDiario.filter(e=>e.tipo==='egreso').reduce((s,e)=>s+(Number(e.montoUSD)||0),0);
+    const totalEntradasCaja=relevantDiario.filter(e=>e.tipo==='ingreso'&&e.categoria!=='VENTA'&&e.categoria!=='COBRO_DEUDA').reduce((s,e)=>s+(Number(e.montoUSD)||0),0);
+    const esMovimientoCaja=(e:any)=>{
+      const categoria=String(e?.categoria||'').trim().toUpperCase().replace(/Á/g,'A');
+      return categoria==='MOVIMIENTO_CAJA' || categoria==='MOVIMIENTO DE CAJA' || String(e?.type||'').toUpperCase()==='MOVIMIENTO CAJA';
+    };
+    const movimientosCaja=relevantDiario.filter((e:any)=>
+      esMovimientoCaja(e) &&
+      (e.tipo==='ingreso'||e.tipo==='egreso')
+    );
+    const totalSalidasCajaBS=movimientosCaja.filter(e=>e.tipo==='egreso'&&normalizarMetodo(e.metodo)==='efectivo_bs').reduce((s,e)=>s+(Number(e.montoBS)||0),0);
+    const totalSalidasCajaUSD=movimientosCaja.filter(e=>e.tipo==='egreso'&&normalizarMetodo(e.metodo)==='efectivo_usd').reduce((s,e)=>s+(Number(e.montoUSD)||0),0);
+    const totalEntradasCajaBS=movimientosCaja.filter(e=>e.tipo==='ingreso'&&normalizarMetodo(e.metodo)==='efectivo_bs').reduce((s,e)=>s+(Number(e.montoBS)||0),0);
+    const totalEntradasCajaUSD=movimientosCaja.filter(e=>e.tipo==='ingreso'&&normalizarMetodo(e.metodo)==='efectivo_usd').reduce((s,e)=>s+(Number(e.montoUSD)||0),0);
+
     const arqueoMap:Record<string,any>={};
     const ensureArqueo=(metodo:string)=>{
       if(!arqueoMap[metodo]) arqueoMap[metodo]={ventasBS:0,ventasUSD:0,cobrosBS:0,cobrosUSD:0,devBS:0,devUSD:0,movPlusBS:0,movPlusUSD:0,movMinusBS:0,movMinusUSD:0};
