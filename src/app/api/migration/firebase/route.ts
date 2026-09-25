@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSessionUser } from '@/lib/auth/turso-auth';
 import { isTursoConfigured } from '@/lib/turso/client';
-import { importarRespaldoFirebase, validateFirebaseBackup } from '@/lib/turso/migration';
+import { importarRespaldoFirebase, repararDeudasMigradas, validateFirebaseBackup } from '@/lib/turso/migration';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,6 +16,13 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json();
+    if (body?.action === 'repair-cxc') {
+      if (body?.confirm !== 'REPARAR_CXC_MIGRADO') {
+        return NextResponse.json({ error: 'Falta confirmación explícita REPARAR_CXC_MIGRADO.' }, { status: 400 });
+      }
+      const result = await repararDeudasMigradas();
+      return NextResponse.json({ ok: true, mode: 'repair-cxc', ...result });
+    }
     const backup = body?.backup;
     const validation = validateFirebaseBackup(backup);
     if (body?.dryRun !== false) return NextResponse.json({ ok: true, ...validation, mode: 'dry-run' });
