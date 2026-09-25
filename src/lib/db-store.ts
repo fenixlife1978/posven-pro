@@ -1664,6 +1664,18 @@ export const Store = {
     return result;
   },
 
+  async syncProductsStockFromKardex(): Promise<any> {
+    if (typeof window === 'undefined') {
+      throw new Error('La sincronización de inventario solo puede ejecutarse desde el cliente mediante Turso.');
+    }
+    const result = await tryTursoOperation('inventoryStockSync', {});
+    if (!result) throw new Error('Turso no confirmó la sincronización del stock con Kardex.');
+    if (Array.isArray(result.products) && result.products.length) {
+      applyPatch({ productos: mergeById(cache.productos, result.products) });
+    }
+    return result;
+  },
+
   async createPurchaseTransaction(params: {
     operationId?: string;
     purchase: any;
