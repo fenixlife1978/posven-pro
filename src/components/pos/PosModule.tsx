@@ -244,8 +244,21 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       });
     });
     cobroDeudaVentas.forEach((v:any) => { const pays=Array.isArray(v.payments)&&v.payments.length?v.payments:[{metodo:v.metodoPago||'otros',montoUSD:v.totalUSD,montoBS:v.totalBS}]; pays.forEach((p:any)=>{const x=addPaymentTo(p);const row=ensureArqueo(x.metodo);if(esMetodoUSD(x.metodo))row.cobrosUSD+=x.usd;else if(esMetodoBS(x.metodo))row.cobrosBS+=x.bs;else row.cobrosUSD+=x.usd;}); });
-    vAnuladas.forEach((v:any) => { const pays=Array.isArray(v.payments)&&v.payments.length?v.payments:[{metodo:v.metodoPago||'otros',montoUSD:v.totalUSD,montoBS:v.totalBS}]; pays.forEach((p:any)=>{const x=addPaymentTo(p);const row=ensureArqueo(x.metodo);if(esMetodoUSD(x.metodo))row.devUSD+=x.usd;else if(esMetodoBS(x.metodo))row.devBS+=x.bs;else row.devUSD+=x.usd;}); });
-    dHoy.forEach((d:any) => { const sale:any=allVentas.find((v:any)=>v.id===d.ventaId); const pays=sale&&Array.isArray(sale.payments)&&sale.payments.length?sale.payments:[{metodo:sale?.metodoPago||'otros',montoUSD:d.totalUSD,montoBS:(Number(d.totalUSD)||0)*(state.tasa||1)}]; const saleTotal=Math.max(Number(sale?.totalUSD)||0,0.000001); pays.forEach((p:any)=>{const x=addPaymentTo(p,(Number(d.totalUSD)||0)/saleTotal);const row=ensureArqueo(x.metodo);if(esMetodoUSD(x.metodo))row.devUSD+=x.usd;else if(esMetodoBS(x.metodo))row.devBS+=x.bs;else row.devUSD+=x.usd;}); });
+    // DEV./ANU.: usar el método y la moneda ORIGINALES del reembolso efectuado.
+    // No se reconstruye desde los métodos de la venta porque el reembolso
+    // puede haberse hecho por un método/moneda diferente.
+    const aplicarReembolso = (doc:any) => {
+      const pagos = Array.isArray(doc?.refundPayments) ? doc.refundPayments : [];
+      pagos.forEach((p:any) => {
+        const x=addPaymentTo(p);
+        const row=ensureArqueo(x.metodo);
+        if(esMetodoUSD(x.metodo)) row.devUSD+=x.usd;
+        else if(esMetodoBS(x.metodo)) row.devBS+=x.bs;
+        else row.devUSD+=x.usd;
+      });
+    };
+    vAnuladas.forEach((v:any) => aplicarReembolso(v));
+    dHoy.forEach((d:any) => aplicarReembolso(d));
     movimientosCaja.forEach((e:any) => {
       const metodo = String(e?.metodo || 'otros');
       const row = ensureArqueo(metodo);
