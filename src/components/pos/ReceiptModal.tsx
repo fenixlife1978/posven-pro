@@ -117,8 +117,10 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
     if (data.cajero) return data.cajero;
     if (data.cashier) return data.cashier;
     const currentUser = (state as any).user;
-    if (currentUser) return currentUser.nombre || currentUser.email || 'Administrador';
-    return 'Administrador';
+    if (currentUser) {
+      return currentUser.nombre || currentUser.name || currentUser.displayName || currentUser.email || 'Cajero';
+    }
+    return 'Cajero';
   }, [data.cajeroNombre, data.cajero, data.cashier]);
 
   const totalBs = React.useMemo(() => {
@@ -187,8 +189,9 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
 
   const [arqueoReal, setArqueoReal] = React.useState<Record<string, string>>({});
   const arqueoRows = React.useMemo(() => {
-    const rows = (Array.isArray(data?.metodosArqueo) ? data.metodosArqueo : []).filter((r:any) => !['otros','mixto','mixtos'].includes(String(r?.metodo || '').toLowerCase()));
-    const base = ['efectivo_bs','efectivo_usd','pagomovil','punto_venta','biopago','transferencia','zelle','credito'];
+    const rows = (Array.isArray(data?.metodosArqueo) ? data.metodosArqueo : [])
+      .filter((r:any) => !['otros','mixto','mixtos','punto_venta','punto_de_venta','punto_pago','punto_de_pago'].includes(String(r?.metodo || '').toLowerCase()));
+    const base = ['efectivo_bs','efectivo_usd','pagomovil','tarjeta','biopago','transferencia','zelle','credito'];
     const map = new Map<string, any>();
     [...base, ...rows.map((r:any) => r.metodo)].forEach((metodo) => { if (metodo) map.set(metodo, rows.find((r:any)=>r.metodo===metodo) || {metodo,ventasBS:0,ventasUSD:0,cobrosBS:0,cobrosUSD:0,devBS:0,devUSD:0,moneda: isUsdPayment(metodo) ? 'USD' : 'BS'}); });
     return Array.from(map.values());
