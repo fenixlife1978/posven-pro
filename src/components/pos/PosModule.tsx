@@ -200,36 +200,47 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       !esAjusteDevolucionAnulacion(e)
     );
 
-    // COBROS DE DEUDA: tomar el monto ORIGINAL registrado en cada medio de pago
-    // del libro diario. Un cobro en BS también conserva montoUSD como equivalente
-    // contable, pero ESE EQUIVALENTE NO puede sumarse al total de cobros en USD.
-    // USD = únicamente efectivo USD + Zelle.
-    // BS = efectivo BS + Pago Móvil + punto de venta + Biopago + transferencia.
-    // Cada pago mixto está guardado como una entrada independiente, por lo que
-    // aquí no se convierte ni se mezcla una moneda con la otra.
+    // COBROS DE DEUDA: separar SIEMPRE por la moneda ORIGINAL del pago.
+    // Nunca usar montoUSD de un pago en Bs. como "cobro USD": montoUSD puede
+    // ser solamente su equivalencia contable. La fuente prioritaria son los
+    // componentes payments de la operación; el libro diario se usa como
+    // respaldo cuando una operación histórica no tiene payments.
     const cobroDeudaVentas = allVentas.filter(v => inWindow(v.fecha) && String(v.terminalId || '') === termId && esCobroDeuda(v));
     const cobrosDeudaDiario = relevantDiario.filter((e:any) =>
-      e.tipo === 'ingreso' && String(e.categoria || '').toUpperCase() === 'COBRO_DEUDA'
+      e.tipo === 'ingreso' && String(e.categoria || '').trim().toUpperCase() === 'COBRO_DEUDA'
     );
-    const metodosUSDDeuda = new Set(['efectivo_usd', 'zelle']);
-    const metodosBSDeuda = new Set(['efectivo_bs', 'pagomovil', 'punto_venta', 'biopago', 'transferencia']);
-    const cobrosDeudaUSD = cobrosDeudaDiario
-      .filter((e:any) => metodosUSDDeuda.has(String(e.metodo || '').toLowerCase()))
-      .reduce((s:number, e:any) => s + (Number(e.montoUSD) || 0), 0);
-    const cobrosDeudaBS = cobrosDeudaDiario
-      .filter((e:any) => metodosBSDeuda.has(String(e.metodo || '').toLowerCase()))
-      .reduce((s:number, e:any) => s + (Number(e.montoBS) || 0), 0);
 
-    const esMetodoUSD = (m:any) => m === 'efectivo_usd' || m === 'zelle';
-    const esMetodoBS = (m:any) => ['efectivo_bs','pagomovil','punto_venta','biopago','transferencia'].includes(String(m));
+    const normalizarMetodo = (m:any) => String(m || '').trim().toLowerCase()
+      .normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').replace(/\\s+/g, '_');
+    const esMetodoUSD = (m:any) => ['efectivo_usd','usd','dolar','dolares','zelle'].includes(normalizarMetodo(m));
+    const esMetodoBS = (m:any) => [
+      'efectivo_bs','efectivo','bs','bolivares','tarjeta','tarjeta_debito','tarjeta_credito',
+      'pagomovil','pago_movil','punto_venta','punto_de_venta','biopago','transferencia'
+    ].includes(normalizarMetodo(m));
+
     const addPaymentTo = (p:any, factor=1) => {
-      const metodo=String(p?.metodo || p?.method || 'otros');
-      const usdBase=Number(p?.montoUSD) || Number(p?.usdAmount) || Number(p?.monto) || 0;
-      const bsBase=Number(p?.montoBS) || (esMetodoBS(metodo) ? (Number(p?.amount) || Number(p?.totalBS) || usdBase*(state.tasa||1)) : 0);
-      return {metodo,usd:usdBase*factor,bs:bsBase*factor};
+      const metodo = String(p?.metodo || p?.method || 'otros').trim().toLowerCase();
+      const usdBase = Number(p?.montoUSD ?? p?.usdAmount ?? 0) || 0;
+      const bsBase = Number(p?.montoBS ?? p?.amountBS ?? p?.amount ?? 0) || 0;
+      return { metodo, usd: usdBase * factor, bs: bsBase * factor };
     };
+
+    // Obtiene los componentes monetarios originales de un cobro.
+    // paymentParts permite conservar el desglose incluso en pagos globales
+    // donde el asiento contable principal tiene metodo="mixto".
+    const getOriginalPaymentParts = (source:any): any[] => {
+      const parts = source?.paymentParts || source?.pagos || source?.payments;
+      if (Array.isArray(parts) && parts.length) return parts;
+      if (source?.metodo || source?.method) return [source];
+      return [];
+    };
+
     const arqueoMap: Record<string, any> = {};
-    const ensureArqueo = (metodo:string) => { if (!arqueoMap[metodo]) arqueoMap[metodo]={ventasBS:0,ventasUSD:0,cobrosBS:0,cobrosUSD:0,devBS:0,devUSD:0}; return arqueoMap[metodo]; };
+    const ensureArqueo = (metodo:string) => {
+      if (!arqueoMap[metodo]) arqueoMap[metodo]={ventasBS:0,ventasUSD:0,cobrosBS:0,cobrosUSD:0,devBS:0,devUSD:0,movPlusBS:0,movPlusUSD:0,movMinusBS:0,movMinusUSD:0};
+      return arqueoMap[metodo];
+    };
+
     vActivas.forEach((v:any) => {
       const pays=Array.isArray(v.payments)&&v.payments.length
         ? v.payments
@@ -243,10 +254,42 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         else row.ventasUSD+=x.usd;
       });
     });
-    cobroDeudaVentas.forEach((v:any) => { const pays=Array.isArray(v.payments)&&v.payments.length?v.payments:[{metodo:v.metodoPago||'otros',montoUSD:v.totalUSD,montoBS:v.totalBS}]; pays.forEach((p:any)=>{const x=addPaymentTo(p);const row=ensureArqueo(x.metodo);if(esMetodoUSD(x.metodo))row.cobrosUSD+=x.usd;else if(esMetodoBS(x.metodo))row.cobrosBS+=x.bs;else row.cobrosUSD+=x.usd;}); });
+
+    // Prioridad 1: ventas COBRO DEUDA, que contienen payments con la moneda
+    // original. Se registra también qué referencias ya fueron cubiertas para
+    // no duplicarlas cuando exista el mismo asiento en libroDiario.
+    const referenciasCobro = new Set<string>();
+    cobroDeudaVentas.forEach((v:any) => {
+      const pays = getOriginalPaymentParts(v);
+      pays.forEach((p:any) => {
+        const x=addPaymentTo(p);
+        const row=ensureArqueo(x.metodo);
+        if(esMetodoUSD(x.metodo)) row.cobrosUSD += x.usd;
+        else if(esMetodoBS(x.metodo)) row.cobrosBS += x.bs;
+        else if(x.usd > 0) row.cobrosUSD += x.usd;
+      });
+      if (v.id) referenciasCobro.add(String(v.id));
+    });
+
+    // Prioridad 2: libroDiario para cobros antiguos o globales. Si trae
+    // paymentParts, se distribuye por cada componente. Si es metodo=mixto
+    // sin componentes, NO se inventa una moneda ni se convierte el monto.
+    cobrosDeudaDiario.forEach((e:any) => {
+      const referencia = String(e?.referencia || '');
+      const yaCubierto = referencia && referenciasCobro.has(referencia);
+      if (yaCubierto) return;
+      const parts = getOriginalPaymentParts(e);
+      parts.forEach((p:any) => {
+        const x=addPaymentTo(p);
+        const row=ensureArqueo(x.metodo);
+        if(esMetodoUSD(x.metodo)) row.cobrosUSD += x.usd;
+        else if(esMetodoBS(x.metodo)) row.cobrosBS += x.bs;
+        // metodo mixto sin desglose se ignora deliberadamente: no hay forma
+        // válida de saber cuánto pertenece a cada moneda.
+      });
+    });
+
     // DEV./ANU.: usar el método y la moneda ORIGINALES del reembolso efectuado.
-    // No se reconstruye desde los métodos de la venta porque el reembolso
-    // puede haberse hecho por un método/moneda diferente.
     const aplicarReembolso = (doc:any) => {
       const pagos = Array.isArray(doc?.refundPayments) ? doc.refundPayments : [];
       pagos.forEach((p:any) => {
@@ -259,30 +302,29 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     };
     vAnuladas.forEach((v:any) => aplicarReembolso(v));
     dHoy.forEach((d:any) => aplicarReembolso(d));
+
     movimientosCaja.forEach((e:any) => {
-      const metodo = String(e?.metodo || 'otros');
+      const metodo = String(e?.metodo || 'otros').trim().toLowerCase();
       const row = ensureArqueo(metodo);
-      const esUSD = esMetodoUSD(metodo);
       const montoUSD = Number(e?.montoUSD) || 0;
-      const montoBS = Number(e?.montoBS) || (esMetodoBS(metodo) ? montoUSD * (state.tasa || 1) : 0);
+      const montoBS = Number(e?.montoBS) || 0;
       if (e.tipo === 'ingreso') {
-        if (esUSD) row.movPlusUSD += montoUSD;
+        if (esMetodoUSD(metodo)) row.movPlusUSD += montoUSD;
         else if (esMetodoBS(metodo)) row.movPlusBS += montoBS;
-        else row.movPlusUSD += montoUSD;
       } else if (e.tipo === 'egreso') {
-        if (esUSD) row.movMinusUSD += montoUSD;
+        if (esMetodoUSD(metodo)) row.movMinusUSD += montoUSD;
         else if (esMetodoBS(metodo)) row.movMinusBS += montoBS;
-        else row.movMinusUSD += montoUSD;
       }
     });
+
     const metodosArqueo=Object.entries(arqueoMap).map(([metodo,val]:any)=>({
       metodo,
       ...val,
       moneda:esMetodoUSD(metodo)?'USD':(esMetodoBS(metodo)?'BS':'USD')
     }));
 
-    // EFECTIVO FÍSICO: estos totales son exclusivamente de efectivo original,
-    // nunca equivalentes convertidos ni otros métodos de pago.
+    // EFECTIVO FÍSICO: exclusivamente moneda original. Los cobros en Bs.
+    // aumentan el estimado Bs.; los cobros en USD aumentan el estimado USD.
     const efectivoBS = ensureArqueo('efectivo_bs');
     const efectivoUSD = ensureArqueo('efectivo_usd');
     const estimadoEfectivoBS = {
@@ -292,12 +334,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       fondo: Number(terminalCash.fondoCajaHoyBS) || 0,
       devolucionesAnulaciones: Number(efectivoBS.devBS) || 0,
       egresos: Number(efectivoBS.movMinusBS) || 0,
-      total: (Number(terminalCash.fondoCajaHoyBS) || 0) +
-        (Number(efectivoBS.ventasBS) || 0) +
-        (Number(efectivoBS.cobrosBS) || 0) +
-        (Number(efectivoBS.movPlusBS) || 0) -
-        (Number(efectivoBS.devBS) || 0) -
-        (Number(efectivoBS.movMinusBS) || 0)
+      total: (Number(terminalCash.fondoCajaHoyBS) || 0) + Number(efectivoBS.ventasBS || 0) + Number(efectivoBS.cobrosBS || 0) + Number(efectivoBS.movPlusBS || 0) - Number(efectivoBS.devBS || 0) - Number(efectivoBS.movMinusBS || 0)
     };
     const estimadoEfectivoUSD = {
       ventas: Number(efectivoUSD.ventasUSD) || 0,
@@ -306,13 +343,12 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       fondo: Number(terminalCash.fondoCajaHoyUSD) || 0,
       devolucionesAnulaciones: Number(efectivoUSD.devUSD) || 0,
       egresos: Number(efectivoUSD.movMinusUSD) || 0,
-      total: (Number(terminalCash.fondoCajaHoyUSD) || 0) +
-        (Number(efectivoUSD.ventasUSD) || 0) +
-        (Number(efectivoUSD.cobrosUSD) || 0) +
-        (Number(efectivoUSD.movPlusUSD) || 0) -
-        (Number(efectivoUSD.devUSD) || 0) -
-        (Number(efectivoUSD.movMinusUSD) || 0)
+      total: (Number(terminalCash.fondoCajaHoyUSD) || 0) + Number(efectivoUSD.ventasUSD || 0) + Number(efectivoUSD.cobrosUSD || 0) + Number(efectivoUSD.movPlusUSD || 0) - Number(efectivoUSD.devUSD || 0) - Number(efectivoUSD.movMinusUSD || 0)
     };
+    const cobrosDeudaUSD = cobroDeudaVentas.reduce((s:number,v:any)=>s + getOriginalPaymentParts(v).filter((p:any)=>esMetodoUSD(p?.metodo || p?.method)).reduce((x:number,p:any)=>x + (Number(p?.montoUSD ?? p?.usdAmount) || 0),0),0)
+      + cobrosDeudaDiario.filter((e:any)=>!referenciasCobro.has(String(e?.referencia||''))).reduce((s:number,e:any)=>s + getOriginalPaymentParts(e).filter((p:any)=>esMetodoUSD(p?.metodo || p?.method)).reduce((x:number,p:any)=>x + (Number(p?.montoUSD ?? p?.usdAmount) || 0),0),0);
+    const cobrosDeudaBS = cobroDeudaVentas.reduce((s:number,v:any)=>s + getOriginalPaymentParts(v).filter((p:any)=>esMetodoBS(p?.metodo || p?.method)).reduce((x:number,p:any)=>x + (Number(p?.montoBS ?? p?.amountBS ?? p?.amount) || 0),0),0)
+      + cobrosDeudaDiario.filter((e:any)=>!referenciasCobro.has(String(e?.referencia||''))).reduce((s:number,e:any)=>s + getOriginalPaymentParts(e).filter((p:any)=>esMetodoBS(p?.metodo || p?.method)).reduce((x:number,p:any)=>x + (Number(p?.montoBS ?? p?.amountBS ?? p?.amount) || 0),0),0);
     const ventasCreditoUSD=vActivas.filter((v:any)=>String(v.metodoPago||'').toLowerCase()==='credito'||(Array.isArray(v.payments)&&v.payments.some((p:any)=>p.metodo==='credito'))).reduce((s:number,v:any)=>s+(Number(v.totalUSD)||0),0);
 
     const terminalName = resolvedTerminal?.nombre || 'CAJA NO IDENTIFICADA';
