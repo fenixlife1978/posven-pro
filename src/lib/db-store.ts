@@ -2018,10 +2018,17 @@ export const Store = {
         return acc;
       }, { total: 0, base: 0, iva: 0, exento: 0 });
 
-      const totalPaid = payments.reduce((s: number, p: any) => s + (Number(p.montoUSD) || 0), 0);
-      if (!credit && totalPaid + 0.001 < totals.total) {
+      // Validación de pago por céntimos USD para evitar errores de coma flotante
+      // en ventas mixtas (ej.: Bs 2.000 + USD 2,76 = USD 5,10).
+      const totalCentsUsd = Math.round((Number(totals.total) || 0) * 100);
+      const totalPaidCentsUsd = payments.reduce(
+        (s: number, p: any) => s + Math.round((Number(p.montoUSD) || 0) * 100),
+        0
+      );
+      if (!credit && totalPaidCentsUsd < totalCentsUsd) {
         throw new Error('El pago recibido es menor al total de la venta.');
       }
+      const totalPaid = totalPaidCentsUsd / 100;
 
       const movements: any[] = [];
       const productUpdates = new Map<string, any>();
