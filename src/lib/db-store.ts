@@ -1694,6 +1694,9 @@ export const Store = {
     if (!result) {
       throw new Error('Turso no confirmó el registro de la compra.');
     }
+    if (Array.isArray(result.products) && result.products.length) {
+      applyPatch({ productos: mergeById(cache.productos, result.products) });
+    }
     return result;
   },
 
