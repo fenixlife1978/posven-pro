@@ -1108,10 +1108,26 @@ export async function deletePurchaseTransaction(params:any){
       args:[String(invoiceNumber),String(supplier)]
     })).rows.map(rowFromDb).filter((d:any)=>!purchaseDate||String(d.fecha||'').slice(0,10)===String(purchaseDate).slice(0,10));
 
-    const journals=(await tx.execute({
+    const purchaseJournals=(await tx.execute({
       sql:"SELECT id,data_json FROM libro_diario WHERE json_extract(data_json,'$.referencia')=?",
       args:[String(invoiceNumber)]
     })).rows.map(rowFromDb).filter((d:any)=>String(d.categoria||'')==='COMPRA');
+
+    // Si la compra generó una CxP y luego recibió abonos, esos abonos también
+    // generaron asientos contables. Al eliminar la compra se eliminan esos
+    // asientos junto con la deuda para que no quede ningún efecto contable.
+    const paymentJournalIds=[...new Set(
+      debts.flatMap((d:any)=>Array.isArray(d.historialPagos)?d.historialPagos:[])
+        .map((p:any)=>String(p?.asientoId||'').trim())
+        .filter(Boolean)
+    )];
+    const paymentJournals=paymentJournalIds.length
+      ? (await tx.execute({
+          sql:`SELECT id,data_json FROM libro_diario WHERE id IN (${paymentJournalIds.map(()=>'?').join(',')})`,
+          args:paymentJournalIds
+        })).rows.map(rowFromDb)
+      : [];
+    const journals=[...purchaseJournals,...paymentJournals.filter((j:any)=>!purchaseJournals.some((p:any)=>String(p.id)===String(j.id)))];
 
     const purchaseReference=`COMPRA FACT: ${invoiceNumber} - PROV: ${supplier}`;
     const deleted=(await tx.execute({
