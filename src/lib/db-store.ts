@@ -1871,10 +1871,11 @@ export const Store = {
     saleType?: string;
     credit?: { customer: any; debtId: string };
     cajeroId?: string;
+    cajeroNombre?: string;
     fromOfflineQueue?: boolean;
   }): Promise<any> {
     if (typeof window === 'undefined') return null;
-    const { operationId, cart, payments, clientName, terminalId, fallbackReceiptNumber, now, tasa, saleType = 'VENTA', credit, cajeroId, fromOfflineQueue } = params;
+    const { operationId, cart, payments, clientName, terminalId, fallbackReceiptNumber, now, tasa, saleType = 'VENTA', credit, cajeroId, cajeroNombre, fromOfflineQueue } = params;
     const resolvedTerminalId = String(terminalId || '').trim();
     // Una venta hecha desde el POS de un cajero debe pertenecer siempre a una caja
     // concreta. Nunca permitimos registrar una venta operativa como GLOBAL, porque
@@ -1904,7 +1905,7 @@ export const Store = {
         subtotalUSD: total, descuentoUSD: 0, totalUSD: total, totalBS: total * tasa,
         metodoPago: credit ? 'credito' : ((payments || []).length > 1 ? 'mixto' : ((payments || [])[0]?.metodo || 'efectivo_usd')),
         estado: 'pendiente', type: saleType, received: paid, change: Math.max(0, paid - total),
-        payments: (payments || []).map((x: any) => ({ ...x })), terminalId: effectiveTerminalId, terminalName: 'PENDIENTE OFFLINE', cajeroId, tasa,
+        payments: (payments || []).map((x: any) => ({ ...x })), terminalId: effectiveTerminalId, terminalName: 'PENDIENTE OFFLINE', cajeroId, cajeroNombre, tasa,
         offlinePending: true, operationId: opId
       };
       let provisionalDebt: any = null;
@@ -2097,6 +2098,7 @@ export const Store = {
         terminalId: effectiveTerminalId,
         terminalName: terminalRemote?.nombre || 'SISTEMA GLOBAL',
         cajeroId,
+        cajeroNombre,
         baseImponibleUSD: Utils.round(totals.base),
         ivaUSD: Utils.round(totals.iva),
         exentoUSD: Utils.round(totals.exento),
