@@ -1275,6 +1275,7 @@ export const Store = {
     const tursoResult = await tryTursoOperation('globalProviderPayment', params);
     if (tursoResult) return tursoResult;
 
+    const effectiveTerminalId = String(terminalId || '').trim();
     const q = query(collection(db, 'cxp'), where('proveedor', '==', provider));
     let result = { appliedUSD: 0, debts: [] as any[] };
     const opId = String(operationId || payment?.id || (provider + '|' + amountUSD + '|' + payment?.fecha + '|' + payment?.metodo));
