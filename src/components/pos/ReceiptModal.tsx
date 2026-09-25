@@ -631,7 +631,37 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
                             <td>TOTAL USD POR COBRO DE DEUDAS:</td>
                             <td className="text-right">$ {formatUsd(data.cobrosDeudaUSD ?? data.cobrosDeudaUsd ?? 0)}</td>
                           </tr>
+                          <tr className="bold">
+                            <td>TOTAL BS POR COBRO DE DEUDAS:</td>
+                            <td className="text-right">{formatBs(Number(data.cobrosDeudaBS ?? 0))}</td>
+                          </tr>
                         </tbody></table>
+
+                        <div className="mt-1">
+                          <div className="text-[9px] font-bold">DESGLOSE POR MÉTODO DE PAGO</div>
+                          <table><tbody>
+                            {(Array.isArray(data.cobrosDeudaPorMetodo) ? data.cobrosDeudaPorMetodo : [])
+                              .filter((p:any) => (Number(p?.montoBS) || 0) > 0.000001 || (Number(p?.montoUSD) || 0) > 0.000001)
+                              .map((p:any, i:number) => {
+                                const metodo = String(p?.metodo || 'otros');
+                                const usd = ['efectivo_usd','zelle','usd','dolar','dolares'].includes(metodo);
+                                const etiqueta = Utils.metodoLabel(metodo);
+                                return (
+                                  <tr key={i}>
+                                    <td>{etiqueta.toUpperCase()}:</td>
+                                    <td className="text-right">
+                                      {usd
+                                        ? `$ ${formatUsd(Number(p?.montoUSD) || 0)}`
+                                        : formatBs(Number(p?.montoBS) || 0)}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            {(!Array.isArray(data.cobrosDeudaPorMetodo) || data.cobrosDeudaPorMetodo.length === 0) && (
+                              <tr><td colSpan={2}>SIN DESGLOSE REGISTRADO</td></tr>
+                            )}
+                          </tbody></table>
+                        </div>
 
                         <div className="separator-dashed"></div>
                         <div className="text-center font-bold">TOTAL NETO EFECTIVO FÍSICO</div>
