@@ -513,10 +513,13 @@ export async function createSaleTransaction(params: {
     const debt = credit ? {
       id: 'CRD-' + reciboId, fecha: now.slice(0, 10), fechaVencimiento: '2099-12-31',
       cliente: `${customer.name} [${customer.cedula}]`, montoUSD: totals.total,
+      subtotalUSD: totals.total, totalUSD: totals.total, totalBS: totals.total * tasa, tasa,
       abonadoUSD: 0, saldoUSD: totals.total, estado: 'pendiente', historialPagos: [],
-      ventaId: reciboId,
+      ventaId: reciboId, facturaId: reciboId,
+      // Snapshot exacto de la factura original para que CxC conserve items,
+      // cantidades y precios aun cuando cambie el catálogo posteriormente.
+      items: cart.map((x: any) => ({ ...x })),
     } : null;
-
     const writes: TursoStatement[] = [{
       sql: 'INSERT INTO operaciones(id,prefijo,operation_id,data_json) VALUES(?,?,?,?)',
       args: [
