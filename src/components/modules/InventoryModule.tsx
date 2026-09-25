@@ -460,8 +460,8 @@ function ReporteGeneral({ state, onAction }: { state: AppState, onAction: (type:
               onChange={e => setDeptFilter(e.target.value)}
             >
               <option value="">TODOS LOS DEPARTAMENTOS</option>
-              {(state.departamentos || []).map(d => (
-                <option key={`dept-report-${d}-${Math.random()}`} value={d}>{d?.toUpperCase()}</option>
+              {Array.from(new Set((state.departamentos || []).map(d => String(d || '').trim()).filter(Boolean))).map(d => (
+                <option key={`dept-report-${d}`} value={d}>{d.toUpperCase()}</option>
               ))}
             </select>
           </div>
