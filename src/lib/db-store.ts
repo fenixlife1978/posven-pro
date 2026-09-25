@@ -530,22 +530,10 @@ async function loadCollection(name: string): Promise<any[]> {
 async function loadAll(name: string): Promise<void> {
   if (loadedAll[name]) return;
   loadedAll[name] = true;
-  const col = COLLECTIONS[name];
-  if (!col) return;
+  if (!COLLECTIONS[name]) return;
   try {
-    const all: any[] = [];
-    let lastDoc: any = null;
-    do {
-      const q = lastDoc
-        ? query(collection(db, col), orderBy('fecha', 'desc'), startAfter(lastDoc), limit(500))
-        : query(collection(db, col), orderBy('fecha', 'desc'), limit(500));
-      const snap = await getDocs(q);
-      const items = snap.docs.map(d => sanitizeForFirestore(d.data())).filter(Boolean);
-      all.push(...items);
-      lastDoc = snap.docs.length > 0 ? snap.docs[snap.docs.length - 1] : null;
-      if (snap.docs.length < 500) break;
-    } while (lastDoc);
-    applyPatch({ [name]: mergeById((cache as any)[name], all) });
+    const items = await loadCollection(name);
+    applyPatch({ [name]: items });
   } catch (e) {
     console.error("Error loadAll " + name + ":", e);
     loadedAll[name] = false;
