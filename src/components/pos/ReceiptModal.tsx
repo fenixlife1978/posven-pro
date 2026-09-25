@@ -585,81 +585,54 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
 
                    <div className="separator-dashed"></div>
 
-                   {/* ===== MOVIMIENTO DE CAJA ===== */}
-                   <div className="text-center font-bold">MOVIMIENTO DE CAJA</div>
-                   <div className="separator-dashed"></div>
-                   {(() => {
-                     const fondoBs = Number(data.fondoAperturaBS ?? data.fondoAperturaBs ?? 0);
-                     const fondoUsd = Number(data.fondoAperturaUSD ?? data.fondoAperturaUsd ?? 0);
-                     const estimadoBS = data.estimadoEfectivoBS || {};
-                     const estimadoUSD = data.estimadoEfectivoUSD || {};
-                     const entradasBs = Number(estimadoBS.entradas) || 0;
-                     const entradasUsd = Number(estimadoUSD.entradas) || 0;
-                     const egresosBs = Number(estimadoBS.egresos) || 0;
-                     const egresosUsd = Number(estimadoUSD.egresos) || 0;
-
-                     return (
-                       <table><tbody>
-                         <tr><td>FONDO APERTURA Bs.:</td><td className="text-right">{formatBs(fondoBs)}</td></tr>
-                         <tr><td>FONDO APERTURA USD:</td><td className="text-right">$ {formatUsd(fondoUsd)}</td></tr>
-                         {entradasBs > 0 && (
-                           <tr className="text-[10px] text-green-700">
-                             <td>ENTRADAS EXTRA EFECTIVO BS:</td>
-                             <td className="text-right">{formatBs(entradasBs)}</td>
-                           </tr>
-                         )}
-                         {entradasUsd > 0 && (
-                           <tr className="text-[10px] text-green-700">
-                             <td>ENTRADAS EXTRA EFECTIVO USD:</td>
-                             <td className="text-right">$ {formatUsd(entradasUsd)}</td>
-                           </tr>
-                         )}
-                         {egresosBs > 0 && (
-                           <tr className="text-[10px] text-red-600">
-                             <td>EGRESO DE CAJA EFECTIVO BS:</td>
-                             <td className="text-right">({formatBs(egresosBs)})</td>
-                           </tr>
-                         )}
-                         {egresosUsd > 0 && (
-                           <tr className="text-[10px] text-red-600">
-                             <td>EGRESO DE CAJA EFECTIVO USD:</td>
-                             <td className="text-right">($ {formatUsd(egresosUsd)})</td>
-                           </tr>
-                         )}
-                       </tbody></table>
-                     );
-                   })()}
-
-                   <div className="separator-dashed"></div>
                    {type === 'REPORT_Z' && (
                      <>
+                        <div className="separator-dashed"></div>
+                        <div className="text-center font-bold">FLUJO DE CAJA</div>
+                        <div className="separator-dashed"></div>
+                        {(() => {
+                          const fondoBs = Number(data.fondoAperturaBS ?? data.fondoAperturaBs ?? 0);
+                          const fondoUsd = Number(data.fondoAperturaUSD ?? data.fondoAperturaUsd ?? 0);
+                          const estimadoBS = data.estimadoEfectivoBS || {};
+                          const estimadoUSD = data.estimadoEfectivoUSD || {};
+                          const entradasBs = Number(estimadoBS.entradas) || 0;
+                          const entradasUsd = Number(estimadoUSD.entradas) || 0;
+                          const egresosBs = Number(estimadoBS.egresos) || 0;
+                          const egresosUsd = Number(estimadoUSD.egresos) || 0;
+                          return (
+                            <table><tbody>
+                              <tr><td>FONDO INICIAL BS:</td><td className="text-right">{formatBs(fondoBs)}</td></tr>
+                              <tr><td>FONDO INICIAL USD:</td><td className="text-right">$ {formatUsd(fondoUsd)}</td></tr>
+                              <tr className="text-[10px] text-green-700">
+                                <td>MOVIMIENTOS DE CAJA (+) — INGRESOS BS:</td>
+                                <td className="text-right">{formatBs(entradasBs)}</td>
+                              </tr>
+                              <tr className="text-[10px] text-green-700">
+                                <td>MOVIMIENTOS DE CAJA (+) — INGRESOS USD:</td>
+                                <td className="text-right">$ {formatUsd(entradasUsd)}</td>
+                              </tr>
+                              <tr className="text-[10px] text-red-600">
+                                <td>MOVIMIENTOS DE CAJA (-) — EGRESOS BS:</td>
+                                <td className="text-right">({formatBs(egresosBs)})</td>
+                              </tr>
+                              <tr className="text-[10px] text-red-600">
+                                <td>MOVIMIENTOS DE CAJA (-) — EGRESOS USD:</td>
+                                <td className="text-right">($ {formatUsd(egresosUsd)})</td>
+                              </tr>
+                            </tbody></table>
+                          );
+                        })()}
+
                         <div className="separator-dashed"></div>
                         <div className="text-center font-bold">COBROS DE DEUDAS</div>
                         <div className="separator-dashed"></div>
                         <table><tbody>
-                          <tr>
-                            <td>TOTAL Bs. POR COBRO DE DEUDAS:</td>
-                            <td className="text-right">{formatBs(data.cobrosDeudaBS ?? data.cobrosDeudaBs ?? 0)}</td>
-                          </tr>
-                          <tr>
+                          <tr className="bold">
                             <td>TOTAL USD POR COBRO DE DEUDAS:</td>
                             <td className="text-right">$ {formatUsd(data.cobrosDeudaUSD ?? data.cobrosDeudaUsd ?? 0)}</td>
                           </tr>
                         </tbody></table>
 
-                        <div className="separator-dashed"></div>
-                        <div className="text-center font-bold">ESTIMADOS EN EFECTIVO BS/USD AL FINAL DE JORNADA</div>
-                        <div className="separator-dashed"></div>
-                        <table><tbody>
-                          <tr className="bold">
-                            <td>TOTAL EFECTIVO BS:</td>
-                            <td className="text-right">{formatBs(Number(data.estimadoEfectivoBS?.total) || 0)}</td>
-                          </tr>
-                          <tr className="bold">
-                            <td>TOTAL EFECTIVO USD:</td>
-                            <td className="text-right">$ {formatUsd(Number(data.estimadoEfectivoUSD?.total) || 0)}</td>
-                          </tr>
-                        </tbody></table>
                         <div className="separator-dashed"></div>
                         <div className="text-center font-bold">CIERRE DE JORNADA EXITOSO</div>
                      </>
