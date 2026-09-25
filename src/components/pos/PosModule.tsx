@@ -219,7 +219,10 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     ].includes(normalizarMetodo(m));
 
     const addPaymentTo = (p:any, factor=1) => {
-      const metodo = String(p?.metodo || p?.method || 'otros').trim().toLowerCase();
+      // Canonicalizamos el método ANTES de usarlo como clave del arqueo.
+      // Así "efectivo", "Efectivo Bs" y "efectivo_bs" terminan en la misma
+      // fila y, sobre todo, en el acumulador físico correcto.
+      const metodo = normalizarMetodo(p?.metodo || p?.method || 'otros');
       const usdBase = Number(p?.montoUSD ?? p?.usdAmount ?? 0) || 0;
       const bsBase = Number(p?.montoBS ?? p?.amountBS ?? p?.amount ?? 0) || 0;
       return { metodo, usd: usdBase * factor, bs: bsBase * factor };
@@ -350,6 +353,23 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     const cobrosDeudaBS = cobroDeudaVentas.reduce((s:number,v:any)=>s + getOriginalPaymentParts(v).filter((p:any)=>esMetodoBS(p?.metodo || p?.method)).reduce((x:number,p:any)=>x + (Number(p?.montoBS ?? p?.amountBS ?? p?.amount) || 0),0),0)
       + cobrosDeudaDiario.filter((e:any)=>!referenciasCobro.has(String(e?.referencia||''))).reduce((s:number,e:any)=>s + getOriginalPaymentParts(e).filter((p:any)=>esMetodoBS(p?.metodo || p?.method)).reduce((x:number,p:any)=>x + (Number(p?.montoBS ?? p?.amountBS ?? p?.amount) || 0),0),0);
 
+    // Desglose explícito del cobro de deudas. Es la fuente que consume el
+    // reporte Z para mostrar cuánto entró por cada medio, sin convertir un
+    // pago en Bs. a USD ni viceversa.
+    const cobrosDeudaPorMetodo: Record<string, { metodo:string; montoBS:number; montoUSD:number }> = {};
+    const addCobroMetodo = (p:any) => {
+      const metodo = normalizarMetodo(p?.metodo || p?.method || 'otros');
+      const bs = Number(p?.montoBS ?? p?.amountBS ?? 0) || 0;
+      const usd = Number(p?.montoUSD ?? p?.usdAmount ?? 0) || 0;
+      if (!cobrosDeudaPorMetodo[metodo]) cobrosDeudaPorMetodo[metodo] = { metodo, montoBS:0, montoUSD:0 };
+      cobrosDeudaPorMetodo[metodo].montoBS += bs;
+      cobrosDeudaPorMetodo[metodo].montoUSD += usd;
+    };
+    cobroDeudaVentas.forEach((v:any) => getOriginalPaymentParts(v).forEach(addCobroMetodo));
+    cobrosDeudaDiario
+      .filter((e:any)=>!referenciasCobro.has(String(e?.referencia||'')))
+      .forEach((e:any)=>getOriginalPaymentParts(e).forEach(addCobroMetodo));
+
     // TOTAL NETO FISICO DEL Z:
     // Solo dinero efectivamente recibido/pagado en efectivo físico.
     // No convierte BS↔USD y no incluye Zelle, transferencias, punto, Pago Móvil,
@@ -397,6 +417,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       estimadoEfectivoUSD,
       totalNetoEfectivoBS,
       totalNetoEfectivoUSD,
+      cobrosDeudaPorMetodo: Object.values(cobrosDeudaPorMetodo),
       tasaBCV: state.tasa || 0
     };
   };
