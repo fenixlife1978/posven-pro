@@ -321,19 +321,36 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     const relevantDiario=allLibroDiario.filter(e=>inWindow(e.fecha)&&String(e.terminalId||'')===termId);
     const totalSalidasCaja=relevantDiario.filter(e=>e.tipo==='egreso').reduce((s,e)=>s+(Number(e.montoUSD)||0),0);
     const totalEntradasCaja=relevantDiario.filter(e=>e.tipo==='ingreso'&&e.categoria!=='VENTA'&&e.categoria!=='COBRO_DEUDA').reduce((s,e)=>s+(Number(e.montoUSD)||0),0);
-    const totalSalidasCajaBS=relevantDiario.filter(e=>e.tipo==='egreso'&&String(e.categoria||'')==='MOVIMIENTO_CAJA'&&String(e.metodo||'')==='efectivo_bs').reduce((s,e)=>s+(Number(e.montoBS)||0),0);
-    const totalSalidasCajaUSD=relevantDiario.filter(e=>e.tipo==='egreso'&&String(e.categoria||'')==='MOVIMIENTO_CAJA'&&String(e.metodo||'')==='efectivo_usd').reduce((s,e)=>s+(Number(e.montoUSD)||0),0);
-    const totalEntradasCajaBS=relevantDiario.filter(e=>e.tipo==='ingreso'&&String(e.categoria||'')==='MOVIMIENTO_CAJA'&&String(e.metodo||'')==='efectivo_bs').reduce((s,e)=>s+(Number(e.montoBS)||0),0);
-    const totalEntradasCajaUSD=relevantDiario.filter(e=>e.tipo==='ingreso'&&String(e.categoria||'')==='MOVIMIENTO_CAJA'&&String(e.metodo||'')==='efectivo_usd').reduce((s,e)=>s+(Number(e.montoUSD)||0),0);
+    const esMovimientoCaja=(e:any)=>{
+      const categoria=String(e?.categoria||'').trim().toUpperCase().replace(/Á/g,'A');
+      return categoria==='MOVIMIENTO_CAJA' || categoria==='MOVIMIENTO DE CAJA' || String(e?.type||'').toUpperCase()==='MOVIMIENTO CAJA';
+    };
+    const movimientosCaja=relevantDiario.filter((e:any)=>
+      esMovimientoCaja(e) &&
+      (e.tipo==='ingreso'||e.tipo==='egreso')
+    );
+    const totalSalidasCajaBS=movimientosCaja.filter(e=>e.tipo==='egreso'&&normalizarMetodo(e.metodo)==='efectivo_bs').reduce((s,e)=>s+(Number(e.montoBS)||0),0);
+    const totalSalidasCajaUSD=movimientosCaja.filter(e=>e.tipo==='egreso'&&normalizarMetodo(e.metodo)==='efectivo_usd').reduce((s,e)=>s+(Number(e.montoUSD)||0),0);
+    const totalEntradasCajaBS=movimientosCaja.filter(e=>e.tipo==='ingreso'&&normalizarMetodo(e.metodo)==='efectivo_bs').reduce((s,e)=>s+(Number(e.montoBS)||0),0);
+    const totalEntradasCajaUSD=movimientosCaja.filter(e=>e.tipo==='ingreso'&&normalizarMetodo(e.metodo)==='efectivo_usd').reduce((s,e)=>s+(Number(e.montoUSD)||0),0);
 
-    const esMetodoUSD=(m:string)=>m==='efectivo_usd'||m==='zelle';
-    const esMetodoBS=(m:string)=>['efectivo_bs','pagomovil','punto_venta','biopago','transferencia'].includes(m);
+    // Todos los métodos se normalizan antes de alimentar el arqueo. Esto evita
+    // que TARJETA/PUNTO DE VENTA terminen en filas distintas.
+    const normalizarMetodo=(m:any)=>{
+      const base=String(m||'otros').trim().toLowerCase()
+        .normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,'_');
+      if (['punto_venta','punto_de_venta','punto_pago','punto_de_pago','tarjeta_debito','tarjeta_credito'].includes(base)) return 'tarjeta';
+      if (base==='pago_movil') return 'pagomovil';
+      return base;
+    };
+    const esMetodoUSD=(m:string)=>['efectivo_usd','zelle','usd','dolar','dolares'].includes(normalizarMetodo(m));
+    const esMetodoBS=(m:string)=>['efectivo_bs','efectivo','bs','bolivares','tarjeta','pagomovil','biopago','transferencia'].includes(normalizarMetodo(m));
     const addPaymentTo=(p:any,factor=1)=>{
-      const metodo=String(p?.metodo||p?.method||'otros');
-      const usd=Number(p?.montoUSD)||Number(p?.usdAmount)||Number(p?.monto)||0;
-      const bs=Number(p?.montoBS)||Number(p?.totalBS)||(
-        esMetodoBS(metodo) ? (Number(p?.amount)||usd*(Number(freshState.tasa)||1)) :
-        esMetodoUSD(metodo) ? usd*(Number(p?.tasaAplicada)||Number(p?.tasa)||Number(freshState.tasa)||1) : 0
+      const metodo=normalizarMetodo(p?.metodo||p?.method||'otros');
+      const usd=Number(p?.montoUSD??p?.usdAmount??0)||0;
+      const bs=Number(p?.montoBS??p?.amountBS??p?.totalBS??0)||(
+        esMetodoBS(metodo) ? (Number(p?.amount)||0) :
+        esMetodoUSD(metodo) ? 0 : 0
       );
       return {metodo,usd:usd*factor,bs:bs*factor};
     };
@@ -388,21 +405,38 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       }
     });
 
-    relevantDiario.filter(e=>e.categoria!=='VENTA'&&e.categoria!=='COBRO_DEUDA').forEach((e:any)=>{
-      const metodo=String(e?.metodo||'otros');const row=ensureArqueo(metodo);
+    movimientosCaja.forEach((e:any)=>{
+      const metodo=normalizarMetodo(e?.metodo||'otros');
+      const row=ensureArqueo(metodo);
       const montoUSD=Number(e?.montoUSD)||0;
-      const montoBS=Number(e?.montoBS)||((esMetodoBS(metodo)?montoUSD*(Number(freshState.tasa)||1):0));
-      if(e.tipo==='ingreso'){if(esMetodoUSD(metodo))row.movPlusUSD+=montoUSD;else row.movPlusBS+=montoBS;}
-      if(e.tipo==='egreso'){if(esMetodoUSD(metodo))row.movMinusUSD+=montoUSD;else row.movMinusBS+=montoBS;}
+      const montoBS=Number(e?.montoBS)||0;
+      if(e.tipo==='ingreso'){
+        if(esMetodoUSD(metodo)) row.movPlusUSD+=montoUSD;
+        else if(esMetodoBS(metodo)) row.movPlusBS+=montoBS;
+      } else if(e.tipo==='egreso'){
+        if(esMetodoUSD(metodo)) row.movMinusUSD+=montoUSD;
+        else if(esMetodoBS(metodo)) row.movMinusBS+=montoBS;
+      }
     });
 
     const metodosArqueo=Object.entries(arqueoMap).map(([metodo,val]:any)=>({metodo,...val,moneda:esMetodoUSD(metodo)?'USD':esMetodoBS(metodo)?'BS':'USD'}));
     const ventasCreditoUSD=vActivas.filter(v=>String(v.metodoPago||'').toLowerCase()==='credito'||(Array.isArray(v.payments)&&v.payments.some((p:any)=>p.metodo==='credito'))).reduce((s,v)=>s+(Number(v.totalUSD)||0),0);
     const cobrosDeudaUSD=cobroDeudaVentas.reduce((s,v)=>s+getSaleCurrencyTotals(v).usd,0);
     const cobrosDeudaBS=cobroDeudaVentas.reduce((s,v)=>s+getSaleCurrencyTotals(v).bs,0);
+
+    // Neto físico: solo efectivo físico de la moneda original. No se convierte
+    // tarjeta/Zelle/Pago Móvil/transferencia a efectivo y se incluyen apertura,
+    // cobros de deuda, movimientos y devoluciones/anulaciones.
+    const efectivoBS=ensureArqueo('efectivo_bs');
+    const efectivoUSD=ensureArqueo('efectivo_usd');
+    const fondoBS=Number(tc.fondoCajaHoyBS)||0;
+    const fondoUSD=Number(tc.fondoCajaHoyUSD)||0;
+    const totalNetoEfectivoBS=fondoBS+Number(efectivoBS.ventasBS||0)+Number(efectivoBS.cobrosBS||0)+Number(efectivoBS.movPlusBS||0)-Number(efectivoBS.devBS||0)-Number(efectivoBS.movMinusBS||0);
+    const totalNetoEfectivoUSD=fondoUSD+Number(efectivoUSD.ventasUSD||0)+Number(efectivoUSD.cobrosUSD||0)+Number(efectivoUSD.movPlusUSD||0)-Number(efectivoUSD.devUSD||0)-Number(efectivoUSD.movMinusUSD||0);
+
     const terminalName=resolvedTerminal?.nombre||'CAJA NO IDENTIFICADA';
 
-    return {brUSD,devUSD,descUSD,netUSD,igtfUSD,ivaUSD,baseImponibleUSD,exentoUSD,paymentMethods:paymentMethodsMap,manualSalidas:totalSalidasCaja,manualEntradas:totalEntradasCaja,manualSalidasBS:totalSalidasCajaBS,manualSalidasUSD:totalSalidasCajaUSD,manualEntradasBS:totalEntradasCajaBS,manualEntradasUSD:totalEntradasCajaUSD,cobrosDeudaUSD,cobrosDeudaBS,fondoAperturaUSD:tc.fondoCajaHoyUSD||0,fondoAperturaBS:tc.fondoCajaHoyBS||0,desdeFactura,hastaFactura,desdeNC,hastaNC,stats:{facturas:vActivas.length,devoluciones:dHoy.length,anulaciones:vAnuladas.length,ticketPromedio:vActivas.length?(netUSD/vActivas.length):0},fecha:Utils.ahora(),terminalName,terminalId:termId,numeroZ:(tc.ultimoZ||0)+1,acumuladoHistoricoUSD:(tc.acumuladoHistorico||0)+netUSD,totalVentasUSD:brUSD,metodosArqueo,ventasCreditoUSD,tasaBCV:freshState.tasa||0};
+    return {brUSD,devUSD,descUSD,netUSD,igtfUSD,ivaUSD,baseImponibleUSD,exentoUSD,paymentMethods:paymentMethodsMap,manualSalidas:totalSalidasCaja,manualEntradas:totalEntradasCaja,manualSalidasBS:totalSalidasCajaBS,manualSalidasUSD:totalSalidasCajaUSD,manualEntradasBS:totalEntradasCajaBS,manualEntradasUSD:totalEntradasCajaUSD,cobrosDeudaUSD,cobrosDeudaBS,fondoAperturaUSD:fondoUSD,fondoAperturaBS:fondoBS,desdeFactura,hastaFactura,desdeNC,hastaNC,stats:{facturas:vActivas.length,devoluciones:dHoy.length,anulaciones:vAnuladas.length,ticketPromedio:vActivas.length?(netUSD/vActivas.length):0},fecha:Utils.ahora(),terminalName,terminalId:termId,numeroZ:(tc.ultimoZ||0)+1,acumuladoHistoricoUSD:(tc.acumuladoHistorico||0)+netUSD,totalVentasUSD:brUSD,metodosArqueo,ventasCreditoUSD,totalNetoEfectivoBS,totalNetoEfectivoUSD,tasaBCV:freshState.tasa||0};
   };
 
   const handleOpenReport = async (type: 'REPORT_X' | 'REPORT_Z') => {
