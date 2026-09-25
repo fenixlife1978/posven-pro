@@ -2551,7 +2551,19 @@ export const Store = {
   }): Promise<any> {
     if (typeof window === 'undefined' || !db) return null;
     const tursoResult = await tryTursoOperation('customerDebt', params);
-    if (tursoResult) return tursoResult;
+    if (tursoResult) {
+      // La operación en Turso ya es autoritativa, pero la UI mantiene un
+      // cache reactivo local. Aplicamos inmediatamente el registro canónico
+      // devuelto por Turso para que Dashboard, CxC y POS vean al nuevo cliente
+      // y su deuda sin tener que salir y volver a entrar al módulo.
+      if (tursoResult.debt) {
+        applyPatch({ cxc: mergeById(cache.cxc, [tursoResult.debt]) });
+      }
+      if (tursoResult.customer) {
+        applyPatch({ clientes: mergeById(cache.clientes, [tursoResult.customer]) });
+      }
+      return tursoResult;
+    }
     const { operationId, debt, customer, customerId, customerCedula, journal } = params;
     const debtRef = doc(db, 'cxc', debt.id);
     let result: any = null;
