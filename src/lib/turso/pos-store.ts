@@ -919,6 +919,45 @@ export async function processReturnOrCancellationTransaction(params:any){
   });
 }
 
+export async function createCashMovementTransaction(params: {
+  operationId: string;
+  movement: any;
+  terminalId?: string;
+}) {
+  assertTursoReady();
+  const { operationId, movement, terminalId } = params;
+  if (!movement?.id) throw new Error('El movimiento de caja no tiene id.');
+  return tursoInteractiveTransaction(async tx => {
+    const opId = String(operationId || movement.id);
+    const check = await tx.execute({
+      sql: 'SELECT id FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',
+      args: ['MOVIMIENTO-CAJA', opId],
+    });
+    if (check.rows.length) throw new Error('Esta operación ya fue procesada. No se registrará nuevamente.');
+    const terminal = terminalId
+      ? rowFromDb((await tx.execute(txSelect('terminales', terminalId))).rows[0])
+      : null;
+    if (terminalId && !terminal) throw new Error('La caja/terminal ya no existe en Turso.');
+    const canonicalMovement = {
+      ...movement,
+      terminalId: terminalId || movement.terminalId || 'GLOBAL',
+      terminalName: terminal?.nombre || movement.terminalName || 'SISTEMA GLOBAL',
+    };
+    await tx.execute(rowStatement('libroDiario', canonicalMovement));
+    await tx.execute({
+      sql: 'INSERT INTO operaciones(id,prefijo,operation_id,data_json) VALUES(?,?,?,?)',
+      args: [
+        'MOVIMIENTO-CAJA-' + opId,
+        'MOVIMIENTO-CAJA',
+        opId,
+        JSON.stringify({ tipo: 'MOVIMIENTO-CAJA', operationId: opId, referencia: canonicalMovement.id, terminalId: canonicalMovement.terminalId }),
+      ],
+      wantRows: false,
+    });
+    return { movement: canonicalMovement };
+  });
+}
+
 export async function reverseDebtPaymentTransaction(params:any){
   assertTursoReady();
   const {operationId,collection,debtId,paymentId,journalId}=params;
