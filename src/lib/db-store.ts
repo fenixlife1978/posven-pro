@@ -632,7 +632,7 @@ async function loadReportWindow(name: string, terminalId: string, cutoff: string
 // No tiene sentido descargar ventas/libroDiario históricos de todas las cajas.
 async function ensureReportData(terminalId?: string, cutoff?: string): Promise<void> {
 
-  const termId = String(terminalId || 'GLOBAL');
+  const termId = String(effectiveTerminalId);
   const desde = String(cutoff || '');
 
   // Si no tenemos terminal/corte (casos administrativos), conservamos el
@@ -1273,7 +1273,7 @@ export const Store = {
     const opId = String(operationId || payment?.id || (provider + '|' + amountUSD + '|' + payment?.fecha + '|' + payment?.metodo));
     await runTransaction(db, async tx => {
       const operationRef = await claimOperation(tx, 'PAGO-CXP-GLOBAL', opId);
-      const terminalRef = terminalId ? doc(db, 'terminales', terminalId) : null;
+      const terminalRef = effectiveTerminalId ? doc(db, 'terminales', effectiveTerminalId) : null;
       const terminalSnap = terminalRef ? await tx.get(terminalRef) : null;
       const terminalRemote = terminalSnap?.exists() ? sanitizeForFirestore(terminalSnap.data()) as any : null;
       if (terminalId && !terminalRemote) throw new Error('La caja/terminal ya no existe en Firestore.');
@@ -1346,7 +1346,7 @@ export const Store = {
       }
       if (terminalRef && terminalRemote) tx.set(terminalRef, { proximoPagoProveedor: nextCounter + 1 }, { merge: true });
 
-      tx.set(operationRef, { tipo: 'PAGO-CXP-GLOBAL', operationId: opId, fecha: payment?.fecha || new Date().toISOString(), referencia: nextResult.receiptId, terminalId: terminalId || 'GLOBAL' }, { merge: false });
+      tx.set(operationRef, { tipo: 'PAGO-CXP-GLOBAL', operationId: opId, fecha: payment?.fecha || new Date().toISOString(), referencia: nextResult.receiptId, terminalId: effectiveTerminalId }, { merge: false });
       result = nextResult;
     });
 
@@ -1485,7 +1485,7 @@ export const Store = {
         operationId: opId,
         fecha: payment?.fecha || new Date().toISOString(),
         referencia: nextResult.receiptId,
-        terminalId: terminalId || 'GLOBAL'
+        terminalId: effectiveTerminalId
       }, { merge: false });
 
       nextResult.debts = nextResult.debts.map((d: any) => d);
@@ -1875,10 +1875,19 @@ export const Store = {
   }): Promise<any> {
     if (typeof window === 'undefined') return null;
     const { operationId, cart, payments, clientName, terminalId, fallbackReceiptNumber, now, tasa, saleType = 'VENTA', credit, cajeroId, fromOfflineQueue } = params;
+    const resolvedTerminalId = String(terminalId || '').trim();
+    // Una venta hecha desde el POS de un cajero debe pertenecer siempre a una caja
+    // concreta. Nunca permitimos registrar una venta operativa como GLOBAL, porque
+    // después de refrescar el historial de Turso se filtra por terminalId y esa venta
+    // quedaría fuera de la caja del cajero.
+    if (!resolvedTerminalId && !fromOfflineQueue) {
+      throw new Error('La caja del cajero todavía no está disponible. Espere a que cargue la caja asignada y vuelva a intentar.');
+    }
+    const effectiveTerminalId = resolvedTerminalId || String(terminalId || '').trim();
     if (!cart?.length) throw new Error('La venta no contiene productos.');
     if (!(Number(tasa) > 0)) throw new Error('La tasa de la venta no es válida.');
 
-    const opId = String(operationId || (terminalId || 'GLOBAL') + '|' + saleType + '|' + JSON.stringify({ cart, payments, client: clientName, credit: credit ? { customerId: credit.customer?.id, cedula: credit.customer?.cedula } : null }));
+    const opId = String(operationId || (effectiveTerminalId || 'GLOBAL') + '|' + saleType + '|' + JSON.stringify({ cart, payments, client: clientName, credit: credit ? { customerId: credit.customer?.id, cedula: credit.customer?.cedula } : null }));
 
     // Las ventas pueden quedar en cola local cuando Turso/Firebase no están disponibles.
     // La cola se procesa posteriormente cuando vuelve la conexión.
@@ -1895,7 +1904,7 @@ export const Store = {
         subtotalUSD: total, descuentoUSD: 0, totalUSD: total, totalBS: total * tasa,
         metodoPago: credit ? 'credito' : ((payments || []).length > 1 ? 'mixto' : ((payments || [])[0]?.metodo || 'efectivo_usd')),
         estado: 'pendiente', type: saleType, received: paid, change: Math.max(0, paid - total),
-        payments: (payments || []).map((x: any) => ({ ...x })), terminalId, terminalName: 'PENDIENTE OFFLINE', cajeroId, tasa,
+        payments: (payments || []).map((x: any) => ({ ...x })), terminalId: effectiveTerminalId, terminalName: 'PENDIENTE OFFLINE', cajeroId, tasa,
         offlinePending: true, operationId: opId
       };
       let provisionalDebt: any = null;
@@ -1909,7 +1918,7 @@ export const Store = {
       return { queuedOffline: true, operationId: opId, sale: provisionalSale, debt: provisionalDebt, nextNumber: fallbackReceiptNumber };
     }
 
-    const tursoResult = await tryTursoOperation('sale', params);
+    const tursoResult = await tryTursoOperation('sale', { ...params, terminalId: effectiveTerminalId });
     if (tursoResult) {
       applyPatch({
         ventas: tursoResult.sale ? mergeById(cache.ventas, [tursoResult.sale]) : cache.ventas,
@@ -1939,7 +1948,7 @@ export const Store = {
         fallbackReceiptNumber ??
         1
       );
-      const prefijo = terminalPrefix(terminalRemote, terminalId);
+      const prefijo = terminalPrefix(terminalRemote, effectiveTerminalId);
       const reciboId = terminalSeries(prefijo, 'V', nextNumber, 9);
       const saleRef = doc(db, 'ventas', reciboId);
       const existingSale = await tx.get(saleRef);
@@ -2085,7 +2094,7 @@ export const Store = {
         received: totalPaid,
         change: Math.max(0, totalPaid - totals.total),
         payments: payments.map((x: any) => ({ ...x })),
-        terminalId: terminalId,
+        terminalId: effectiveTerminalId,
         terminalName: terminalRemote?.nombre || 'SISTEMA GLOBAL',
         cajeroId,
         baseImponibleUSD: Utils.round(totals.base),
