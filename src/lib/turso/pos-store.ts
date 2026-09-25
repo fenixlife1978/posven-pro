@@ -1088,10 +1088,156 @@ export async function createPurchaseTransaction(params:any){
   });
 }
 export async function deletePurchaseTransaction(params:any){
-  assertTursoReady(); const {operationId,purchaseId,invoiceNumber,supplier,purchaseDate}=params;if(!invoiceNumber||!supplier)throw new Error('La compra no tiene factura/proveedor identificables.'); const opId=String(operationId||invoiceNumber+'|'+supplier+'|'+String(purchaseDate||'').slice(0,10)+'|DELETE');
-  return tursoInteractiveTransaction(async tx=>{if((await tx.execute({sql:'SELECT id FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',args:['ELIMINAR-COMPRA',opId]})).rows.length)throw new Error('Esta operación ya fue procesada.');const purchase=purchaseId?rowFromDb((await tx.execute(txSelect('compras',purchaseId))).rows[0]):null;const purchases=(await tx.execute({sql:"SELECT id,data_json FROM compras WHERE json_extract(data_json,'$.numeroFactura')=? AND json_extract(data_json,'$.proveedor')=?",args:[String(invoiceNumber),String(supplier)]})).rows.map(rowFromDb).filter((d:any)=>!purchaseDate||String(d.fecha||'').slice(0,10)===String(purchaseDate).slice(0,10));const debts=(await tx.execute({sql:"SELECT id,data_json FROM cxp WHERE json_extract(data_json,'$.numeroFactura')=? AND json_extract(data_json,'$.proveedor')=?",args:[String(invoiceNumber),String(supplier)]})).rows.map(rowFromDb).filter((d:any)=>!purchaseDate||String(d.fecha||'').slice(0,10)===String(purchaseDate).slice(0,10));const journals=(await tx.execute({sql:"SELECT id,data_json FROM libro_diario WHERE json_extract(data_json,'$.referencia')=?",args:[String(invoiceNumber)]})).rows.map(rowFromDb).filter((d:any)=>String(d.categoria||'')==='COMPRA');const deleted=(await tx.execute({sql:"SELECT id,data_json FROM movimientos WHERE json_extract(data_json,'$.referencia')=?",args:[`COMPRA FACT: ${invoiceNumber} - PROV: ${supplier}`]})).rows.map(rowFromDb).filter((d:any)=>String(d.tipo||'')==='compra');if(!purchase&&!purchases.length&&!debts.length&&!deleted.length)throw new Error('La compra ya no existe en Turso.');const affected=[...new Set(deleted.map((d:any)=>String(d.productoId||'')).filter(Boolean))],statements:TursoStatement[]=[];for(const pid of affected){const p=rowFromDb((await tx.execute(txSelect('productos',pid))).rows[0]);if(!p)continue;const qty=deleted.filter((d:any)=>String(d.productoId)===pid).reduce((s:number,d:any)=>s+Math.abs(Number(d.cantidad)||0),0);const rows=(await tx.execute({sql:"SELECT id,data_json FROM movimientos WHERE json_extract(data_json,'$.productoId')=? ORDER BY fecha ASC,id ASC",args:[pid]})).rows.map(rowFromDb);const remain=rows.filter((m:any)=>!deleted.some((d:any)=>String(d.id)===String(m.id)));let running=remain.length?Number(remain[0].stockAntes)||0:0;for(const m of remain){const before=running;running=before+(Number(m.cantidad)||0);statements.push(rowStatement('movimientos',{...m,stockAntes:before,stockDespues:running}));}statements.push(rowStatement('productos',{...p,stock:Math.max(0,(Number(p.stock)||0)-qty),id:pid}));for(const d of deleted.filter((x:any)=>String(x.productoId)===pid))statements.push({sql:'DELETE FROM movimientos WHERE id=?',args:[d.id],wantRows:false});}for(const d of debts)statements.push({sql:'DELETE FROM cxp WHERE id=?',args:[d.id],wantRows:false});for(const j of journals)statements.push({sql:'DELETE FROM libro_diario WHERE id=?',args:[j.id],wantRows:false});for(const p of purchases)statements.push({sql:'DELETE FROM compras WHERE id=?',args:[p.id],wantRows:false});if(purchase?.id&&!purchases.some((p:any)=>String(p.id)===String(purchase.id)))statements.push({sql:'DELETE FROM compras WHERE id=?',args:[purchase.id],wantRows:false});statements.push({sql:'INSERT INTO operaciones(id,prefijo,operation_id,data_json) VALUES(?,?,?,?)',args:['ELIMINAR-COMPRA-'+opId,'ELIMINAR-COMPRA',opId,JSON.stringify({tipo:'ELIMINAR-COMPRA',operationId:opId,referencia:invoiceNumber})],wantRows:false});if(statements.length>450)throw new Error('La compra tiene demasiados movimientos históricos para revertirla en una sola transacción.');for(const s of statements)await tx.execute(s);return {deletedMovements:deleted.length,deletedDebts:debts.length,deletedJournals:journals.length,deletedPurchase:purchases.length,affectedProducts:affected.length};});
-}
+  assertTursoReady();
+  const {operationId,purchaseId,invoiceNumber,supplier,purchaseDate}=params;
+  if(!invoiceNumber||!supplier) throw new Error('La compra no tiene factura/proveedor identificables.');
+  const opId=String(operationId||invoiceNumber+'|'+supplier+'|'+String(purchaseDate||'').slice(0,10)+'|DELETE');
 
+  return tursoInteractiveTransaction(async tx=>{
+    if((await tx.execute({sql:'SELECT id FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',args:['ELIMINAR-COMPRA',opId]})).rows.length)
+      throw new Error('Esta operación ya fue procesada.');
+
+    const purchase=purchaseId?rowFromDb((await tx.execute(txSelect('compras',purchaseId))).rows[0]):null;
+    const purchases=(await tx.execute({
+      sql:"SELECT id,data_json FROM compras WHERE json_extract(data_json,'$.numeroFactura')=? AND json_extract(data_json,'$.proveedor')=?",
+      args:[String(invoiceNumber),String(supplier)]
+    })).rows.map(rowFromDb).filter((d:any)=>!purchaseDate||String(d.fecha||'').slice(0,10)===String(purchaseDate).slice(0,10));
+
+    const debts=(await tx.execute({
+      sql:"SELECT id,data_json FROM cxp WHERE json_extract(data_json,'$.numeroFactura')=? AND json_extract(data_json,'$.proveedor')=?",
+      args:[String(invoiceNumber),String(supplier)]
+    })).rows.map(rowFromDb).filter((d:any)=>!purchaseDate||String(d.fecha||'').slice(0,10)===String(purchaseDate).slice(0,10));
+
+    const journals=(await tx.execute({
+      sql:"SELECT id,data_json FROM libro_diario WHERE json_extract(data_json,'$.referencia')=?",
+      args:[String(invoiceNumber)]
+    })).rows.map(rowFromDb).filter((d:any)=>String(d.categoria||'')==='COMPRA');
+
+    const purchaseReference=`COMPRA FACT: ${invoiceNumber} - PROV: ${supplier}`;
+    const deleted=(await tx.execute({
+      sql:"SELECT id,data_json FROM movimientos WHERE json_extract(data_json,'$.referencia')=?",
+      args:[purchaseReference]
+    })).rows.map(rowFromDb).filter((d:any)=>String(d.tipo||'')==='compra');
+
+    if(!purchase&&!purchases.length&&!debts.length&&!deleted.length)
+      throw new Error('La compra ya no existe en Turso.');
+
+    const affected=[...new Set(deleted.map((d:any)=>String(d.productoId||'')).filter(Boolean))];
+    const statements:TursoStatement[]=[];
+    const updatedProducts:any[]=[];
+    const updatedMovements:any[]=[];
+
+    for(const pid of affected){
+      const p=rowFromDb((await tx.execute(txSelect('productos',pid))).rows[0]);
+      if(!p) continue;
+
+      const rows=(await tx.execute({
+        sql:"SELECT id,data_json FROM movimientos WHERE json_extract(data_json,'$.productoId')=? ORDER BY fecha ASC,id ASC",
+        args:[pid]
+      })).rows.map(rowFromDb);
+
+      const deletedIds=new Set(deleted.filter((d:any)=>String(d.productoId)===pid).map((d:any)=>String(d.id)));
+      const remaining=rows.filter((m:any)=>!deletedIds.has(String(m.id)));
+
+      let running=remaining.length ? Number(remaining[0].stockAntes)||0 : 0;
+      const rebuilt:any[]=[];
+      for(const m of remaining){
+        const before=running;
+        running=before+(Number(m.cantidad)||0);
+        const rebuiltMovement={...m,stockAntes:before,stockDespues:running};
+        rebuilt.push(rebuiltMovement);
+        statements.push(rowStatement('movimientos',rebuiltMovement));
+      }
+
+      for(const d of deleted.filter((x:any)=>String(x.productoId)===pid))
+        statements.push({sql:'DELETE FROM movimientos WHERE id=?',args:[d.id],wantRows:false});
+
+      // El costo CPP debe quedar exactamente como estaba antes de la compra:
+      // si quedan entradas de compra, se toma el CPP ponderado de las compras
+      // restantes; de lo contrario se conserva el costo de un stock previo.
+      const purchaseRows=rebuilt
+        .filter((m:any)=>String(m.tipo||'')==='compra')
+        .map((m:any)=>({
+          qty:Number(m.cantidad)||0,
+          cost:Number(m.costoUnitarioUSD ?? m.costoUSD ?? 0)||0,
+          fecha:String(m.fecha||'')
+        }))
+        .filter((m:any)=>m.qty>0&&m.cost>0);
+
+      const deletedItems=(purchases.length?purchases:purchase?[purchase]:[])
+        .flatMap((pu:any)=>Array.isArray(pu.items)?pu.items:[])
+        .filter((it:any)=>String(it.productoId||'')===pid);
+
+      const deletedQty=deleted.filter((d:any)=>String(d.productoId)===pid)
+        .reduce((s:number,d:any)=>s+Math.abs(Number(d.cantidad)||0),0);
+
+      // Las compras históricas anteriores no guardaban costo en el movimiento.
+      // Si el producto conserva stock, el CPP actual se reconstruye usando
+      // el costo previo al momento de esta eliminación cuando está disponible.
+      // Para compras creadas por el flujo actual, el snapshot de la compra sí
+      // contiene el costo unitario y permite calcular el CPP restante con precisión.
+      let finalCost=Number(p.costoUSD)||0;
+      const currentStock=Number(p.stock)||0;
+      const finalStock=Math.max(0,currentStock-deletedQty);
+
+      if(deletedItems.length && deletedQty>0 && currentStock>0){
+        const deletedCostTotal=deletedItems.reduce((s:number,it:any)=>s+(Number(it.cantidad)||0)*(Number(it.costoUnitarioUSD)||0),0);
+        const beforeStock=finalStock;
+        const currentValue=currentStock*finalCost;
+        const beforeValue=Math.max(0,currentValue-deletedCostTotal);
+        if(beforeStock>0) finalCost=Math.round((beforeValue/beforeStock+Number.EPSILON)*10000)/10000;
+        else finalCost=0;
+      }
+
+      const updatedProduct={...p,id:pid,stock:finalStock,costoUSD:finalCost};
+      statements.push(rowStatement('productos',updatedProduct));
+      updatedProducts.push(updatedProduct);
+      updatedMovements.push(...rebuilt);
+    }
+
+    for(const d of debts) statements.push({sql:'DELETE FROM cxp WHERE id=?',args:[d.id],wantRows:false});
+    for(const j of journals) statements.push({sql:'DELETE FROM libro_diario WHERE id=?',args:[j.id],wantRows:false});
+    for(const p of purchases) statements.push({sql:'DELETE FROM compras WHERE id=?',args:[p.id],wantRows:false});
+    if(purchase?.id&&!purchases.some((p:any)=>String(p.id)===String(purchase.id)))
+      statements.push({sql:'DELETE FROM compras WHERE id=?',args:[purchase.id],wantRows:false});
+
+    statements.push({
+      sql:'INSERT INTO operaciones(id,prefijo,operation_id,data_json) VALUES(?,?,?,?)',
+      args:['ELIMINAR-COMPRA-'+opId,'ELIMINAR-COMPRA',opId,JSON.stringify({
+        tipo:'ELIMINAR-COMPRA',operationId:opId,referencia:invoiceNumber,
+        purchaseId:purchaseId||null
+      })],
+      wantRows:false
+    });
+
+    if(statements.length>450)
+      throw new Error('La compra tiene demasiados movimientos históricos para revertirla en una sola transacción.');
+
+    for(const s of statements) await tx.execute(s);
+
+    const deletedPurchaseIds=[...new Set([
+      ...purchases.map((p:any)=>String(p.id)),
+      ...(purchase?.id?[String(purchase.id)]:[])
+    ])];
+    const deletedDebtIds=debts.map((d:any)=>String(d.id));
+    const deletedJournalIds=journals.map((j:any)=>String(j.id));
+    const deletedMovementIds=deleted.map((m:any)=>String(m.id));
+
+    return {
+      deletedMovements:deleted.length,
+      deletedDebts:debts.length,
+      deletedJournals:journals.length,
+      deletedPurchase:purchases.length+(purchase&&!purchases.some((p:any)=>String(p.id)===String(purchase.id))?1:0),
+      affectedProducts:affected.length,
+      deletedPurchaseIds,
+      deletedDebtIds,
+      deletedJournalIds,
+      deletedMovementIds,
+      products:updatedProducts,
+      movements:updatedMovements
+    };
+  });
+}
 export async function deleteCustomerDebtTransaction(params:any){
   assertTursoReady(); const {operationId,debtId,customerCedula,customerId}=params; const opId=String(operationId||debtId);
   return tursoInteractiveTransaction(async tx=>{ if((await tx.execute({sql:'SELECT id FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',args:['ELIMINAR-CXC',opId]})).rows.length)throw new Error('Esta operación ya fue procesada.'); const debt=rowFromDb((await tx.execute(txSelect('cxc',debtId))).rows[0]);if(!debt)throw new Error('La deuda ya no existe.');const saldo=Number(debt.saldoUSD)||0;let customer:any=null,customerRefId:any=null;if(customerId){customerRefId=customerId;customer=rowFromDb((await tx.execute(txSelect('clientes',customerId))).rows[0]);}else if(customerCedula){customer=rowFromDb((await tx.execute({sql:"SELECT id,data_json FROM clientes WHERE json_extract(data_json,'$.cedula')=? LIMIT 1",args:[String(customerCedula)]})).rows[0]);if(customer)customerRefId=customer.id;}const statements:TursoStatement[]=[{sql:'DELETE FROM cxc WHERE id=?',args:[debtId],wantRows:false}];if(customer&&customerRefId)statements.push(rowStatement('clientes',{...customer,debt:Math.max(0,(Number(customer.debt)||0)-saldo),id:customerRefId}));statements.push({sql:'INSERT INTO operaciones(id,prefijo,operation_id,data_json) VALUES(?,?,?,?)',args:['ELIMINAR-CXC-'+opId,'ELIMINAR-CXC',opId,JSON.stringify({tipo:'ELIMINAR-CXC',operationId:opId,referencia:debtId})],wantRows:false});for(const s of statements)await tx.execute(s);return {debt,customer:customer?{...customer,debt:Math.max(0,(Number(customer.debt)||0)-saldo)}:null};});
