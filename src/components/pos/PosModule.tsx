@@ -210,12 +210,16 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       e.tipo === 'ingreso' && String(e.categoria || '').trim().toUpperCase() === 'COBRO_DEUDA'
     );
 
-    const normalizarMetodo = (m:any) => String(m || '').trim().toLowerCase()
-      .normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, '_');
+    const normalizarMetodo = (m:any) => {
+      const base = String(m || '').trim().toLowerCase()
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, '_');
+      if (base === 'punto_venta' || base === 'punto_de_venta' || base === 'punto_pago' || base === 'punto_de_pago') return 'tarjeta';
+      return base;
+    };
     const esMetodoUSD = (m:any) => ['efectivo_usd','usd','dolar','dolares','zelle'].includes(normalizarMetodo(m));
     const esMetodoBS = (m:any) => [
       'efectivo_bs','efectivo','bs','bolivares','tarjeta','tarjeta_debito','tarjeta_credito',
-      'pagomovil','pago_movil','punto_venta','punto_de_venta','biopago','transferencia'
+      'pagomovil','pago_movil','biopago','transferencia'
     ].includes(normalizarMetodo(m));
 
     const addPaymentTo = (p:any, factor=1) => {
@@ -811,7 +815,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         now: ahoraStr,
         tasa: state.tasa,
         saleType: 'VENTA',
-        cajeroId: (state as any).user?.id || (state as any).user?.uid
+        cajeroId: (state as any).user?.id || (state as any).user?.uid,
+        cajeroNombre: String((state as any).user?.nombre || (state as any).user?.name || (state as any).user?.displayName || (state as any).user?.email || '').trim() || undefined
       });
 
       if (!resultado?.sale) throw new Error('No se pudo registrar la venta.');
