@@ -396,6 +396,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
 
     const ventasCreditoUSD=vActivas.filter((v:any)=>String(v.metodoPago||'').toLowerCase()==='credito'||(Array.isArray(v.payments)&&v.payments.some((p:any)=>p.metodo==='credito'))).reduce((s:number,v:any)=>s+(Number(v.totalUSD)||0),0);
 
+    const totalSalidasCaja = movimientosBS.egresos + movimientosUSD.egresos;
+    const totalEntradasCaja = movimientosBS.entradas + movimientosUSD.entradas;
     const terminalName = resolvedTerminal?.nombre || 'CAJA NO IDENTIFICADA';
 
     return { 
@@ -422,6 +424,10 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       totalNetoEfectivoBS,
       totalNetoEfectivoUSD,
       cobrosDeudaPorMetodo: Object.values(cobrosDeudaPorMetodo),
+      metodosArqueo,
+      ventasCreditoUSD,
+      estimadoEfectivoBS,
+      estimadoEfectivoUSD,
       tasaBCV: state.tasa || 0
     };
   };
