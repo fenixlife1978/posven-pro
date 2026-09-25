@@ -528,7 +528,7 @@ async function loadCollection(name: string): Promise<any[]> {
 
 // Carga COMPLETA de una colección paginada de 500 (evita leer doc a doc en loops).
 async function loadAll(name: string): Promise<void> {
-  if (!db || loadedAll[name]) return;
+  if (loadedAll[name]) return;
   loadedAll[name] = true;
   const col = COLLECTIONS[name];
   if (!col) return;
@@ -561,7 +561,7 @@ const loadingPromises: Record<string, Promise<void>> = {};
 async function ensureLoaded(name: string): Promise<void> {
   if (loadedAll[name]) return;
   if (loadingPromises[name]) return loadingPromises[name];
-  if (!db && typeof window === 'undefined') return;
+  if (typeof window === 'undefined') return;
   const p = (async () => {
     loadedAll[name] = true;
     try {
