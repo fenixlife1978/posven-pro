@@ -904,11 +904,6 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       }
     })();
 
-    toast({
-      title: cashMovement.tipo === 'egreso' ? 'Egreso registrado' : 'Ingreso registrado',
-      description: `${cashMovement.tipo === 'egreso' ? 'Salida' : 'Entrada'} de ${cashMovement.metodo === 'efectivo_bs' ? Utils.fmtBS(monto) : Utils.fmtUSD(monto)} registrada en ${terminal.nombre}.`
-    });
-
     setCashMovement({
       tipo: 'egreso',
       metodo: 'efectivo_usd',
