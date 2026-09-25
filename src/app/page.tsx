@@ -228,7 +228,7 @@ export default function LicoreriaPOS() {
   // evitando repetir el snapshot completo de clientes/proveedores al navegar.
   useEffect(() => {
     const clientesModules = new Set(['dashboard', 'ventas', 'cxc']);
-    const proveedoresModules = new Set(['compras', 'proveedores', 'cxp']);
+    const proveedoresModules = new Set(['dashboard', 'compras', 'proveedores', 'cxp']);
     const wanted: string[] = [];
     if (clientesModules.has(activeModule)) wanted.push('clientes');
     if (proveedoresModules.has(activeModule)) wanted.push('proveedores');
