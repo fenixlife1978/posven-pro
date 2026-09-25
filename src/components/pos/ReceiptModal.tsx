@@ -630,15 +630,6 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
 
                         <div className="separator-dashed"></div>
                         <div className="text-center font-bold">COBROS DE DEUDAS</div>
-                        <div className="separator-dashed"></div>
-                        <table><tbody>
-                          <tr className="bold">
-                            <td>TOTAL USD POR COBRO DE DEUDAS:</td>
-                            <td className="text-right">$ {formatUsd(data.cobrosDeudaUSD ?? data.cobrosDeudaUsd ?? 0)}</td>
-                          </tr>
-                        </tbody></table>
-
-                        <div className="separator-dashed"></div>
                         <div className="text-center font-bold">TOTAL NETO EFECTIVO FÍSICO</div>
                         <div className="separator-dashed"></div>
                         <table><tbody>
@@ -649,6 +640,21 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
                           <tr className="bold">
                             <td>TOTAL NETO EFECTIVO USD (FÍSICOS):</td>
                             <td className="text-right">$ {formatUsd(Number(data.totalNetoEfectivoUSD) || 0)}</td>
+                          </tr>
+                        </tbody></table>
+
+
+                        <div className="separator-dashed"></div>
+                        <div className="text-center font-bold">ESTIMADOS EN EFECTIVO BS/USD AL FINAL DE JORNADA</div>
+                        <div className="separator-dashed"></div>
+                        <table><tbody>
+                          <tr className="bold">
+                            <td>TOTAL EFECTIVO BS:</td>
+                            <td className="text-right">{formatBs(Number(data.estimadoEfectivoBS?.total) || 0)}</td>
+                          </tr>
+                          <tr className="bold">
+                            <td>TOTAL EFECTIVO USD:</td>
+                            <td className="text-right">$ {formatUsd(Number(data.estimadoEfectivoUSD?.total) || 0)}</td>
                           </tr>
                         </tbody></table>
 
