@@ -169,23 +169,50 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
 
   const mesesDisponibles = useMemo(() => {
     const set = new Set<string>();
-    todasCompras.forEach(c => set.add(c.fecha.slice(0, 7)));
+    todasCompras.forEach(c => {
+      const mes = String(c.fecha || '').slice(0, 7);
+      if (/^\\d{4}-\\d{2}$/.test(mes)) set.add(mes);
+    });
     return Array.from(set).sort().reverse();
   }, [todasCompras]);
 
+  // El selector de proveedor del historial debe leer el catálogo real de proveedores,
+  // no solamente los proveedores que ya aparecen en compras. Así funciona igual que
+  // el selector de "Nueva Compra".
   const proveedoresDisponibles = useMemo(() => {
     const set = new Set<string>();
-    todasCompras.forEach(c => set.add(c.proveedor));
-    return Array.from(set).sort();
-  }, [todasCompras]);
+    safeProveedores.forEach(p => {
+      const nombre = String(p.nombre || '').trim();
+      if (nombre) set.add(nombre);
+    });
+    // Conserva también proveedores históricos que pudieran no estar ya en el catálogo.
+    todasCompras.forEach(c => {
+      const nombre = String(c.proveedor || '').trim();
+      if (nombre) set.add(nombre);
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
+  }, [safeProveedores, todasCompras]);
 
   const comprasFiltradas = useMemo(() => {
+    const desde = String(rango.desde || '').slice(0, 10);
+    const hasta = String(rango.hasta || '').slice(0, 10);
+    const proveedorNormalizado = proveedorFiltro.trim().toLocaleLowerCase();
     return todasCompras
-      .filter(c => c.fecha >= rango.desde && c.fecha <= rango.hasta)
-      .filter(c => !proveedorFiltro || c.proveedor === proveedorFiltro)
-      .filter(c => !mesFiltro || c.fecha.slice(0, 7) === mesFiltro)
+      .filter(c => {
+        const fechaCompra = String(c.fecha || '').slice(0, 10);
+        return (!desde || fechaCompra >= desde) && (!hasta || fechaCompra <= hasta);
+      })
+      .filter(c => !proveedorNormalizado || String(c.proveedor || '').trim().toLocaleLowerCase() === proveedorNormalizado)
+      .filter(c => !mesFiltro || String(c.fecha || '').slice(0, 7) === mesFiltro)
       .sort((a, b) => (b.fechaHora || b.fecha).localeCompare(a.fechaHora || a.fecha));
   }, [todasCompras, rango, proveedorFiltro, mesFiltro]);
+
+  const handleRangoChange = (nuevoRango: DateRange) => {
+    const desde = String(nuevoRango.desde || '').slice(0, 10);
+    const hasta = String(nuevoRango.hasta || '').slice(0, 10);
+    setRango({ desde, hasta });
+    setHistPage(1);
+  };
 
   const totalComprasUSD = comprasFiltradas.reduce((s, c) => s + (c.montoUSD || 0), 0);
   const totalPagadoUSD = comprasFiltradas.reduce((s, c) => s + (c.pagadoUSD || 0), 0);
@@ -668,7 +695,7 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
             <div className="flex flex-wrap items-end gap-4">
               <div className="min-w-[320px]">
                 <label className="text-[10px] font-black uppercase text-ink/40 block mb-2">CONSULTAR COMPRAS POR PERÍODO</label>
-                <DateRangeFilter value={rango} onChange={setRango} />
+                <DateRangeFilter value={rango} onChange={handleRangoChange} />
               </div>
               <div className="form-group mb-0">
                 <label className="text-ink text-[10px] font-black uppercase block mb-1.5 opacity-70">Proveedor</label>
@@ -681,7 +708,11 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
                 <label className="text-ink text-[10px] font-black uppercase block mb-1.5 opacity-70">Mes</label>
                 <select className="form-select h-8 text-[10px] font-black uppercase bg-surface-soft border-line rounded-md" value={mesFiltro} onChange={e => setMesFiltro(e.target.value)}>
                   <option value="">TODOS LOS MESES</option>
-                  {mesesDisponibles.map(m => <option key={m} value={m}>{m}</option>)}
+                  {mesesDisponibles.map(m => {
+                    const [y, mo] = m.split('-');
+                    const label = new Date(Number(y), Number(mo) - 1, 1).toLocaleDateString('es-VE', { month: 'long', year: 'numeric' });
+                    return <option key={m} value={m}>{label.toUpperCase()}</option>;
+                  })}
                 </select>
               </div>
             </div>
