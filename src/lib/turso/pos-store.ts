@@ -1095,8 +1095,16 @@ export async function deletePurchaseTransaction(params:any){
   const opId=String(operationId||invoiceNumber+'|'+supplier+'|'+String(purchaseDate||'').slice(0,10)+'|DELETE');
 
   return tursoInteractiveTransaction(async tx=>{
-    if((await tx.execute({sql:'SELECT id FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',args:['ELIMINAR-COMPRA',opId]})).rows.length)
-      throw new Error('Esta operación ya fue procesada.');
+    const previousDelete = await tx.execute({
+      sql:'SELECT id FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',
+      args:['ELIMINAR-COMPRA',opId]
+    });
+    // Si una ejecución anterior dejó la marca de idempotencia pero la compra
+    // todavía existe, permitimos la recuperación con un nuevo operationId.
+    // Solo una compra realmente inexistente se considera ya eliminada.
+    const deleteOpId = previousDelete.rows.length
+      ? opId + '|RECOVERY-' + crypto.randomUUID()
+      : opId;
 
     const purchase=purchaseId?rowFromDb((await tx.execute(txSelect('compras',purchaseId))).rows[0]):null;
     const purchases=(await tx.execute({
@@ -1231,8 +1239,8 @@ export async function deletePurchaseTransaction(params:any){
 
     statements.push({
       sql:'INSERT INTO operaciones(id,prefijo,operation_id,data_json) VALUES(?,?,?,?)',
-      args:['ELIMINAR-COMPRA-'+opId,'ELIMINAR-COMPRA',opId,JSON.stringify({
-        tipo:'ELIMINAR-COMPRA',operationId:opId,referencia:invoiceNumber,
+      args:['ELIMINAR-COMPRA-'+deleteOpId,'ELIMINAR-COMPRA',deleteOpId,JSON.stringify({
+        tipo:'ELIMINAR-COMPRA',operationId:deleteOpId,referencia:invoiceNumber,
         purchaseId:purchaseId||null
       })],
       wantRows:false
