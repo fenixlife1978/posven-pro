@@ -5,10 +5,6 @@ import { AppState } from '@/lib/types';
 import { Store } from '@/lib/db-store';
 import { Save, AlertTriangle, RefreshCw, Database, Activity, BookOpen, PenLine, Trash2 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
-import { db, auth } from '@/lib/firebase';
-import { collection, getDocs, deleteDoc, doc, setDoc, writeBatch, query, limit } from 'firebase/firestore';
-import { signOut } from 'firebase/auth';
-import { migrarEstructura } from '@/lib/migracion-firestore';
 import { crearRespaldo, descargarRespaldo, cargarRespaldoDesdeArchivo } from '@/lib/backup';
 
 export default function ConfigModule({ state, updateState }: { state: AppState, updateState: (s: Partial<AppState>) => void }) {
@@ -96,67 +92,6 @@ export default function ConfigModule({ state, updateState }: { state: AppState, 
     }
   };
 
-  // ============================================================
-  // FUNCIÓN PARA ELIMINAR UNA COLECCIÓN COMPLETA CON BATCH
-  // ============================================================
-  const deleteCollection = async (collectionPath: string, batchSize = 100) => {
-    try {
-      const colRef = collection(db, collectionPath);
-      const snapshot = await getDocs(query(colRef, limit(batchSize)));
-
-      if (snapshot.empty) {
-        console.log(`✅ Colección "${collectionPath}" vacía o no existe.`);
-        return;
-      }
-
-      const batch = writeBatch(db);
-      snapshot.docs.forEach((docSnap) => {
-        batch.delete(docSnap.ref);
-      });
-      await batch.commit();
-
-      // Recursivamente eliminar el resto (si hay más de batchSize documentos)
-      await deleteCollection(collectionPath, batchSize);
-    } catch (error) {
-      console.warn(`⚠️ Error al eliminar colección "${collectionPath}":`, error);
-    }
-  };
-
-  const handleMigrar = async () => {
-    if (!confirm('¿Estás seguro de que quieres migrar los datos a la nueva estructura?\n\nEsta acción:\n- Creará colecciones separadas para: config, catalogos, inventario, ventas, movimientos, terminales, proveedores, devoluciones\n- Los datos existentes se mantendrán en la estructura antigua también\n- No se eliminarán datos existentes')) {
-      return;
-    }
-
-    setIsMigrating(true);
-    setShowMigracionResultado(false);
-    try {
-      const result = await migrarEstructura();
-      setMigracionResultado(result);
-      setShowMigracionResultado(true);
-      
-      if (result.success && result.resultados) {
-        toast({ 
-          title: "✅ Migración exitosa", 
-          description: `Se migraron ${result.resultados.inventario} productos, ${result.resultados.ventas} ventas, etc.` 
-        });
-      } else {
-        toast({ 
-          variant: "destructive", 
-          title: "❌ Error en migración", 
-          description: result.error || 'Error desconocido'
-        });
-      }
-    } catch (error: any) {
-      toast({ 
-        variant: "destructive", 
-        title: "❌ Error", 
-        description: String(error) 
-      });
-    } finally {
-      setIsMigrating(false);
-    }
-  };
-
   const handleRepararCxcMigrado = async () => {
     const confirmar = window.confirm(
       'REPARAR CxC MIGRADO\n\n' +
@@ -194,138 +129,29 @@ export default function ConfigModule({ state, updateState }: { state: AppState, 
   };
 
   const formatearSistema = async () => {
-    const confirmMsg = 
-      '⚠️ ¿ESTÁ ABSOLUTAMENTE SEGURO?\n\n' +
-      'ESTA ACCIÓN ELIMINARÁ PERMANENTEMENTE:\n' +
-      '✅ TODOS los productos e inventario.\n' +
-      '✅ TODAS las ventas y créditos.\n' +
-      '✅ TODOS los clientes y proveedores.\n' +
-      '✅ TODOS los movimientos y asientos contables.\n' +
-      '✅ TODOS los usuarios y sus credenciales.\n' +
-      '✅ TODOS los reportes y configuraciones.\n\n' +
-      '⚠️ ESTA ACCIÓN NO SE PUEDE DESHACER.';
-
+    const confirmMsg = '⚠️ Esta acción eliminará los datos operativos almacenados en Turso. El administrador semilla se conservará. ¿Desea continuar?';
     if (!confirm(confirmMsg)) return;
-
     setIsFormatting(true);
     try {
-      // En Turso el formateo es una transacción única y conserva el administrador semilla.
-      const tursoResponse = await fetch('/api/turso/store', {
+      const response = await fetch('/api/turso/store', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({ operation: 'factoryReset' })
       });
-      if (tursoResponse.status !== 503) {
-        const tursoBody = await tursoResponse.json().catch(() => ({}));
-        if (!tursoResponse.ok || tursoBody?.ok === false) throw new Error(tursoBody?.error || 'No fue posible formatear Turso.');
-        if (typeof sessionStorage !== 'undefined') sessionStorage.clear();
-        if (typeof localStorage !== 'undefined') {
-          localStorage.removeItem('posven_apertura_done');
-          localStorage.removeItem('posven_last_cxp_alert');
-        }
-        await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
-        if (auth) await signOut(auth).catch(() => {});
-        toast({ title: "Sistema Formateado", description: "Turso fue reiniciado y el administrador semilla fue conservado." });
-        window.location.href = '/login';
-        return;
-      }
-
-      // Turso no configurado: conserva el formateo Firebase legado.
-      // ===== 1. ELIMINAR TODAS LAS COLECCIONES =====
-      const colecciones = [
-        'productos',
-        'ventas',
-        'clientes',
-        'cxc',
-        'cxp',
-        'movimientos',
-        'terminales',
-        'proveedores',
-        'devoluciones',
-        'anulaciones',
-        'libroDiario',
-        'reportesZ',
-        'catalogos',
-        'inventario',
-        'config',
-        'users'
-      ];
-
-      console.log('🗑️ Iniciando eliminación de colecciones...');
-      for (const colName of colecciones) {
-        console.log(`Eliminando colección "${colName}"...`);
-        await deleteCollection(colName);
-      }
-
-      // ===== 2. ELIMINAR DOCUMENTOS DE pos_system_data (excepto 'state') =====
-      try {
-        const mainColRef = collection(db, 'pos_system_data');
-        const mainSnapshot = await getDocs(mainColRef);
-        const batch = writeBatch(db);
-        mainSnapshot.docs.forEach((docSnap) => {
-          if (docSnap.id !== 'state') {
-            batch.delete(docSnap.ref);
-          }
-        });
-        await batch.commit();
-        console.log('✅ Documentos extras en pos_system_data eliminados (excepto state).');
-      } catch (e) {
-        console.warn('⚠️ Error al limpiar pos_system_data:', e);
-      }
-
-      // ===== 3. REINICIAR CONFIGURACIÓN GLOBAL (config/general) =====
-      const configRef = doc(db, 'config', 'general');
-      await setDoc(configRef, {
-        isInitialized: false,
-        ultimoZ: 0,
-        proximoRecibo: 1,
-        proximaDevolucion: 1,
-        proximaAnulacion: 1,
-        acumuladoHistorico: 0,
-        fechaUltimoZ: '',
-        fondoCajaHoyUSD: 0,
-        fondoCajaHoyBS: 0,
-        tasa: state.tasa || 36.50,
-        pinDevolucion: '000000',
-        empresa: {
-          nombre: 'NOMBRE DE SU NEGOCIO',
-          rif: 'J-00000000-0',
-          direccion: 'DIRECCIÓN FISCAL',
-          telefono: '0000-0000000'
-        }
-      }, { merge: true });
-      console.log('✅ Configuración global reiniciada con valores iniciales.');
-
-      // ===== 4. LIMPIAR SESIÓN Y SALIR =====
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data?.ok === false) throw new Error(data?.error || 'Turso no confirmó el formateo.');
       if (typeof sessionStorage !== 'undefined') sessionStorage.clear();
       if (typeof localStorage !== 'undefined') {
         localStorage.removeItem('posven_apertura_done');
         localStorage.removeItem('posven_last_cxp_alert');
       }
-
-      toast({ 
-        title: "Sistema Formateado", 
-        description: "Todos los datos han sido eliminados permanentemente." 
-      });
-
-      // ===== 5. CERRAR SESIÓN =====
-      try {
-        await signOut(auth);
-      } catch (e) {
-        console.warn('⚠️ Error al cerrar sesión:', e);
-      }
-
-      // ===== 6. REDIRIGIR AL LOGIN =====
+      await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
+      toast({ title: 'Sistema Formateado', description: 'Turso fue reiniciado y el administrador semilla fue conservado.' });
       window.location.href = '/login';
-
     } catch (error: any) {
-      console.error("❌ Error en formateo:", error);
-      toast({ 
-        variant: "destructive", 
-        title: "Fallo en Limpieza", 
-        description: error.message 
-      });
+      console.error('Error en formateo Turso:', error);
+      toast({ variant: 'destructive', title: 'Fallo en Limpieza', description: error?.message || 'No se pudo completar el formateo.' });
     } finally {
       setIsFormatting(false);
     }
@@ -416,97 +242,6 @@ export default function ConfigModule({ state, updateState }: { state: AppState, 
           <button className="btn btn-primary h-12 px-8 font-black uppercase text-xs shadow-md" onClick={guardarEmpresa}>
             <Save className="w-4 h-4" /> Actualizar Empresa
           </button>
-        </div>
-      </div>
-
-      {/* ===== MIGRACIÓN DE DATOS ===== */}
-      <div className="card shadow-lg border-blue-500/30 bg-blue-50 border-2">
-        <div className="card-head border-b border-blue-500/20 px-5 py-4">
-          <h3 className="text-blue-700 font-black uppercase italic text-xs flex items-center gap-2">
-            <Database className="w-4 h-4" /> Migración de Estructura de Datos
-          </h3>
-        </div>
-        <div className="card-body p-6 bg-white">
-          <p className="text-xs text-ink font-bold mb-4">
-            Esta acción migrará los datos de la estructura antigua (documento único) a la nueva estructura (colecciones separadas).
-          </p>
-          <div className="flex flex-col gap-3">
-            <button 
-              className="btn bg-blue-600 hover:bg-blue-700 text-white h-12 px-8 font-black uppercase text-xs shadow-xl flex items-center gap-2" 
-              onClick={handleMigrar}
-              disabled={isMigrating}
-            >
-              {isMigrating ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Database className="w-4 h-4" />}
-              {isMigrating ? 'MIGRANDO DATOS...' : 'Migrar Estructura de Datos'}
-            </button>
-
-            <div className="mt-5 pt-5 border-t border-blue-500/20">
-              <p className="text-xs text-ink font-bold mb-3">
-                Si ya realizó una migración anterior, use esta herramienta para sincronizar los detalles de las deudas con sus facturas originales en Turso. No necesita volver a cargar el archivo JSON.
-              </p>
-              <button
-                className="btn bg-amber-600 hover:bg-amber-700 text-white h-12 px-8 font-black uppercase text-xs shadow-xl flex items-center gap-2"
-                onClick={handleRepararCxcMigrado}
-                disabled={isRepairingCxc}
-              >
-                {isRepairingCxc ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Database className="w-4 h-4" />}
-                {isRepairingCxc ? 'REPARANDO CxC...' : 'REPARAR CxC MIGRADO'}
-              </button>
-              {reparacionCxcResultado && (
-                <div className={reparacionCxcResultado.error ? 'mt-3 p-4 rounded-lg border bg-red-50 border-red-500' : 'mt-3 p-4 rounded-lg border bg-amber-50 border-amber-400'}>
-                  {reparacionCxcResultado.error ? (
-                    <p className="text-xs text-red-700 font-bold">{reparacionCxcResultado.error}</p>
-                  ) : (
-                    <>
-                      <h4 className="font-black uppercase text-xs text-amber-800 mb-2">Resultado de reparación CxC</h4>
-                      <div className="grid grid-cols-2 gap-2 text-xs text-ink">
-                        <div className="flex justify-between"><span className="font-bold">Revisadas:</span><span>{reparacionCxcResultado.revisadas || 0}</span></div>
-                        <div className="flex justify-between"><span className="font-bold">Corregidas:</span><span>{reparacionCxcResultado.corregidas || 0}</span></div>
-                        <div className="flex justify-between"><span className="font-bold">Sin venta:</span><span>{reparacionCxcResultado.sinVenta || 0}</span></div>
-                        <div className="flex justify-between"><span className="font-bold">Sin items en venta:</span><span>{reparacionCxcResultado.sinItemsVenta || 0}</span></div>
-                        <div className="flex justify-between"><span className="font-bold">Sin cambios:</span><span>{reparacionCxcResultado.sinCambios || 0}</span></div>
-                      </div>
-                      <p className="text-[10px] text-ink/70 mt-3 font-bold">La reparación solo sincroniza factura, items y totales desde la venta original. No modifica pagos, abonos ni saldo pendiente.</p>
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {showMigracionResultado && migracionResultado && (
-              <div className={`mt-4 p-4 rounded-lg border ${migracionResultado.success ? 'bg-green-50 border-green-500' : 'bg-red-50 border-red-500'}`}>
-                <h4 className={`font-black uppercase text-xs mb-2 ${migracionResultado.success ? 'text-green-700' : 'text-red-700'}`}>
-                  {migracionResultado.success ? '✅ Migración completada exitosamente' : '❌ Error en migración'}
-                </h4>
-                {migracionResultado.success && resultados ? (
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    <div className="flex justify-between"><span className="font-bold">Config:</span> <span>{resultados.config || 0}</span></div>
-                    <div className="flex justify-between"><span className="font-bold">Catálogos:</span> <span>{resultados.catalogos || 0}</span></div>
-                    <div className="flex justify-between"><span className="font-bold">Inventario:</span> <span>{resultados.inventario || 0}</span></div>
-                    <div className="flex justify-between"><span className="font-bold">Ventas:</span> <span>{resultados.ventas || 0}</span></div>
-                    <div className="flex justify-between"><span className="font-bold">Movimientos:</span> <span>{resultados.movimientos || 0}</span></div>
-                    <div className="flex justify-between"><span className="font-bold">Terminales:</span> <span>{resultados.terminales || 0}</span></div>
-                    <div className="flex justify-between"><span className="font-bold">Proveedores:</span> <span>{resultados.proveedores || 0}</span></div>
-                    <div className="flex justify-between"><span className="font-bold">Devoluciones:</span> <span>{resultados.devoluciones || 0}</span></div>
-                    <div className="flex justify-between"><span className="font-bold">Anulaciones:</span> <span>{resultados.anulaciones || 0}</span></div>
-                    <div className="flex justify-between"><span className="font-bold">CXC:</span> <span>{resultados.cxc || 0}</span></div>
-                    <div className="flex justify-between"><span className="font-bold">CXP:</span> <span>{resultados.cxp || 0}</span></div>
-                    <div className="flex justify-between"><span className="font-bold">Clientes:</span> <span>{resultados.clientes || 0}</span></div>
-                  </div>
-                ) : migracionResultado.success ? (
-                  <p className="text-xs text-yellow-700">No se encontraron resultados para mostrar</p>
-                ) : (
-                  <p className="text-xs text-red-700">{migracionResultado.error || 'Error desconocido'}</p>
-                )}
-                <button 
-                  className="mt-3 text-xs font-black underline hover:no-underline"
-                  onClick={() => setShowMigracionResultado(false)}
-                >
-                  Cerrar
-                </button>
-              </div>
-            )}
-          </div>
         </div>
       </div>
 
