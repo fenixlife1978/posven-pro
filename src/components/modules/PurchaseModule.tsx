@@ -175,8 +175,8 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
       const fecha = String(c?.fecha || '').slice(0, 10);
       const factura = String(c?.numeroFactura || '').trim().toLowerCase();
       const proveedor = String(c?.proveedor || '').trim().toLowerCase();
-      if (factura && proveedor && fecha) return \`\${fecha}|\${factura}|\${proveedor}\`;
-      return \`ID|\${String(c?.id || '')}\`;
+      if (factura && proveedor && fecha) return `${fecha}|${factura}|${proveedor}`;
+      return `ID|${String(c?.id || '')}`;
     };
 
     // Primero entra la reconstrucción histórica y luego el registro canónico
