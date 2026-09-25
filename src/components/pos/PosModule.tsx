@@ -786,7 +786,18 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     try {
       const listadoPagos = pagosFinales || pagos;
       const totalPagadoRecibido = listadoPagos.reduce((s, p) => s + p.montoUSD, 0);
-      const terminal = getCurrentTerminal();
+      // Releer la identidad de sesión justo al confirmar la venta. Esto evita
+      // que el primer clic después del login ocurra antes de que React termine
+      // de hidratar currentTerminal y termine guardándose como SISTEMA GLOBAL.
+      const freshState = Store.get();
+      const sessionTerminalId = String((freshState as any).user?.terminalId || '').trim();
+      const freshTerminal = sessionTerminalId
+        ? (freshState.terminales || []).find((t:any) => String(t?.id || '') === sessionTerminalId)
+        : null;
+      const terminal = freshTerminal || getCurrentTerminal();
+      if (!terminal?.id) {
+        throw new Error('La caja del cajero todavía está cargando. Espere un momento y vuelva a intentar la venta.');
+      }
       const ahoraStr = Utils.ahora();
 
       const operationId = 'VENTA-' + Store.uid();
