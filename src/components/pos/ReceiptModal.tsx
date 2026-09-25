@@ -200,7 +200,9 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
     const details = arqueoRows.map((r:any) => {
       const usd = r.moneda === 'USD';
       const fondo = r.metodo === 'efectivo_bs' ? Number(data?.fondoAperturaBS || 0) : r.metodo === 'efectivo_usd' ? Number(data?.fondoAperturaUSD || 0) : 0;
-      const ventas = usd ? Number(r.ventasUSD || 0) : Number(r.ventasBS || 0);
+      const ventas = r.metodo === 'tarjeta' && !(Number(r.ventasBS) > 0)
+        ? Number(r.ventasUSD || 0) * Number(state.tasa || 0)
+        : (usd ? Number(r.ventasUSD || 0) : Number(r.ventasBS || 0));
       const cobros = usd ? Number(r.cobrosUSD || 0) : Number(r.cobrosBS || 0);
       const dev = usd ? Number(r.devUSD || 0) : Number(r.devBS || 0);
       const credito = r.metodo === 'credito' ? Number(data?.ventasCreditoUSD || 0) : 0;
