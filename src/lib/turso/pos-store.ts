@@ -760,7 +760,7 @@ export async function applyDebtPaymentTransaction(params: {
     const receiptId=terminal?terminalSeries(await terminalUniquePrefix(tx,terminal,terminalId),label,counter,6):terminalSeries('GLOBAL',label,Date.now(),6);
     const applied=Math.min(Number(amountUSD),saldo);
     const appliedBS=Number(amountBS)>0?Math.min(Number(amountBS),Number(payment?.montoBS)||Number(amountBS)):(Number(payment?.montoBS)||(applied*(Number(payment?.tasaAplicada)||0)));
-    const pago=clean({...payment,id:receiptId,reciboId:receiptId,terminalId:terminalForOperation||payment?.terminalId,montoUSD:applied,montoBS:appliedBS});
+    const pago=clean({...payment,id:receiptId,reciboId:receiptId,terminalId:terminalId||payment?.terminalId,montoUSD:applied,montoBS:appliedBS});
     const updated={...debt,abonadoUSD:(Number(debt.abonadoUSD)||0)+applied,saldoUSD:Math.max(0,saldo-applied),estado:saldo-applied<=0.001?'pagada':'parcial',historialPagos:[...(Array.isArray(debt.historialPagos)?debt.historialPagos:[]),pago]};
     const statements:TursoStatement[]=[rowStatement(collection,updated)];
     if(collection==='cxc'&&customerCedula){
@@ -815,7 +815,7 @@ async function applyGlobalPayment(params:any, collection:'cxc'|'cxp'){
       docs = candidates.rows.map(rowFromDb);
     } else {
       const found=await tx.execute({
-        sql:"SELECT id,data_json FROM "+tableName(collection)+" WHERE json_extract(data_json,'$."+matchField+"')=? ORDER BY COALESCE(fecha,'') ASC,id ASC",
+        sql:"SELECT id,data_json FROM "+tableName(collection)+" WHERE LOWER(TRIM(COALESCE(json_extract(data_json,'$."+matchField+"'),''))) = LOWER(TRIM(?)) ORDER BY COALESCE(fecha,'') ASC,id ASC",
         args:[matchValue]
       });
       docs = found.rows.map(rowFromDb);
