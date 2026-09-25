@@ -164,10 +164,13 @@ export default function CxPModule({ state, updateState, terminalId }: CxPModuleP
     }
     const montoBS = esMetodoBS ? rawMonto : rawMonto * state.tasa;
     const amount = esMetodoBS ? rawMonto / state.tasa : rawMonto;
-    if (amount > (showPaymentModal.saldoUSD + 0.001)) {
+    const amountCents = Math.round(amount * 100);
+    const saldoCents = Math.round((Number(showPaymentModal.saldoUSD) || 0) * 100);
+    if (amountCents > saldoCents) {
       toast({ variant: "destructive", title: "Error", description: "El monto no puede ser mayor al saldo pendiente." });
       return;
     }
+    const amountNormalizado = amountCents / 100;
 
     if (isProcessing || processingRef.current) return;
     processingRef.current = true;
@@ -178,7 +181,7 @@ export default function CxPModule({ state, updateState, terminalId }: CxPModuleP
     const reciboId = `PEND-CXP-${Store.uid().toUpperCase().slice(0, 8)}`;
     const pago = {
       id: 'PAYS-' + Store.uid().toUpperCase().slice(0, 6),
-      asientoId, fecha: ahoraStr, montoUSD: amount, montoBS,
+      asientoId, fecha: ahoraStr, montoUSD: amountNormalizado, montoBS,
       metodo: paymentMethod, reciboId
     };
     const nuevoAsiento: LibroDiarioEntry = {
@@ -192,8 +195,8 @@ export default function CxPModule({ state, updateState, terminalId }: CxPModuleP
       const resultadoPago = await Store.applyDebtPaymentTransaction({
         collection: 'cxp',
         debtId: showPaymentModal.id,
-        amountUSD: amount,
-        payment: pago,
+        amountUSD: amountNormalizado,
+        payment: { ...pago, montoUSD: amountNormalizado },
         journal: nuevoAsiento,
         terminalId
       });
