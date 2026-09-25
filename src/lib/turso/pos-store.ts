@@ -907,7 +907,21 @@ export async function createCustomerDebtTransaction(params:any){
     let customer=null;
     if(params.customerId) customer=rowFromDb((await tx.execute(txSelect('clientes',params.customerId))).rows[0]);
     if(!customer&&params.customerCedula) customer=rowFromDb((await tx.execute({sql:"SELECT id,data_json FROM clientes WHERE json_extract(data_json,'$.cedula')=? LIMIT 1",args:[String(params.customerCedula)]})).rows[0]);
-    if(customer) statements.push(rowStatement('clientes',{...customer,debt:(Number(customer.debt)||0)+(Number(debt.montoUSD)||0)}));
+    if(customer) {
+      customer = {
+        ...customer,
+        debt: (Number(customer.debt)||0) + (Number(debt.montoUSD)||0),
+        address: params.customer?.address || customer.address || 'Sin dirección',
+        phone: params.customer?.phone || customer.phone || 'Sin teléfono',
+      };
+      statements.push(rowStatement('clientes',customer));
+    } else if(params.customer?.id) {
+      customer = {
+        ...params.customer,
+        debt: Number(params.customer.debt) || Number(debt.montoUSD) || 0,
+      };
+      statements.push(rowStatement('clientes',customer));
+    }
     if(params.journal?.id) statements.push(rowStatement('libroDiario',params.journal));
     statements.push({sql:'INSERT INTO operaciones(id,prefijo,operation_id,data_json) VALUES(?,?,?,?)',args:['DEUDA-CXC-'+opId,'DEUDA-CXC',opId,JSON.stringify({tipo:'DEUDA-CXC',operationId:opId,referencia:debt.id})],wantRows:false});
     for(const s of statements) await tx.execute(s); return {debt,customer};
