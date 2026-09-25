@@ -1273,7 +1273,12 @@ export const Store = {
     const { operationId, provider, amountUSD, payment, journal, terminalId } = params;
     if (!(amountUSD > 0)) return { appliedUSD: 0, debts: [] };
     const tursoResult = await tryTursoOperation('globalProviderPayment', params);
-    if (tursoResult) return tursoResult;
+    if (tursoResult) {
+      const refreshedCxp = await tryTursoRead('cxp', { limit: 2000 });
+      if (refreshedCxp !== null) applyPatch({ cxp: refreshedCxp });
+      if (Array.isArray(tursoResult.journal)) applyPatch({ libroDiario: mergeById(cache.libroDiario, tursoResult.journal) });
+      return tursoResult;
+    }
 
     const effectiveTerminalId = String(terminalId || '').trim();
     const q = query(collection(db, 'cxp'), where('proveedor', '==', provider));
@@ -1532,7 +1537,7 @@ export const Store = {
     if (!(amountUSD > 0)) return null;
     const tursoResult = await tryTursoOperation('debtPayment', params);
     if (tursoResult) {
-      if (tursoResult.id) applyPatch({ cxc: mergeById(cache.cxc, [tursoResult]) });
+      if (tursoResult.id) applyPatch({ [collectionName]: mergeById((cache as any)[collectionName] || [], [tursoResult]) });
       // Tras un cobro, hidratar CxC completa desde Turso para que el historial
       // de cada pago/abono aparezca inmediatamente, incluso cuando la deuda
       // pasó de activa a pagada y dejó de pertenecer al listado realtime activo.
