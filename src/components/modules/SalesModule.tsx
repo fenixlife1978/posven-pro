@@ -487,7 +487,11 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       ventaNetaUSD: data.netUSD, baseImponibleUSD: data.baseImponibleUSD, ivaUSD: data.ivaUSD, exentoUSD: data.exentoUSD,
       igtfUSD: data.igtfUSD, metodosPago: { ...data.paymentMethods },
       cobrosDeudaUSD: Number(data.cobrosDeudaUSD) || 0,
+      // Se conserva el campo histórico BS por compatibilidad de datos, pero el
+      // recibo Z ya no lo presenta. El importe físico final se calcula por moneda.
       cobrosDeudaBS: Number(data.cobrosDeudaBS) || 0,
+      totalNetoEfectivoBS: Number(data.totalNetoEfectivoBS) || 0,
+      totalNetoEfectivoUSD: Number(data.totalNetoEfectivoUSD) || 0,
       salidasCajaUSD: data.manualSalidas, entradasCajaUSD: data.manualEntradas,
       fondoAperturaUSD: data.fondoAperturaUSD, fondoAperturaBS: data.fondoAperturaBS, acumuladoHistoricoUSD: data.acumuladoHistoricoUSD, stats: { ...data.stats }
     };
