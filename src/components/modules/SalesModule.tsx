@@ -521,16 +521,27 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         metodo: payments.length > 1 ? 'mixto' : payments[0].method,
         tasaAplicada: state.tasa, terminalId: terminal?.id
       };
+      const paymentParts = payments.map((p: any) => ({
+        id: receiptId + '-' + String(p.method || 'OTROS'),
+        metodo: p.method,
+        montoUSD: Number(p.usdAmount) || (Number(p.amount) || 0) / state.tasa,
+        montoBS: Number(p.amount) || 0,
+        tasaAplicada: state.tasa,
+        terminalId: terminal?.id,
+      }));
       const result = await Store.applyGlobalCustomerPaymentTransaction({
         operationId,
         customerName: globalCreditCustomer.name,
         customerCedula: globalCreditCustomer.cedula,
         amountUSD: totalUSD,
         amountBS: totalBS,
-        payment,
+        payment: { ...payment, paymentParts },
+        paymentParts,
         journal: {
           id: 'JD-' + Store.uid(), fecha: Utils.ahora(), tipo: 'ingreso',
           categoria: 'COBRO_DEUDA', montoUSD: totalUSD, montoBS: totalBS,
+          metodo: payments.length > 1 ? 'mixto' : payments[0].method,
+          paymentParts,
           descripcion: 'PAGO GLOBAL CxC', terminalId: terminal?.id
         },
         terminalId: terminal?.id
@@ -828,6 +839,9 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       if (Math.abs(appliedUSD - totalAbonado) > 0.001) throw new Error('El saldo cambió mientras se registraba el abono. La operación fue limitada al saldo real.');
 
       const saleFinal = resultadoPago.sale || { ...saleAbono, id: resultadoPago.receiptId || saleAbono.id };
+      if (resultadoPago.sale?.payments?.length) {
+        saleFinal.payments = resultadoPago.sale.payments.map((p: any) => ({ ...p }));
+      }
       setLastProcessedSale(saleFinal); 
       setShowReceiptModal(true); 
       setShowAbonoModal(null);
@@ -873,7 +887,22 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       ...(cashMovement.observacion.trim() ? { observacion: cashMovement.observacion.trim() } : {})
     } as LibroDiarioEntry;
 
-    updateState({ libroDiario: [entry, ...(state.libroDiario || [])] });
+    void (async () => {
+      try {
+        const result = await Store.createCashMovementTransaction({
+          operationId: 'MOVIMIENTO-CAJA-' + Store.uid(),
+          movement: entry,
+          terminalId: terminal.id,
+        });
+        updateState({ libroDiario: [...(state.libroDiario || []), result.movement] });
+        toast({
+          title: cashMovement.tipo === 'egreso' ? 'Egreso registrado' : 'Ingreso registrado',
+          description: `${cashMovement.tipo === 'egreso' ? 'Salida' : 'Entrada'} de ${cashMovement.metodo === 'efectivo_bs' ? Utils.fmtBS(monto) : Utils.fmtUSD(monto)} registrada en ${terminal.nombre}.`
+        });
+      } catch (e: any) {
+        toast({ variant: 'destructive', title: 'Movimiento no registrado', description: e?.message || 'No se pudo persistir el movimiento en Turso.' });
+      }
+    })();
 
     toast({
       title: cashMovement.tipo === 'egreso' ? 'Egreso registrado' : 'Ingreso registrado',
