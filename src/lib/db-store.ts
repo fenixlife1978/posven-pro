@@ -1149,17 +1149,24 @@ function init() {
 async function getSaleById(saleId: string): Promise<any | null> {
   if (!saleId) return null;
   const id = String(saleId);
-  const cached = (cache.ventas || []).find((v: any) => String(v?.id || '') === id);
-  if (cached) return sanitizeForFirestore(cached);
   try {
-    const tursoItems = await tryTursoRead('ventas', { limit: 500 });
-    if (tursoItems !== null) {
-      const found = tursoItems.find((v: any) => String(v?.id || '') === id);
-      return found ? sanitizeForFirestore(found) : null;
+    // Para consultas históricas, la venta debe salir de Turso directamente.
+    // El cache local puede contener una versión antigua de la venta migrada
+    // sin items y no debe ocultar el payload completo persistido.
+    if (typeof window !== 'undefined') {
+      const response = await fetch('/api/turso/store?table=ventas&id=' + encodeURIComponent(id), {
+        credentials: 'include',
+        cache: 'no-store',
+      });
+      if (response.status === 503) throw new Error('Turso no está configurado o no está disponible.');
+      const body: any = await response.json();
+      if (!response.ok || body?.ok === false) throw new Error(String(body?.error || 'Turso rechazó la lectura.'));
+      if (body?.record) return sanitizeForFirestore(body.record);
+      return null;
     }
-    if (!db) return null;
-    const snap = await getDoc(doc(db, 'ventas', id));
-    return snap.exists() ? sanitizeForFirestore({ ...snap.data(), id }) : null;
+    const cached = (cache.ventas || []).find((v: any) => String(v?.id || '') === id);
+    if (cached) return sanitizeForFirestore(cached);
+    return null;
   } catch (e) {
     console.error('Error leyendo venta puntual:', e);
     throw e;
