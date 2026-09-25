@@ -676,12 +676,16 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         amountUSD: totalUSD,
         amountBS: totalBS,
         payment: pagoBase,
-        paymentParts: payments.map((p:any) => ({
-          metodo: p.method,
-          montoBS: Number(p.amount) || 0,
-          montoUSD: Number(p.usdAmount) || ((Number(p.amount) || 0) / state.tasa),
-          tasaAplicada: state.tasa
-        })),
+        paymentParts: payments.map((p:any) => {
+          const metodo = String(p.method || '').trim().toLowerCase();
+          const esUSD = ['efectivo_usd', 'zelle', 'usd', 'dolar', 'dolares'].includes(metodo);
+          return {
+            metodo: p.method,
+            montoBS: esUSD ? 0 : (Number(p.amount) || Number(p.amountBS) || 0),
+            montoUSD: esUSD ? (Number(p.usdAmount) || Number(p.amount) || 0) : 0,
+            tasaAplicada: state.tasa
+          };
+        }),
         journal,
         terminalId: terminal?.id
       });
