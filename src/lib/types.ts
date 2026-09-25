@@ -304,6 +304,9 @@ export interface ReportZ {
   metodosPago: Record<string, number>;
   cobrosDeudaUSD?: number;
   cobrosDeudaBS?: number;
+  cobrosDeudaPorMetodo?: Array<{ metodo: string; montoBS: number; montoUSD: number }>;
+  totalNetoEfectivoBS?: number;
+  totalNetoEfectivoUSD?: number;
   salidasCajaUSD: number;
   entradasCajaUSD: number;
   fondoAperturaUSD: number;
