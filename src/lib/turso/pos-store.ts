@@ -1204,8 +1204,14 @@ export async function deletePurchaseTransaction(params:any){
         .flatMap((pu:any)=>Array.isArray(pu.items)?pu.items:[])
         .filter((it:any)=>String(it.productoId||'')===pid);
 
-      const deletedQty=deleted.filter((d:any)=>String(d.productoId)===pid)
-        .reduce((s:number,d:any)=>s+Math.abs(Number(d.cantidad)||0),0);
+      // El Kardex es la fuente de verdad del stock. Nunca debemos calcular
+      // el stock final como "stock actual - cantidad eliminada", porque el
+      // producto puede haber tenido ventas/consumos posteriores a la compra.
+      // Si reconstruimos el Kardex, tomamos su último saldo; si la compra
+      // eliminada era el último movimiento, tomamos el último saldo restante.
+      const kardexFinalStock = rebuilt.length
+        ? Number(rebuilt[rebuilt.length - 1].stockDespues)
+        : 0;
 
       // Las compras históricas anteriores no guardaban costo en el movimiento.
       // Si el producto conserva stock, el CPP actual se reconstruye usando
@@ -1214,9 +1220,11 @@ export async function deletePurchaseTransaction(params:any){
       // contiene el costo unitario y permite calcular el CPP restante con precisión.
       let finalCost=Number(p.costoUSD)||0;
       const currentStock=Number(p.stock)||0;
-      const finalStock=Math.max(0,currentStock-deletedQty);
+      const finalStock=Number.isFinite(kardexFinalStock)
+        ? Math.max(0,kardexFinalStock)
+        : currentStock;
 
-      if(deletedItems.length && deletedQty>0 && currentStock>0){
+      if(deletedItems.length && finalStock>0 && currentStock>0){
         const deletedCostTotal=deletedItems.reduce((s:number,it:any)=>s+(Number(it.cantidad)||0)*(Number(it.costoUnitarioUSD)||0),0);
         const beforeStock=finalStock;
         const currentValue=currentStock*finalCost;
