@@ -360,6 +360,27 @@ export default function CxCModule({ state, updateState }: CxCModuleProps) {
     }
   };
 
+  // Normaliza ítems históricos/migrados para que el detalle CxC sea legible
+  // aunque el JSON original use nombres de campos distintos al esquema actual.
+  const normalizeSaleItem = (item: any) => {
+    const cantidad = Number(item?.cantidad ?? item?.qty ?? item?.quantity ?? 0);
+    const precioUnitUSD = Number(item?.precioUnitUSD ?? item?.precioUSD ?? item?.precio ?? item?.priceUSD ?? item?.price ?? 0);
+    const subtotalUSD = Number(item?.subtotalUSD ?? item?.totalUSD ?? item?.subtotal ?? item?.total ?? (cantidad * precioUnitUSD));
+    return {
+      ...item,
+      productoId: String(item?.productoId ?? item?.productId ?? item?.id ?? ''),
+      nombre: String(item?.nombre ?? item?.productoNombre ?? item?.producto ?? item?.descripcion ?? item?.description ?? item?.name ?? 'Ítem'),
+      cantidad,
+      precioUnitUSD,
+      subtotalUSD,
+    };
+  };
+
+  const normalizeSaleForDetails = (sale: any) => {
+    if (!sale || !Array.isArray(sale.items)) return sale;
+    return { ...sale, items: sale.items.map(normalizeSaleItem) };
+  };
+
   const handleExportPDF = () => {
     exportarPDFCxC(pendientes, state.empresa, totalPendiente);
   };
@@ -616,7 +637,7 @@ export default function CxCModule({ state, updateState }: CxCModuleProps) {
                                                         tasa: Number(d?.tasa ?? 0),
                                                       };
                                                     }
-                                                    setShowDetailsSale(sale);
+                                                    setShowDetailsSale(normalizeSaleForDetails(sale));
                                                   }} className="text-ink hover:text-brand-gold p-1 transition-colors"><Eye className="w-3.5 h-3.5"/></button>
                                                   {d.estado !== 'pagada' && (
                                                     <button onClick={() => eliminarDeuda(d)} disabled={isProcessing} className="text-ink hover:text-status-danger p-1"><Trash2 className="w-3.5 h-3.5" /></button>
