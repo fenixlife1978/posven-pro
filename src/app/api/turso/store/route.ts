@@ -21,6 +21,7 @@ import {
   deleteTerminalTransaction,
   createZClosureTransaction,
   applyDebtPaymentTransaction,
+  createCashMovementTransaction,
   applyGlobalProviderPaymentTransaction,
   applyGlobalCustomerPaymentTransaction,
   createCustomerDebtTransaction,
@@ -157,6 +158,14 @@ export async function POST(request: Request) {
       }
       case 'debtPayment': {
         const result = await applyDebtPaymentTransaction(body);
+        return NextResponse.json({ ok: true, ...result });
+      }
+      case 'cashMovement': {
+        const result = await createCashMovementTransaction({
+          operationId: String(body.operationId || ''),
+          movement: body.movement,
+          terminalId: String(body.terminalId || body.movement?.terminalId || ''),
+        });
         return NextResponse.json({ ok: true, ...result });
       }
       case 'globalProviderPayment': {
