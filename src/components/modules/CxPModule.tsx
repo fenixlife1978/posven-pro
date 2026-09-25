@@ -293,7 +293,7 @@ export default function CxPModule({ state, updateState, terminalId }: CxPModuleP
 
       const remanente = Math.max(0, amount - totalAplicado);
       const aplicados = resultadoPago.debts;
-      const aplicadoBS = totalAplicado * tasaAplicada;
+      const aplicadoBS = Number(resultadoPago.appliedBS) > 0 ? Number(resultadoPago.appliedBS) : totalAplicado * tasaAplicada;
 
       toast({
         title: "Pago global registrado",
@@ -310,7 +310,7 @@ export default function CxPModule({ state, updateState, terminalId }: CxPModuleP
       toast({
         variant: "destructive",
         title: "No se pudo registrar el pago global",
-        description: e?.message || 'Las deudas cambiaron en otra caja. Actualice y vuelva a intentar.'
+        description: e?.message || 'No se pudo completar la operación contra Turso.'
       });
     } finally {
       processingRef.current = false;
@@ -825,6 +825,8 @@ export default function CxPModule({ state, updateState, terminalId }: CxPModuleP
                <div className="bg-surface-soft p-5 rounded-[20px] text-center border border-line shadow-inner">
                   <p className="text-ink text-[9px] font-black uppercase tracking-[0.2em] mb-2">TOTAL PENDIENTE</p>
                   <p className="text-3xl font-black text-status-danger">{Utils.fmtUSD(globalProvider.total)}</p>
+                  <p className="text-base font-black text-ink mt-1">{Utils.fmtBS(globalProvider.total * (Number(state.tasa) || 0))}</p>
+                  <p className="text-[9px] font-black text-ink/70 mt-0.5 uppercase">Equivalente en BS · Tasa BCV {Number(state.tasa || 0).toFixed(2)} Bs/USD</p>
                   <p className="text-[9px] font-black text-ink mt-2 uppercase tracking-tight italic">
                     Se liquidarán las deudas desde la más antigua; el excedente se aplica como abono.
                   </p>
