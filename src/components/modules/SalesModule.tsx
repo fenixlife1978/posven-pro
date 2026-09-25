@@ -451,7 +451,10 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       desdeFactura: data.desdeFactura, hastaFactura: data.hastaFactura, desdeNotaCredito: data.desdeNC, hastaNotaCredito: data.hastaNC,
       cantidadAnuladas: data.stats.anulaciones, ventaBrutaUSD: data.brUSD, descuentoUSD: data.descUSD, devolucionesUSD: data.devUSD,
       ventaNetaUSD: data.netUSD, baseImponibleUSD: data.baseImponibleUSD, ivaUSD: data.ivaUSD, exentoUSD: data.exentoUSD,
-      igtfUSD: data.igtfUSD, metodosPago: { ...data.paymentMethods }, salidasCajaUSD: data.manualSalidas, entradasCajaUSD: data.manualEntradas,
+      igtfUSD: data.igtfUSD, metodosPago: { ...data.paymentMethods },
+      cobrosDeudaUSD: Number(data.cobrosDeudaUSD) || 0,
+      cobrosDeudaBS: Number(data.cobrosDeudaBS) || 0,
+      salidasCajaUSD: data.manualSalidas, entradasCajaUSD: data.manualEntradas,
       fondoAperturaUSD: data.fondoAperturaUSD, fondoAperturaBS: data.fondoAperturaBS, acumuladoHistoricoUSD: data.acumuladoHistoricoUSD, stats: { ...data.stats }
     };
     
