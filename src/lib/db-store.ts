@@ -632,7 +632,7 @@ async function loadReportWindow(name: string, terminalId: string, cutoff: string
 // No tiene sentido descargar ventas/libroDiario históricos de todas las cajas.
 async function ensureReportData(terminalId?: string, cutoff?: string): Promise<void> {
 
-  const termId = String(effectiveTerminalId);
+  const termId = String(terminalId || '').trim();
   const desde = String(cutoff || '');
 
   // Si no tenemos terminal/corte (casos administrativos), conservamos el
