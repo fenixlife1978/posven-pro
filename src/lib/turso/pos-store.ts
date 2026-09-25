@@ -587,6 +587,58 @@ export async function createSaleTransaction(params: {
 /**
  * Inventario atómico: el stock se lee y calcula dentro de BEGIN IMMEDIATE.
  */
+/**
+ * Reconciliación segura de stock: Kardex es la fuente de verdad.
+ * Solo corrige productos que ya tienen al menos un movimiento en Kardex.
+ * No modifica cantidades ni movimientos; únicamente sincroniza productos.stock
+ * con el stockDespues del último movimiento cronológico.
+ */
+export async function syncProductsStockFromKardex() {
+  assertTursoReady();
+  return tursoInteractiveTransaction(async tx => {
+    await tx.execute({
+      sql: `
+        UPDATE productos
+        SET data_json = json_set(
+          data_json,
+          '$.stock',
+          (
+            SELECT COALESCE(json_extract(m.data_json,'$.stockDespues'),0)
+            FROM movimientos m
+            WHERE json_extract(m.data_json,'$.productoId') = productos.id
+            ORDER BY COALESCE(m.fecha,'' ) DESC, m.id DESC
+            LIMIT 1
+          )
+        ),
+        updated_at = CURRENT_TIMESTAMP
+        WHERE EXISTS (
+          SELECT 1
+          FROM movimientos m2
+          WHERE json_extract(m2.data_json,'$.productoId') = productos.id
+        )
+      `,
+      args: [],
+      wantRows: false,
+    });
+
+    const result = await tx.execute({
+      sql: `
+        SELECT p.id,p.data_json
+        FROM productos p
+        WHERE EXISTS (
+          SELECT 1
+          FROM movimientos m
+          WHERE json_extract(m.data_json,'$.productoId') = p.id
+        )
+      `,
+      args: [],
+    });
+
+    const products = result.rows.map(rowFromDb).filter(Boolean);
+    return { products, source: 'kardex' };
+  });
+}
+
 export async function applyInventoryMovementsTransaction(params: {
   operationId: string;
   operationType: string;
