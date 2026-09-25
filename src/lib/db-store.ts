@@ -1180,6 +1180,7 @@ async function getSaleById(saleId: string): Promise<any | null> {
 
 export const Store = {
   applyInventoryMovementsTransaction,
+  createCashMovementTransaction,
   subscribe(callback: (state: Partial<AppState>) => void): () => void {
     listeners.add(callback);
     init();
