@@ -339,10 +339,14 @@ function mergeById<T extends { id?: any }>(existing: T[] | undefined, incoming: 
 // transacción que Firestore siga teniendo exactamente la versión que esta
 // caja leyó. Si otra caja lo cambió entretanto, abortamos en lugar de
 // pisar silenciosamente su modificación con un array local antiguo.
-async function syncArrayToCollection(name: string, _prevArr: any[] | undefined, newArr: any[] | undefined): Promise<void> {
+async function syncArrayToCollection(name: string, prevArr: any[] | undefined, newArr: any[] | undefined): Promise<void> {
+  const previousIds = new Set((prevArr || []).filter(x => x && x.id).map(x => String(x.id)));
   const records = (newArr || []).filter(x => x && x.id).map(sanitizeForFirestore);
-  const result = await tryTursoOperation('recordsSync', { table: name, records, deletedIds: [] });
-  if (result && Array.isArray(result.records)) applyPatch({ [name]: mergeById(newArr, result.records) });
+  const currentIds = new Set(records.map((x: any) => String(x.id)));
+  const deletedIds = [...previousIds].filter(id => !currentIds.has(id));
+  if (records.length === 0 && deletedIds.length === 0) return;
+  const result = await tryTursoOperation('recordsSync', { table: name, records, deletedIds });
+  if (result && Array.isArray(result.records)) applyPatch({ [name]: result.records });
 }
 
 // Stock y movimientos se gestionan exclusivamente mediante operaciones transaccionales de Turso.
