@@ -501,11 +501,25 @@ export default function LicoreriaPOS() {
                   const updatedTerminals = (currentState.terminales || []).map(t =>
                     t.id === termId ? { ...t, fondoCajaHoyBS: bsValue, fondoCajaHoyUSD: usdValue, isCashOpen: true, cashData: session } : t
                   );
+                  // Mantener la identidad operativa de Turso al salir de la apertura.
+                  // currentState puede contener un usuario cacheado antiguo sin terminalId;
+                  // si lo copiamos completo a React, el POS pierde la caja inmediatamente
+                  // después de confirmar la apertura y vuelve a mostrar "caja no disponible".
+                  const authoritativeUser = {
+                    ...(currentUser || {}),
+                    terminalId: termId
+                  };
                   const newState: AppState = {
                     ...currentState,
+                    user: authoritativeUser,
                     terminales: updatedTerminals
                   };
-                  Store.set({ terminales: updatedTerminals });
+                  Store.set({
+                    user: authoritativeUser,
+                    terminales: updatedTerminals
+                  });
+                  setUser(authoritativeUser);
+                  setUserProfile(authoritativeUser);
                   setState(newState);
                   
                   localStorage.removeItem('posven_apertura_done');
