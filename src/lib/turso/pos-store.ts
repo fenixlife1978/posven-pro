@@ -1154,18 +1154,29 @@ export async function deletePurchaseTransaction(params:any){
 
       const deletedIds=new Set(deleted.filter((d:any)=>String(d.productoId)===pid).map((d:any)=>String(d.id)));
       const remaining=rows.filter((m:any)=>!deletedIds.has(String(m.id)));
+      const deletedForProduct=deleted.filter((x:any)=>String(x.productoId)===pid);
+      const latestMovementId=rows.length ? String(rows[rows.length-1].id) : '';
+      const deletingLatestMovement=deletedForProduct.some((d:any)=>String(d.id)===latestMovementId);
 
-      let running=remaining.length ? Number(remaining[0].stockAntes)||0 : 0;
+      // Una compra nueva normalmente es el último movimiento. En ese caso NO
+      // se debe reconstruir todo el Kardex histórico: basta eliminar el
+      // movimiento de compra y actualizar el producto. Esto evita convertir
+      // una eliminación sencilla en cientos/miles de escrituras.
       const rebuilt:any[]=[];
-      for(const m of remaining){
-        const before=running;
-        running=before+(Number(m.cantidad)||0);
-        const rebuiltMovement={...m,stockAntes:before,stockDespues:running};
-        rebuilt.push(rebuiltMovement);
-        statements.push(rowStatement('movimientos',rebuiltMovement));
+      if(!deletingLatestMovement){
+        let running=remaining.length ? Number(remaining[0].stockAntes)||0 : 0;
+        for(const m of remaining){
+          const before=running;
+          running=before+(Number(m.cantidad)||0);
+          const rebuiltMovement={...m,stockAntes:before,stockDespues:running};
+          rebuilt.push(rebuiltMovement);
+          statements.push(rowStatement('movimientos',rebuiltMovement));
+        }
+      } else {
+        rebuilt.push(...remaining);
       }
 
-      for(const d of deleted.filter((x:any)=>String(x.productoId)===pid))
+      for(const d of deletedForProduct)
         statements.push({sql:'DELETE FROM movimientos WHERE id=?',args:[d.id],wantRows:false});
 
       // El costo CPP debe quedar exactamente como estaba antes de la compra:
@@ -1225,9 +1236,6 @@ export async function deletePurchaseTransaction(params:any){
       })],
       wantRows:false
     });
-
-    if(statements.length>450)
-      throw new Error('La compra tiene demasiados movimientos históricos para revertirla en una sola transacción.');
 
     for(const s of statements) await tx.execute(s);
 
