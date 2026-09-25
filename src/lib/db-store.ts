@@ -483,7 +483,6 @@ function syncProductosRTDB(prevArr: any[] | undefined, newArr: any[] | undefined
 //  - Si está incompleto (menos productos que Firestore) → lo repuebla completo.
 // Firestore sigue siendo la fuente de verdad; RTDB es el espejo barato de tiempo real.
 async function bootstrapProductos(): Promise<boolean> {
-  if (!db) return false;
   try {
     const tursoItems = await tryTursoRead('productos', { limit: 5000 });
     if (tursoItems !== null) {
@@ -1120,26 +1119,16 @@ function init() {
     }
   })();
 
-  // Históricos operativos: mantenemos la ventana de últimas 50 para no
-  // convertir cada movimiento de una caja en una lectura completa.
-  for (const name of ['movimientos']) {
-    const col = COLLECTIONS[name];
-    teardownFns.push(onSnapshot(
-      query(collection(db, col), orderBy('fecha', 'desc'), limit(50)),
-      (snap) => {
-        const currentArr = [...((cache as any)[name] || [])];
-        const map = new Map<string, any>(currentArr.map(x => [String(x.id), x]));
-        snap.docChanges().forEach(change => {
-          const item = sanitizeForFirestore(change.doc.data());
-          if (!item || !item.id) return;
-          if (change.type === 'removed') map.delete(String(item.id));
-          else map.set(String(item.id), item);
-        });
-        applyPatch({ [name]: [...map.values()] });
-      },
-      (err) => { if (err.code !== 'permission-denied') console.warn("Sync " + name + ":", err); }
-    ));
-  }
+  // Históricos operativos: Turso es la única fuente de movimientos.
+  // No se instala ningún listener Firebase/Firestore porque Firebase fue retirado.
+  void (async () => {
+    try {
+      const tursoItems = await tryTursoRead('movimientos', { limit: 50 });
+      if (tursoItems !== null) applyPatch({ movimientos: tursoItems });
+    } catch (e) {
+      console.error('[db-store] Error leyendo movimientos desde Turso:', e);
+    }
+  })();
 
   // 4) CARGA INICIAL: listas pequeñas completas + ventas/libroDiario COMPLETOS
   //    (cada caja filtra por su propio corte Z, así que ninguna puede perder datos
