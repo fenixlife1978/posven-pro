@@ -349,6 +349,27 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       + cobrosDeudaDiario.filter((e:any)=>!referenciasCobro.has(String(e?.referencia||''))).reduce((s:number,e:any)=>s + getOriginalPaymentParts(e).filter((p:any)=>esMetodoUSD(p?.metodo || p?.method)).reduce((x:number,p:any)=>x + (Number(p?.montoUSD ?? p?.usdAmount) || 0),0),0);
     const cobrosDeudaBS = cobroDeudaVentas.reduce((s:number,v:any)=>s + getOriginalPaymentParts(v).filter((p:any)=>esMetodoBS(p?.metodo || p?.method)).reduce((x:number,p:any)=>x + (Number(p?.montoBS ?? p?.amountBS ?? p?.amount) || 0),0),0)
       + cobrosDeudaDiario.filter((e:any)=>!referenciasCobro.has(String(e?.referencia||''))).reduce((s:number,e:any)=>s + getOriginalPaymentParts(e).filter((p:any)=>esMetodoBS(p?.metodo || p?.method)).reduce((x:number,p:any)=>x + (Number(p?.montoBS ?? p?.amountBS ?? p?.amount) || 0),0),0);
+
+    // TOTAL NETO FISICO DEL Z:
+    // Solo dinero efectivamente recibido/pagado en efectivo físico.
+    // No convierte BS↔USD y no incluye Zelle, transferencias, punto, Pago Móvil,
+    // Biopago u otros métodos no físicos.
+    const totalNetoEfectivoBS =
+      Number(terminalCash.fondoCajaHoyBS || 0) +
+      Number(efectivoBS.ventasBS || 0) +
+      Number(efectivoBS.cobrosBS || 0) +
+      Number(efectivoBS.movPlusBS || 0) -
+      Number(efectivoBS.devBS || 0) -
+      Number(efectivoBS.movMinusBS || 0);
+
+    const totalNetoEfectivoUSD =
+      Number(terminalCash.fondoCajaHoyUSD || 0) +
+      Number(efectivoUSD.ventasUSD || 0) +
+      Number(efectivoUSD.cobrosUSD || 0) +
+      Number(efectivoUSD.movPlusUSD || 0) -
+      Number(efectivoUSD.devUSD || 0) -
+      Number(efectivoUSD.movMinusUSD || 0);
+
     const ventasCreditoUSD=vActivas.filter((v:any)=>String(v.metodoPago||'').toLowerCase()==='credito'||(Array.isArray(v.payments)&&v.payments.some((p:any)=>p.metodo==='credito'))).reduce((s:number,v:any)=>s+(Number(v.totalUSD)||0),0);
 
     const terminalName = resolvedTerminal?.nombre || 'CAJA NO IDENTIFICADA';
@@ -374,6 +395,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       ventasCreditoUSD,
       estimadoEfectivoBS,
       estimadoEfectivoUSD,
+      totalNetoEfectivoBS,
+      totalNetoEfectivoUSD,
       tasaBCV: state.tasa || 0
     };
   };
