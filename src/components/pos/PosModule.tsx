@@ -745,11 +745,53 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         throw new Error('No hay saldo pendiente del cliente o la información cambió en otra caja.');
       }
 
+      const aplicadoUSD = Number(resultado.appliedUSD) || 0;
       const aplicadoBS = Number(resultado.appliedBS) || 0;
-      const remanenteUSD = Math.max(0, totalUSD - Number(resultado.appliedUSD || 0));
+      const remanenteUSD = Math.max(0, totalUSD - aplicadoUSD);
+      // PAGO GLOBAL genera un comprobante propio de CxC. No es una venta,
+      // pero debe poder imprimirse/visualizarse igual que un ticket de pago.
+      const cajeroNombre = String(
+        (state as any).user?.nombre ||
+        (state as any).user?.name ||
+        (state as any).user?.displayName ||
+        (state as any).user?.email ||
+        ''
+      ).trim() || 'Cajero';
+      const ticketPagoGlobal: any = {
+        id: resultado.receiptId || reciboProvisional,
+        fecha: ahora,
+        cliente: globalCreditCustomer.name,
+        items: [{
+          productoId: 'COBRO_CXC_GLOBAL',
+          nombre: `PAGO GLOBAL DE CxC - ${resultado.debts.length} FACTURA(S)`,
+          cantidad: 1,
+          precioUnitUSD: aplicadoUSD,
+          subtotalUSD: aplicadoUSD
+        }],
+        subtotalUSD: aplicadoUSD,
+        descuentoUSD: 0,
+        totalUSD: aplicadoUSD,
+        totalBS: aplicadoBS,
+        metodoPago: pagoBase.metodo,
+        estado: 'completada',
+        type: 'COBRO DEUDA',
+        payments: payments.map((p:any) => ({
+          metodo: p.method,
+          montoUSD: Number(p.usdAmount) || 0,
+          montoBS: Number(p.amount) || 0
+        })),
+        terminalId: terminal?.id,
+        terminalName: terminal?.nombre || 'SISTEMA GLOBAL',
+        cajeroNombre,
+        cajeroId: (state as any).user?.id || (state as any).user?.uid,
+        tasa: state.tasa,
+        reciboId: resultado.receiptId || reciboProvisional
+      };
+      setLastProcessedSale(ticketPagoGlobal);
+      setShowReceiptModal(true);
       toast({
         title: 'Pago global registrado',
-        description: `${Utils.fmtUSD(resultado.appliedUSD)} (${Utils.fmtBS(aplicadoBS)}) aplicado a ${resultado.debts.length} factura(s)${remanenteUSD > 0.000001 ? ' · excedente sin aplicar' : ''}.`
+        description: `${Utils.fmtUSD(aplicadoUSD)} (${Utils.fmtBS(aplicadoBS)}) aplicado a ${resultado.debts.length} factura(s)${remanenteUSD > 0.000001 ? ' · excedente sin aplicar' : ''}.`
       });
       setGlobalCreditCustomer(null);
     } catch (e: any) {
