@@ -224,6 +224,11 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
   const histPageCompras = comprasFiltradas.slice((histSafePage - 1) * histPageSize, histSafePage * histPageSize);
 
   useEffect(() => {
+    if (view !== 'historial') return;
+    void Store.ensurePurchaseHistory().catch(() => {});
+  }, [view]);
+
+  useEffect(() => {
     if (condicion === 'contado') {
       setMontoPagadoUSD(totalUSD.toFixed(4));
       setMontoPagadoBS((totalUSD * tasaActual).toFixed(2));
