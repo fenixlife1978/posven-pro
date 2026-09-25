@@ -2,6 +2,7 @@
 
 import { AppState, Terminal, Movimiento } from './types';
 import { enqueueOfflineOperation, registerOfflineProcessor } from './offline-queue';
+import { createCashMovementTransaction } from './turso/pos-store';
 // Turso es la única base de datos operativa. Estos nombres se conservan únicamente
 // para que los caminos legacy de sincronización no vuelvan a escribir en Firebase.
 // Cualquier intento de alcanzar esos caminos falla explícitamente.
