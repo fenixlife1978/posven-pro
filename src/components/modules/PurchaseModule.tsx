@@ -164,7 +164,19 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
   }, [state.movimientos, state.cxp, state.productos]);
 
   const todasCompras = useMemo<PurchaseRecord[]>(() => {
-    return [...legacyCompras, ...(state.compras || [])];
+    // Una compra registrada en Turso puede aparecer también en legacyCompras
+    // porque su movimiento de inventario ya existe. El registro canónico de
+    // compras debe prevalecer para no mostrarla dos veces.
+    const map = new Map<string, PurchaseRecord>();
+    const keyOf = (c: any) => [
+      String(c?.id || ''),
+      String(c?.fecha || '').slice(0, 10),
+      String(c?.numeroFactura || '').trim().toLowerCase(),
+      String(c?.proveedor || '').trim().toLowerCase()
+    ].join('|');
+    (legacyCompras || []).forEach((c: any) => map.set(keyOf(c), c));
+    (state.compras || []).forEach((c: any) => map.set(keyOf(c), c));
+    return Array.from(map.values());
   }, [legacyCompras, state.compras]);
 
   const mesesDisponibles = useMemo(() => {
@@ -386,6 +398,26 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
       });
 
       if (resultCompra?.queuedOffline) { toast({ title: 'Compra guardada sin conexión', description: 'Quedó pendiente y se sincronizará automáticamente al regresar Internet.' }); return; }
+      // Reflejar inmediatamente la compra y el nuevo stock/CPP en el estado
+      // local. Turso sigue siendo la fuente de verdad; esto solo evita esperar
+      // una nueva hidratación para que Productos/Inventario se actualice.
+      const productosActualizados = (state.productos || []).map((producto: any) => {
+        const agregados = purchaseItems.filter(i => String(i.productoId) === String(producto.id));
+        if (!agregados.length) return producto;
+        const cantidadCompra = agregados.reduce((s, i) => s + (Number(i.cantidad) || 0), 0);
+        const costoCompra = agregados.reduce((s, i) => s + (Number(i.cantidad) || 0) * (Number(i.costoUnitarioUSD) || 0), 0);
+        const stockAnterior = Number(producto.stock) || 0;
+        const costoAnterior = Number(producto.costoUSD) || 0;
+        const stockNuevo = stockAnterior + cantidadCompra;
+        const costoNuevo = stockNuevo > 0
+          ? Math.round((((stockAnterior * costoAnterior) + costoCompra) / stockNuevo + Number.EPSILON) * 10000) / 10000
+          : costoAnterior;
+        return { ...producto, stock: stockNuevo, costoUSD: costoNuevo };
+      });
+      updateState({
+        compras: [...(state.compras || []), nuevaCompra],
+        productos: productosActualizados
+      });
       toast({ title: "Compra Registrada ✅", description: `Factura ${numeroFactura} guardada en Turso de forma transaccional.` });
       
       setProveedor('');
