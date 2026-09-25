@@ -168,14 +168,23 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
     // porque su movimiento de inventario ya existe. El registro canónico de
     // compras debe prevalecer para no mostrarla dos veces.
     const map = new Map<string, PurchaseRecord>();
-    const keyOf = (c: any) => [
-      String(c?.id || ''),
-      String(c?.fecha || '').slice(0, 10),
-      String(c?.numeroFactura || '').trim().toLowerCase(),
-      String(c?.proveedor || '').trim().toLowerCase()
-    ].join('|');
+    const keyOf = (c: any) => {
+      // El ID no sirve para deduplicar aquí: una misma compra puede tener
+      // un ID canónico en "compras" y otro ID sintético en legacyCompras.
+      // Factura + proveedor + fecha identifican la operación comercial.
+      const fecha = String(c?.fecha || '').slice(0, 10);
+      const factura = String(c?.numeroFactura || '').trim().toLowerCase();
+      const proveedor = String(c?.proveedor || '').trim().toLowerCase();
+      if (factura && proveedor && fecha) return \`\${fecha}|\${factura}|\${proveedor}\`;
+      return \`ID|\${String(c?.id || '')}\`;
+    };
+
+    // Primero entra la reconstrucción histórica y luego el registro canónico
+    // de Turso. Así una compra nueva reemplaza a su copia reconstruida desde
+    // el movimiento de Kardex, en vez de sumarse como una segunda compra.
     (legacyCompras || []).forEach((c: any) => map.set(keyOf(c), c));
     (state.compras || []).forEach((c: any) => map.set(keyOf(c), c));
+
     return Array.from(map.values());
   }, [legacyCompras, state.compras]);
 
