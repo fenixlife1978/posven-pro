@@ -451,15 +451,28 @@ export async function createSaleTransaction(params: {
       return acc;
     }, { total: 0, base: 0, iva: 0, exento: 0 });
 
-    // Validar el pago en céntimos USD. Esto es especialmente importante
-    // cuando una venta combina efectivo BS + un método USD: la conversión
-    // puede producir valores decimales como 2.339999... aunque visualmente
-    // sean $2,34.
+    // Validar pagos por moneda en céntimos. Para pagos en Bs se suma
+    // PRIMERO el total Bs y se convierte UNA sola vez a USD; esto evita que
+    // una venta cubierta exactamente en Bs falle porque cada uno de varios
+    // métodos Bs fue redondeado individualmente al convertirlo a USD.
     const totalCentsUsd = Math.round((Number(totals.total) || 0) * 100);
-    const totalPaidCentsUsd = payments.reduce(
-      (s, p) => s + Math.round((Number(p.montoUSD) || 0) * 100),
-      0
-    );
+    const tasaCents = Math.round(Number(tasa) * 100);
+    const esMetodoUSD = (metodo: any) => {
+      const m = String(metodo || '').toLowerCase().trim();
+      return ['efectivo_usd', 'efectivo usd', 'usd', 'dolar', 'dolares', 'zelle'].some(x => m.includes(x));
+    };
+    const paidBsCents = payments.reduce((s, p) => {
+      if (esMetodoUSD(p?.metodo)) return s;
+      return s + Math.round((Number(p?.montoBS) || 0) * 100);
+    }, 0);
+    const paidUsdCents = payments.reduce((s, p) => {
+      if (!esMetodoUSD(p?.metodo)) return s;
+      return s + Math.round((Number(p?.montoUSD) || 0) * 100);
+    }, 0);
+    const paidBsAsUsdCents = tasaCents > 0
+      ? Math.round((paidBsCents * 100) / tasaCents)
+      : 0;
+    const totalPaidCentsUsd = paidBsAsUsdCents + paidUsdCents;
     if (!credit && totalPaidCentsUsd < totalCentsUsd) {
       throw new Error('El pago recibido es menor al total de la venta.');
     }
