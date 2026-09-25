@@ -588,7 +588,53 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         terminalId: terminal?.id
       });
       if (!result) throw new Error('No se pudo registrar el Pago Global.');
-      toast({ title: 'Pago Global registrado', description: `Aplicado: ${Utils.fmtUSD(result.appliedUSD)} · ${Utils.fmtBS(result.appliedBS)}` });
+
+      // PAGO GLOBAL CxC también debe emitir comprobante. Esta ruta es la que
+      // utiliza el módulo Ventas activo; anteriormente solo mostraba el toast
+      // y cerraba el formulario, dejando el cobro sin ticket.
+      const aplicadoUSD = Number(result.appliedUSD) || 0;
+      const aplicadoBS = Number(result.appliedBS) || 0;
+      const cajeroNombre = String(
+        (state as any).user?.nombre ||
+        (state as any).user?.name ||
+        (state as any).user?.displayName ||
+        (state as any).user?.email ||
+        ''
+      ).trim() || 'Cajero';
+      const ticketPagoGlobal: any = {
+        id: result.receiptId || receiptId,
+        fecha: payment.fecha,
+        cliente: globalCreditCustomer.name,
+        items: [{
+          productoId: 'COBRO_CXC_GLOBAL',
+          nombre: `PAGO GLOBAL DE CxC - ${Array.isArray(result.debts) ? result.debts.length : 0} FACTURA(S)`,
+          cantidad: 1,
+          precioUnitUSD: aplicadoUSD,
+          subtotalUSD: aplicadoUSD
+        }],
+        subtotalUSD: aplicadoUSD,
+        descuentoUSD: 0,
+        totalUSD: aplicadoUSD,
+        totalBS: aplicadoBS,
+        metodoPago: payment.metodo,
+        estado: 'completada',
+        type: 'COBRO DEUDA',
+        payments: payments.map((p:any) => ({
+          metodo: p.method,
+          montoUSD: Number(p.usdAmount) || 0,
+          montoBS: Number(p.amount) || 0
+        })),
+        terminalId: terminal?.id,
+        terminalName: terminal?.nombre || 'SISTEMA GLOBAL',
+        cajeroNombre,
+        cajeroId: (state as any).user?.id || (state as any).user?.uid,
+        tasa: state.tasa,
+        reciboId: result.receiptId || receiptId
+      };
+      setLastProcessedSale(ticketPagoGlobal);
+      setShowReceiptModal(true);
+
+      toast({ title: 'Pago Global registrado', description: `Aplicado: ${Utils.fmtUSD(aplicadoUSD)} · ${Utils.fmtBS(aplicadoBS)}` });
       setGlobalCreditCustomer(null);
     } catch (err: any) {
       toast({ variant: 'destructive', title: 'Pago Global no registrado', description: err?.message || 'No se pudo registrar el cobro.' });
