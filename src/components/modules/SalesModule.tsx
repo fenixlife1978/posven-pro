@@ -919,7 +919,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     setShowCashMovementModal(false);
   };
 
-  // ===== CORREGIDO: FUNCIÓN PARA EJECUTAR VENTA A CRÉDITO CON CLIENTE =====
+  // ===== VENTA A CRÉDITO: MISMA TRANSACCIÓN TURSO QUE UNA VENTA NORMAL =====
   const ejecutarVentaACredito = async (customer: Customer) => {
     if (state.carrito.length === 0 || isProcessing) return;
     if (!customer) return alert("Seleccione un cliente.");
@@ -927,110 +927,32 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     setIsProcessing(true);
     try {
       const terminal = getCurrentTerminal();
-      const nextNum = terminal?.proximoRecibo || state.proximoRecibo;
-      const prefijo = Utils.prefijoCaja(terminal, state.terminales);
-      const reciboId = prefijo + '-' + String(nextNum).padStart(9, '0');
-      const ahoraStr = Utils.ahora();
-      
-      let vExento = 0, vBase = 0, vIVA = 0;
-      let prodsActualizados = [...state.productos], nuevosMovimientos: Movimiento[] = [];
-      
-      state.carrito.forEach(item => {
-        const pIdx = prodsActualizados.findIndex(x => x.id === item.productoId);
-        if (pIdx === -1) return;
-        const p = { ...prodsActualizados[pIdx] };
-        if (p.aplicaIVA) { const base = item.subtotalUSD / 1.16; vBase += base; vIVA += (item.subtotalUSD - base); } else { vExento += item.subtotalUSD; }
-        if (p.isKit && p.kitType === 'stock_componentes' && p.kitItems) {
-          p.kitItems.forEach(ki => {
-            const cpIdx = prodsActualizados.findIndex(cp => cp.id === ki.productoId);
-            if (cpIdx !== -1) {
-              const cp = { ...prodsActualizados[cpIdx] };
-              const qty = item.cantidad * ki.cantidad, stockAntes = cp.stock;
-              cp.stock -= qty;
-              nuevosMovimientos.push({ id: Store.uid(), productoId: cp.id, tipo: 'venta', cantidad: -qty, stockAntes, stockDespues: cp.stock, fecha: ahoraStr, referencia: `KIT: ${p.nombre} - CRÉDITO ${reciboId}`, terminalId: terminal?.id || 'GLOBAL' });
-              prodsActualizados[cpIdx] = cp;
-            }
-          });
-        } else {
-          const stockAntes = p.stock;
-          p.stock -= item.cantidad;
-          nuevosMovimientos.push({ id: Store.uid(), productoId: item.productoId, tipo: 'venta', cantidad: -item.cantidad, stockAntes, stockDespues: p.stock, fecha: ahoraStr, referencia: `CRÉDITO ${reciboId}`, terminalId: terminal?.id || 'GLOBAL' });
-          prodsActualizados[pIdx] = p;
+      const cedulaNormalizada = normalizeCedula(customer.cedula, extractDocType(customer.cedula));
+      const result = await Store.createSaleTransaction({
+        operationId: 'VENTA-CREDITO-POS-' + Store.uid(),
+        cart: state.carrito.map(x => ({ ...x })),
+        payments: [],
+        clientName: customer.name,
+        terminalId: terminal?.id,
+        fallbackReceiptNumber: terminal?.proximoRecibo || state.proximoRecibo,
+        now: Utils.ahora(),
+        tasa: state.tasa,
+        saleType: 'VENTA CRÉDITO',
+        cajeroId: (state as any).user?.id || (state as any).user?.uid,
+        credit: {
+          customer: { ...customer, cedula: cedulaNormalizada },
+          debtId: 'CRD-PENDIENTE'
         }
       });
-      
-      const nuevaVenta: Sale = { 
-        id: reciboId, 
-        fecha: ahoraStr, 
-        cliente: customer.name, 
-        items: [...state.carrito], 
-        subtotalUSD, 
-        descuentoUSD: 0, 
-        totalUSD: subtotalUSD, 
-        totalBS, 
-        metodoPago: 'credito', 
-        estado: 'completada', 
-        type: 'VENTA CRÉDITO', 
-        received: 0, 
-        change: 0, 
-        terminalId: terminal?.id, 
-        terminalName: terminal?.nombre || 'SISTEMA GLOBAL', 
-        cajeroId: (state as any).user?.id || (state as any).user?.uid, 
-        baseImponibleUSD: Utils.round(vBase), 
-        ivaUSD: Utils.round(vIVA), 
-        exentoUSD: Utils.round(vExento), 
-        igtfUSD: 0,
-        tasa: state.tasa
-      };
-      
-      // Normalizar cédula para la deuda (asegurar formato correcto)
-      const cedulaNormalizada = normalizeCedula(customer.cedula, extractDocType(customer.cedula));
-      const nombreCliente = customer.name;
-      
-      const nuevaDeuda: Debt = { 
-        id: 'CRD-' + reciboId.slice(-6), 
-        fecha: ahoraStr.slice(0, 10), 
-        fechaVencimiento: '2099-12-31', 
-        cliente: `${nombreCliente} [${cedulaNormalizada}]`, 
-        montoUSD: subtotalUSD, 
-        abonadoUSD: 0, 
-        saldoUSD: subtotalUSD, 
-        estado: 'pendiente' as 'pendiente', 
-        historialPagos: [], 
-        ventaId: reciboId 
-      };
-      
-      // Asegurar que el cliente quede registrado en la cartera (upsert) y su saldo
-      // refleje la nueva deuda, para que persista en todos los usuarios/dispositivos.
-      const clientesBase = state.clientes || [];
-      const clienteIdx = clientesBase.findIndex(c => c.id === customer.id);
-      const clientesActualizados = clienteIdx >= 0
-        ? clientesBase.map(c => c.id === customer.id ? { ...c, debt: (c.debt || 0) + subtotalUSD } : c)
-        : [...clientesBase, {
-            id: customer.id,
-            name: nombreCliente,
-            cedula: cedulaNormalizada,
-            phone: customer.phone || '',
-            address: customer.address || '',
-            debt: subtotalUSD
-          }];
 
-      await updateState({ 
-        productos: prodsActualizados, 
-        ventas: [...state.ventas, nuevaVenta], 
-        movimientos: [...state.movimientos, ...nuevosMovimientos], 
-        cxc: [...state.cxc, nuevaDeuda], 
-        clientes: clientesActualizados, 
-        proximoRecibo: state.proximoRecibo + 1, 
-        terminales: state.terminales.map(t => t.id === terminal?.id ? { ...t, proximoRecibo: t.proximoRecibo + 1 } : t), 
-        carrito: [] 
-      });
+      if (!result?.sale || !result?.debt) throw new Error('La venta a crédito no pudo confirmarse en Turso.');
       if (typeof window !== 'undefined') sessionStorage.removeItem('posven_current_cart');
-      
-      setLastProcessedSale(nuevaVenta); 
-      setShowReceiptModal(true); 
-      setIsCreditModalOpen(false); 
+
+      setLastProcessedSale(result.sale);
+      setShowReceiptModal(true);
+      setIsCreditModalOpen(false);
       setSelectedClient(null);
+      updateState({ carrito: [] });
     } finally {
       setIsProcessing(false);
     }
