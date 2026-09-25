@@ -59,6 +59,13 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
   const [page, setPage] = useState(1);
 
   useEffect(() => {
+    if (activeTab === 'productos' || activeTab === 'reporte_general') {
+      // Kardex es la fuente de verdad del stock. Al entrar a Productos/CPP
+      // sincronizamos el stock persistido en Turso antes de mostrarlo.
+      void Store.syncProductsStockFromKardex().catch((error: any) => {
+        console.error('No fue posible sincronizar stock desde Kardex:', error);
+      });
+    }
     if (activeTab !== 'productos') {
       void Store.ensureLoaded('movimientos');
     }
