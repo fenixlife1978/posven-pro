@@ -1157,29 +1157,50 @@ function ModalConteoFisico({ productos, departamentos, departamentoInicial, onCl
 }
 
 function ModalAjuste({ producto, onClose, onSave }: { producto: Product, onClose: () => void, onSave: (m: Movimiento, nuevoCosto?: number) => void }) {
-  const [tipo, setTipo] = useState<'ajuste_entrada' | 'ajuste_salida' | 'consumo' | 'colaboracion'>('ajuste_entrada');
+  const [tipo, setTipo] = useState<'ajuste_entrada' | 'ajuste_salida'>('ajuste_entrada');
   const [cantidad, setCantidad] = useState<string>('1');
   const [nuevoCosto, setNuevoCosto] = useState<string>(String(producto.costoUSD));
+  const [motivoTipo, setMotivoTipo] = useState<'consumo' | 'colaboracion' | 'libre'>('libre');
   const [motivo, setMotivo] = useState('');
+
+  const esSalidaEspecial = motivoTipo === 'consumo' || motivoTipo === 'colaboracion';
 
   const handleSave = () => {
     const pCant = parseFloat(cantidad) || 0;
     const pCosto = parseFloat(nuevoCosto) || 0;
     if (pCant <= 0) return alert('Cantidad invalida');
-    if (!motivo.trim()) return alert('Por favor indique el motivo del ajuste');
+
+    if (motivoTipo === 'libre' && !motivo.trim()) {
+      return alert('Por favor indique el motivo del ajuste');
+    }
+
+    const movimientoTipo: Movimiento['tipo'] = motivoTipo === 'consumo'
+      ? 'consumo'
+      : motivoTipo === 'colaboracion'
+        ? 'colaboracion'
+        : tipo;
+
+    const cantidadMovimiento = esSalidaEspecial || tipo === 'ajuste_salida'
+      ? -Math.abs(pCant)
+      : pCant;
 
     const mov: Movimiento = {
       id: Store.uid(),
       productoId: producto.id,
-      tipo,
-      cantidad: (tipo === 'ajuste_entrada') ? pCant : -Math.abs(pCant),
+      tipo: movimientoTipo,
+      cantidad: cantidadMovimiento,
       stockAntes: producto.stock,
-      stockDespues: (tipo === 'ajuste_entrada') ? producto.stock + pCant : producto.stock - Math.abs(pCant),
+      stockDespues: producto.stock + cantidadMovimiento,
       fecha: Utils.ahora(),
-      referencia: motivo.toUpperCase(),
+      referencia: (motivoTipo === 'consumo'
+        ? 'CONSUMO PROPIO'
+        : motivoTipo === 'colaboracion'
+          ? 'COLABORACIÓN'
+          : motivo).toUpperCase(),
       terminalId: 'ADMIN'
     };
-    onSave(mov, tipo === 'ajuste_entrada' ? pCosto : undefined);
+
+    onSave(mov, movimientoTipo === 'ajuste_entrada' ? pCosto : undefined);
   };
 
   return (
@@ -1191,27 +1212,53 @@ function ModalAjuste({ producto, onClose, onSave }: { producto: Product, onClose
         </div>
         <div className="modal-body p-6 space-y-4 bg-white">
           <div className="grid grid-cols-2 gap-4">
-             <div className="form-group"><Label className="text-[10px] font-black uppercase text-ink/60 mb-1 block">Tipo</Label>
-               <select className="form-select h-10 text-xs font-bold" value={tipo} onChange={e => setTipo(e.target.value as any)}>
+             <div className="form-group">
+               <Label className="text-[10px] font-black uppercase text-ink/60 mb-1 block">Tipo</Label>
+               <select
+                 className="form-select h-10 text-xs font-bold"
+                 value={esSalidaEspecial ? 'ajuste_salida' : tipo}
+                 disabled={esSalidaEspecial}
+                 onChange={e => setTipo(e.target.value as 'ajuste_entrada' | 'ajuste_salida')}
+               >
                  <option value="ajuste_entrada">Entrada (+)</option>
                  <option value="ajuste_salida">Salida (-)</option>
-                 <option value="consumo">Consumo Propio</option>
-                 <option value="colaboracion">Colaboración</option>
                </select>
              </div>
-             <div className="form-group"><Label className="text-[10px] font-black uppercase text-ink/60 mb-1 block">Cantidad</Label>
+             <div className="form-group">
+               <Label className="text-[10px] font-black uppercase text-ink/60 mb-1 block">Cantidad</Label>
                <Input className="h-10 text-center font-black bg-white" type="text" value={cantidad} onChange={e => setCantidad(e.target.value)} />
              </div>
           </div>
           <div className="form-group">
             <Label className="text-[10px] font-black uppercase text-ink/60 mb-1 block">Motivo del Ajuste</Label>
-            <Input 
-              className="h-10 text-xs font-black uppercase bg-white" 
-              placeholder="Ej: ERROR DE CONTEO, DAÑO, ETC..." 
-              value={motivo} 
-              onChange={e => setMotivo(e.target.value)} 
-            />
+            <select
+              className="form-select h-10 text-xs font-black uppercase bg-white"
+              value={motivoTipo}
+              onChange={e => {
+                const next = e.target.value as 'consumo' | 'colaboracion' | 'libre';
+                setMotivoTipo(next);
+                if (next !== 'libre') setTipo('ajuste_salida');
+                if (next !== 'libre') setMotivo('');
+              }}
+            >
+              <option value="libre">Texto libre / Motivo personalizado</option>
+              <option value="consumo">Consumo propio</option>
+              <option value="colaboracion">Colaboración</option>
+            </select>
           </div>
+
+          {motivoTipo === 'libre' && (
+            <div className="form-group">
+              <Label className="text-[10px] font-black uppercase text-ink/60 mb-1 block">Detalle del motivo</Label>
+              <Input
+                className="h-10 text-xs font-black uppercase bg-white"
+                placeholder="Ej: ERROR DE CONTEO, DAÑO, ETC..."
+                value={motivo}
+                onChange={e => setMotivo(e.target.value)}
+              />
+            </div>
+          )}
+
           <Button className="w-full h-12 font-black uppercase text-xs shadow-md mt-2" onClick={handleSave}>Procesar Ajuste</Button>
         </div>
       </div>
