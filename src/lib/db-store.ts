@@ -2549,7 +2549,9 @@ export const Store = {
     customerCedula?: string;
     journal?: any;
   }): Promise<any> {
-    if (typeof window === 'undefined' || !db) return null;
+    if (typeof window === 'undefined') return null;
+    // Turso es la fuente operativa; db es un marcador legacy retirado.
+    // No debemos salir aquí antes de ejecutar la operación contra Turso.
     const tursoResult = await tryTursoOperation('customerDebt', params);
     if (tursoResult) {
       // La operación en Turso ya es autoritativa, pero la UI mantiene un
