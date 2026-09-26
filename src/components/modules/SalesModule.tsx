@@ -534,7 +534,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     const activeDebts = debts
       .filter(d => d.estado !== 'pagada' && (Number(d.saldoUSD) || 0) > 0.001)
       .sort((a, b) => a.fecha.localeCompare(b.fecha) || a.id.localeCompare(b.id));
-    if (activeDebts.length <= 1) return;
+    if (activeDebts.length === 0) return;
     const totalUSD = activeDebts.reduce((sum, d) => sum + (Number(d.saldoUSD) || 0), 0);
     if (totalUSD <= 0.001) return;
     const cedulaMatch = String(activeDebts[0]?.cliente || '').match(/\[([^\]]+)\]\s*$/);
