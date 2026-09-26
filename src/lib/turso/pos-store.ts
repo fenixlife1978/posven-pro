@@ -1065,9 +1065,9 @@ export async function processReturnOrCancellationTransaction(params:any){
     for(const p of products.values()) statements.push(rowStatement('productos',p));
     statements.push(rowStatement(table,{...operationDoc,id:canonicalId,terminalId:terminalId||operationDoc?.terminalId,terminalName:terminal?.nombre||operationDoc?.terminalName}));
     statements.push(rowStatement('ventas',{...sale,estado:operationType==='ANULACION'?'anulada':'parcialmente_devuelta'}));
-    if(journal?.id) statements.push(rowStatement('libroDiario',{...journal,referencia:canonicalId,terminalId:terminalForOperation||journal.terminalId,terminalName:terminal?.nombre||journal.terminalName}));
+    if(journal?.id) statements.push(rowStatement('libroDiario',{...journal,referencia:canonicalId,terminalId:terminalId||journal.terminalId,terminalName:terminal?.nombre||journal.terminalName}));
     if(terminal) statements.push(rowStatement('terminales',{...terminal,[field]:counter+1}));
-    statements.push({sql:'INSERT INTO operaciones(id,prefijo,operation_id,data_json) VALUES(?,?,?,?)',args:[operationType+'-'+operationId,operationType,operationId,JSON.stringify({tipo:operationType,operationId,referencia:canonicalId,terminalId:terminalForOperation||'GLOBAL'})],wantRows:false});
+    statements.push({sql:'INSERT INTO operaciones(id,prefijo,operation_id,data_json) VALUES(?,?,?,?)',args:[operationType+'-'+operationId,operationType,operationId,JSON.stringify({tipo:operationType,operationId,referencia:canonicalId,terminalId:terminalId||'GLOBAL'})],wantRows:false});
     for(const s of statements) await tx.execute(s);
     return {operationId,operationType,receiptId:canonicalId,operationDoc:{...operationDoc,id:canonicalId},products:[...products.values()],terminal:terminal?{...terminal,id:terminalId,[field]:counter+1}:null};
   });
