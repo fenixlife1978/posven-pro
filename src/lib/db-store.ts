@@ -1558,15 +1558,37 @@ export const Store = {
     if (!(amountUSD > 0)) return null;
     const tursoResult = await tryTursoOperation('debtPayment', params);
     if (tursoResult) {
-      if (tursoResult.id) applyPatch({ [collectionName]: mergeById((cache as any)[collectionName] || [], [tursoResult]) });
-      // Tras un cobro, hidratar CxC completa desde Turso para que el historial
-      // de cada pago/abono aparezca inmediatamente, incluso cuando la deuda
-      // pasó de activa a pagada y dejó de pertenecer al listado realtime activo.
-      const refreshedCxc = await tryTursoRead('cxc', { limit: 2000 });
-      if (refreshedCxc !== null) applyPatch({ cxc: refreshedCxc });
-      if (tursoResult.sale?.id) applyPatch({ ventas: mergeById(cache.ventas, [tursoResult.sale]) });
-      if (Array.isArray(tursoResult.journal)) applyPatch({ libroDiario: mergeById(cache.libroDiario, tursoResult.journal) });
-      if (tursoResult.terminal) applyPatch({ terminales: mergeById(cache.terminales, [tursoResult.terminal]) });
+      if (tursoResult.id) {
+        applyPatch({ [collectionName]: mergeById((cache as any)[collectionName] || [], [tursoResult]) });
+      }
+
+      // El pago individual CxP es una operación administrativa y su asiento
+      // debe aparecer inmediatamente en Contabilidad, sin depender de una
+      // recarga ni de que el listado de CxP haya sido hidratado nuevamente.
+      if (collectionName === 'cxp' && tursoResult.id) {
+        applyPatch({ cxp: mergeById(cache.cxp || [], [tursoResult]) });
+      }
+
+      // Tras un cobro CxC, hidratar CxC completa desde Turso para que el
+      // historial de cada pago/abono aparezca inmediatamente, incluso cuando
+      // la deuda pasó de activa a pagada y dejó de pertenecer al listado activo.
+      if (collectionName === 'cxc') {
+        const refreshedCxc = await tryTursoRead('cxc', { limit: 2000 });
+        if (refreshedCxc !== null) applyPatch({ cxc: refreshedCxc });
+      }
+
+      if (tursoResult.sale?.id) {
+        applyPatch({ ventas: mergeById(cache.ventas, [tursoResult.sale]) });
+      }
+
+      if (Array.isArray(tursoResult.journal) && tursoResult.journal.length) {
+        applyPatch({ libroDiario: mergeById(cache.libroDiario || [], tursoResult.journal) });
+      }
+
+      if (tursoResult.terminal) {
+        applyPatch({ terminales: mergeById(cache.terminales, [tursoResult.terminal]) });
+      }
+
       return tursoResult;
     }
     const debtRef = doc(db, collectionName, debtId);
