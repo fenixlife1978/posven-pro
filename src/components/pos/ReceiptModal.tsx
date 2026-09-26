@@ -205,7 +205,11 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
         : (usd ? Number(r.ventasUSD || 0) : Number(r.ventasBS || 0));
       const cobros = usd ? Number(r.cobrosUSD || 0) : Number(r.cobrosBS || 0);
       const dev = usd ? Number(r.devUSD || 0) : Number(r.devBS || 0);
-      const credito = r.metodo === 'credito' ? Number(data?.ventasCreditoUSD || 0) : 0;
+      // Las ventas a crédito se expresan en el Arqueo en su equivalente en BS.
+      // El origen está en USD, por lo que se convierte con la tasa BCV vigente.
+      const credito = r.metodo === 'credito'
+        ? Number(data?.ventasCreditoUSD || 0) * Number(state.tasa || 0)
+        : 0;
       const movPlus = usd ? Number(r.movPlusUSD || 0) : Number(r.movPlusBS || 0);
       const movMinus = usd ? Number(r.movMinusUSD || 0) : Number(r.movMinusBS || 0);
       const sistema = r.metodo === 'credito' ? credito : fondo + ventas + cobros - dev + movPlus - movMinus;
