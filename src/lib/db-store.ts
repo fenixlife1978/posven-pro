@@ -1718,6 +1718,43 @@ export const Store = {
     return result;
   },
 
+  async createSaleTransaction(params: any): Promise<any> {
+    // El POS opera exclusivamente contra Turso. Este puente faltaba en el
+    // Store aunque la transacción y el endpoint de Turso sí existen.
+    if (typeof window === 'undefined') {
+      throw new Error('Las ventas solo pueden registrarse desde el cliente mediante Turso.');
+    }
+
+    const result = await tryTursoOperation('sale', params);
+    if (!result?.sale) {
+      throw new Error('Turso no confirmó el registro de la venta.');
+    }
+
+    // Reflejar inmediatamente la misma transacción confirmada por Turso.
+    // Esto mantiene POS, Kardex, CxC, Contabilidad y Caja sincronizados sin
+    // tocar los módulos administrativos ni introducir otra fuente de datos.
+    const patch: Partial<AppState> = {};
+    patch.ventas = mergeById(cache.ventas || [], [result.sale]);
+    if (result.debt) {
+      patch.cxc = mergeById(cache.cxc || [], [result.debt]);
+    }
+    if (Array.isArray(result.movements) && result.movements.length) {
+      patch.movimientos = mergeById(cache.movimientos || [], result.movements);
+    }
+    if (Array.isArray(result.journal) && result.journal.length) {
+      patch.libroDiario = mergeById(cache.libroDiario || [], result.journal);
+    }
+    if (result.terminal) {
+      patch.terminales = mergeById(cache.terminales || [], [result.terminal]);
+    }
+    if (Array.isArray(result.products) && result.products.length) {
+      patch.productos = mergeById(cache.productos || [], result.products);
+    }
+    applyPatch(patch);
+
+    return result;
+  },
+
   async createPurchaseTransaction(params: {
     operationId?: string;
     purchase: any;
