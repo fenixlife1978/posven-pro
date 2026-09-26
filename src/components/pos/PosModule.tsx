@@ -906,63 +906,116 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     processingRef.current = true;
     setIsProcessing(true);
     try {
-      const totalAbonado = pagosAbono.reduce((s, p) => s + p.montoUSD, 0);
+      // Releer la deuda desde el Store justo al confirmar. Las deudas iniciales
+      // creadas desde Administración no tienen venta/items y pueden haber sido
+      // hidratadas después de abrir la vista de Créditos.
+      const freshState = Store.get();
+      const deudaActual = (freshState.cxc || []).find((d: any) => String(d?.id) === String(showAbonoModal.id)) || showAbonoModal;
+      const totalAbonado = pagosAbono.reduce((s, p) => s + (Number(p.montoUSD) || 0), 0);
       const totalAbonadoBS = pagosAbono.reduce((s, p) => s + (Number(p.montoBS) || 0), 0);
-      if (totalAbonado <= 0 || totalAbonadoBS <= 0) return;
+      if (!(totalAbonado > 0.000001)) {
+        throw new Error('El monto del abono no es válido.');
+      }
 
-      // La deuda histórica puede conservar un nombre antiguo. La identidad
-      // operativa se resuelve por la cédula embebida en "cliente" y se contrasta
-      // con el catálogo actual de clientes antes de generar el cobro.
-      const clienteRaw = showAbonoModal.cliente || '';
+      const clienteRaw = String(deudaActual?.cliente || '').trim();
       const cedulaMatch = clienteRaw.match(/\[([^\]]+)\]\s*$/);
-      const cedulaDeuda = cedulaMatch?.[1]?.trim();
-      const clienteActual = cedulaDeuda
-        ? (state.clientes || []).find(c => c.cedula === cedulaDeuda || c.cedula.replace(/[^0-9A-Za-z]/g, '') === cedulaDeuda.replace(/[^0-9A-Za-z]/g, ''))
-        : undefined;
-      const nombreClienteCanonico = clienteActual?.name || (cedulaMatch ? clienteRaw.replace(/\s*\[[^\]]+\]\s*$/, '').trim() : clienteRaw) || 'CLIENTE';
-      const ahoraStr = Utils.ahora(), terminal = getCurrentTerminal();
-      // El correlativo de COBRO DE DEUDA lo asigna Firestore dentro de la
-      // transacción, usando la secuencia exclusiva de esta caja.
+      const cedulaDeuda = String(cedulaMatch?.[1] || '').trim();
+
+      // Para una deuda inicial, la cédula/nombre puede venir del registro CxC
+      // aunque el formato histórico no coincida exactamente con el catálogo.
+      const normalizarCedula = (v: any) => String(v || '').replace(/[^0-9A-Za-z]/g, '').toUpperCase();
+      const nombreDeuda = cedulaMatch
+        ? clienteRaw.replace(/\s*\[[^\]]+\]\s*$/, '').trim()
+        : clienteRaw;
+      const clienteActual = (freshState.clientes || []).find((c: any) =>
+        (cedulaDeuda && normalizarCedula(c?.cedula) === normalizarCedula(cedulaDeuda)) ||
+        (nombreDeuda && String(c?.name || '').trim().toLowerCase() === nombreDeuda.toLowerCase())
+      );
+      const nombreClienteCanonico = String(clienteActual?.name || nombreDeuda || 'CLIENTE').trim();
+
+      const ahoraStr = Utils.ahora();
+      const terminal = getCurrentTerminal();
+      if (!terminal?.id) {
+        throw new Error('La caja del cajero no está disponible. Abra la caja y vuelva a intentar.');
+      }
+
       const reciboProvisional = 'PEND-CXC-' + Store.uid().toUpperCase().slice(0, 8);
       const pagoAtomic = {
         fecha: ahoraStr,
         montoUSD: totalAbonado,
-        montoBS: totalAbonado * state.tasa,
+        montoBS: totalAbonadoBS > 0 ? totalAbonadoBS : totalAbonado * state.tasa,
         metodo: pagosAbono.length > 1 ? 'mixto' : pagosAbono[0].metodo,
-        reciboId: reciboProvisional
+        reciboId: reciboProvisional,
+        tasaAplicada: state.tasa,
+        terminalId: terminal.id
       };
 
-      const nuevasEntradasDiario: LibroDiarioEntry[] = pagosAbono.map(p => ({ id: 'ACC-' + Store.uid().toUpperCase().slice(0, 5), fecha: ahoraStr, tipo: 'ingreso', categoria: 'COBRO_DEUDA', concepto: `ABONO DEUDA #${showAbonoModal.id} - CLIENTE: ${nombreClienteCanonico.toUpperCase()}`, montoUSD: p.montoUSD, montoBS: p.montoBS, metodo: p.metodo, referencia: reciboProvisional, terminalId: terminal?.id, terminalName: terminal?.nombre }));
+      const nuevasEntradasDiario: LibroDiarioEntry[] = pagosAbono.map(p => ({
+        id: 'ACC-' + Store.uid().toUpperCase().slice(0, 8),
+        fecha: ahoraStr,
+        tipo: 'ingreso',
+        categoria: 'COBRO_DEUDA',
+        concepto: `ABONO DEUDA #${deudaActual.id} - CLIENTE: ${nombreClienteCanonico.toUpperCase()}`,
+        montoUSD: Number(p.montoUSD) || 0,
+        montoBS: Number(p.montoBS) || (Number(p.montoUSD) || 0) * state.tasa,
+        metodo: p.metodo,
+        referencia: reciboProvisional,
+        terminalId: terminal.id,
+        terminalName: terminal.nombre
+      }));
 
       const saleAbono: Sale = {
-        id: reciboProvisional, fecha: ahoraStr, cliente: nombreClienteCanonico,
-        items: [{ productoId: 'ABONO', nombre: `ABONO A FACTURA #${showAbonoModal.id}`, cantidad: 1, precioUnitUSD: totalAbonado, subtotalUSD: totalAbonado }],
-        subtotalUSD: totalAbonado, descuentoUSD: 0, totalUSD: totalAbonado, totalBS: totalAbonado * state.tasa,
+        id: reciboProvisional,
+        fecha: ahoraStr,
+        cliente: nombreClienteCanonico,
+        items: [{
+          productoId: 'ABONO',
+          nombre: `ABONO A CxC #${deudaActual.id}`,
+          cantidad: 1,
+          precioUnitUSD: totalAbonado,
+          subtotalUSD: totalAbonado
+        }],
+        subtotalUSD: totalAbonado,
+        descuentoUSD: 0,
+        totalUSD: totalAbonado,
+        totalBS: totalAbonadoBS > 0 ? totalAbonadoBS : totalAbonado * state.tasa,
         metodoPago: pagosAbono.length > 1 ? 'mixto' : pagosAbono[0].metodo,
-        estado: 'completada', type: 'COBRO DEUDA', payments: [...pagosAbono],
+        estado: 'completada',
+        type: 'COBRO DEUDA',
+        payments: [...pagosAbono],
         cajeroId: (state as any).user?.id || (state as any).user?.uid,
         cajeroNombre: String((state as any).user?.nombre || (state as any).user?.name || (state as any).user?.displayName || (state as any).user?.email || '').trim() || undefined,
-        terminalId: terminal?.id, terminalName: terminal?.nombre || 'SISTEMA GLOBAL', tasa: state.tasa
+        terminalId: terminal.id,
+        terminalName: terminal.nombre || 'SISTEMA GLOBAL',
+        tasa: state.tasa
       };
 
-      const clienteCedula = cedulaDeuda;
       const resultadoPago = await Store.applyDebtPaymentTransaction({
+        operationId: 'PAGO-CXC-' + Store.uid(),
         collection: 'cxc',
-        debtId: showAbonoModal.id,
+        debtId: deudaActual.id,
         amountUSD: totalAbonado,
-        amountBS: totalAbonadoBS,
+        amountBS: totalAbonadoBS > 0 ? totalAbonadoBS : totalAbonado * state.tasa,
         payment: pagoAtomic,
         journal: nuevasEntradasDiario,
         sale: saleAbono,
-        customerCedula: clienteCedula,
-        terminalId: terminal?.id
+        customerCedula: cedulaDeuda || clienteActual?.cedula,
+        terminalId: terminal.id
       });
-      if (!resultadoPago) throw new Error('No se pudo registrar el abono.');
-      const appliedUSD = Number(resultadoPago.appliedUSD) || totalAbonado;
-      if (Math.abs(appliedUSD - totalAbonado) > 0.001) throw new Error('El saldo cambió mientras se registraba el abono. La operación fue limitada al saldo real.');
+
+      if (!resultadoPago?.appliedUSD || Number(resultadoPago.appliedUSD) <= 0.000001) {
+        throw new Error('Turso no aplicó el abono a esta cuenta por cobrar.');
+      }
+
+      const appliedUSD = Number(resultadoPago.appliedUSD);
+      if (Math.abs(appliedUSD - totalAbonado) > 0.001) {
+        throw new Error('El saldo cambió mientras se registraba el abono. La operación fue limitada al saldo real.');
+      }
 
       const saleFinal = resultadoPago.sale || { ...saleAbono, id: resultadoPago.receiptId || saleAbono.id };
-      setLastProcessedSale(saleFinal); setShowReceiptModal(true); setShowAbonoModal(null);
+      setLastProcessedSale(saleFinal);
+      setShowReceiptModal(true);
+      setShowAbonoModal(null);
     } catch (err: any) {
       toast({
         variant: 'destructive',
