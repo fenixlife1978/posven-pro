@@ -97,7 +97,7 @@ export default function GlobalControlModule({ state, updateState }: { state: App
       .filter(n => !isNaN(n) && n > 0);
     const nextNum = (usedPrefixes.length ? Math.max(...usedPrefixes) : 0) + 1;
     const newTerm: Terminal = {
-      id: 'TRM-' + Store.uid().toUpperCase().slice(0, 4),
+      id: 'TRM-' + Store.uid().toUpperCase(),
       nombre: newTerminalName.toUpperCase(),
       usuarioId: null,
       activo: true,
