@@ -1265,11 +1265,9 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                         <td className="text-right py-4 font-black text-status-info text-base">{Utils.fmtUSD(group.totalUSD)}</td>
                         <td className="text-right py-4 font-black text-ink">{Utils.fmtBS(group.totalUSD * state.tasa)}</td>
                         <td className="text-center py-4"><div className="flex items-center justify-center gap-2">
-                          {group.debts.length > 1 && (
-                            <button onClick={() => handleOpenGlobalCreditPayment(clientName, group.debts)} className="h-10 px-3 rounded-full flex items-center justify-center gap-1.5 bg-brand-gold text-black border-2 border-brand-gold hover:bg-brand-gold-deep transition-all shadow-md font-black text-[9px] uppercase whitespace-nowrap" title="PAGO GLOBAL" aria-label="PAGO GLOBAL">
-                              <HandCoins className="w-4 h-4" /><span>PAGO GLOBAL</span>
-                            </button>
-                          )}
+                          <button onClick={() => handleOpenGlobalCreditPayment(clientName, group.debts)} className="h-10 px-3 rounded-full flex items-center justify-center gap-1.5 bg-brand-gold text-black border-2 border-brand-gold hover:bg-brand-gold-deep transition-all shadow-md font-black text-[9px] uppercase whitespace-nowrap" title="PAGO GLOBAL" aria-label="PAGO GLOBAL">
+                            <HandCoins className="w-4 h-4" /><span>PAGO GLOBAL</span>
+                          </button>
                           <button onClick={() => setShowClientHistory(clientName)} className="w-10 h-10 rounded-full flex items-center justify-center bg-white text-status-success border-2 border-status-success/20 hover:bg-status-success hover:text-white transition-all shadow-md"><Eye className="w-5 h-5" /></button>
                         </div></td>
                       </tr>
@@ -1279,7 +1277,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                               <div className="card border-line bg-white shadow-inner rounded-xl overflow-hidden">
                                  <table className="w-full">
                                     <thead className="bg-ink/5"><tr><th className="text-[9px] font-black uppercase p-2 text-left">Emisión</th><th className="text-[9px] font-black uppercase p-2 text-left">Vencimiento</th><th className="text-[9px] font-black uppercase p-2 text-right">Saldo USD</th><th className="text-[9px] font-black uppercase p-2 text-center">Acciones</th></tr></thead>
-                                    <tbody>{group.debts.map(d => (<tr key={d.id} className="border-b border-line/20"><td className="text-[10px] font-black p-2">{Utils.fmtFecha(d.fecha)}</td><td className={`text-[10px] font-black p-2 ${d.saldoUSD > 0.001 && d.fechaVencimiento < Utils.hoy() ? 'text-status-danger' : 'text-ink'}`}>{d.fechaVencimiento === '2099-12-31' ? 'ABIERTA' : Utils.fmtFecha(d.fechaVencimiento)}</td><td className="text-[10px] font-black p-2 text-right text-brand-gold-deep">{Utils.fmtUSD(d.saldoUSD)}</td><td className="p-2 text-center"><div className="flex justify-center gap-2"><button onClick={() => setShowDetails(d)} className="w-8 h-8 rounded-full flex items-center justify-center text-status-success hover:bg-status-success/10"><Eye className="w-4 h-4"/></button><button onClick={() => { setShowAbonoModal(d); }} className="btn btn-sm btn-primary h-7 px-3 text-[8px] uppercase">Abonar</button></div></td></tr>))}</tbody>
+                                    <tbody>{group.debts.map(d => (<tr key={d.id} className="border-b border-line/20"><td className="text-[10px] font-black p-2">{Utils.fmtFecha(d.fecha)}</td><td className={`text-[10px] font-black p-2 ${d.saldoUSD > 0.001 && d.fechaVencimiento < Utils.hoy() ? 'text-status-danger' : 'text-ink'}`}>{d.fechaVencimiento === '2099-12-31' ? 'ABIERTA' : Utils.fmtFecha(d.fechaVencimiento)}</td><td className="text-[10px] font-black p-2 text-right text-brand-gold-deep">{Utils.fmtUSD(d.saldoUSD)}</td><td className="p-2 text-center"><div className="flex justify-center gap-2"><button onClick={() => setShowDetails(d)} className="w-8 h-8 rounded-full flex items-center justify-center text-status-success hover:bg-status-success/10"><Eye className="w-4 h-4"/></button></div></td></tr>))}</tbody>
                                  </table>
                               </div>
                            </td>
