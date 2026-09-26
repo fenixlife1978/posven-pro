@@ -1281,17 +1281,15 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                         <td className="text-right py-4 font-black text-ink">{Utils.fmtBS(group.totalUSD * state.tasa)}</td>
                         <td className="text-center py-4">
                           <div className="flex items-center justify-center gap-2">
-                            {
-                              <button
-                                onClick={() => handleOpenGlobalCreditPayment(clientName, group.debts)}
-                                className="h-10 px-3 rounded-full flex items-center justify-center gap-1.5 bg-brand-gold text-black border-2 border-brand-gold hover:bg-brand-gold-deep transition-all shadow-md font-black text-[9px] uppercase whitespace-nowrap"
-                                title="PAGO GLOBAL"
-                                aria-label="PAGO GLOBAL"
-                              >
-                                <HandCoins className="w-4 h-4" />
-                                <span>PAGO GLOBAL</span>
-                              </button>
-                            )}
+                            <button
+                              onClick={() => handleOpenGlobalCreditPayment(clientName, group.debts)}
+                              className="h-10 px-3 rounded-full flex items-center justify-center gap-1.5 bg-brand-gold text-black border-2 border-brand-gold hover:bg-brand-gold-deep transition-all shadow-md font-black text-[9px] uppercase whitespace-nowrap"
+                              title="PAGO GLOBAL"
+                              aria-label="PAGO GLOBAL"
+                            >
+                              <HandCoins className="w-4 h-4" />
+                              <span>PAGO GLOBAL</span>
+                            </button>
                             <button onClick={() => setShowClientHistory(clientName)} className="w-10 h-10 rounded-full flex items-center justify-center bg-white text-status-success border-2 border-status-success/20 hover:bg-status-success hover:text-white transition-all shadow-md" title="Consultar historial">
                               <Eye className="w-5 h-5" />
                             </button>
