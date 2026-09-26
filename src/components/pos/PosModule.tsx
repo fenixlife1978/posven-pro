@@ -678,7 +678,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   const getCurrentTerminal = () => currentTerminal;
   const handleOpenGlobalCreditPayment = (clientName: string, debts: Debt[]) => {
     const activeDebts = debts.filter(esDeudaActiva).sort((a, b) => a.fecha.localeCompare(b.fecha) || a.id.localeCompare(b.id));
-    if (activeDebts.length <= 1) return;
+    if (activeDebts.length === 0) return;
     const totalUSD = activeDebts.reduce((sum, d) => sum + saldoActualDeuda(d), 0);
     if (totalUSD <= 0.001) return;
     const cedulaMatch = String(activeDebts[0]?.cliente || '').match(/\[([^\]]+)\]\s*$/);
@@ -1281,7 +1281,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                         <td className="text-right py-4 font-black text-ink">{Utils.fmtBS(group.totalUSD * state.tasa)}</td>
                         <td className="text-center py-4">
                           <div className="flex items-center justify-center gap-2">
-                            {group.debts.filter(esDeudaActiva).length > 1 && (
+                            {group.debts.filter(esDeudaActiva).length > 0 && (
                               <button
                                 onClick={() => handleOpenGlobalCreditPayment(clientName, group.debts)}
                                 className="h-10 px-3 rounded-full flex items-center justify-center gap-1.5 bg-brand-gold text-black border-2 border-brand-gold hover:bg-brand-gold-deep transition-all shadow-md font-black text-[9px] uppercase whitespace-nowrap"
@@ -1321,7 +1321,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     };
   }
   setShowDetails({ ...(d as any), ventaDetalle: sale });
-}} className="w-8 h-8 rounded-full flex items-center justify-center text-status-success hover:bg-status-success/10"><Eye className="w-4 h-4"/></button><button onClick={() => { setShowAbonoModal(d); }} className="btn btn-sm btn-primary h-7 px-3 text-[8px] uppercase">Abonar</button></div></td></tr>))}</tbody>
+}} className="w-8 h-8 rounded-full flex items-center justify-center text-status-success hover:bg-status-success/10"><Eye className="w-4 h-4"/></button></div></td></tr>))}</tbody>
                                  </table>
                               </div>
                            </td>
