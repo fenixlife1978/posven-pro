@@ -1670,8 +1670,28 @@ export const Store = {
     }
     const result = await tryTursoOperation('inventoryStockSync', {});
     if (!result) throw new Error('Turso no confirmó la sincronización del stock con Kardex.');
+    // Reflejar inmediatamente en memoria todo lo que la misma transacción
+    // de Turso acaba de confirmar. Esto evita que Contabilidad tenga que
+    // recargar la página para mostrar el egreso/asiento del contado, y mantiene
+    // sincronizados Compras, CxP, Kardex y Productos.
+    const patch: Partial<AppState> = {};
     if (Array.isArray(result.products) && result.products.length) {
-      applyPatch({ productos: mergeById(cache.productos, result.products) });
+      patch.productos = mergeById(cache.productos, result.products);
+    }
+    if (result.purchase) {
+      patch.compras = mergeById(cache.compras, [result.purchase]);
+    }
+    if (result.debt) {
+      patch.cxp = mergeById(cache.cxp, [result.debt]);
+    }
+    if (result.journal) {
+      patch.libroDiario = mergeById(cache.libroDiario, [result.journal]);
+    }
+    if (Array.isArray(result.movements) && result.movements.length) {
+      patch.movimientos = mergeById(cache.movimientos, result.movements);
+    }
+    if (Object.keys(patch).length) {
+      applyPatch(patch);
     }
     return result;
   },
