@@ -1785,8 +1785,28 @@ export const Store = {
     if (!result) {
       throw new Error('Turso no confirmó el registro de la compra.');
     }
+
+    // Reflejar inmediatamente en memoria la misma transacción confirmada por Turso.
+    // En una compra mixta existe un pago contado (asiento) y un saldo CxP; ambos
+    // deben aparecer en Contabilidad/CxP sin obligar al usuario a recargar la página.
+    const patch: Partial<AppState> = {};
+    if (result.purchase) {
+      patch.compras = mergeById(cache.compras || [], [result.purchase]);
+    }
+    if (result.debt) {
+      patch.cxp = mergeById(cache.cxp || [], [result.debt]);
+    }
+    if (result.journal) {
+      patch.libroDiario = mergeById(cache.libroDiario || [], [result.journal]);
+    }
+    if (Array.isArray(result.movements) && result.movements.length) {
+      patch.movimientos = mergeById(cache.movimientos || [], result.movements);
+    }
     if (Array.isArray(result.products) && result.products.length) {
-      applyPatch({ productos: mergeById(cache.productos, result.products) });
+      patch.productos = mergeById(cache.productos || [], result.products);
+    }
+    if (Object.keys(patch).length) {
+      applyPatch(patch);
     }
     return result;
   },
