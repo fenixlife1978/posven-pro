@@ -555,13 +555,21 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
 
   const saldoActualDeuda = (debt: any) => {
     const monto = Math.max(0, Number(debt?.montoUSD) || 0);
-    const saldoRegistrado = Math.max(0, Number(debt?.saldoUSD) || 0);
+    const saldoRegistrado = Number(debt?.saldoUSD);
     const abonadoRegistrado = Math.max(0, Number(debt?.abonadoUSD) || 0);
     const abonadoHistorial = Array.isArray(debt?.historialPagos)
       ? debt.historialPagos.reduce((sum: number, p: any) => sum + Math.max(0, Number(p?.montoUSD) || 0), 0)
       : 0;
-    const abonadoActual = Math.min(monto, Math.max(abonadoRegistrado, abonadoHistorial));
-    return abonadoActual > 0.000001 ? Math.max(0, monto - abonadoActual) : saldoRegistrado;
+    const abonadoBase = Math.min(monto, Math.max(abonadoRegistrado, abonadoHistorial));
+    const saldoCalculado = Math.max(0, monto - abonadoBase);
+
+    // Algunas CxC iniciales sin items tienen saldoUSD=0 aunque montoUSD siga
+    // pendiente. En ese caso la deuda debe seguir siendo cobrable desde
+    // Abonar/Liquidar. Conservamos el saldo persistido cuando es consistente.
+    if (Number.isFinite(saldoRegistrado) && saldoRegistrado >= saldoCalculado) {
+      return saldoRegistrado;
+    }
+    return saldoCalculado;
   };
 
   const esDeudaActiva = (debt: any) =>
