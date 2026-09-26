@@ -1667,7 +1667,21 @@ export const Store = {
   }): Promise<any> {
     if (typeof window === 'undefined' || !db) return null;
     const tursoResult = await tryTursoOperation('supplierDebt', params);
-    if (tursoResult) return tursoResult;
+    if (tursoResult) {
+      // Turso confirma la deuda, pero la UI administrativa necesita reflejar
+      // inmediatamente ese mismo registro en memoria para que CxP y
+      // "Total a Pagar" se actualicen sin recargar la página.
+      const debtFromTurso = tursoResult.debt || params.debt;
+      const patch: Partial<AppState> = {};
+      if (debtFromTurso?.id) {
+        patch.cxp = mergeById(cache.cxp || [], [debtFromTurso]);
+      }
+      if (params.journal?.id) {
+        patch.libroDiario = mergeById(cache.libroDiario || [], [params.journal]);
+      }
+      if (Object.keys(patch).length) applyPatch(patch);
+      return debtFromTurso;
+    }
     const { operationId, debt, journal } = params;
     const debtRef = doc(db, 'cxp', debt.id);
     let result: any = null;
