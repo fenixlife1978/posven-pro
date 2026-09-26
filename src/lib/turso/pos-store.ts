@@ -790,7 +790,7 @@ export async function createZClosureTransaction(params: {
 
 export async function applyDebtPaymentTransaction(params: {
   operationId?: string; collection: 'cxc' | 'cxp'; debtId: string; amountUSD: number;
-  amountBS?: number; payment: any; journal?: any | any[]; sale?: any; customerCedula?: string; terminalForOperation?: string;
+  amountBS?: number; payment: any; journal?: any | any[]; sale?: any; customerCedula?: string; terminalId?: string;
 }) {
   assertTursoReady();
   const { operationId, collection, debtId, amountUSD, amountBS, payment, journal, sale, customerCedula, terminalId } = params;
@@ -842,8 +842,8 @@ export async function applyDebtPaymentTransaction(params: {
       // Primero usamos la cédula enviada por el POS. Si la deuda inicial no
       // la trae por alguna razón, recuperamos la identidad desde "cliente".
       const clienteRaw = String(debt.cliente || '');
-      const cedulaDeuda = String(customerCedula || (clienteRaw.match(/\\[([^\\]]+)\\]\\s*$/)?.[1] || '')).trim();
-      const nombreDeuda = clienteRaw.replace(/\\s*\\[[^\\]]+\\]\\s*$/, '').trim();
+      const cedulaDeuda = String(customerCedula || (clienteRaw.match(/\[([^\]]+)\]\s*$/)?.[1] || '')).trim();
+      const nombreDeuda = clienteRaw.replace(/\s*\[[^\]]+\]\s*$/, '').trim();
 
       let found;
       if (cedulaDeuda) {
