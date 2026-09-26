@@ -812,9 +812,14 @@ export async function applyDebtPaymentTransaction(params: {
     const abonadoHistorial = historialPrevio.reduce((sum:number, p:any) => sum + Math.max(0, Number(p?.montoUSD) || 0), 0);
     const montoInicial = Math.max(0, Number(debt.montoUSD) || 0);
     const abonadoRegistrado = Math.max(0, Number(debt.abonadoUSD) || 0);
-    const saldoCalculado = Math.max(0, montoInicial - Math.max(abonadoRegistrado, abonadoHistorial));
-    const saldo = Number.isFinite(Number(debt.saldoUSD)) && Number(debt.saldoUSD) > 0
-      ? Number(debt.saldoUSD)
+    // Para deudas iniciales sin venta/items, el saldo almacenado puede venir
+    // desactualizado (por ejemplo 0) aunque montoUSD siga pendiente. La fuente
+    // segura es el mayor abonado registrado/histórico y el monto original.
+    const abonadoBase = Math.min(montoInicial, Math.max(abonadoRegistrado, abonadoHistorial));
+    const saldoCalculado = Math.max(0, montoInicial - abonadoBase);
+    const saldoPersistido = Number(debt.saldoUSD);
+    const saldo = Number.isFinite(saldoPersistido) && saldoPersistido >= saldoCalculado
+      ? saldoPersistido
       : saldoCalculado;
     const saldoCents = Math.round(saldo * 100);
     const amountCents = Math.round(Number(amountUSD) * 100);
