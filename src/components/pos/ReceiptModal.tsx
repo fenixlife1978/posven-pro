@@ -193,27 +193,12 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
       .filter((r:any) => !['otros','mixto','mixtos','punto_venta','punto_de_venta','punto_pago','punto_de_pago'].includes(String(r?.metodo || '').toLowerCase()));
     const base = ['efectivo_bs','efectivo_usd','pagomovil','tarjeta','biopago','transferencia','zelle','credito'];
     const map = new Map<string, any>();
-    [...base, ...rows.map((r:any) => r.metodo)].forEach((metodo) => {
-      if (!metodo) return;
-      map.set(metodo, rows.find((r:any)=>r.metodo===metodo) || {
-        metodo,
-        ventasBS:0,
-        ventasUSD:0,
-        cobrosBS:0,
-        cobrosUSD:0,
-        devBS:0,
-        devUSD:0,
-        // Una venta a crédito se registra en USD y no representa efectivo BS.
-        moneda: metodo === 'credito' || isUsdPayment(metodo) ? 'USD' : 'BS'
-      });
-    });
+    [...base, ...rows.map((r:any) => r.metodo)].forEach((metodo) => { if (metodo) map.set(metodo, rows.find((r:any)=>r.metodo===metodo) || {metodo,ventasBS:0,ventasUSD:0,cobrosBS:0,cobrosUSD:0,devBS:0,devUSD:0,moneda: isUsdPayment(metodo) ? 'USD' : 'BS'}); });
     return Array.from(map.values());
   }, [data?.metodosArqueo]);
   const arqueoCalc = React.useMemo(() => {
     const details = arqueoRows.map((r:any) => {
-      // CRÉDITO está denominado en USD aunque no sea un medio de cobro.
-      // Antes heredaba BS por defecto y una venta de $2,50 aparecía como Bs. 2,50.
-      const usd = r.metodo === 'credito' ? true : r.moneda === 'USD';
+      const usd = r.moneda === 'USD';
       const fondo = r.metodo === 'efectivo_bs' ? Number(data?.fondoAperturaBS || 0) : r.metodo === 'efectivo_usd' ? Number(data?.fondoAperturaUSD || 0) : 0;
       const ventas = r.metodo === 'tarjeta' && !(Number(r.ventasBS) > 0)
         ? Number(r.ventasUSD || 0) * Number(state.tasa || 0)
