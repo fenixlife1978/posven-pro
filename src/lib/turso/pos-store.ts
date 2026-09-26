@@ -804,11 +804,23 @@ export async function applyDebtPaymentTransaction(params: {
     if (check.rows.length) throw new Error('Esta operación ya fue procesada. No se registrará nuevamente.');
     const debt = rowFromDb((await tx.execute(txSelect(collection,debtId))).rows[0]);
     if (!debt) throw new Error('La deuda ya no existe.');
-    const saldo = Number(debt.saldoUSD)||0;
+
+    // Las deudas iniciales creadas desde Administración no tienen venta/factura
+    // asociada. El cobro individual del POS debe tratarlas como una CxC válida
+    // exactamente igual que una deuda originada por una venta a crédito.
+    const historialPrevio = Array.isArray(debt.historialPagos) ? debt.historialPagos : [];
+    const abonadoHistorial = historialPrevio.reduce((sum:number, p:any) => sum + Math.max(0, Number(p?.montoUSD) || 0), 0);
+    const montoInicial = Math.max(0, Number(debt.montoUSD) || 0);
+    const abonadoRegistrado = Math.max(0, Number(debt.abonadoUSD) || 0);
+    const saldoCalculado = Math.max(0, montoInicial - Math.max(abonadoRegistrado, abonadoHistorial));
+    const saldo = Number.isFinite(Number(debt.saldoUSD)) && Number(debt.saldoUSD) > 0
+      ? Number(debt.saldoUSD)
+      : saldoCalculado;
     const saldoCents = Math.round(saldo * 100);
     const amountCents = Math.round(Number(amountUSD) * 100);
     if (saldoCents <= 0) throw new Error('La deuda ya está pagada.');
     if (amountCents > saldoCents) throw new Error('El monto a pagar no puede ser mayor al saldo pendiente.');
+
     const terminal = terminalForOperation ? rowFromDb((await tx.execute(txSelect('terminales',terminalForOperation))).rows[0]) : null;
     if (terminalForOperation && !terminal) throw new Error('La caja/terminal ya no existe en Turso.');
     const field = collection==='cxc'?'proximoCobroDeuda':'proximoPagoProveedor';
@@ -817,13 +829,39 @@ export async function applyDebtPaymentTransaction(params: {
     const receiptId=terminal?terminalSeries(await terminalUniquePrefix(tx,terminal,terminalForOperation),label,counter,6):terminalSeries('GLOBAL',label,Date.now(),6);
     const applied=Math.min(amountCents, saldoCents) / 100;
     const appliedBS=Number(amountBS)>0?Math.min(Number(amountBS),Number(payment?.montoBS)||Number(amountBS)):(Number(payment?.montoBS)||(applied*(Number(payment?.tasaAplicada)||0)));
-    const pago=clean({...payment,id:receiptId,reciboId:receiptId,terminalForOperation:terminalForOperation||payment?.terminalForOperation,montoUSD:applied,montoBS:appliedBS});
-    const updated={...debt,abonadoUSD:(Number(debt.abonadoUSD)||0)+applied,saldoUSD:Math.max(0,saldo-applied),estado:Math.round((saldo-applied)*100)<=0?'pagada':'parcial',historialPagos:[...(Array.isArray(debt.historialPagos)?debt.historialPagos:[]),pago]};
+
+    const paymentWithTerminal = collection === 'cxc'
+      ? {...payment, terminalId: terminalForOperation || payment?.terminalId, terminalName: terminal?.nombre || payment?.terminalName}
+      : {...payment, terminalId: undefined, terminalName: undefined};
+    const pago=clean({...paymentWithTerminal,id:receiptId,reciboId:receiptId,terminalForOperation:terminalForOperation||payment?.terminalForOperation,montoUSD:applied,montoBS:appliedBS});
+
+    const updated={...debt,abonadoUSD:abonadoRegistrado+applied,saldoUSD:Math.max(0,saldo-applied),estado:Math.round((saldo-applied)*100)<=0?'pagada':'parcial',historialPagos:[...historialPrevio,pago]};
     const statements:TursoStatement[]=[rowStatement(collection,updated)];
-    if(collection==='cxc'&&customerCedula){
-      const found=await tx.execute({sql:"SELECT id,data_json FROM clientes WHERE json_extract(data_json,'$.cedula')=? LIMIT 1",args:[String(customerCedula)]});
-      const customer=rowFromDb(found.rows[0]);
-      if(customer) statements.push(rowStatement('clientes',{...customer,debt:Math.max(0,(Number(customer.debt)||0)-applied)}));
+
+    if(collection==='cxc'){
+      // Primero usamos la cédula enviada por el POS. Si la deuda inicial no
+      // la trae por alguna razón, recuperamos la identidad desde "cliente".
+      const clienteRaw = String(debt.cliente || '');
+      const cedulaDeuda = String(customerCedula || (clienteRaw.match(/\\[([^\\]]+)\\]\\s*$/)?.[1] || '')).trim();
+      const nombreDeuda = clienteRaw.replace(/\\s*\\[[^\\]]+\\]\\s*$/, '').trim();
+
+      let found;
+      if (cedulaDeuda) {
+        found = await tx.execute({
+          sql:"SELECT id,data_json FROM clientes WHERE json_extract(data_json,'$.cedula')=? LIMIT 1",
+          args:[cedulaDeuda]
+        });
+      }
+      if ((!found || !found.rows.length) && nombreDeuda) {
+        found = await tx.execute({
+          sql:"SELECT id,data_json FROM clientes WHERE LOWER(TRIM(json_extract(data_json,'$.name'))) = LOWER(TRIM(?)) LIMIT 1",
+          args:[nombreDeuda]
+        });
+      }
+      const customer=rowFromDb(found?.rows?.[0]);
+      if(customer) {
+        statements.push(rowStatement('clientes',{...customer,debt:Math.max(0,(Number(customer.debt)||0)-applied)}));
+      }
     }
     const journals=Array.isArray(journal)?journal:(journal?[journal]:[]);
     for(const entry of journals) if(entry?.id) statements.push(rowStatement('libroDiario',{...entry,referencia:receiptId,terminalForOperation:terminalForOperation||entry.terminalForOperation,terminalName:terminal?.nombre||entry.terminalName}));
