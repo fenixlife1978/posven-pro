@@ -81,7 +81,6 @@ jobs:
           }
 
       - name: Build Electron installer
-        if: github.ref != 'refs/heads/turso-migration'
         shell: pwsh
         run: |
           # Solo publica en GitHub Releases cuando es push a main/master o tag.
@@ -115,7 +114,6 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
       - name: Verify installer exists
-        if: github.ref != 'refs/heads/turso-migration'
         shell: pwsh
         run: |
           echo "=== Verificando instalador generado ==="
@@ -129,7 +127,6 @@ jobs:
           }
 
       - name: Upload installer artifact
-        if: github.ref != 'refs/heads/turso-migration'
         uses: actions/upload-artifact@v4
         with:
           name: PosVEN-Pro-Windows-Installer
