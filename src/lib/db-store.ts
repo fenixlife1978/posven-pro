@@ -1665,7 +1665,9 @@ export const Store = {
     debt: any;
     journal?: any;
   }): Promise<any> {
-    if (typeof window === 'undefined' || !db) return null;
+    // En modo Turso no existe `db` local: Turso es la única fuente operativa.
+    // No debemos bloquear esta ruta antes de llamar al endpoint /api/turso/store.
+    if (typeof window === 'undefined') return null;
     const tursoResult = await tryTursoOperation('supplierDebt', params);
     if (tursoResult) {
       // Turso confirma la deuda, pero la UI administrativa necesita reflejar
