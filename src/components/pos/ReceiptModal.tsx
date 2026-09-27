@@ -116,12 +116,17 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
     if (data.cajeroNombre) return data.cajeroNombre;
     if (data.cajero) return data.cajero;
     if (data.cashier) return data.cashier;
+
+    // En X/Z no usar el usuario cacheado globalmente: el reporte ya trae
+    // el cajero ligado al terminal que se está arqueando.
+    if (isReport) return 'Cajero';
+
     const currentUser = (state as any).user;
     if (currentUser) {
       return currentUser.nombre || currentUser.name || currentUser.displayName || currentUser.email || 'Cajero';
     }
     return 'Cajero';
-  }, [data.cajeroNombre, data.cajero, data.cashier]);
+  }, [data.cajeroNombre, data.cajero, data.cashier, isReport]);
 
   const totalBs = React.useMemo(() => {
     if (data.totalBS) return data.totalBS;
