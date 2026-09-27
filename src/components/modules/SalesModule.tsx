@@ -274,10 +274,26 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
 
   const getFreshReportData = () => {
     const freshState = Store.get();
-    const freshUser: any = (freshState as any).user || (state as any).user || null;
-    const sessionTerminalId = String(freshUser?.terminalId || currentTerminal?.id || '').trim();
-    const resolvedTerminal = (freshState.terminales || []).find((t:any) => String(t?.id || '') === sessionTerminalId) || currentTerminal;
-    const termId = String(resolvedTerminal?.id || '');
+
+    // El terminal que ya resolvió la pantalla POS es la fuente de verdad para
+    // X/Z. Nunca permitimos que un usuario cacheado de Store.get() cambie de
+    // caja el reporte (p.ej. Rosmary/Barra 2 -> Newman/Barra 3).
+    const activeTerminalId = String(currentTerminal?.id || '').trim();
+    const resolvedTerminal =
+      (activeTerminalId
+        ? (freshState.terminales || []).find((t:any) => String(t?.id || '') === activeTerminalId)
+        : null) || currentTerminal;
+    const termId = String(resolvedTerminal?.id || activeTerminalId || '').trim();
+
+    // El cajero queda ligado a la caja activa. Para la sesión normal, el usuario
+    // actual debe coincidir con el usuario asignado al terminal.
+    const sessionUser: any = (state as any).user || null;
+    const assignedUserId = String(resolvedTerminal?.usuarioId || '').trim();
+    const sessionUserIds = [sessionUser?.uid, sessionUser?.id].filter(Boolean).map(String);
+    const cajeroNombre =
+      assignedUserId && sessionUserIds.includes(assignedUserId)
+        ? String(sessionUser?.nombre || sessionUser?.name || sessionUser?.displayName || sessionUser?.email || 'Cajero')
+        : String(sessionUser?.nombre || sessionUser?.name || sessionUser?.displayName || sessionUser?.email || 'Cajero');
     const tc = Utils.getTerminalCash(resolvedTerminal);
     const corteTimestamp = tc.fechaUltimoZ || freshState.fechaUltimoZ || '';
 
@@ -436,7 +452,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
 
     const terminalName=resolvedTerminal?.nombre||'CAJA NO IDENTIFICADA';
 
-    return {brUSD,devUSD,descUSD,netUSD,igtfUSD,ivaUSD,baseImponibleUSD,exentoUSD,paymentMethods:paymentMethodsMap,manualSalidas:totalSalidasCaja,manualEntradas:totalEntradasCaja,manualSalidasBS:totalSalidasCajaBS,manualSalidasUSD:totalSalidasCajaUSD,manualEntradasBS:totalEntradasCajaBS,manualEntradasUSD:totalEntradasCajaUSD,cobrosDeudaUSD,cobrosDeudaBS,fondoAperturaUSD:fondoUSD,fondoAperturaBS:fondoBS,desdeFactura,hastaFactura,desdeNC,hastaNC,stats:{facturas:vActivas.length,devoluciones:dHoy.length,anulaciones:vAnuladas.length,ticketPromedio:vActivas.length?(netUSD/vActivas.length):0},fecha:Utils.ahora(),terminalName,terminalId:termId,numeroZ:(tc.ultimoZ||0)+1,acumuladoHistoricoUSD:(tc.acumuladoHistorico||0)+netUSD,totalVentasUSD:brUSD,metodosArqueo,ventasCreditoUSD,totalNetoEfectivoBS,totalNetoEfectivoUSD,estimadoEfectivoBS:{entradas:totalEntradasCajaBS,egresos:totalSalidasCajaBS,total:totalNetoEfectivoBS},estimadoEfectivoUSD:{entradas:totalEntradasCajaUSD,egresos:totalSalidasCajaUSD,total:totalNetoEfectivoUSD},tasaBCV:freshState.tasa||0};
+    return {brUSD,devUSD,descUSD,netUSD,igtfUSD,ivaUSD,baseImponibleUSD,exentoUSD,paymentMethods:paymentMethodsMap,manualSalidas:totalSalidasCaja,manualEntradas:totalEntradasCaja,manualSalidasBS:totalSalidasCajaBS,manualSalidasUSD:totalSalidasCajaUSD,manualEntradasBS:totalEntradasCajaBS,manualEntradasUSD:totalEntradasCajaUSD,cobrosDeudaUSD,cobrosDeudaBS,fondoAperturaUSD:fondoUSD,fondoAperturaBS:fondoBS,desdeFactura,hastaFactura,desdeNC,hastaNC,stats:{facturas:vActivas.length,devoluciones:dHoy.length,anulaciones:vAnuladas.length,ticketPromedio:vActivas.length?(netUSD/vActivas.length):0},fecha:Utils.ahora(),terminalName,terminalId:termId,cajeroId:assignedUserId || sessionUser?.uid || sessionUser?.id || '',cajeroNombre,numeroZ:(tc.ultimoZ||0)+1,acumuladoHistoricoUSD:(tc.acumuladoHistorico||0)+netUSD,totalVentasUSD:brUSD,metodosArqueo,ventasCreditoUSD,totalNetoEfectivoBS,totalNetoEfectivoUSD,estimadoEfectivoBS:{entradas:totalEntradasCajaBS,egresos:totalSalidasCajaBS,total:totalNetoEfectivoBS},estimadoEfectivoUSD:{entradas:totalEntradasCajaUSD,egresos:totalSalidasCajaUSD,total:totalNetoEfectivoUSD},tasaBCV:freshState.tasa||0};
   };
 
   const handleOpenReport = async (type: 'REPORT_X' | 'REPORT_Z') => {
