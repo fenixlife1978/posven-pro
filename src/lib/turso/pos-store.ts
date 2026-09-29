@@ -319,8 +319,24 @@ export async function syncRecords(params: {
     for (const id of deletedIds) {
       await tx.execute({ sql: `DELETE FROM ${tableName(table)} WHERE id=?`, args: [id], wantRows: false });
     }
+
+    // Primero persistimos y luego volvemos a leer los registros afectados desde
+    // la misma transacción. Así la respuesta al navegador siempre contiene la
+    // fila realmente almacenada por Turso y no solamente el payload que envió
+    // el cliente. Esto es especialmente importante para altas nuevas, donde la
+    // interfaz necesita recibir inmediatamente el registro creado.
     for (const record of records) await tx.execute(rowStatement(table, record));
-    return { records, deletedIds };
+
+    const confirmed: any[] = [];
+    for (const record of records) {
+      const id = String(record?.id || '');
+      if (!id) continue;
+      const result = await tx.execute(txSelect(table, id));
+      const row = result.rows[0];
+      if (row) confirmed.push(rowFromDb(row));
+    }
+
+    return { records: confirmed, deletedIds };
   });
 }
 
