@@ -606,13 +606,35 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
 
   const handleOpenCreditDetails = async (debt: any) => {
     setShowDetailsSale(null);
-    setShowDetails(debt);
-    const ventaId = String(debt?.ventaId || debt?.facturaId || '').trim();
+
+    // POS -> Consultar Deudas debe trabajar con la misma fila CxC completa
+    // que Administración -> CxC. La fila usada para agrupar el POS puede
+    // venir resumida; por eso aquí se vuelve a leer únicamente esa deuda
+    // antes de ejecutar exactamente la misma lógica de detalle.
+    let d = debt;
+    try {
+      const debtId = String(debt?.id || '').trim();
+      if (debtId) {
+        const response = await fetch('/api/turso/store?table=cxc&id=' + encodeURIComponent(debtId), {
+          credentials: 'include',
+          cache: 'no-store',
+        });
+        if (response.ok) {
+          const body: any = await response.json();
+          if (body?.record) d = { ...debt, ...body.record };
+        }
+      }
+    } catch (error) {
+      console.warn('[POS/Consultar Deudas] No se pudo actualizar la deuda CxC:', error);
+    }
+
+    setShowDetails(d);
+    const ventaId = String(d?.ventaId || d?.facturaId || '').trim();
     let sale = ventaId ? await Store.getSaleById(ventaId) : null;
     // La deuda migrada puede conservar un snapshot de la factura original.
     // Si la venta enlazada no coincide con ese snapshot, nunca mostramos
     // items de otra factura: usamos la copia autoritativa de CxC.
-    const debtItems = Array.isArray(debt?.items) ? debt.items : [];
+    const debtItems = Array.isArray(d?.items) ? d.items : [];
     const sameItems = (a:any[], b:any[]) => {
     if (!a.length || !b.length || a.length !== b.length) return false;
     return a.every((x:any, i:number) => {
@@ -624,14 +646,14 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     };
     if (debtItems.length && (!sale || !sameItems(debtItems, Array.isArray(sale.items) ? sale.items : []))) {
     sale = {
-    id: ventaId || String(debt?.id || ''),
-    fecha: String(debt?.fecha || ''),
-    cliente: debt?.cliente || '',
+    id: ventaId || String(d?.id || ''),
+    fecha: String(d?.fecha || ''),
+    cliente: d?.cliente || '',
     items: debtItems.map((x:any) => ({ ...x })),
-    subtotalUSD: Number(debt?.subtotalUSD ?? debt?.totalUSD ?? debt?.montoUSD ?? 0),
-    totalUSD: Number(debt?.totalUSD ?? debt?.montoUSD ?? 0),
-    totalBS: Number(debt?.totalBS ?? 0),
-    tasa: Number(debt?.tasa ?? 0),
+    subtotalUSD: Number(d?.subtotalUSD ?? d?.totalUSD ?? d?.montoUSD ?? 0),
+    totalUSD: Number(d?.totalUSD ?? d?.montoUSD ?? 0),
+    totalBS: Number(d?.totalBS ?? 0),
+    tasa: Number(d?.tasa ?? 0),
     };
     }
     setShowDetailsSale(normalizeSaleForDetails(sale));
