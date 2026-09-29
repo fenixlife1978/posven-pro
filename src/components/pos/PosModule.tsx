@@ -629,7 +629,16 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     }
 
     const ventaId = String(authoritativeDebt?.ventaId || authoritativeDebt?.facturaId || '').trim();
+    // Igual que Administración -> CxC: resolver primero por ventaId. Si esa
+    // referencia no existe (casos históricos/migrados), probar también con
+    // el id de la propia cuenta CxC. No dependemos de state.ventas.
     let sale = ventaId ? await Store.getSaleById(ventaId) : null;
+    if (!sale) {
+      const cxcId = String(authoritativeDebt?.id || '').trim();
+      if (cxcId && cxcId !== ventaId) {
+        sale = await Store.getSaleById(cxcId);
+      }
+    }
 
     const debtItems = Array.isArray(authoritativeDebt?.items) ? authoritativeDebt.items : [];
     const saleItems = Array.isArray(sale?.items) ? sale.items : [];
