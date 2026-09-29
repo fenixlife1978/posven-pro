@@ -1494,7 +1494,16 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
               </div>
 
               {(() => {
-                const sale = showDetailsSale;
+                const sale = showDetailsSale || (
+                  showDetails && Array.isArray(showDetails.items) && showDetails.items.length > 0
+                    ? normalizeSaleForDetails({
+                        ...showDetails,
+                        id: String(showDetails?.ventaId || showDetails?.facturaId || showDetails?.id || ''),
+                        fecha: String(showDetails?.fecha || ''),
+                        items: showDetails.items.map((x:any) => ({ ...x })),
+                      })
+                    : null
+                );
                 if (!sale || !Array.isArray(sale.items) || sale.items.length === 0) return null;
                 return (
                   <div className="space-y-3 animate-in slide-in-from-top-2 duration-300">
