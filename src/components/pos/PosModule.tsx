@@ -1561,7 +1561,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                             </span>
                           </td>
                           <td className="p-4 text-center">
-                             <button onClick={() => setShowDetails(d)} className="w-10 h-10 rounded-full flex items-center justify-center bg-white text-status-success border-2 border-status-success/20 hover:bg-status-success hover:text-white transition-all shadow-md"><Eye className="w-5 h-5"/></button>
+                             <button onClick={() => void handleOpenCreditDetails(d)} className="w-10 h-10 rounded-full flex items-center justify-center bg-white text-status-success border-2 border-status-success/20 hover:bg-status-success hover:text-white transition-all shadow-md"><Eye className="w-5 h-5"/></button>
                           </td>
                         </tr>
                       ))}
