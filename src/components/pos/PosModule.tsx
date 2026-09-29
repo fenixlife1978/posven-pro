@@ -577,6 +577,67 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     saldoActualDeuda(debt) > 0.001 &&
     debt?.estado !== 'pagada';
 
+  // En Consultar Créditos el detalle debe usar la versión autoritativa de Turso.
+  // El estado del POS puede tener una deuda resumida/caché sin items o historial
+  // completo. Antes de abrir el OJO refrescamos CxC y luego consultamos la venta
+  // original por su ventaId/facturaId.
+  const handleOpenCreditDetails = async (debt: any) => {
+    try {
+      await Store.ensureLoaded('cxc');
+      const freshState: any = Store.get();
+      const freshDebt =
+        (freshState?.cxc || []).find((d: any) => String(d?.id || '') === String(debt?.id || '')) ||
+        debt;
+
+      const ventaId = String(freshDebt?.ventaId || freshDebt?.facturaId || debt?.ventaId || debt?.facturaId || '').trim();
+      let sale: any = ventaId ? await Store.getSaleById(ventaId) : null;
+
+      // CxC conserva un snapshot de items para créditos históricos/migrados.
+      // Si existe, tiene prioridad cuando la venta enlazada no coincide o no trae items.
+      const debtItems = Array.isArray(freshDebt?.items)
+        ? freshDebt.items
+        : (Array.isArray(debt?.items) ? debt.items : []);
+
+      const sameItems = (a: any[], b: any[]) => {
+        if (!a.length || !b.length || a.length !== b.length) return false;
+        return a.length === b.length && a.every((x: any, i: number) => {
+          const y = b[i] || {};
+          return String(x?.productoId || '') === String(y?.productoId || '') &&
+            Number(x?.cantidad || 0) === Number(y?.cantidad || 0) &&
+            Math.abs((Number(x?.subtotalUSD) || 0) - (Number(y?.subtotalUSD) || 0)) < 0.001;
+        });
+      };
+
+      if (debtItems.length && (!sale || !Array.isArray(sale.items) || !sameItems(debtItems, sale.items))) {
+        sale = {
+          id: ventaId || String(freshDebt?.id || ''),
+          fecha: String(freshDebt?.fecha || ''),
+          cliente: freshDebt?.cliente || '',
+          items: debtItems.map((it: any) => ({ ...it })),
+          subtotalUSD: Number(freshDebt?.subtotalUSD ?? freshDebt?.totalUSD ?? freshDebt?.montoUSD ?? 0),
+          totalUSD: Number(freshDebt?.totalUSD ?? freshDebt?.montoUSD ?? 0),
+          totalBS: Number(freshDebt?.totalBS ?? 0),
+          tasa: Number(freshDebt?.tasa ?? state.tasa ?? 0),
+        };
+      }
+
+      setShowDetails({
+        ...(freshDebt as any),
+        ventaDetalle: sale,
+        // Garantiza que el historial que se muestra corresponde a la deuda
+        // recién leída y no al snapshot anterior del POS.
+        historialPagos: Array.isArray(freshDebt?.historialPagos) ? freshDebt.historialPagos : [],
+      });
+    } catch (error: any) {
+      console.error('[POS/CxC] Error cargando detalle de crédito:', error);
+      toast({
+        title: 'No se pudo cargar el detalle',
+        description: error?.message || 'Verifique la conexión con Turso e inténtelo nuevamente.',
+        variant: 'destructive',
+      });
+    }
+  };
+
   const groupedCredits = useMemo(() => {
     const groups: Record<string, { totalUSD: number; debts: Debt[] }> = {};
     (state.cxc || []).filter(esDeudaActiva).forEach(debt => {
@@ -1302,24 +1363,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                               <div className="card border-line bg-white shadow-inner rounded-xl overflow-hidden">
                                  <table className="w-full">
                                     <thead className="bg-ink/5"><tr><th className="text-[9px] font-black uppercase p-2 text-left">Emisión</th><th className="text-[9px] font-black uppercase p-2 text-left">Vencimiento</th><th className="text-[9px] font-black uppercase p-2 text-right">Saldo USD</th><th className="text-[9px] font-black uppercase p-2 text-center">Acciones</th></tr></thead>
-                                    <tbody>{group.debts.map(d => (<tr key={d.id} className="border-b border-line/20"><td className="text-[10px] font-black p-2">{Utils.fmtFecha(d.fecha)}</td><td className={`text-[10px] font-black p-2 ${d.fechaVencimiento < Utils.hoy() ? 'text-status-danger' : 'text-ink'}`}>{d.fechaVencimiento === '2099-12-31' ? 'ABIERTA' : Utils.fmtFecha(d.fechaVencimiento)}</td><td className="text-[10px] font-black p-2 text-right text-brand-gold-deep">{Utils.fmtUSD(saldoActualDeuda(d))}</td><td className="p-2 text-center"><div className="flex justify-center gap-2"><button onClick={async () => {
-  let sale: any = null;
-  const ventaId = String((d as any)?.ventaId || (d as any)?.facturaId || '').trim();
-  if (ventaId) sale = await Store.getSaleById(ventaId);
-  const debtItems = Array.isArray((d as any)?.items) ? (d as any).items : [];
-  if ((!sale || !Array.isArray(sale.items) || sale.items.length === 0) && debtItems.length) {
-    sale = {
-      id: ventaId || String((d as any)?.id || ''),
-      fecha: String((d as any)?.fecha || ''),
-      items: debtItems.map((it: any) => ({ ...it })),
-      subtotalUSD: Number((d as any)?.subtotalUSD ?? (d as any)?.totalUSD ?? (d as any)?.montoUSD ?? 0),
-      totalUSD: Number((d as any)?.totalUSD ?? (d as any)?.montoUSD ?? 0),
-      totalBS: Number((d as any)?.totalBS ?? 0),
-      tasa: Number((d as any)?.tasa ?? 0),
-    };
-  }
-  setShowDetails({ ...(d as any), ventaDetalle: sale });
-}} className="w-8 h-8 rounded-full flex items-center justify-center text-status-success hover:bg-status-success/10"><Eye className="w-4 h-4"/></button></div></td></tr>))}</tbody>
+                                    <tbody>{group.debts.map(d => (<tr key={d.id} className="border-b border-line/20"><td className="text-[10px] font-black p-2">{Utils.fmtFecha(d.fecha)}</td><td className={`text-[10px] font-black p-2 ${d.fechaVencimiento < Utils.hoy() ? 'text-status-danger' : 'text-ink'}`}>{d.fechaVencimiento === '2099-12-31' ? 'ABIERTA' : Utils.fmtFecha(d.fechaVencimiento)}</td><td className="text-[10px] font-black p-2 text-right text-brand-gold-deep">{Utils.fmtUSD(saldoActualDeuda(d))}</td><td className="p-2 text-center"><div className="flex justify-center gap-2"><button onClick={() => void handleOpenCreditDetails(d)} className="w-8 h-8 rounded-full flex items-center justify-center text-status-success hover:bg-status-success/10" title="Ver factura y abonos"><Eye className="w-4 h-4"/></button></div></td></tr>))}</tbody>
                                  </table>
                               </div>
                            </td>
