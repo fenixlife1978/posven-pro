@@ -615,13 +615,29 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     try {
       const debtId = String(debt?.id || '').trim();
       if (debtId) {
-        const response = await fetch('/api/turso/store?table=cxc&id=' + encodeURIComponent(debtId), {
+        // Leer la colección CxC completa en esta acción, igual que Administración.
+        // Esto evita depender de un snapshot parcial que POS pudo haber hidratado
+        // al iniciar la sesión. Solo afecta Consultar Créditos/Deudas.
+        const response = await fetch('/api/turso/store?table=cxc&limit=2000', {
           credentials: 'include',
           cache: 'no-store',
         });
         if (response.ok) {
           const body: any = await response.json();
-          if (body?.record) d = { ...debt, ...body.record };
+          const freshDebt = Array.isArray(body?.records)
+            ? body.records.find((row: any) => String(row?.id || '') === debtId)
+            : null;
+          if (freshDebt) d = { ...debt, ...freshDebt };
+        } else {
+          // Fallback puntual al registro por ID si la consulta de colección no responde.
+          const byId = await fetch('/api/turso/store?table=cxc&id=' + encodeURIComponent(debtId), {
+            credentials: 'include',
+            cache: 'no-store',
+          });
+          if (byId.ok) {
+            const body: any = await byId.json();
+            if (body?.record) d = { ...debt, ...body.record };
+          }
         }
       }
     } catch (error) {
