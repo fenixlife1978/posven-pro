@@ -621,7 +621,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         });
         if (response.ok) {
           const body: any = await response.json();
-          if (body?.record) d = { ...debt, ...body.record };
+          if (body?.record) { d = { ...debt, ...body.record }; if (!Array.isArray(d?.items) && Array.isArray(debt?.items)) d.items = debt.items; }
         }
       }
     } catch (error) {
