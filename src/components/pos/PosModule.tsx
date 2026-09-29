@@ -51,10 +51,10 @@ import { cn } from '@/lib/utils';
 
 // ✅ ELIMINADO: El declare global ya está en ReceiptModal.tsx
 
-export default function SalesModule({
+export default function SalesModule({ state, updateState }: { state: AppState, updateState: (s: Partial<AppState>) => void }) {
   // Mismo cargador que Administración -> CxC: el POS debe tener la deuda
   // completa desde Turso antes de abrir su historial, incluidos sus items.
-  useEffect(() => { void Store.ensureLoaded('cxc'); }, []); state, updateState }: { state: AppState, updateState: (s: Partial<AppState>) => void }) {
+  useEffect(() => { void Store.ensureLoaded('cxc'); }, []);
   const [search, setSearch] = useState('');
   const [view, setView] = useState<'pos' | 'history' | 'credits' | 'returns'>('pos');
   const [showReportType, setShowReportType] = useState<'REPORT_X' | 'REPORT_Z' | null>(null);
