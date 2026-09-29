@@ -607,70 +607,107 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   const handleOpenCreditDetails = async (debt: any) => {
     setShowDetailsSale(null);
 
-    // POS -> Consultar Deudas debe trabajar con la misma fila CxC completa
-    // que Administración -> CxC. La fila usada para agrupar el POS puede
-    // venir resumida; por eso aquí se vuelve a leer únicamente esa deuda
-    // antes de ejecutar exactamente la misma lógica de detalle.
+    // Consultar Deudas debe usar la fila CxC autoritativa y, cuando esa fila
+    // no trae el snapshot de items, resolver la venta original por cualquiera
+    // de sus referencias conocidas. Todo esto queda aislado de la lógica de cobro.
     let d = debt;
+    const debtId = String(debt?.id || '').trim();
+
     try {
-      const debtId = String(debt?.id || '').trim();
       if (debtId) {
-        // Leer la colección CxC completa en esta acción, igual que Administración.
-        // Esto evita depender de un snapshot parcial que POS pudo haber hidratado
-        // al iniciar la sesión. Solo afecta Consultar Créditos/Deudas.
-        const response = await fetch('/api/turso/store?table=cxc&limit=2000', {
+        const response = await fetch('/api/turso/store?table=cxc&id=' + encodeURIComponent(debtId), {
           credentials: 'include',
           cache: 'no-store',
         });
         if (response.ok) {
           const body: any = await response.json();
-          const freshDebt = Array.isArray(body?.records)
-            ? body.records.find((row: any) => String(row?.id || '') === debtId)
-            : null;
-          if (freshDebt) d = { ...debt, ...freshDebt };
-        } else {
-          // Fallback puntual al registro por ID si la consulta de colección no responde.
-          const byId = await fetch('/api/turso/store?table=cxc&id=' + encodeURIComponent(debtId), {
-            credentials: 'include',
-            cache: 'no-store',
-          });
-          if (byId.ok) {
-            const body: any = await byId.json();
-            if (body?.record) d = { ...debt, ...body.record };
-          }
+          if (body?.record) d = { ...debt, ...body.record };
         }
       }
     } catch (error) {
-      console.warn('[POS/Consultar Deudas] No se pudo actualizar la deuda CxC:', error);
+      console.warn('[POS/Consultar Deudas] No se pudo leer la deuda CxC autoritativa:', error);
     }
 
     setShowDetails(d);
-    const ventaId = String(d?.ventaId || d?.facturaId || '').trim();
-    const debtItems = Array.isArray(d?.items) ? d.items : [];
 
-    // En POS, si la propia deuda CxC ya trae el snapshot de items, ese es
-    // el detalle autoritativo de la factura. No volvemos a pasar por
-    // Store.getSaleById ni por una comparación que pueda descartar el
-    // snapshot correcto. Esto replica el fallback que ya funciona en Admin.
+    const refIds = [
+      d?.ventaId,
+      d?.facturaId,
+      d?.venta?.id,
+      d?.saleId,
+    ].map((x:any) => String(x || '').trim()).filter(Boolean);
+
+    const debtItems = Array.isArray(d?.items) ? d.items : [];
     if (debtItems.length > 0) {
       setShowDetailsSale(normalizeSaleForDetails({
-        id: ventaId || String(d?.id || ''),
+        id: refIds[0] || debtId,
         fecha: String(d?.fecha || ''),
         cliente: d?.cliente || '',
         items: debtItems.map((x:any) => ({ ...x })),
         subtotalUSD: Number(d?.subtotalUSD ?? d?.totalUSD ?? d?.montoUSD ?? 0),
         totalUSD: Number(d?.totalUSD ?? d?.montoUSD ?? 0),
-        totalBS: Number(d?.totalBS ?? d?.montoUSD ?? 0),
+        totalBS: Number(d?.totalBS ?? 0),
         tasa: Number(d?.tasa ?? 0),
       }));
       return;
     }
 
-    // Solo para deudas que no tienen snapshot de items, conservamos la
-    // resolución de la venta enlazada. No se modifica ninguna lógica de cobro.
-    const sale = ventaId ? await Store.getSaleById(ventaId) : null;
-    setShowDetailsSale(normalizeSaleForDetails(sale));
+    // Primero intentamos las referencias explícitas de la deuda.
+    for (const refId of refIds) {
+      try {
+        const sale = await Store.getSaleById(refId);
+        if (sale && Array.isArray(sale.items) && sale.items.length > 0) {
+          setShowDetailsSale(normalizeSaleForDetails(sale));
+          return;
+        }
+      } catch (error) {
+        console.warn('[POS/Consultar Deudas] No se pudo leer venta ' + refId + ':', error);
+      }
+    }
+
+    // Si la deuda histórica no conserva ventaId/facturaId utilizable,
+    // buscamos la venta en Turso usando las referencias de negocio que sí
+    // conserva CxC. Esta búsqueda ocurre exclusivamente al abrir el detalle.
+    try {
+      const response = await fetch('/api/turso/store?table=ventas&limit=2000', {
+        credentials: 'include',
+        cache: 'no-store',
+      });
+      if (response.ok) {
+        const body: any = await response.json();
+        const sales = Array.isArray(body?.records) ? body.records : [];
+        const candidates = [
+          d?.id,
+          d?.numeroFactura,
+          d?.numero,
+          d?.reciboId,
+          ...refIds,
+        ].map((x:any) => String(x || '').trim()).filter(Boolean);
+
+        const sale = sales.find((row:any) => {
+          const rowValues = [
+            row?.id, row?.ventaId, row?.facturaId, row?.numeroFactura,
+            row?.numero, row?.reciboId, row?.numeroRecibo, row?.cxcId,
+            row?.debtId, row?.creditoId,
+          ].map((x:any) => String(x || '').trim()).filter(Boolean);
+          return rowValues.some((value:string) => candidates.includes(value))
+            && Array.isArray(row?.items)
+            && row.items.length > 0;
+        });
+
+        if (sale) {
+          setShowDetailsSale(normalizeSaleForDetails(sale));
+          return;
+        }
+      }
+    } catch (error) {
+      console.warn('[POS/Consultar Deudas] No se pudo resolver la venta original:', error);
+    }
+
+    // Deuda inicial/manual sin factura asociada: no inventamos artículos.
+    setShowDetailsSale(null);
   };
+
   const groupedCredits = useMemo(() => {
     const groups: Record<string, { totalUSD: number; debts: Debt[] }> = {};
     (state.cxc || []).filter(esDeudaActiva).forEach(debt => {
