@@ -630,32 +630,29 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
 
     setShowDetails(d);
     const ventaId = String(d?.ventaId || d?.facturaId || '').trim();
-    let sale = ventaId ? await Store.getSaleById(ventaId) : null;
-    // La deuda migrada puede conservar un snapshot de la factura original.
-    // Si la venta enlazada no coincide con ese snapshot, nunca mostramos
-    // items de otra factura: usamos la copia autoritativa de CxC.
     const debtItems = Array.isArray(d?.items) ? d.items : [];
-    const sameItems = (a:any[], b:any[]) => {
-    if (!a.length || !b.length || a.length !== b.length) return false;
-    return a.every((x:any, i:number) => {
-    const y=b[i] || {};
-    return String(x?.productoId || '') === String(y?.productoId || '') &&
-    Number(x?.cantidad || 0) === Number(y?.cantidad || 0) &&
-    Math.abs((Number(x?.subtotalUSD) || 0) - (Number(y?.subtotalUSD) || 0)) < 0.001;
-    });
-    };
-    if (debtItems.length && (!sale || !sameItems(debtItems, Array.isArray(sale.items) ? sale.items : []))) {
-    sale = {
-    id: ventaId || String(d?.id || ''),
-    fecha: String(d?.fecha || ''),
-    cliente: d?.cliente || '',
-    items: debtItems.map((x:any) => ({ ...x })),
-    subtotalUSD: Number(d?.subtotalUSD ?? d?.totalUSD ?? d?.montoUSD ?? 0),
-    totalUSD: Number(d?.totalUSD ?? d?.montoUSD ?? 0),
-    totalBS: Number(d?.totalBS ?? 0),
-    tasa: Number(d?.tasa ?? 0),
-    };
+
+    // En POS, si la propia deuda CxC ya trae el snapshot de items, ese es
+    // el detalle autoritativo de la factura. No volvemos a pasar por
+    // Store.getSaleById ni por una comparación que pueda descartar el
+    // snapshot correcto. Esto replica el fallback que ya funciona en Admin.
+    if (debtItems.length > 0) {
+      setShowDetailsSale(normalizeSaleForDetails({
+        id: ventaId || String(d?.id || ''),
+        fecha: String(d?.fecha || ''),
+        cliente: d?.cliente || '',
+        items: debtItems.map((x:any) => ({ ...x })),
+        subtotalUSD: Number(d?.subtotalUSD ?? d?.totalUSD ?? d?.montoUSD ?? 0),
+        totalUSD: Number(d?.totalUSD ?? d?.montoUSD ?? 0),
+        totalBS: Number(d?.totalBS ?? d?.montoUSD ?? 0),
+        tasa: Number(d?.tasa ?? 0),
+      }));
+      return;
     }
+
+    // Solo para deudas que no tienen snapshot de items, conservamos la
+    // resolución de la venta enlazada. No se modifica ninguna lógica de cobro.
+    const sale = ventaId ? await Store.getSaleById(ventaId) : null;
     setShowDetailsSale(normalizeSaleForDetails(sale));
   };
   const groupedCredits = useMemo(() => {
