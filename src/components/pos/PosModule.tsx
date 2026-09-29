@@ -605,47 +605,18 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   };
 
   const handleOpenCreditDetails = async (debt: any) => {
+    // El OJO de POS -> Consultar Deudas usa exactamente la misma secuencia
+    // de resolución que Administración -> CxC. No depende de state.ventas.
     setShowDetailsSale(null);
     setShowDetails(debt);
 
-    // Consultar Deudas debe resolver la misma fuente persistente que CxC:
-    // primero obtenemos la venta completa y, si la deuda local no trae snapshot
-    // de items, recuperamos la fila CxC directamente desde Turso.
-    let authoritativeDebt = debt;
-    try {
-      const debtId = String(debt?.id || '').trim();
-      if (debtId && (!Array.isArray(debt?.items) || debt.items.length === 0)) {
-        const response = await fetch('/api/turso/store?table=cxc&id=' + encodeURIComponent(debtId), {
-          credentials: 'include',
-          cache: 'no-store',
-        });
-        if (response.ok) {
-          const body: any = await response.json();
-          if (body?.record) authoritativeDebt = { ...debt, ...body.record };
-        }
-      }
-    } catch (e) {
-      console.error('Error leyendo detalle CxC desde Turso:', e);
-    }
-
-    const ventaId = String(authoritativeDebt?.ventaId || authoritativeDebt?.facturaId || '').trim();
-    // Igual que Administración -> CxC: resolver primero por ventaId. Si esa
-    // referencia no existe (casos históricos/migrados), probar también con
-    // el id de la propia cuenta CxC. No dependemos de state.ventas.
+    const ventaId = String(debt?.ventaId || debt?.facturaId || '').trim();
     let sale = ventaId ? await Store.getSaleById(ventaId) : null;
-    if (!sale) {
-      const cxcId = String(authoritativeDebt?.id || '').trim();
-      if (cxcId && cxcId !== ventaId) {
-        sale = await Store.getSaleById(cxcId);
-      }
-    }
 
-    const debtItems = Array.isArray(authoritativeDebt?.items) ? authoritativeDebt.items : [];
-    const saleItems = Array.isArray(sale?.items) ? sale.items : [];
-
-    // Si la venta persistida no trae los items o no coincide con la deuda,
-    // usamos el snapshot de la fila CxC, igual que el comportamiento de
-    // Administración -> CxC.
+    // La deuda puede conservar el snapshot original de sus productos.
+    // Ese snapshot es la última fuente válida si la venta enlazada no está
+    // disponible en la caché/consulta puntual.
+    const debtItems = Array.isArray(debt?.items) ? debt.items : [];
     const sameItems = (a:any[], b:any[]) => {
       if (!a.length || !b.length || a.length !== b.length) return false;
       return a.every((x:any, i:number) => {
@@ -656,21 +627,42 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       });
     };
 
-    if (debtItems.length && (!sale || !sameItems(debtItems, saleItems))) {
+    if (debtItems.length && (!sale || !sameItems(debtItems, Array.isArray(sale.items) ? sale.items : []))) {
       sale = {
-        id: ventaId || String(authoritativeDebt?.id || ''),
-        fecha: String(authoritativeDebt?.fecha || ''),
-        cliente: authoritativeDebt?.cliente || '',
+        id: ventaId || String(debt?.id || ''),
+        fecha: String(debt?.fecha || ''),
+        cliente: debt?.cliente || '',
         items: debtItems.map((x:any) => ({ ...x })),
-        subtotalUSD: Number(authoritativeDebt?.subtotalUSD ?? authoritativeDebt?.totalUSD ?? authoritativeDebt?.montoUSD ?? 0),
-        totalUSD: Number(authoritativeDebt?.totalUSD ?? authoritativeDebt?.montoUSD ?? 0),
-        totalBS: Number(authoritativeDebt?.totalBS ?? 0),
-        tasa: Number(authoritativeDebt?.tasa ?? 0),
+        subtotalUSD: Number(debt?.subtotalUSD ?? debt?.totalUSD ?? debt?.montoUSD ?? 0),
+        totalUSD: Number(debt?.totalUSD ?? debt?.montoUSD ?? 0),
+        totalBS: Number(debt?.totalBS ?? 0),
+        tasa: Number(debt?.tasa ?? 0),
       };
     }
 
-    // Mostramos también los datos persistidos de la deuda en el historial.
-    setShowDetails(authoritativeDebt);
+    // Si la fila CxC local no trae snapshot, buscamos una deuda equivalente
+    // ya hidratada por Store. Esto cubre diferencias entre las rutas del POS
+    // y Administración sin tocar ninguna otra operación del POS.
+    if (!sale) {
+      const cxcMatch = (Store.get().cxc || []).find((x:any) =>
+        String(x?.id || '') === String(debt?.id || '') ||
+        (ventaId && String(x?.ventaId || x?.facturaId || '') === ventaId)
+      );
+      const cxcItems = Array.isArray(cxcMatch?.items) ? cxcMatch.items : [];
+      if (cxcItems.length) {
+        sale = {
+          id: ventaId || String(debt?.id || ''),
+          fecha: String(cxcMatch?.fecha || debt?.fecha || ''),
+          cliente: cxcMatch?.cliente || debt?.cliente || '',
+          items: cxcItems.map((x:any) => ({ ...x })),
+          subtotalUSD: Number(cxcMatch?.subtotalUSD ?? cxcMatch?.totalUSD ?? cxcMatch?.montoUSD ?? debt?.montoUSD ?? 0),
+          totalUSD: Number(cxcMatch?.totalUSD ?? cxcMatch?.montoUSD ?? debt?.montoUSD ?? 0),
+          totalBS: Number(cxcMatch?.totalBS ?? debt?.totalBS ?? 0),
+          tasa: Number(cxcMatch?.tasa ?? debt?.tasa ?? 0),
+        };
+      }
+    }
+
     setShowDetailsSale(normalizeSaleForDetails(sale));
   };
 
