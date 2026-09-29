@@ -68,6 +68,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   const [globalCreditCustomer, setGlobalCreditCustomer] = useState<{ name: string; cedula?: string; totalUSD: number; totalBS: number } | null>(null);
   
   const [showDetails, setShowDetails] = useState<any | null>(null);
+  const [showDetailsSale, setShowDetailsSale] = useState<any | null>(null);
   const [lastProcessedSale, setLastProcessedSale] = useState<any | null>(null);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [selectedProductDisplay, setSelectedProductDisplay] = useState<Product | null>(null);
@@ -583,53 +584,22 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   // original por su ventaId/facturaId.
   const handleOpenCreditDetails = async (debt: any) => {
     try {
-      await Store.ensureLoaded('cxc');
-      const freshState: any = Store.get();
-      const freshDebt =
-        (freshState?.cxc || []).find((d: any) => String(d?.id || '') === String(debt?.id || '')) ||
-        debt;
+      // Mantener exactamente el mismo flujo que CxC Administración:
+      // la deuda abre el historial y la factura se carga aparte desde Turso.
+      setShowDetailsSale(null);
+      setShowDetails(debt);
 
-      const ventaId = String(freshDebt?.ventaId || freshDebt?.facturaId || debt?.ventaId || debt?.facturaId || '').trim();
-      let sale: any = ventaId ? await Store.getSaleById(ventaId) : null;
+      const ventaId = String(debt?.ventaId || debt?.facturaId || '').trim();
+      const sale = ventaId ? await Store.getSaleById(ventaId) : null;
 
-      // CxC conserva un snapshot de items para créditos históricos/migrados.
-      // Si existe, tiene prioridad cuando la venta enlazada no coincide o no trae items.
-      const debtItems = Array.isArray(freshDebt?.items)
-        ? freshDebt.items
-        : (Array.isArray(debt?.items) ? debt.items : []);
-
-      const sameItems = (a: any[], b: any[]) => {
-        if (!a.length || !b.length || a.length !== b.length) return false;
-        return a.length === b.length && a.every((x: any, i: number) => {
-          const y = b[i] || {};
-          return String(x?.productoId || '') === String(y?.productoId || '') &&
-            Number(x?.cantidad || 0) === Number(y?.cantidad || 0) &&
-            Math.abs((Number(x?.subtotalUSD) || 0) - (Number(y?.subtotalUSD) || 0)) < 0.001;
-        });
-      };
-
-      if (debtItems.length && (!sale || !Array.isArray(sale.items) || !sameItems(debtItems, sale.items))) {
-        sale = {
-          id: ventaId || String(freshDebt?.id || ''),
-          fecha: String(freshDebt?.fecha || ''),
-          cliente: freshDebt?.cliente || '',
-          items: debtItems.map((it: any) => ({ ...it })),
-          subtotalUSD: Number(freshDebt?.subtotalUSD ?? freshDebt?.totalUSD ?? freshDebt?.montoUSD ?? 0),
-          totalUSD: Number(freshDebt?.totalUSD ?? freshDebt?.montoUSD ?? 0),
-          totalBS: Number(freshDebt?.totalBS ?? 0),
-          tasa: Number(freshDebt?.tasa ?? state.tasa ?? 0),
-        };
+      if (sale && Array.isArray(sale.items)) {
+        setShowDetailsSale(sale);
+      } else {
+        setShowDetailsSale(null);
       }
-
-      setShowDetails({
-        ...(freshDebt as any),
-        ventaDetalle: sale,
-        // Garantiza que el historial que se muestra corresponde a la deuda
-        // recién leída y no al snapshot anterior del POS.
-        historialPagos: Array.isArray(freshDebt?.historialPagos) ? freshDebt.historialPagos : [],
-      });
     } catch (error: any) {
-      console.error('[POS/CxC] Error cargando detalle de crédito:', error);
+      console.error('[POS/CxC] Error cargando detalle de factura:', error);
+      setShowDetailsSale(null);
       toast({
         title: 'No se pudo cargar el detalle',
         description: error?.message || 'Verifique la conexión con Turso e inténtelo nuevamente.',
@@ -1446,7 +1416,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
               <h3 className="font-black text-xs uppercase italic tracking-tighter flex items-center gap-2">
                 <Receipt className="w-5 h-5 text-brand-gold" /> HISTORIAL DETALLADO: {showDetails.id}
               </h3>
-              <button onClick={() => setShowDetails(null)} className="text-white hover:text-brand-gold"><X className="w-5 h-5"/></button>
+              <button onClick={() => { setShowDetails(null); setShowDetailsSale(null); }} className="text-white hover:text-brand-gold"><X className="w-5 h-5"/></button>
             </div>
             <div className="modal-body p-6 space-y-6 max-h-[75vh] overflow-y-auto bg-white">
               <div className="grid grid-cols-2 gap-4">
@@ -1461,7 +1431,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
               </div>
 
               {(() => {
-                const sale = showDetails.ventaDetalle || state.ventas.find(v => v.id === showDetails.ventaId || v.id === showDetails.id);
+                const sale = showDetailsSale;
                 if (!sale || !Array.isArray(sale.items) || sale.items.length === 0) return null;
                 return (
                   <div className="space-y-3 animate-in slide-in-from-top-2 duration-300">
@@ -1518,7 +1488,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
               </div>
             </div>
             <div className="modal-foot p-4 bg-surface-soft border-t border-line text-right">
-               <button onClick={() => setShowDetails(null)} className="btn btn-primary px-8 font-black uppercase text-[10px] rounded-lg shadow-md">Cerrar</button>
+               <button onClick={() => { setShowDetails(null); setShowDetailsSale(null); }} className="btn btn-primary px-8 font-black uppercase text-[10px] rounded-lg shadow-md">Cerrar</button>
             </div>
           </div>
         </div>
