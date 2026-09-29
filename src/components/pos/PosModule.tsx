@@ -609,13 +609,37 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       setShowDetailsSale(null);
       setShowDetails(debt);
 
+      // La fila que POS tiene en memoria puede ser una versión resumida de CxC.
+      // Administración trabaja con la deuda completa. Por eso aquí primero
+      // recuperamos la MISMA deuda desde Turso y usamos sus enlaces/snapshot.
+      let authoritativeDebt = debt;
+      try {
+        const debtId = String(debt?.id || '').trim();
+        if (debtId) {
+          const response = await fetch('/api/turso/store?table=cxc&id=' + encodeURIComponent(debtId), {
+            credentials: 'include',
+            cache: 'no-store',
+          });
+          if (response.status === 503) throw new Error('Turso no está configurado o no está disponible.');
+          const body: any = await response.json();
+          if (!response.ok || body?.ok === false) {
+            throw new Error(String(body?.error || 'Turso rechazó la lectura de CxC.'));
+          }
+          if (body?.record) authoritativeDebt = { ...debt, ...body.record };
+        }
+      } catch (readError) {
+        console.warn('[POS/CxC] No se pudo releer la deuda desde Turso; se usará la deuda cargada:', readError);
+      }
+
+      setShowDetails(authoritativeDebt);
+
       // Igual que Administración: primero intenta abrir la venta enlazada.
-      const ventaId = String(debt?.ventaId || debt?.facturaId || debt?.id || '').trim();
+      const ventaId = String(authoritativeDebt?.ventaId || authoritativeDebt?.facturaId || '').trim();
       let sale = ventaId ? await Store.getSaleById(ventaId) : null;
 
       // Igual que Administración: si CxC conserva el snapshot de los items,
       // éste es la fuente de respaldo del detalle de esa misma deuda.
-      const debtItems = Array.isArray(debt?.items) ? debt.items : [];
+      const debtItems = Array.isArray(authoritativeDebt?.items) ? authoritativeDebt.items : [];
       const sameItems = (a: any[], b: any[]) => {
         if (!a.length || !b.length || a.length !== b.length) return false;
         return a.every((x: any, i: number) => {
@@ -628,14 +652,14 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
 
       if (debtItems.length && (!sale || !sameItems(debtItems, Array.isArray(sale.items) ? sale.items : []))) {
         sale = {
-          id: ventaId || String(debt?.id || ''),
-          fecha: String(debt?.fecha || ''),
-          cliente: debt?.cliente || '',
+          id: ventaId || String(authoritativeDebt?.id || ''),
+          fecha: String(authoritativeDebt?.fecha || ''),
+          cliente: authoritativeDebt?.cliente || '',
           items: debtItems.map((x: any) => ({ ...x })),
-          subtotalUSD: Number(debt?.subtotalUSD ?? debt?.totalUSD ?? debt?.montoUSD ?? 0),
-          totalUSD: Number(debt?.totalUSD ?? debt?.montoUSD ?? 0),
-          totalBS: Number(debt?.totalBS ?? 0),
-          tasa: Number(debt?.tasa ?? 0),
+          subtotalUSD: Number(authoritativeDebt?.subtotalUSD ?? authoritativeDebt?.totalUSD ?? authoritativeDebt?.montoUSD ?? 0),
+          totalUSD: Number(authoritativeDebt?.totalUSD ?? authoritativeDebt?.montoUSD ?? 0),
+          totalBS: Number(authoritativeDebt?.totalBS ?? 0),
+          tasa: Number(authoritativeDebt?.tasa ?? 0),
         };
       }
 
