@@ -589,7 +589,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       setShowDetailsSale(null);
       setShowDetails(debt);
 
-      const ventaId = String(debt?.ventaId || debt?.facturaId || '').trim();
+      const ventaId = String(debt?.ventaId || debt?.facturaId || debt?.id || '').trim();
       const sale = ventaId ? await Store.getSaleById(ventaId) : null;
 
       if (sale && Array.isArray(sale.items)) {
