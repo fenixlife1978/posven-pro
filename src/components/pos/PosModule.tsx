@@ -605,107 +605,36 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   };
 
   const handleOpenCreditDetails = async (debt: any) => {
-    setShowDetailsSale(null);
-
-    // Consultar Deudas debe usar la fila CxC autoritativa y, cuando esa fila
-    // no trae el snapshot de items, resolver la venta original por cualquiera
-    // de sus referencias conocidas. Todo esto queda aislado de la lógica de cobro.
-    let d = debt;
-    const debtId = String(debt?.id || '').trim();
-
-    try {
-      if (debtId) {
-        const response = await fetch('/api/turso/store?table=cxc&id=' + encodeURIComponent(debtId), {
-          credentials: 'include',
-          cache: 'no-store',
-        });
-        if (response.ok) {
-          const body: any = await response.json();
-          if (body?.record) { d = { ...debt, ...body.record }; if (!Array.isArray(d?.items) && Array.isArray(debt?.items)) d.items = debt.items; }
-        }
-      }
-    } catch (error) {
-      console.warn('[POS/Consultar Deudas] No se pudo leer la deuda CxC autoritativa:', error);
-    }
-
-    setShowDetails(d);
-
-    const refIds = [
-      d?.ventaId,
-      d?.facturaId,
-      d?.venta?.id,
-      d?.saleId,
-    ].map((x:any) => String(x || '').trim()).filter(Boolean);
-
-    const debtItems = Array.isArray(d?.items) ? d.items : [];
-    if (debtItems.length > 0) {
-      setShowDetailsSale(normalizeSaleForDetails({
-        id: refIds[0] || debtId,
-        fecha: String(d?.fecha || ''),
-        cliente: d?.cliente || '',
-        items: debtItems.map((x:any) => ({ ...x })),
-        subtotalUSD: Number(d?.subtotalUSD ?? d?.totalUSD ?? d?.montoUSD ?? 0),
-        totalUSD: Number(d?.totalUSD ?? d?.montoUSD ?? 0),
-        totalBS: Number(d?.totalBS ?? 0),
-        tasa: Number(d?.tasa ?? 0),
-      }));
-      return;
-    }
-
-    // Primero intentamos las referencias explícitas de la deuda.
-    for (const refId of refIds) {
-      try {
-        const sale = await Store.getSaleById(refId);
-        if (sale && Array.isArray(sale.items) && sale.items.length > 0) {
-          setShowDetailsSale(normalizeSaleForDetails(sale));
-          return;
-        }
-      } catch (error) {
-        console.warn('[POS/Consultar Deudas] No se pudo leer venta ' + refId + ':', error);
-      }
-    }
-
-    // Si la deuda histórica no conserva ventaId/facturaId utilizable,
-    // buscamos la venta en Turso usando las referencias de negocio que sí
-    // conserva CxC. Esta búsqueda ocurre exclusivamente al abrir el detalle.
-    try {
-      const response = await fetch('/api/turso/store?table=ventas&limit=2000', {
-        credentials: 'include',
-        cache: 'no-store',
-      });
-      if (response.ok) {
-        const body: any = await response.json();
-        const sales = Array.isArray(body?.records) ? body.records : [];
-        const candidates = [
-          d?.id,
-          d?.numeroFactura,
-          d?.numero,
-          d?.reciboId,
-          ...refIds,
-        ].map((x:any) => String(x || '').trim()).filter(Boolean);
-
-        const sale = sales.find((row:any) => {
-          const rowValues = [
-            row?.id, row?.ventaId, row?.facturaId, row?.numeroFactura,
-            row?.numero, row?.reciboId, row?.numeroRecibo, row?.cxcId,
-            row?.debtId, row?.creditoId,
-          ].map((x:any) => String(x || '').trim()).filter(Boolean);
-          return rowValues.some((value:string) => candidates.includes(value))
-            && Array.isArray(row?.items)
-            && row.items.length > 0;
-        });
-
-        if (sale) {
-          setShowDetailsSale(normalizeSaleForDetails(sale));
-          return;
-        }
-      }
-    } catch (error) {
-      console.warn('[POS/Consultar Deudas] No se pudo resolver la venta original:', error);
-    }
-
-    // Deuda inicial/manual sin factura asociada: no inventamos artículos.
-    setShowDetailsSale(null);
+                                                    setShowDetailsSale(null);
+                                                    setShowDetails(d);
+                                                    const ventaId = String(d?.ventaId || d?.facturaId || '').trim();
+                                                    let sale = ventaId ? await Store.getSaleById(ventaId) : null;
+                                                    // La deuda migrada puede conservar un snapshot de la factura original.
+                                                    // Si la venta enlazada no coincide con ese snapshot, nunca mostramos
+                                                    // items de otra factura: usamos la copia autoritativa de CxC.
+                                                    const debtItems = Array.isArray(d?.items) ? d.items : [];
+                                                    const sameItems = (a:any[], b:any[]) => {
+                                                      if (!a.length || !b.length || a.length !== b.length) return false;
+                                                      return a.every((x:any, i:number) => {
+                                                        const y=b[i] || {};
+                                                        return String(x?.productoId || '') === String(y?.productoId || '') &&
+                                                          Number(x?.cantidad || 0) === Number(y?.cantidad || 0) &&
+                                                          Math.abs((Number(x?.subtotalUSD) || 0) - (Number(y?.subtotalUSD) || 0)) < 0.001;
+                                                      });
+                                                    };
+                                                    if (debtItems.length && (!sale || !sameItems(debtItems, Array.isArray(sale.items) ? sale.items : []))) {
+                                                      sale = {
+                                                        id: ventaId || String(d?.id || ''),
+                                                        fecha: String(d?.fecha || ''),
+                                                        cliente: d?.cliente || '',
+                                                        items: debtItems.map((x:any) => ({ ...x })),
+                                                        subtotalUSD: Number(d?.subtotalUSD ?? d?.totalUSD ?? d?.montoUSD ?? 0),
+                                                        totalUSD: Number(d?.totalUSD ?? d?.montoUSD ?? 0),
+                                                        totalBS: Number(d?.totalBS ?? 0),
+                                                        tasa: Number(d?.tasa ?? 0),
+                                                      };
+                                                    }
+                                                    setShowDetailsSale(normalizeSaleForDetails(sale));
   };
 
   const groupedCredits = useMemo(() => {
@@ -1509,8 +1438,9 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         />
       )}
 
+      {/* MODAL DETALLES AVANZADOS */}
       {showDetails && (
-        <div className="modal show" style={{ zIndex: 110 }}><div className="modal-bg" onClick={() => setShowDetails(null)}></div>
+        <div className="modal show" style={{ zIndex: 100 }}><div className="modal-bg" onClick={() => { setShowDetails(null); setShowDetailsSale(null); }}></div>
           <div className="modal-box max-w-[600px] bg-white border-2 border-line rounded-xl overflow-hidden shadow-2xl">
             <div className="modal-head py-4 px-6 border-b border-line bg-ink flex justify-between items-center text-white">
               <h3 className="font-black text-xs uppercase italic tracking-tighter flex items-center gap-2">
@@ -1526,44 +1456,35 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                  </div>
                  <div className="p-3 bg-brand-gold-soft border border-brand-gold/20 rounded-lg">
                     <label className="text-[8px] font-black uppercase text-brand-gold-deep block mb-1">Saldo Actual</label>
-                    <p className="text-lg font-black text-brand-gold-deep">{Utils.fmtUSD(saldoActualDeuda(showDetails))}</p>
+                    <p className="text-lg font-black text-brand-gold-deep">{Utils.fmtUSD(showDetails.saldoUSD)}</p>
                  </div>
               </div>
 
               {(() => {
-                const sale = showDetailsSale || (
-                  showDetails && Array.isArray(showDetails.items) && showDetails.items.length > 0
-                    ? normalizeSaleForDetails({
-                        ...showDetails,
-                        id: String(showDetails?.ventaId || showDetails?.facturaId || showDetails?.id || ''),
-                        fecha: String(showDetails?.fecha || ''),
-                        items: showDetails.items.map((x:any) => ({ ...x })),
-                      })
-                    : null
-                );
-                if (!sale || !Array.isArray(sale.items) || sale.items.length === 0) return null;
+                const sale = showDetailsSale;
+                if (!sale) return null;
                 return (
                   <div className="space-y-3 animate-in slide-in-from-top-2 duration-300">
                     <div className="flex justify-between items-center border-b border-line pb-2">
                        <h4 className="text-[10px] font-black uppercase text-ink tracking-[0.2em]">DETALLE DE COMPRA ORIGINAL</h4>
-                       <span className="text-[9px] font-black text-ink uppercase">{Utils.fmtFecha(sale.fecha)}</span>
+                       <span className="text-[9px] font-black text-ink uppercase">{Utils.fmtFecha(sale.fecha)} - {sale.fecha.split('T')[1]?.slice(0,5)}</span>
                     </div>
                     <div className="bg-surface-soft/50 rounded-lg overflow-hidden border border-line/30">
                        <table className="w-full">
                           <thead>
                             <tr className="bg-ink/5">
-                               <th className="text-[8px] font-black uppercase p-2 text-left">Cant</th>
-                               <th className="text-[8px] font-black uppercase p-2 text-left">Descripción</th>
-                               <th className="text-[8px] font-black uppercase p-2 text-right">P. Unit</th>
-                               <th className="text-[8px] font-black uppercase p-2 text-right">Total</th>
+                               <th className="text-[8px] font-black uppercase p-2 text-left text-ink">Cant</th>
+                               <th className="text-[8px] font-black uppercase p-2 text-left text-ink">Descripción</th>
+                               <th className="text-[8px] font-black uppercase p-2 text-right text-ink">P. Unit</th>
+                               <th className="text-[8px] font-black uppercase p-2 text-right text-ink">Total</th>
                             </tr>
                           </thead>
                           <tbody>
                             {sale.items.map((it: any, idx: number) => (
                               <tr key={idx} className="border-b border-line/20">
-                                 <td className="text-[9px] font-black p-2">{it.cantidad}</td>
-                                 <td className="text-[9px] font-black uppercase p-2 truncate max-w-[180px]">{it.nombre}</td>
-                                 <td className="text-[9px] font-black p-2 text-right">{Utils.fmtUSD(it.precioUnitUSD)}</td>
+                                 <td className="text-[9px] font-black p-2 text-ink">{it.cantidad}</td>
+                                 <td className="text-[9px] font-black uppercase p-2 text-ink truncate max-w-[180px]">{it.nombre}</td>
+                                 <td className="text-[9px] font-black p-2 text-right text-ink">{Utils.fmtUSD(it.precioUnitUSD)}</td>
                                  <td className="text-[9px] font-black p-2 text-right text-brand-gold-deep">{Utils.fmtUSD(it.subtotalUSD)}</td>
                               </tr>
                             ))}
@@ -1583,8 +1504,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                       showDetails.historialPagos.map((p: any, idx: number) => (
                         <div key={idx} className="flex justify-between items-center p-3 bg-surface-soft border border-line rounded-lg">
                            <div className="space-y-0.5">
-                              <p className="text-[10px] font-black text-ink uppercase">{Utils.fmtFecha(p.fecha)}</p>
-                              <p className="text-[8px] font-black text-ink mono">REF: {p.reciboId}</p>
+                              <p className="text-[10px] font-black text-ink uppercase">{Utils.fmtFecha(p.fecha)} - {p.fecha.split('T')[1]?.slice(0,5)}</p>
+                              <p className="text-[8px] font-black text-ink mono">REF RECIBO: {p.reciboId}</p>
                            </div>
                            <div className="text-right">
                               <p className="text-xs font-black text-status-success">+{Utils.fmtUSD(p.montoUSD)}</p>
@@ -1597,7 +1518,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
               </div>
             </div>
             <div className="modal-foot p-4 bg-surface-soft border-t border-line text-right">
-               <button onClick={() => { setShowDetails(null); setShowDetailsSale(null); }} className="btn btn-primary px-8 font-black uppercase text-[10px] rounded-lg shadow-md">Cerrar</button>
+               <button onClick={() => { setShowDetails(null); setShowDetailsSale(null); }} className="btn btn-primary px-8 font-black uppercase text-[10px] rounded-lg shadow-md">Cerrar Ficha</button>
             </div>
           </div>
         </div>
