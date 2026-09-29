@@ -607,12 +607,12 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   const handleOpenCreditDetails = async (debt: any) => {
     setShowDetailsSale(null);
     setShowDetails(debt);
-    const ventaId = String(d?.ventaId || d?.facturaId || '').trim();
+    const ventaId = String(debt?.ventaId || debt?.facturaId || '').trim();
     let sale = ventaId ? await Store.getSaleById(ventaId) : null;
     // La deuda migrada puede conservar un snapshot de la factura original.
     // Si la venta enlazada no coincide con ese snapshot, nunca mostramos
     // items de otra factura: usamos la copia autoritativa de CxC.
-    const debtItems = Array.isArray(d?.items) ? d.items : [];
+    const debtItems = Array.isArray(debt?.items) ? debt.items : [];
     const sameItems = (a:any[], b:any[]) => {
     if (!a.length || !b.length || a.length !== b.length) return false;
     return a.every((x:any, i:number) => {
@@ -624,14 +624,14 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     };
     if (debtItems.length && (!sale || !sameItems(debtItems, Array.isArray(sale.items) ? sale.items : []))) {
     sale = {
-    id: ventaId || String(d?.id || ''),
-    fecha: String(d?.fecha || ''),
-    cliente: d?.cliente || '',
+    id: ventaId || String(debt?.id || ''),
+    fecha: String(debt?.fecha || ''),
+    cliente: debt?.cliente || '',
     items: debtItems.map((x:any) => ({ ...x })),
-    subtotalUSD: Number(d?.subtotalUSD ?? d?.totalUSD ?? d?.montoUSD ?? 0),
-    totalUSD: Number(d?.totalUSD ?? d?.montoUSD ?? 0),
-    totalBS: Number(d?.totalBS ?? 0),
-    tasa: Number(d?.tasa ?? 0),
+    subtotalUSD: Number(debt?.subtotalUSD ?? debt?.totalUSD ?? debt?.montoUSD ?? 0),
+    totalUSD: Number(debt?.totalUSD ?? debt?.montoUSD ?? 0),
+    totalBS: Number(debt?.totalBS ?? 0),
+    tasa: Number(debt?.tasa ?? 0),
     };
     }
     setShowDetailsSale(normalizeSaleForDetails(sale));
