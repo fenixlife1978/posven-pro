@@ -578,25 +578,65 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     saldoActualDeuda(debt) > 0.001 &&
     debt?.estado !== 'pagada';
 
-  // En Consultar Créditos el detalle debe usar la versión autoritativa de Turso.
-  // El estado del POS puede tener una deuda resumida/caché sin items o historial
-  // completo. Antes de abrir el OJO refrescamos CxC y luego consultamos la venta
-  // original por su ventaId/facturaId.
+  // CONSULTAR DEUDAS debe reproducir el mismo comportamiento que
+  // Administración -> CxC para abrir el detalle de una factura.
+  // La única diferencia funcional del POS se mantiene fuera de este bloque:
+  // los botones de cobro/abono siguen usando la lógica propia del POS.
+  const normalizeSaleItem = (item: any) => {
+    const cantidad = Number(item?.cantidad ?? item?.qty ?? item?.quantity ?? 0);
+    const precioUnitUSD = Number(item?.precioUnitUSD ?? item?.precioUSD ?? item?.precio ?? item?.priceUSD ?? item?.price ?? 0);
+    const subtotalUSD = Number(item?.subtotalUSD ?? item?.totalUSD ?? item?.subtotal ?? item?.total ?? (cantidad * precioUnitUSD));
+    return {
+      ...item,
+      productoId: String(item?.productoId ?? item?.productId ?? item?.id ?? ''),
+      nombre: String(item?.nombre ?? item?.productoNombre ?? item?.producto ?? item?.descripcion ?? item?.description ?? item?.name ?? 'Ítem'),
+      cantidad,
+      precioUnitUSD,
+      subtotalUSD,
+    };
+  };
+
+  const normalizeSaleForDetails = (sale: any) => {
+    if (!sale || !Array.isArray(sale.items)) return sale;
+    return { ...sale, items: sale.items.map(normalizeSaleItem) };
+  };
+
   const handleOpenCreditDetails = async (debt: any) => {
     try {
-      // Mantener exactamente el mismo flujo que CxC Administración:
-      // la deuda abre el historial y la factura se carga aparte desde Turso.
       setShowDetailsSale(null);
       setShowDetails(debt);
 
+      // Igual que Administración: primero intenta abrir la venta enlazada.
       const ventaId = String(debt?.ventaId || debt?.facturaId || debt?.id || '').trim();
-      const sale = ventaId ? await Store.getSaleById(ventaId) : null;
+      let sale = ventaId ? await Store.getSaleById(ventaId) : null;
 
-      if (sale && Array.isArray(sale.items)) {
-        setShowDetailsSale(sale);
-      } else {
-        setShowDetailsSale(null);
+      // Igual que Administración: si CxC conserva el snapshot de los items,
+      // éste es la fuente de respaldo del detalle de esa misma deuda.
+      const debtItems = Array.isArray(debt?.items) ? debt.items : [];
+      const sameItems = (a: any[], b: any[]) => {
+        if (!a.length || !b.length || a.length !== b.length) return false;
+        return a.every((x: any, i: number) => {
+          const y = b[i] || {};
+          return String(x?.productoId || '') === String(y?.productoId || '') &&
+            Number(x?.cantidad || 0) === Number(y?.cantidad || 0) &&
+            Math.abs((Number(x?.subtotalUSD) || 0) - (Number(y?.subtotalUSD) || 0)) < 0.001;
+        });
+      };
+
+      if (debtItems.length && (!sale || !sameItems(debtItems, Array.isArray(sale.items) ? sale.items : []))) {
+        sale = {
+          id: ventaId || String(debt?.id || ''),
+          fecha: String(debt?.fecha || ''),
+          cliente: debt?.cliente || '',
+          items: debtItems.map((x: any) => ({ ...x })),
+          subtotalUSD: Number(debt?.subtotalUSD ?? debt?.totalUSD ?? debt?.montoUSD ?? 0),
+          totalUSD: Number(debt?.totalUSD ?? debt?.montoUSD ?? 0),
+          totalBS: Number(debt?.totalBS ?? 0),
+          tasa: Number(debt?.tasa ?? 0),
+        };
       }
+
+      setShowDetailsSale(normalizeSaleForDetails(sale));
     } catch (error: any) {
       console.error('[POS/CxC] Error cargando detalle de factura:', error);
       setShowDetailsSale(null);
