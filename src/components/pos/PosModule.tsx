@@ -71,7 +71,6 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   const [globalCreditCustomer, setGlobalCreditCustomer] = useState<{ name: string; cedula?: string; totalUSD: number; totalBS: number } | null>(null);
   
   const [showDetails, setShowDetails] = useState<any | null>(null);
-  const [showDetailsSale, setShowDetailsSale] = useState<any | null>(null);
   const [lastProcessedSale, setLastProcessedSale] = useState<any | null>(null);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [selectedProductDisplay, setSelectedProductDisplay] = useState<Product | null>(null);
@@ -585,85 +584,11 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   // Administración -> CxC para abrir el detalle de una factura.
   // La única diferencia funcional del POS se mantiene fuera de este bloque:
   // los botones de cobro/abono siguen usando la lógica propia del POS.
-  const normalizeSaleItem = (item: any) => {
-    const cantidad = Number(item?.cantidad ?? item?.qty ?? item?.quantity ?? 0);
-    const precioUnitUSD = Number(item?.precioUnitUSD ?? item?.precioUSD ?? item?.precio ?? item?.priceUSD ?? item?.price ?? 0);
-    const subtotalUSD = Number(item?.subtotalUSD ?? item?.totalUSD ?? item?.subtotal ?? item?.total ?? (cantidad * precioUnitUSD));
-    return {
-      ...item,
-      productoId: String(item?.productoId ?? item?.productId ?? item?.id ?? ''),
-      nombre: String(item?.nombre ?? item?.productoNombre ?? item?.producto ?? item?.descripcion ?? item?.description ?? item?.name ?? 'Ítem'),
-      cantidad,
-      precioUnitUSD,
-      subtotalUSD,
-    };
-  };
-
-  const normalizeSaleForDetails = (sale: any) => {
-    if (!sale || !Array.isArray(sale.items)) return sale;
-    return { ...sale, items: sale.items.map(normalizeSaleItem) };
-  };
-
-  const handleOpenCreditDetails = async (debt: any) => {
-    // El OJO de POS -> Consultar Deudas usa exactamente la misma secuencia
-    // de resolución que Administración -> CxC. No depende de state.ventas.
-    setShowDetailsSale(null);
+  const handleOpenCreditDetails = (debt: any) => {
+    // POS -> Consultar Deudas utiliza exactamente el mismo modal que
+    // Administración -> CxC. La carga de la factura original vive dentro
+    // del componente compartido para evitar dos implementaciones distintas.
     setShowDetails(debt);
-
-    const ventaId = String(debt?.ventaId || debt?.facturaId || '').trim();
-    let sale = ventaId ? await Store.getSaleById(ventaId) : null;
-
-    // La deuda puede conservar el snapshot original de sus productos.
-    // Ese snapshot es la última fuente válida si la venta enlazada no está
-    // disponible en la caché/consulta puntual.
-    const debtItems = Array.isArray(debt?.items) ? debt.items : [];
-    const sameItems = (a:any[], b:any[]) => {
-      if (!a.length || !b.length || a.length !== b.length) return false;
-      return a.every((x:any, i:number) => {
-        const y=b[i] || {};
-        return String(x?.productoId || '') === String(y?.productoId || '') &&
-          Number(x?.cantidad || 0) === Number(y?.cantidad || 0) &&
-          Math.abs((Number(x?.subtotalUSD) || 0) - (Number(y?.subtotalUSD) || 0)) < 0.001;
-      });
-    };
-
-    if (debtItems.length && (!sale || !sameItems(debtItems, Array.isArray(sale.items) ? sale.items : []))) {
-      sale = {
-        id: ventaId || String(debt?.id || ''),
-        fecha: String(debt?.fecha || ''),
-        cliente: debt?.cliente || '',
-        items: debtItems.map((x:any) => ({ ...x })),
-        subtotalUSD: Number(debt?.subtotalUSD ?? debt?.totalUSD ?? debt?.montoUSD ?? 0),
-        totalUSD: Number(debt?.totalUSD ?? debt?.montoUSD ?? 0),
-        totalBS: Number(debt?.totalBS ?? 0),
-        tasa: Number(debt?.tasa ?? 0),
-      };
-    }
-
-    // Si la fila CxC local no trae snapshot, buscamos una deuda equivalente
-    // ya hidratada por Store. Esto cubre diferencias entre las rutas del POS
-    // y Administración sin tocar ninguna otra operación del POS.
-    if (!sale) {
-      const cxcMatch = (Store.get().cxc || []).find((x:any) =>
-        String(x?.id || '') === String(debt?.id || '') ||
-        (ventaId && String(x?.ventaId || x?.facturaId || '') === ventaId)
-      );
-      const cxcItems = Array.isArray(cxcMatch?.items) ? cxcMatch.items : [];
-      if (cxcItems.length) {
-        sale = {
-          id: ventaId || String(debt?.id || ''),
-          fecha: String(cxcMatch?.fecha || debt?.fecha || ''),
-          cliente: cxcMatch?.cliente || debt?.cliente || '',
-          items: cxcItems.map((x:any) => ({ ...x })),
-          subtotalUSD: Number(cxcMatch?.subtotalUSD ?? cxcMatch?.totalUSD ?? cxcMatch?.montoUSD ?? debt?.montoUSD ?? 0),
-          totalUSD: Number(cxcMatch?.totalUSD ?? cxcMatch?.montoUSD ?? debt?.montoUSD ?? 0),
-          totalBS: Number(cxcMatch?.totalBS ?? debt?.totalBS ?? 0),
-          tasa: Number(cxcMatch?.tasa ?? debt?.tasa ?? 0),
-        };
-      }
-    }
-
-    setShowDetailsSale(normalizeSaleForDetails(sale));
   };
 
   const groupedCredits = useMemo(() => {
@@ -1467,90 +1392,11 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         />
       )}
 
-      {/* MODAL DETALLES AVANZADOS */}
       {showDetails && (
-        <div className="modal show" style={{ zIndex: 100 }}><div className="modal-bg" onClick={() => { setShowDetails(null); setShowDetailsSale(null); }}></div>
-          <div className="modal-box max-w-[600px] bg-white border-2 border-line rounded-xl overflow-hidden shadow-2xl">
-            <div className="modal-head py-4 px-6 border-b border-line bg-ink flex justify-between items-center text-white">
-              <h3 className="font-black text-xs uppercase italic tracking-tighter flex items-center gap-2">
-                <Receipt className="w-5 h-5 text-brand-gold" /> HISTORIAL DETALLADO: {showDetails.id}
-              </h3>
-              <button onClick={() => { setShowDetails(null); setShowDetailsSale(null); }} className="text-white hover:text-brand-gold"><X className="w-5 h-5"/></button>
-            </div>
-            <div className="modal-body p-6 space-y-6 max-h-[75vh] overflow-y-auto bg-white">
-              <div className="grid grid-cols-2 gap-4">
-                 <div className="p-3 bg-surface-soft rounded-lg border border-line">
-                    <label className="text-[8px] font-black uppercase text-ink block mb-1">Monto Original</label>
-                    <p className="text-lg font-black text-ink">{Utils.fmtUSD(showDetails.montoUSD)}</p>
-                 </div>
-                 <div className="p-3 bg-brand-gold-soft border border-brand-gold/20 rounded-lg">
-                    <label className="text-[8px] font-black uppercase text-brand-gold-deep block mb-1">Saldo Actual</label>
-                    <p className="text-lg font-black text-brand-gold-deep">{Utils.fmtUSD(showDetails.saldoUSD)}</p>
-                 </div>
-              </div>
-
-              {(() => {
-                const sale = showDetailsSale;
-                if (!sale) return null;
-                return (
-                  <div className="space-y-3 animate-in slide-in-from-top-2 duration-300">
-                    <div className="flex justify-between items-center border-b border-line pb-2">
-                       <h4 className="text-[10px] font-black uppercase text-ink tracking-[0.2em]">DETALLE DE COMPRA ORIGINAL</h4>
-                       <span className="text-[9px] font-black text-ink uppercase">{Utils.fmtFecha(sale.fecha)} - {sale.fecha.split('T')[1]?.slice(0,5)}</span>
-                    </div>
-                    <div className="bg-surface-soft/50 rounded-lg overflow-hidden border border-line/30">
-                       <table className="w-full">
-                          <thead>
-                            <tr className="bg-ink/5">
-                               <th className="text-[8px] font-black uppercase p-2 text-left text-ink">Cant</th>
-                               <th className="text-[8px] font-black uppercase p-2 text-left text-ink">Descripción</th>
-                               <th className="text-[8px] font-black uppercase p-2 text-right text-ink">P. Unit</th>
-                               <th className="text-[8px] font-black uppercase p-2 text-right text-ink">Total</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {sale.items.map((it: any, idx: number) => (
-                              <tr key={idx} className="border-b border-line/20">
-                                 <td className="text-[9px] font-black p-2 text-ink">{it.cantidad}</td>
-                                 <td className="text-[9px] font-black uppercase p-2 text-ink truncate max-w-[180px]">{it.nombre}</td>
-                                 <td className="text-[9px] font-black p-2 text-right text-ink">{Utils.fmtUSD(it.precioUnitUSD)}</td>
-                                 <td className="text-[9px] font-black p-2 text-right text-brand-gold-deep">{Utils.fmtUSD(it.subtotalUSD)}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                       </table>
-                    </div>
-                  </div>
-                );
-              })()}
-
-              <div className="space-y-3">
-                 <h4 className="text-[10px] font-black uppercase text-ink tracking-[0.2em] border-b border-line pb-2">CRONOLOGÍA DE ABONOS</h4>
-                 <div className="max-h-[200px] overflow-y-auto space-y-2 pr-1">
-                    {(!showDetails.historialPagos || showDetails.historialPagos.length === 0) ? (
-                      <div className="py-10 text-center text-ink font-black uppercase italic text-[10px]">No se han registrado abonos aún</div>
-                    ) : (
-                      showDetails.historialPagos.map((p: any, idx: number) => (
-                        <div key={idx} className="flex justify-between items-center p-3 bg-surface-soft border border-line rounded-lg">
-                           <div className="space-y-0.5">
-                              <p className="text-[10px] font-black text-ink uppercase">{Utils.fmtFecha(p.fecha)} - {p.fecha.split('T')[1]?.slice(0,5)}</p>
-                              <p className="text-[8px] font-black text-ink mono">REF RECIBO: {p.reciboId}</p>
-                           </div>
-                           <div className="text-right">
-                              <p className="text-xs font-black text-status-success">+{Utils.fmtUSD(p.montoUSD)}</p>
-                              <p className="text-[8px] font-black text-ink uppercase">{Utils.metodoLabel(p.metodo || 'otros')}</p>
-                           </div>
-                        </div>
-                      ))
-                    )}
-                 </div>
-              </div>
-            </div>
-            <div className="modal-foot p-4 bg-surface-soft border-t border-line text-right">
-               <button onClick={() => { setShowDetails(null); setShowDetailsSale(null); }} className="btn btn-primary px-8 font-black uppercase text-[10px] rounded-lg shadow-md">Cerrar Ficha</button>
-            </div>
-          </div>
-        </div>
+        <CreditDetailModal
+          debt={showDetails}
+          onClose={() => setShowDetails(null)}
+        />
       )}
 
       {showClientHistory && (
