@@ -605,76 +605,37 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   };
 
   const handleOpenCreditDetails = async (debt: any) => {
-    try {
-      setShowDetailsSale(null);
-      setShowDetails(debt);
-
-      // La fila que POS tiene en memoria puede ser una versión resumida de CxC.
-      // Administración trabaja con la deuda completa. Por eso aquí primero
-      // recuperamos la MISMA deuda desde Turso y usamos sus enlaces/snapshot.
-      let authoritativeDebt = debt;
-      try {
-        const debtId = String(debt?.id || '').trim();
-        if (debtId) {
-          const response = await fetch('/api/turso/store?table=cxc&id=' + encodeURIComponent(debtId), {
-            credentials: 'include',
-            cache: 'no-store',
-          });
-          if (response.status === 503) throw new Error('Turso no está configurado o no está disponible.');
-          const body: any = await response.json();
-          if (!response.ok || body?.ok === false) {
-            throw new Error(String(body?.error || 'Turso rechazó la lectura de CxC.'));
-          }
-          if (body?.record) authoritativeDebt = { ...debt, ...body.record };
-        }
-      } catch (readError) {
-        console.warn('[POS/CxC] No se pudo releer la deuda desde Turso; se usará la deuda cargada:', readError);
-      }
-
-      setShowDetails(authoritativeDebt);
-
-      // Igual que Administración: primero intenta abrir la venta enlazada.
-      const ventaId = String(authoritativeDebt?.ventaId || authoritativeDebt?.facturaId || '').trim();
-      let sale = ventaId ? await Store.getSaleById(ventaId) : null;
-
-      // Igual que Administración: si CxC conserva el snapshot de los items,
-      // éste es la fuente de respaldo del detalle de esa misma deuda.
-      const debtItems = Array.isArray(authoritativeDebt?.items) ? authoritativeDebt.items : [];
-      const sameItems = (a: any[], b: any[]) => {
-        if (!a.length || !b.length || a.length !== b.length) return false;
-        return a.every((x: any, i: number) => {
-          const y = b[i] || {};
-          return String(x?.productoId || '') === String(y?.productoId || '') &&
-            Number(x?.cantidad || 0) === Number(y?.cantidad || 0) &&
-            Math.abs((Number(x?.subtotalUSD) || 0) - (Number(y?.subtotalUSD) || 0)) < 0.001;
-        });
-      };
-
-      if (debtItems.length && (!sale || !sameItems(debtItems, Array.isArray(sale.items) ? sale.items : []))) {
-        sale = {
-          id: ventaId || String(authoritativeDebt?.id || ''),
-          fecha: String(authoritativeDebt?.fecha || ''),
-          cliente: authoritativeDebt?.cliente || '',
-          items: debtItems.map((x: any) => ({ ...x })),
-          subtotalUSD: Number(authoritativeDebt?.subtotalUSD ?? authoritativeDebt?.totalUSD ?? authoritativeDebt?.montoUSD ?? 0),
-          totalUSD: Number(authoritativeDebt?.totalUSD ?? authoritativeDebt?.montoUSD ?? 0),
-          totalBS: Number(authoritativeDebt?.totalBS ?? 0),
-          tasa: Number(authoritativeDebt?.tasa ?? 0),
-        };
-      }
-
-      setShowDetailsSale(normalizeSaleForDetails(sale));
-    } catch (error: any) {
-      console.error('[POS/CxC] Error cargando detalle de factura:', error);
-      setShowDetailsSale(null);
-      toast({
-        title: 'No se pudo cargar el detalle',
-        description: error?.message || 'Verifique la conexión con Turso e inténtelo nuevamente.',
-        variant: 'destructive',
-      });
+    setShowDetailsSale(null);
+    setShowDetails(debt);
+    const ventaId = String(d?.ventaId || d?.facturaId || '').trim();
+    let sale = ventaId ? await Store.getSaleById(ventaId) : null;
+    // La deuda migrada puede conservar un snapshot de la factura original.
+    // Si la venta enlazada no coincide con ese snapshot, nunca mostramos
+    // items de otra factura: usamos la copia autoritativa de CxC.
+    const debtItems = Array.isArray(d?.items) ? d.items : [];
+    const sameItems = (a:any[], b:any[]) => {
+    if (!a.length || !b.length || a.length !== b.length) return false;
+    return a.every((x:any, i:number) => {
+    const y=b[i] || {};
+    return String(x?.productoId || '') === String(y?.productoId || '') &&
+    Number(x?.cantidad || 0) === Number(y?.cantidad || 0) &&
+    Math.abs((Number(x?.subtotalUSD) || 0) - (Number(y?.subtotalUSD) || 0)) < 0.001;
+    });
+    };
+    if (debtItems.length && (!sale || !sameItems(debtItems, Array.isArray(sale.items) ? sale.items : []))) {
+    sale = {
+    id: ventaId || String(d?.id || ''),
+    fecha: String(d?.fecha || ''),
+    cliente: d?.cliente || '',
+    items: debtItems.map((x:any) => ({ ...x })),
+    subtotalUSD: Number(d?.subtotalUSD ?? d?.totalUSD ?? d?.montoUSD ?? 0),
+    totalUSD: Number(d?.totalUSD ?? d?.montoUSD ?? 0),
+    totalBS: Number(d?.totalBS ?? 0),
+    tasa: Number(d?.tasa ?? 0),
+    };
     }
+    setShowDetailsSale(normalizeSaleForDetails(sale));
   };
-
   const groupedCredits = useMemo(() => {
     const groups: Record<string, { totalUSD: number; debts: Debt[] }> = {};
     (state.cxc || []).filter(esDeudaActiva).forEach(debt => {
