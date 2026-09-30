@@ -71,6 +71,7 @@ export async function GET(request: Request) {
     if (id) return NextResponse.json({ ok: true, record: await getRecord(t, id) });
     const records = await listRecords(t, {
       limit: Number(url.searchParams.get('limit') || 500),
+      offset: Number(url.searchParams.get('offset') || 0),
       terminalId: url.searchParams.get('terminalId') || undefined,
       estado: url.searchParams.get('estado') || undefined,
     });
