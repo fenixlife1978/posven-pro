@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { revokeSession } from '@/lib/auth/turso-auth';
+import { getRequestSessionId, revokeSession } from '@/lib/auth/turso-auth';
 
 export const runtime = 'nodejs';
 
 export async function POST(request: NextRequest) {
   try {
-    await revokeSession(request.cookies.get('posven_session')?.value);
+    await revokeSession(getRequestSessionId(request));
   } finally {
     const response = NextResponse.json({ ok: true });
     response.cookies.set('posven_session', '', {
