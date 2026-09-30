@@ -1347,7 +1347,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                            <td colSpan={6} className="px-12 py-4">
                               <div className="card border-line bg-white shadow-inner rounded-xl overflow-hidden">
                                  <div className="overflow-x-auto">
-                                   <table className="w-full min-w-[760px]">
+                                   <table data-credit-history-version="v3" className="w-full min-w-[780px]">
                                     <thead className="bg-ink/5">
                                        <tr>
                                           <th className="text-[9px] font-black uppercase p-2 text-left">Emisión</th>
