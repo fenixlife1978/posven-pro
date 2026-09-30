@@ -1346,7 +1346,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                         <tr className="bg-surface-soft/40 animate-in slide-in-from-top-1 duration-200">
                            <td colSpan={6} className="px-12 py-4">
                               <div className="card border-line bg-white shadow-inner rounded-xl overflow-hidden">
-                                 <table className="w-full">
+                                 <div className="overflow-x-auto">
+                                   <table className="w-full min-w-[760px]">
                                     <thead className="bg-ink/5">
                                        <tr>
                                           <th className="text-[9px] font-black uppercase p-2 text-left">Emisión</th>
@@ -1381,7 +1382,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                                           </tr>
                                        ))}
                                     </tbody>
-                                 </table>
+                                   </table>
+                                 </div>
                               </div>
                            </td>
                         </tr>
