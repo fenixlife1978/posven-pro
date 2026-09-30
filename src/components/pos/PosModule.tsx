@@ -52,6 +52,8 @@ import { cn } from '@/lib/utils';
 // ✅ ELIMINADO: El declare global ya está en ReceiptModal.tsx
 
 export default function SalesModule({ state, updateState }: { state: AppState, updateState: (s: Partial<AppState>) => void }) {
+  const [search, setSearch] = useState('');
+  const [view, setView] = useState<'pos' | 'history' | 'credits' | 'returns'>('pos');
   // Consultar Deudas debe consultar directamente el conjunto histórico de CxC
   // en Turso al entrar a la vista. El cache inicial del POS contiene solo deudas
   // activas/recentes para no cargar todo el histórico durante el arranque.
@@ -77,8 +79,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     })();
     return () => { cancelled = true; };
   }, [view]);
-  const [search, setSearch] = useState('');
-  const [view, setView] = useState<'pos' | 'history' | 'credits' | 'returns'>('pos');
+
   const [showReportType, setShowReportType] = useState<'REPORT_X' | 'REPORT_Z' | null>(null);
   const [reportSnapshot, setReportSnapshot] = useState<any>(null);
   const [cliente, setCliente] = useState('Consumidor final');
