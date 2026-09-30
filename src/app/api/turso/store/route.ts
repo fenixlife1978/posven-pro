@@ -1,6 +1,5 @@
-import { cookies } from 'next/headers';
+import { getRequestSessionId } from '@/lib/auth/turso-auth';
 import { NextResponse } from 'next/server';
-import { getSessionUser } from '@/lib/auth/turso-auth';
 import {
   assertTursoReady,
   getRecord,
@@ -50,10 +49,8 @@ function table(value: unknown): TursoStoreTable {
   return name as TursoStoreTable;
 }
 
-async function requireUser() {
-  const cookieStore = await cookies();
-  const sessionId = cookieStore.get('posven_session')?.value || null;
-  const user = await getSessionUser(sessionId);
+async function requireUser(request: Request) {
+  const user = await getSessionUser(getRequestSessionId(request));
   if (!user) throw new Error('No autenticado.');
   return user;
 }
@@ -61,7 +58,7 @@ async function requireUser() {
 export async function GET(request: Request) {
   try {
     assertTursoReady();
-    await requireUser();
+    await requireUser(request);
     const url = new URL(request.url);
     const special = url.searchParams.get('special');
     if (special === 'config') return NextResponse.json({ ok: true, config: await getAppConfig() });
