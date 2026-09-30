@@ -181,7 +181,16 @@ export default function LicoreriaPOS() {
           } else {
             Store.startTerminalSync(undefined, true);
             setShowApertura(false);
-            setActiveTab(sessionStorage.getItem('posven_active_module') || 'dashboard');
+
+            // Un administrador nunca entra al POS/caja, aunque esta pestaña
+            // conserve de una sesión anterior el módulo "ventas".
+            // La caja es exclusiva del rol cajero.
+            const savedModule = sessionStorage.getItem('posven_active_module') || 'dashboard';
+            const safeModule = savedModule === 'ventas' ? 'dashboard' : savedModule;
+            if (safeModule !== savedModule) {
+              sessionStorage.setItem('posven_active_module', safeModule);
+            }
+            setActiveTab(safeModule);
           }
           setLoading(false);
           return;
@@ -324,7 +333,11 @@ export default function LicoreriaPOS() {
   };
 
   const handleModuleChange = (moduleId: string) => {
+    // Regla estricta: el POS/caja solo existe para el rol cajero.
+    // Un administrador no puede llegar a "ventas" ni siquiera por navegación
+    // residual de sessionStorage o una invocación accidental del handler.
     if (userRole === 'cajero' && moduleId !== 'ventas') return;
+    if (userRole === 'administrador' && moduleId === 'ventas') return;
     setActiveTab(moduleId);
     setIsSidebarOpen(false);
   };
@@ -371,7 +384,12 @@ export default function LicoreriaPOS() {
     switch (activeModule) {
       case 'dashboard': return <DashboardModule state={state} />;
       case 'inventario': return <InventoryModule state={state} updateState={updateState} />;
-      case 'ventas': return <SalesModule state={state} updateState={updateState} />;
+      case 'ventas':
+        // Defensa final de UI: aunque el estado de navegación quedara
+        // contaminado por una sesión previa, un administrador jamás renderiza
+        // el módulo POS/caja.
+        if (userRole !== 'cajero') return <DashboardModule state={state} />;
+        return <SalesModule state={state} updateState={updateState} />;
       case 'compras': return <PurchaseModule state={state} updateState={updateState} />;
       case 'proveedores': return <SuppliersModule state={state} updateState={updateState} />;
       case 'contabilidad': {
