@@ -1475,15 +1475,15 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
               <button onClick={() => setShowClientHistory(null)} className="text-white hover:text-brand-gold"><X className="w-5 h-5"/></button>
             </div>
             <div className="modal-body p-0 max-h-[70vh] overflow-y-auto bg-white">
-               <div className="table-wrap">
-                  <table className="w-full">
+               <div className="table-wrap overflow-x-auto">
+                  <table className="w-full min-w-[760px]">
                     <thead className="bg-surface-soft sticky top-0 z-10">
                       <tr>
-                        <th className="text-[9px] font-black uppercase p-4 text-left">Fecha</th>
-                        <th className="text-[9px] font-black uppercase p-4 text-left">ID Documento</th>
-                        <th className="text-[9px] font-black uppercase p-4 text-right">Monto Total</th>
-                        <th className="text-[9px] font-black uppercase p-4 text-right">Abonado</th>
-                        <th className="text-[9px] font-black uppercase p-4 text-right">Saldo Pend.</th>
+                        <th className="text-[9px] font-black uppercase p-4 text-left">Emisión</th>
+                        <th className="text-[9px] font-black uppercase p-4 text-left">Vencimiento</th>
+                        <th className="text-[9px] font-black uppercase p-4 text-left">ID Factura</th>
+                        <th className="text-[9px] font-black uppercase p-4 text-right">Monto</th>
+                        <th className="text-[9px] font-black uppercase p-4 text-right">Saldo USD</th>
                         <th className="text-[9px] font-black uppercase p-4 text-center">Estado</th>
                         <th className="text-[9px] font-black uppercase p-4 text-center">Auditoría</th>
                       </tr>
@@ -1492,9 +1492,9 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                       {creditDebts.filter(d => d.cliente === showClientHistory).sort((a,b) => b.fecha.localeCompare(a.fecha)).map(d => (
                         <tr key={d.id} className="border-b border-line/30 hover:bg-surface-warm/20 transition-colors">
                           <td className="p-4 text-xs font-black">{Utils.fmtFecha(d.fecha)}</td>
+                          <td className="p-4 text-xs font-black">{Utils.fmtFecha(d.fechaVencimiento || d.fechaVencim || d.fecha)}</td>
                           <td className="p-4 text-xs font-black mono">{d.id}</td>
                           <td className="p-4 text-right text-xs font-black">{Utils.fmtUSD(d.montoUSD)}</td>
-                          <td className="p-4 text-right text-xs font-black text-status-success">{Utils.fmtUSD(d.abonadoUSD)}</td>
                           <td className="p-4 text-right text-sm font-black text-brand-gold-deep">{Utils.fmtUSD(d.saldoUSD)}</td>
                           <td className="p-4 text-center">
                             <span className={`badge ${d.estado === 'pagada' ? 'badge-ok' : (d.estado === 'parcial' ? 'badge-info' : 'badge-warn')} font-black text-[8px] uppercase px-3`}>
