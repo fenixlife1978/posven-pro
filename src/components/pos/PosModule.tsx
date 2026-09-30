@@ -70,8 +70,10 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         const body: any = await response.json();
         if (!response.ok || body?.ok === false) throw new Error(String(body?.error || 'Turso rechazó la lectura de CxC.'));
         const records = Array.isArray(body?.records) ? body.records : [];
-        const active = records.filter((x: any) => ['pendiente', 'parcial'].includes(String(x?.estado || '')));
-        if (!cancelled) setCreditDebts(active as Debt[]);
+        // Consultar Créditos debe mostrar el historial completo del cliente,
+        // igual que Administración -> CxC. Los cobros/pagos siguen usando
+        // únicamente las deudas activas al ejecutar una operación.
+        if (!cancelled) setCreditDebts(records as Debt[]);
       } catch (e) {
         console.error('[POS] No se pudo cargar el histórico de CxC:', e);
         if (!cancelled) setCreditDebts((Store.get().cxc || state.cxc || []) as Debt[]);
@@ -616,7 +618,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
 
   const groupedCredits = useMemo(() => {
     const groups: Record<string, { totalUSD: number; debts: Debt[] }> = {};
-    (creditDebts || []).filter(esDeudaActiva).forEach(debt => {
+    (creditDebts || []).forEach(debt => {
       const name = debt.cliente || 'DESCONOCIDO';
       if (!groups[name]) groups[name] = { totalUSD: 0, debts: [] };
       groups[name].totalUSD += saldoActualDeuda(debt);
@@ -1338,8 +1340,40 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                            <td colSpan={6} className="px-12 py-4">
                               <div className="card border-line bg-white shadow-inner rounded-xl overflow-hidden">
                                  <table className="w-full">
-                                    <thead className="bg-ink/5"><tr><th className="text-[9px] font-black uppercase p-2 text-left">Emisión</th><th className="text-[9px] font-black uppercase p-2 text-left">Vencimiento</th><th className="text-[9px] font-black uppercase p-2 text-right">Saldo USD</th><th className="text-[9px] font-black uppercase p-2 text-center">Acciones</th></tr></thead>
-                                    <tbody>{group.debts.map(d => (<tr key={d.id} className="border-b border-line/20"><td className="text-[10px] font-black p-2">{Utils.fmtFecha(d.fecha)}</td><td className={`text-[10px] font-black p-2 ${d.fechaVencimiento < Utils.hoy() ? 'text-status-danger' : 'text-ink'}`}>{d.fechaVencimiento === '2099-12-31' ? 'ABIERTA' : Utils.fmtFecha(d.fechaVencimiento)}</td><td className="text-[10px] font-black p-2 text-right text-brand-gold-deep">{Utils.fmtUSD(saldoActualDeuda(d))}</td><td className="p-2 text-center"><div className="flex justify-center gap-2"><button onClick={() => void handleOpenCreditDetails(d)} className="w-8 h-8 rounded-full flex items-center justify-center text-status-success hover:bg-status-success/10" title="Ver factura y abonos"><Eye className="w-4 h-4"/></button></div></td></tr>))}</tbody>
+                                    <thead className="bg-ink/5">
+                                       <tr>
+                                          <th className="text-[9px] font-black uppercase p-2 text-left">Emisión</th>
+                                          <th className="text-[9px] font-black uppercase p-2 text-left">Vencimiento</th>
+                                          <th className="text-[9px] font-black uppercase p-2 text-left">ID Factura</th>
+                                          <th className="text-[9px] font-black uppercase p-2 text-right">Monto</th>
+                                          <th className="text-[9px] font-black uppercase p-2 text-right">Saldo USD</th>
+                                          <th className="text-[9px] font-black uppercase p-2 text-center">Estado</th>
+                                          <th className="text-[9px] font-black uppercase p-2 text-center">Auditoría</th>
+                                       </tr>
+                                    </thead>
+                                    <tbody>
+                                       {group.debts.map(d => (
+                                          <tr key={d.id} className="border-b border-line/20 hover:bg-brand-gold-soft/10">
+                                             <td className="text-[10px] font-black p-2">{Utils.fmtFecha(d.fecha)}</td>
+                                             <td className={`text-[10px] font-black p-2 ${d.fechaVencimiento < Utils.hoy() && d.estado !== 'pagada' ? 'text-status-danger' : 'text-ink'}`}>
+                                                {d.fechaVencimiento === '2099-12-31' ? 'ABIERTA' : Utils.fmtFecha(d.fechaVencimiento)}
+                                             </td>
+                                             <td className="text-[10px] font-black p-2 mono">{d.id}</td>
+                                             <td className="text-[10px] font-black p-2 text-right">{Utils.fmtUSD(d.montoUSD)}</td>
+                                             <td className="text-[10px] font-black p-2 text-right text-brand-gold-deep">{Utils.fmtUSD(saldoActualDeuda(d))}</td>
+                                             <td className="p-2 text-center">
+                                                <span className={`badge ${d.estado === 'pagada' ? 'badge-ok' : (d.estado === 'parcial' ? 'badge-info' : 'badge-warn')} font-black text-[8px] uppercase px-3`}>
+                                                   {d.estado}
+                                                </span>
+                                             </td>
+                                             <td className="p-2 text-center">
+                                                <button onClick={() => void handleOpenCreditDetails(d)} className="text-ink hover:text-brand-gold p-1 transition-colors" title="Ver factura y abonos">
+                                                   <Eye className="w-3.5 h-3.5"/>
+                                                </button>
+                                             </td>
+                                          </tr>
+                                       ))}
+                                    </tbody>
                                  </table>
                               </div>
                            </td>
