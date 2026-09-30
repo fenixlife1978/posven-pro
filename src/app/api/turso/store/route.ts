@@ -204,6 +204,14 @@ export async function POST(request: Request) {
         const result = await processReturnOrCancellationTransaction(body);
         return NextResponse.json({ ok: true, ...result });
       }
+      case 'repairReturnInventoryAndCxc': {
+        if (user.rol !== 'administrador') throw new Error('Se requiere administrador.');
+        const result = await repairReturnInventoryAndCxcTransaction({
+          saleId: String(body.saleId || ''),
+          operationId: String(body.operationId || ('REPAIR-' + String(body.saleId || '') + '-' + Date.now())),
+        });
+        return NextResponse.json({ ok: true, ...result });
+      }
       case 'zClosure': {
         const result = await createZClosureTransaction({
           user,
