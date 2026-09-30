@@ -196,6 +196,38 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   const [showClientHistory, setShowClientHistory] = useState<string | null>(null);
   const [creditSearch, setCreditSearch] = useState('');
 
+  // Historial completo de CxC usado EXCLUSIVAMENTE por Consultar Créditos.
+  // No depende del cache reducido que se carga al iniciar el POS.
+  const [creditDebts, setCreditDebts] = useState<Debt[]>(state.cxc || []);
+
+  useEffect(() => {
+    if (view !== 'credits') return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const pageSize = 2000;
+        const allRecords: any[] = [];
+        for (let offset = 0; ; offset += pageSize) {
+          const response = await fetch(
+            '/api/turso/store?table=cxc&limit=' + pageSize + '&offset=' + offset,
+            { credentials: 'include', cache: 'no-store' }
+          );
+          const body: any = await response.json();
+          if (!response.ok || body?.ok === false) {
+            throw new Error(String(body?.error || 'Turso rechazó la lectura histórica de CxC.'));
+          }
+          const page = Array.isArray(body?.records) ? body.records : [];
+          allRecords.push(...page);
+          if (page.length < pageSize) break;
+        }
+        if (!cancelled) setCreditDebts(allRecords as Debt[]);
+      } catch (e) {
+        console.error('[POS Ventas] No se pudo cargar el histórico completo de CxC:', e);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [view]);
+
   useEffect(() => {
     setHistPage(1);
     if (view !== 'credits') setCreditSearch('');
@@ -659,16 +691,39 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     }
   };
 
+  const handleOpenCreditDetails = async (debt: Debt) => {
+    setShowDetails(debt);
+    try {
+      const response = await fetch(
+        '/api/turso/store?table=cxc&id=' + encodeURIComponent(String(debt.id)),
+        { credentials: 'include', cache: 'no-store' }
+      );
+      const body: any = await response.json();
+      if (!response.ok || body?.ok === false) throw new Error(String(body?.error || 'Turso rechazó la lectura de la deuda.'));
+      const sourceDebt: any = body?.record || debt;
+      const saleId = String(sourceDebt?.ventaId || sourceDebt?.facturaId || '').trim();
+      let sale: any = null;
+      if (saleId) sale = await Store.getSaleById(saleId);
+      if (!sale) sale = await Store.getSaleById(String(sourceDebt?.id || debt.id));
+      if (sale) setShowDetails({ ...sourceDebt, __originalSale: sale });
+      else setShowDetails(sourceDebt);
+    } catch (e) {
+      console.error('[POS Ventas] No se pudo resolver el detalle histórico de CxC:', e);
+    }
+  };
+
   const groupedCredits = useMemo(() => {
     const groups: Record<string, { totalUSD: number; debts: Debt[] }> = {};
-    (state.cxc || []).filter(x => x.estado !== 'pagada' && (x.saldoUSD || 0) > 0.001).forEach(debt => {
+    // La consulta de créditos es histórica: aquí NO filtramos por estado ni por
+    // fecha. El Pago Global filtra sus deudas activas por separado.
+    (creditDebts || []).forEach(debt => {
       const name = debt.cliente || 'DESCONOCIDO';
       if (!groups[name]) groups[name] = { totalUSD: 0, debts: [] };
       groups[name].totalUSD += Number(debt.saldoUSD) || 0;
       groups[name].debts.push(debt);
     });
     return groups;
-  }, [state.cxc]);
+  }, [creditDebts]);
 
   const normalizeCreditSearch = (value: unknown) =>
     String(value || '')
@@ -1291,10 +1346,38 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                         <tr className="bg-surface-soft/40 animate-in slide-in-from-top-1 duration-200">
                            <td colSpan={6} className="px-12 py-4">
                               <div className="card border-line bg-white shadow-inner rounded-xl overflow-hidden">
-                                 <table className="w-full">
-                                    <thead className="bg-ink/5"><tr><th className="text-[9px] font-black uppercase p-2 text-left">Emisión</th><th className="text-[9px] font-black uppercase p-2 text-left">Vencimiento</th><th className="text-[9px] font-black uppercase p-2 text-right">Saldo USD</th><th className="text-[9px] font-black uppercase p-2 text-center">Acciones</th></tr></thead>
-                                    <tbody>{group.debts.map(d => (<tr key={d.id} className="border-b border-line/20"><td className="text-[10px] font-black p-2">{Utils.fmtFecha(d.fecha)}</td><td className={`text-[10px] font-black p-2 ${d.saldoUSD > 0.001 && d.fechaVencimiento < Utils.hoy() ? 'text-status-danger' : 'text-ink'}`}>{d.fechaVencimiento === '2099-12-31' ? 'ABIERTA' : Utils.fmtFecha(d.fechaVencimiento)}</td><td className="text-[10px] font-black p-2 text-right text-brand-gold-deep">{Utils.fmtUSD(d.saldoUSD)}</td><td className="p-2 text-center"><div className="flex justify-center gap-2"><button onClick={() => setShowDetails(d)} className="w-8 h-8 rounded-full flex items-center justify-center text-status-success hover:bg-status-success/10"><Eye className="w-4 h-4"/></button></div></td></tr>))}</tbody>
-                                 </table>
+                                 <div className="overflow-x-auto">
+                                   <table data-credit-history-version="sales-v1" className="w-full min-w-[780px]">
+                                      <thead className="bg-ink/5">
+                                        <tr>
+                                          <th className="text-[9px] font-black uppercase p-2 text-left">Emisión</th>
+                                          <th className="text-[9px] font-black uppercase p-2 text-left">Vencimiento</th>
+                                          <th className="text-[9px] font-black uppercase p-2 text-left">ID Factura</th>
+                                          <th className="text-[9px] font-black uppercase p-2 text-right">Monto</th>
+                                          <th className="text-[9px] font-black uppercase p-2 text-right">Saldo USD</th>
+                                          <th className="text-[9px] font-black uppercase p-2 text-center">Estado</th>
+                                          <th className="text-[9px] font-black uppercase p-2 text-center">Auditoría</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {group.debts.map(d => (
+                                          <tr key={d.id} className="border-b border-line/20">
+                                            <td className="text-[10px] font-black p-2">{Utils.fmtFecha(d.fecha)}</td>
+                                            <td className={`text-[10px] font-black p-2 ${Number(d.saldoUSD) > 0.001 && d.fechaVencimiento < Utils.hoy() ? 'text-status-danger' : 'text-ink'}`}>{d.fechaVencimiento === '2099-12-31' ? 'ABIERTA' : Utils.fmtFecha(d.fechaVencimiento)}</td>
+                                            <td className="text-[10px] font-black p-2 mono">{d.id}</td>
+                                            <td className="text-[10px] font-black p-2 text-right">{Utils.fmtUSD(d.montoUSD)}</td>
+                                            <td className="text-[10px] font-black p-2 text-right text-brand-gold-deep">{Utils.fmtUSD(d.saldoUSD)}</td>
+                                            <td className="text-[10px] font-black p-2 text-center uppercase">{d.estado}</td>
+                                            <td className="p-2 text-center">
+                                              <button onClick={() => { void handleOpenCreditDetails(d); }} className="w-8 h-8 rounded-full flex items-center justify-center text-status-success hover:bg-status-success/10" title="Auditar factura">
+                                                <Eye className="w-4 h-4"/>
+                                              </button>
+                                            </td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                   </table>
+                                 </div>
                               </div>
                            </td>
                         </tr>
@@ -1613,7 +1696,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
               </div>
 
               {(() => {
-                const sale = state.ventas.find(v => v.id === showDetails.ventaId || v.id === showDetails.id);
+                const sale = showDetails.__originalSale || state.ventas.find(v => v.id === showDetails.ventaId || v.id === showDetails.id);
                 if (!sale) return null;
                 return (
                   <div className="space-y-3 animate-in slide-in-from-top-2 duration-300">
@@ -1700,7 +1783,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                       </tr>
                     </thead>
                     <tbody>
-                      {state.cxc.filter(d => d.cliente === showClientHistory).sort((a,b) => b.fecha.localeCompare(a.fecha)).map(d => (
+                      {creditDebts.filter(d => d.cliente === showClientHistory).sort((a,b) => b.fecha.localeCompare(a.fecha)).map(d => (
                         <tr key={d.id} className="border-b border-line/30 hover:bg-surface-warm/20 transition-colors">
                           <td className="p-4 text-xs font-black">{Utils.fmtFecha(d.fecha)}</td>
                           <td className="p-4 text-xs font-black mono">{d.id}</td>
@@ -1713,7 +1796,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                             </span>
                           </td>
                           <td className="p-4 text-center">
-                             <button onClick={() => setShowDetails(d)} className="w-10 h-10 rounded-full flex items-center justify-center bg-white text-status-success border-2 border-status-success/20 hover:bg-status-success hover:text-white transition-all shadow-md"><Eye className="w-5 h-5"/></button>
+                             <button onClick={() => { void handleOpenCreditDetails(d); }} className="w-10 h-10 rounded-full flex items-center justify-center bg-white text-status-success border-2 border-status-success/20 hover:bg-status-success hover:text-white transition-all shadow-md"><Eye className="w-5 h-5"/></button>
                           </td>
                         </tr>
                       ))}
