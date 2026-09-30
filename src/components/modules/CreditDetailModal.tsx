@@ -39,9 +39,9 @@ const sameItems = (a: any[], b: any[]) => {
 };
 
 async function loadOriginalSale(debt: any) {
-  const ventaId = String(debt?.ventaId || debt?.facturaId || '').trim();
-  let sale = ventaId ? await Store.getSaleById(ventaId) : null;
-
+  // CxC Administración resuelve primero el registro autoritativo de la deuda
+  // y luego intenta la venta por ventaId/facturaId. Para históricos migrados,
+  // el id de la propia deuda puede ser también la referencia de la venta.
   let authoritativeCxc: any = null;
   try {
     const debtId = String(debt?.id || '').trim();
@@ -60,6 +60,18 @@ async function loadOriginalSale(debt: any) {
   }
 
   const sourceDebt = authoritativeCxc || debt;
+  const ventaId = String(sourceDebt?.ventaId || sourceDebt?.facturaId || '').trim();
+  const saleIds = [...new Set([
+    ventaId,
+    String(sourceDebt?.id || debt?.id || '').trim(),
+  ].filter(Boolean))];
+
+  let sale: any = null;
+  for (const id of saleIds) {
+    sale = await Store.getSaleById(id);
+    if (sale) break;
+  }
+
   const debtItems = Array.isArray(sourceDebt?.items) ? sourceDebt.items : [];
 
   if (debtItems.length && (!sale || !sameItems(debtItems, Array.isArray(sale.items) ? sale.items : []))) {
