@@ -135,10 +135,11 @@ export async function getRecord(table: TursoStoreTable, id: string): Promise<any
 
 export async function listRecords(
   table: TursoStoreTable,
-  options: { limit?: number; terminalId?: string; estado?: string } = {},
+  options: { limit?: number; offset?: number; terminalId?: string; estado?: string } = {},
 ): Promise<any[]> {
   assertTursoReady();
   const limit = Math.min(Math.max(Number(options.limit) || 500, 1), 10000);
+  const offset = Math.max(Number(options.offset) || 0, 0);
   const args: any[] = [];
   const filters: string[] = [];
   if (options.terminalId) {
@@ -154,7 +155,7 @@ export async function listRecords(
   // tablas operativas sí conservan fecha para ordenar cronológicamente.
   const orderBy = table === 'productos' ? 'updated_at DESC' : "COALESCE(fecha,'') DESC";
   const result = await tursoExecute({
-    sql: `SELECT id,data_json FROM ${tableName(table)}${where} ORDER BY ${orderBy} LIMIT ${limit}`,
+    sql: `SELECT id,data_json FROM ${tableName(table)}${where} ORDER BY ${orderBy} LIMIT ${limit} OFFSET ${offset}`,
     args,
   });
   return result.rows.map(rowFromDb).filter(Boolean);
