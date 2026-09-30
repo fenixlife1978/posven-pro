@@ -18,6 +18,16 @@ export type AuthUser = {
 
 const SESSION_DAYS = 7;
 
+export function getRequestSessionId(request: Request) {
+  const mode = request.headers.get('x-posven-session-mode');
+  const tabSessionId = request.headers.get('x-posven-session')?.trim();
+  if (mode === 'tab') return tabSessionId || null;
+
+  const cookieHeader = request.headers.get('cookie') || '';
+  const match = cookieHeader.match(/(?:^|;\\s*)posven_session=([^;]+)/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
 function nowIso() {
   return new Date().toISOString();
 }
