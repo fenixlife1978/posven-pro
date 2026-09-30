@@ -759,8 +759,14 @@ function ReporteDevoluciones({ state, updateState }: { state: AppState, updateSt
         ? state.anulaciones.map(a => body.anulaciones.find((x:any) => String(x.id) === String(a.id)) || a)
         : state.anulaciones;
 
+      const affectedIds = new Set((body.affectedProducts || []).map((id:any) => String(id)));
+      const nextMovements = Array.isArray(body.movimientos)
+        ? [...state.movimientos.filter((m:any) => !affectedIds.has(String(m.productoId))), ...body.movimientos]
+        : state.movimientos;
+
       updateState({
         productos: nextProducts,
+        movimientos: nextMovements,
         devoluciones: nextReturns,
         anulaciones: nextAnulaciones,
         ...(body.debt ? { cxc: state.cxc.map((d:any) => String(d.id) === String(body.debt.id) ? body.debt : d) } : {}),
