@@ -1,4 +1,4 @@
-import { getRequestSessionId } from '@/lib/auth/turso-auth';
+import { getRequestSessionId, getSessionUser } from '@/lib/auth/turso-auth';
 import { NextResponse } from 'next/server';
 import {
   assertTursoReady,
