@@ -1324,6 +1324,278 @@ export async function processReturnOrCancellationTransaction(params:any){
   });
 }
 
+
+// ============================================================
+// REPARACIÓN ÚNICA DE DEVOLUCIONES / ANULACIONES / CxC / KARDEX
+// Recalcula una factura concreta desde su venta original y su historial
+// real de devoluciones. No borra la auditoría: corrige el detalle de cada
+// operación y elimina únicamente el efecto de inventario duplicado.
+// ============================================================
+export async function repairReturnInventoryAndCxcTransaction(params:{saleId:string;operationId?:string}){
+  assertTursoReady();
+  const saleId=String(params.saleId||'').trim();
+  if(!saleId) throw new Error('Debe indicar la factura a reparar.');
+
+  return tursoInteractiveTransaction(async tx=>{
+    const sale=rowFromDb((await tx.execute(txSelect('ventas',saleId))).rows[0]);
+    if(!sale) throw new Error('La factura indicada no existe en Turso.');
+
+    const returnRows=(await tx.execute({
+      sql:"SELECT id,data_json FROM devoluciones WHERE json_extract(data_json,'$.ventaId')=? ORDER BY COALESCE(fecha,''),id",
+      args:[saleId],
+    })).rows.map(rowFromDb).filter(Boolean);
+
+    const annulRows=(await tx.execute({
+      sql:"SELECT id,data_json FROM anulaciones WHERE json_extract(data_json,'$.ventaId')=? ORDER BY COALESCE(fecha,''),id",
+      args:[saleId],
+    })).rows.map(rowFromDb).filter(Boolean);
+
+    const operations=[
+      ...returnRows.map((doc:any)=>({kind:'DEVOLUCION',doc})),
+      ...annulRows.map((doc:any)=>({kind:'ANULACION',doc})),
+    ].sort((a:any,b:any)=>{
+      const f=String(a.doc?.fecha||'').localeCompare(String(b.doc?.fecha||''));
+      return f!==0?f:String(a.doc?.id||'').localeCompare(String(b.doc?.id||''));
+    });
+
+    const remaining=new Map<string,number>();
+    for(const item of (Array.isArray(sale.items)?sale.items:[]))
+      remaining.set(String(item?.productoId||''),Math.max(0,Number(item?.cantidad)||0));
+
+    const correctedOps:any[]=[];
+    const affectedProducts=new Set<string>();
+
+    for(const operation of operations){
+      const doc=operation.doc;
+      const effective:any[]=[];
+
+      if(operation.kind==='ANULACION'){
+        for(const item of (Array.isArray(sale.items)?sale.items:[])){
+          const pid=String(item?.productoId||'');
+          const qty=Number(remaining.get(pid)||0);
+          if(qty<=0) continue;
+          const originalQty=Math.max(1,Number(item?.cantidad)||1);
+          const unit=Number(item?.precioUnitUSD)||((Number(item?.subtotalUSD)||0)/originalQty);
+          effective.push({
+            ...item,
+            cantidad:qty,
+            precioUnitUSD:unit,
+            subtotalUSD:Math.round((qty*unit+Number.EPSILON)*100)/100,
+          });
+          remaining.set(pid,0);
+        }
+      }else{
+        for(const item of (Array.isArray(doc?.items)?doc.items:[])){
+          const pid=String(item?.productoId||'');
+          const available=Number(remaining.get(pid)||0);
+          if(!pid||available<=0) continue;
+          const qty=Math.min(available,Math.max(0,Number(item?.cantidad)||0));
+          if(qty<=0) continue;
+          const unit=Number(item?.precioUnitUSD)||0;
+          effective.push({
+            ...item,
+            cantidad:qty,
+            precioUnitUSD:unit,
+            subtotalUSD:Math.round((qty*unit+Number.EPSILON)*100)/100,
+          });
+          remaining.set(pid,Math.max(0,available-qty));
+        }
+      }
+
+      const totalUSD=Math.round((effective.reduce((sum:number,item:any)=>sum+(Number(item?.subtotalUSD)||0),0)+Number.EPSILON)*100)/100;
+      const corrected={
+        ...doc,
+        items:effective,
+        totalUSD,
+        ...(operation.kind==='ANULACION'?{totalRevertidoUSD:totalUSD}:{}),
+        ...(effective.length===0?{sinEfecto:true}:{}),
+      };
+      correctedOps.push({kind:operation.kind,doc:corrected,original:doc});
+
+      // Corregimos SOLO los movimientos generados por esta operación.
+      // Los identificamos por su referencia histórica que contiene el ID
+      // de la operación y la factura. Esto conserva cualquier otro movimiento.
+      const pattern='%'+String(doc.id||'')+'%';
+      const movementRows=(await tx.execute({
+        sql:"SELECT id,data_json FROM movimientos WHERE json_extract(data_json,'$.tipo') IN ('devolucion','anulacion') AND json_extract(data_json,'$.referencia') LIKE ?",
+        args:[pattern],
+      })).rows.map(rowFromDb).filter(Boolean);
+
+      const byProduct=new Map<string,any>();
+      for(const item of effective){
+        const pid=String(item?.productoId||'');
+        if(!pid) continue;
+        const current=byProduct.get(pid);
+        if(current) current.cantidad+=Number(item?.cantidad)||0;
+        else byProduct.set(pid,{...item,cantidad:Number(item?.cantidad)||0});
+        affectedProducts.add(pid);
+      }
+
+      const usedMovementIds=new Set<string>();
+      for(const movement of movementRows){
+        const pid=String(movement?.productoId||'');
+        const item=byProduct.get(pid);
+        if(!item || usedMovementIds.has(String(movement.id))){
+          await tx.execute({sql:'DELETE FROM movimientos WHERE id=?',args:[String(movement.id)],wantRows:false});
+          continue;
+        }
+
+        const reintegrado=operation.kind==='ANULACION'
+          ? true
+          : String(item?.estadoProducto||movement?.estadoProducto||'REINTEGRADO_STOCK')==='REINTEGRADO_STOCK';
+
+        if(!reintegrado){
+          // La merma no cambia stock; conserva el registro de auditoría pero
+          // deja explícito el efecto físico en cero.
+          await tx.execute(rowStatement('movimientos',{
+            ...movement,
+            cantidad:Number(item.cantidad)||0,
+            stockDespues:Number(movement.stockAntes)||0,
+            efectoStock:0,
+          }));
+        }else{
+          await tx.execute(rowStatement('movimientos',{
+            ...movement,
+            cantidad:Number(item.cantidad)||0,
+            stockDespues:Number(movement.stockAntes||0)+(Number(item.cantidad)||0),
+          }));
+        }
+        usedMovementIds.add(String(movement.id));
+      }
+
+      // Si una operación válida perdió su movimiento, lo reconstruimos para
+      // que el Kardex represente exactamente lo que muestran Devoluciones.
+      for(const [pid,item] of byProduct){
+        const reintegrado=operation.kind==='ANULACION'
+          ? true
+          : String(item?.estadoProducto||'REINTEGRADO_STOCK')==='REINTEGRADO_STOCK';
+        if(!reintegrado || [...usedMovementIds].some(id=>movementRows.some((m:any)=>String(m.id)===id&&String(m.productoId)===pid))) continue;
+        const p=rowFromDb((await tx.execute(txSelect('productos',pid))).rows[0]);
+        const movement={
+          id:'REPAIR-MOV-'+crypto.randomUUID(),
+          productoId:pid,
+          tipo:operation.kind==='ANULACION'?'anulacion':'devolucion',
+          cantidad:Number(item.cantidad)||0,
+          stockAntes:Number(p?.stock)||0,
+          stockDespues:(Number(p?.stock)||0)+(Number(item.cantidad)||0),
+          fecha:String(doc.fecha||new Date().toISOString()),
+          referencia:operation.kind==='ANULACION'
+            ? 'ANULACIÓN TOTAL FACTURA #'+saleId
+            : 'DEVOLUCIÓN '+String(doc.id)+' - REF VENTA '+saleId,
+          terminalId:String(doc.terminalId||'GLOBAL'),
+          reparado:true,
+        };
+        await tx.execute(rowStatement('movimientos',movement));
+      }
+
+      if(JSON.stringify(corrected)!==JSON.stringify(doc))
+        await tx.execute(rowStatement(operation.kind==='ANULACION'?'anulaciones':'devoluciones',corrected));
+    }
+
+    // CxC se recalcula desde la deuda original, pagos reales y el total
+    // efectivamente revertido. No se inventan pagos ni reembolsos.
+    const debtRow=(await tx.execute({
+      sql:"SELECT id,data_json FROM cxc WHERE json_extract(data_json,'$.ventaId')=? OR json_extract(data_json,'$.facturaId')=? ORDER BY id LIMIT 1",
+      args:[saleId,saleId],
+    })).rows[0];
+    let debt:any=null;
+    let customer:any=null;
+    if(debtRow){
+      const originalDebt=rowFromDb(debtRow);
+      const totalRevertido=correctedOps.reduce((sum:number,o:any)=>sum+(Number(o.doc?.totalUSD)||0),0);
+      const originalAmount=Number(originalDebt.montoUSD)||Number(sale.totalUSD)||0;
+      const paid=Number(originalDebt.abonadoUSD)||0;
+      const saldo=Math.max(0,Math.round((originalAmount-totalRevertido-paid+Number.EPSILON)*100)/100);
+      debt={
+        ...originalDebt,
+        saldoUSD:saldo,
+        estado:saldo<=0.001?'pagada':'parcial',
+        ...(saldo<=0.001&&correctedOps.some((o:any)=>o.kind==='ANULACION')?{cancelada:true,canceladaFecha:String(correctedOps.find((o:any)=>o.kind==='ANULACION')?.doc?.fecha||new Date().toISOString())}:{}),
+      };
+      await tx.execute(rowStatement('cxc',debt));
+
+      const clienteTexto=String(originalDebt.cliente||'');
+      const cedulaMatch=clienteTexto.match(/\[([^\]]+)\]/);
+      const cedula=cedulaMatch?.[1]||'';
+      if(cedula){
+        const cr=(await tx.execute({
+          sql:"SELECT id,data_json FROM clientes WHERE json_extract(data_json,'$.cedula')=? LIMIT 1",
+          args:[cedula],
+        })).rows[0];
+        customer=cr?rowFromDb(cr):null;
+      }
+      if(customer){
+        const customerDebts=(await tx.execute({
+          sql:"SELECT data_json FROM cxc WHERE json_extract(data_json,'$.cliente')=?",
+          args:[clienteTexto],
+        })).rows.map(rowFromDb).filter(Boolean);
+        const customerDebt=customerDebts.reduce((sum:number,d:any)=>sum+Math.max(0,Number(d?.saldoUSD)||0),0);
+        customer={...customer,debt:Math.round((customerDebt+Number.EPSILON)*100)/100};
+        await tx.execute(rowStatement('clientes',customer));
+      }
+    }
+
+    // Recalcular stock de cada producto afectado usando el DELTA físico de
+    // cada movimiento, no la cantidad declarada. Así las mermas (delta 0) no
+    // alteran stock y el doble reingreso desaparece realmente.
+    const products:any[]=[];
+    for(const pid of affectedProducts){
+      const rows=(await tx.execute({
+        sql:"SELECT id,data_json FROM movimientos WHERE json_extract(data_json,'$.productoId')=? ORDER BY COALESCE(fecha,''),id",
+        args:[pid],
+      })).rows.map(rowFromDb).filter(Boolean);
+      if(!rows.length) continue;
+      let running=Number(rows[0]?.stockAntes)||0;
+      const rebuilt:any[]=[];
+      for(const movement of rows){
+        const oldBefore=Number(movement?.stockAntes)||0;
+        const oldAfter=Number(movement?.stockDespues)||oldBefore;
+        const delta=oldAfter-oldBefore;
+        const before=running;
+        running=before+delta;
+        const fixed={...movement,stockAntes:before,stockDespues:running};
+        rebuilt.push(fixed);
+        await tx.execute(rowStatement('movimientos',fixed));
+      }
+      const p=rowFromDb((await tx.execute(txSelect('productos',pid))).rows[0]);
+      if(p){
+        const fixedProduct={...p,stock:running};
+        await tx.execute(rowStatement('productos',fixedProduct));
+        products.push(fixedProduct);
+      }
+    }
+
+    // La venta queda anulada solo si ya existía una anulación; de lo contrario
+    // la reparación no inventa una anulación nueva.
+    const hasAnulacion=correctedOps.some((o:any)=>o.kind==='ANULACION');
+    const fixedSale=hasAnulacion?{...sale,estado:'anulada'}:sale;
+    if(hasAnulacion) await tx.execute(rowStatement('ventas',fixedSale));
+
+    if(params.operationId){
+      const opId=String(params.operationId);
+      await tx.execute({
+        sql:'INSERT INTO operaciones(id,prefijo,operation_id,data_json) VALUES(?,?,?,?)',
+        args:['REPARAR-DEVOLUCION-'+opId,'REPARAR-DEVOLUCION',opId,JSON.stringify({tipo:'REPARAR-DEVOLUCION',operationId:opId,saleId})],
+        wantRows:false,
+      });
+    }
+
+    const correctedReturns=correctedOps.filter((o:any)=>o.kind==='DEVOLUCION').map((o:any)=>o.doc);
+    const correctedAnulaciones=correctedOps.filter((o:any)=>o.kind==='ANULACION').map((o:any)=>o.doc);
+
+    return {
+      sale:fixedSale,
+      debt,
+      customer,
+      products,
+      devoluciones:correctedReturns,
+      anulaciones:correctedAnulaciones,
+      correctedOperations:correctedOps.length,
+      affectedProducts:[...affectedProducts],
+    };
+  });
+}
+
 export async function createCashMovementTransaction(params: {
   operationId: string;
   movement: any;
