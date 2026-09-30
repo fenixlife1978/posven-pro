@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSessionUser } from '@/lib/auth/turso-auth';
+import { getRequestSessionId, getSessionUser } from '@/lib/auth/turso-auth';
 
 export const runtime = 'nodejs';
 
 export async function GET(request: NextRequest) {
   try {
-    const user = await getSessionUser(request.cookies.get('posven_session')?.value);
+    const user = await getSessionUser(getRequestSessionId(request));
     if (!user) return NextResponse.json({ authenticated: false }, { status: 401 });
     return NextResponse.json({ authenticated: true, user });
   } catch (error: any) {
