@@ -38,6 +38,7 @@ export async function POST(request: Request) {
         nombre: row.nombre,
         rol: row.rol,
       },
+      sessionId: session.id,
     });
 
     response.cookies.set('posven_session', session.id, {
