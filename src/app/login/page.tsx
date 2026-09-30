@@ -5,6 +5,32 @@ import { useRouter } from "next/navigation";
 import { Mail, Lock, Eye, EyeOff } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 
+const POSVEN_TAB_SESSION_KEY = 'posven_session_id';
+
+function getTabSessionId() {
+  if (typeof window === 'undefined') return null;
+  return sessionStorage.getItem(POSVEN_TAB_SESSION_KEY);
+}
+
+function installLoginTabSessionFetch() {
+  if (typeof window === 'undefined' || (window as any).__posvenTabFetchInstalled) return;
+  (window as any).__posvenTabFetchInstalled = true;
+  const nativeFetch = window.fetch.bind(window);
+  window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+    const rawUrl = input instanceof Request ? input.url : String(input);
+    let sameOrigin = false;
+    try { sameOrigin = rawUrl.startsWith('/') || new URL(rawUrl, window.location.href).origin === window.location.origin; } catch {}
+    if (!sameOrigin) return nativeFetch(input, init);
+    const headers = new Headers(input instanceof Request ? input.headers : undefined);
+    if (init?.headers) new Headers(init.headers).forEach((value, key) => headers.set(key, value));
+    headers.set('x-posven-session-mode', 'tab');
+    const sessionId = getTabSessionId();
+    if (sessionId) headers.set('x-posven-session', sessionId);
+    else headers.delete('x-posven-session');
+    return nativeFetch(input, { ...init, headers });
+  };
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -16,6 +42,7 @@ export default function LoginPage() {
   const [statusMessage, setStatusMessage] = useState("Inicializando Base de Datos Turso...");
 
   useEffect(() => {
+    installLoginTabSessionFetch();
     let cancelled = false;
     const checkTursoSession = async () => {
       setStatusMessage("Inicializando Base de Datos Turso...");
@@ -56,6 +83,7 @@ export default function LoginPage() {
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data?.error || ("Error de autenticación (" + response.status + ")."));
       setStatusMessage("Turso autenticó correctamente. Ingresando...");
+      if (data?.sessionId) sessionStorage.setItem(POSVEN_TAB_SESSION_KEY, String(data.sessionId));
       toast({ title: "Acceso autorizado", description: "Bienvenido, " + (data.user?.nombre || email) + "." });
       router.push("/");
     } catch (err: any) {
