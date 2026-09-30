@@ -63,20 +63,27 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     let cancelled = false;
     (async () => {
       try {
-        const response = await fetch('/api/turso/store?table=cxc&limit=10000', {
-          credentials: 'include',
-          cache: 'no-store',
-        });
-        const body: any = await response.json();
-        if (!response.ok || body?.ok === false) throw new Error(String(body?.error || 'Turso rechazó la lectura de CxC.'));
-        const records = Array.isArray(body?.records) ? body.records : [];
-        // Consultar Créditos debe mostrar el historial completo del cliente,
-        // igual que Administración -> CxC. Los cobros/pagos siguen usando
-        // únicamente las deudas activas al ejecutar una operación.
-        if (!cancelled) setCreditDebts(records as Debt[]);
+        // Consultar Créditos debe hidratar TODO el histórico de CxC, no el
+        // cache reducido del arranque del POS. Se pagina para evitar truncar
+        // el historial o generar respuestas HTTP demasiado grandes.
+        const pageSize = 2000;
+        const allRecords: any[] = [];
+        for (let offset = 0; ; offset += pageSize) {
+          const response = await fetch(
+            '/api/turso/store?table=cxc&limit=' + pageSize + '&offset=' + offset,
+            { credentials: 'include', cache: 'no-store' }
+          );
+          const body: any = await response.json();
+          if (!response.ok || body?.ok === false) {
+            throw new Error(String(body?.error || 'Turso rechazó la lectura histórica de CxC.'));
+          }
+          const page = Array.isArray(body?.records) ? body.records : [];
+          allRecords.push(...page);
+          if (page.length < pageSize) break;
+        }
+        if (!cancelled) setCreditDebts(allRecords as Debt[]);
       } catch (e) {
-        console.error('[POS] No se pudo cargar el histórico de CxC:', e);
-        if (!cancelled) setCreditDebts((Store.get().cxc || state.cxc || []) as Debt[]);
+        console.error('[POS] No se pudo cargar el histórico completo de CxC:', e);
       }
     })();
     return () => { cancelled = true; };
