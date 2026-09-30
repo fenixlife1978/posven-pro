@@ -1050,31 +1050,277 @@ export async function createSupplierDebtTransaction(params:any){
 
 export async function processReturnOrCancellationTransaction(params:any){
   assertTursoReady();
-  const {operationId,operationType,saleId,operationDoc,movements=[],journal,terminalId}=params;
-  return tursoInteractiveTransaction(async tx=>{
-    const check=await tx.execute({sql:'SELECT id FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',args:[operationType,operationId]});
-    if(check.rows.length) throw new Error('Esta operación ya fue procesada. No se registrará nuevamente.');
-    const sale=rowFromDb((await tx.execute(txSelect('ventas',String(saleId)))).rows[0]); if(!sale) throw new Error('La venta ya no existe en Turso.');
-    if(operationType==='ANULACION'&&String(sale.estado||'')==='anulada') throw new Error('La factura ya fue anulada.');
-    const terminal=terminalId?rowFromDb((await tx.execute(txSelect('terminales',terminalId))).rows[0]):null;
-    if(terminalId&&!terminal) throw new Error('La terminal de la operación ya no existe.');
-    const field=operationType==='DEVOLUCION'?'proximaDevolucion':'proximaAnulacion';
-    const label=operationType==='DEVOLUCION'?'DEV':'ANU'; const counter=Number(terminal?.[field])||1;
-    const canonicalId=terminal?terminalSeries(await terminalUniquePrefix(tx,terminal,terminalId),label,counter,6):terminalSeries('GLOBAL',label,Date.now(),6);
-    const table=operationType==='DEVOLUCION'?'devoluciones':'anulaciones';
-    if((await tx.execute(txSelect(table,canonicalId))).rows.length) throw new Error('Esta operación ya fue registrada.');
+  const {
+    operationId,
+    operationType,
+    saleId,
+    operationDoc,
+    movements = [],
+    journal,
+    terminalId,
+    refundItems = [],
+    fullCancellation = false,
+  } = params;
+
+  return tursoInteractiveTransaction(async tx => {
+    const opCheck = await tx.execute({
+      sql:'SELECT id FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',
+      args:[operationType,operationId],
+    });
+    if(opCheck.rows.length) throw new Error('Esta operación ya fue procesada. No se registrará nuevamente.');
+
+    const sale = rowFromDb((await tx.execute(txSelect('ventas',String(saleId)))).rows[0]);
+    if(!sale) throw new Error('La venta ya no existe en Turso.');
+    if(operationType==='ANULACION' && String(sale.estado||'')==='anulada')
+      throw new Error('La factura ya fue anulada.');
+
+    const terminal = terminalId
+      ? rowFromDb((await tx.execute(txSelect('terminales',terminalId))).rows[0])
+      : null;
+    if(terminalId && !terminal) throw new Error('La terminal de la operación ya no existe.');
+
+    // ============================================================
+    // REGLA MAESTRA DE DEVOLUCIONES/ANULACIONES
+    // Una unidad vendida solo puede reingresar al inventario UNA vez.
+    // El servidor Turso recalcula aquí lo que todavía queda por revertir;
+    // nunca confía en que el navegador le envíe las cantidades originales.
+    // ============================================================
+    const originalItems = Array.isArray(sale.items) ? sale.items : [];
+    if(!originalItems.length) throw new Error('La venta no contiene detalle para revertir.');
+
+    const previousReturnsRows = await tx.execute({
+      sql:"SELECT id,data_json FROM devoluciones WHERE json_extract(data_json,'$.ventaId')=? ORDER BY COALESCE(fecha,''),id",
+      args:[String(saleId)],
+    });
+    const previousReturns = previousReturnsRows.rows.map(rowFromDb).filter(Boolean);
+
+    const returnedByProduct = new Map<string,number>();
+    for(const dev of previousReturns){
+      for(const item of (Array.isArray(dev?.items)?dev.items:[])){
+        const pid=String(item?.productoId||'');
+        if(!pid) continue;
+        returnedByProduct.set(pid,(returnedByProduct.get(pid)||0)+Math.max(0,Number(item?.cantidad)||0));
+      }
+    }
+
+    const remainingItems:any[]=[];
+    for(const item of originalItems){
+      const pid=String(item?.productoId||'');
+      const originalQty=Math.max(0,Number(item?.cantidad)||0);
+      const alreadyReturned=returnedByProduct.get(pid)||0;
+      const remaining=Math.max(0,originalQty-alreadyReturned);
+      if(remaining<=0) continue;
+      const unit=originalQty>0 ? Number(item?.subtotalUSD||0)/originalQty : Number(item?.precioUnitUSD||0);
+      remainingItems.push({
+        ...item,
+        cantidad:remaining,
+        precioUnitUSD:Number(item?.precioUnitUSD ?? unit)||0,
+        subtotalUSD:Math.round((remaining*(Number(item?.precioUnitUSD ?? unit)||0)+Number.EPSILON)*100)/100,
+      });
+    }
+
+    if(operationType==='DEVOLUCION'){
+      const requested = Array.isArray(refundItems) && refundItems.length ? refundItems : (Array.isArray(operationDoc?.items)?operationDoc.items:[]);
+      if(!requested.length) throw new Error('La devolución no contiene productos.');
+
+      const remainingByProduct=new Map(remainingItems.map((i:any)=>[String(i.productoId),i]));
+      const effectiveItems:any[]=[];
+      const seen=new Set<string>();
+
+      for(const requestedItem of requested){
+        const pid=String(requestedItem?.productoId||'');
+        if(!pid || seen.has(pid)) continue;
+        seen.add(pid);
+        const available=remainingByProduct.get(pid);
+        if(!available) throw new Error('Este producto ya fue devuelto en su totalidad.');
+        const qty=Math.max(0,Number(requestedItem?.cantidad)||0);
+        if(qty<=0 || qty>Number(available.cantidad||0)+0.000001)
+          throw new Error('La cantidad solicitada supera la cantidad todavía pendiente de devolución.');
+
+        const unit=Number(available.precioUnitUSD)||0;
+        effectiveItems.push({
+          ...available,
+          ...requestedItem,
+          cantidad:qty,
+          precioUnitUSD:unit,
+          subtotalUSD:Math.round((qty*unit+Number.EPSILON)*100)/100,
+        });
+      }
+
+      if(!effectiveItems.length) throw new Error('No hay unidades pendientes de devolución.');
+      remainingItems.splice(0,remainingItems.length,...effectiveItems);
+    }
+
+    const effectiveItems = remainingItems.map((item:any)=>({
+      ...item,
+      cantidad:Math.max(0,Number(item.cantidad)||0),
+      subtotalUSD:Math.round((Math.max(0,Number(item.cantidad)||0)*(Number(item.precioUnitUSD)||0)+Number.EPSILON)*100)/100,
+    })).filter((item:any)=>item.cantidad>0);
+
+    if(!effectiveItems.length)
+      throw new Error('La factura ya no tiene mercancía pendiente de reversión.');
+
+    const effectiveTotal=Math.round((effectiveItems.reduce((sum:number,item:any)=>sum+(Number(item.subtotalUSD)||0),0)+Number.EPSILON)*100)/100;
+
+    // En una anulación total posterior a una devolución parcial, SOLO se
+    // registra lo que todavía quedaba pendiente. Así, 2 Polar ya devueltas
+    // no vuelven a entrar al Kardex y únicamente retorna el producto restante.
+    const effectiveMovements:any[]=[];
+    const requestedMovementsByProduct=new Map<string,any[]>();
+    for(const m of (Array.isArray(movements)?movements:[])){
+      const pid=String(m?.productoId||'');
+      if(!pid) continue;
+      const arr=requestedMovementsByProduct.get(pid)||[];
+      arr.push(m);
+      requestedMovementsByProduct.set(pid,arr);
+    }
+
+    for(const item of effectiveItems){
+      const pid=String(item.productoId);
+      const requestedMovement=requestedMovementsByProduct.get(pid)?.[0];
+      const shouldReintegrate = operationType==='ANULACION'
+        ? true
+        : String(item.estadoProducto||requestedMovement?.estadoProducto||'REINTEGRADO_STOCK')==='REINTEGRADO_STOCK';
+
+      if(!shouldReintegrate) continue;
+      effectiveMovements.push({
+        ...(requestedMovement||{}),
+        id:String(requestedMovement?.id||('MOV-'+crypto.randomUUID())),
+        productoId:pid,
+        tipo:operationType==='ANULACION'?'anulacion':'devolucion',
+        cantidad:Number(item.cantidad)||0,
+        fecha:String(operationDoc?.fecha||new Date().toISOString()),
+        referencia:operationType==='ANULACION'
+          ? 'ANULACIÓN TOTAL FACTURA #'+String(saleId)
+          : 'DEVOLUCIÓN '+String(operationDoc?.id||operationId)+' - REF VENTA '+String(saleId),
+        terminalId:terminalId||operationDoc?.terminalId||'GLOBAL',
+      });
+    }
+
     const products=new Map<string,any>();
-    for(const m of movements){const pid=String(m.productoId||''); if(!pid) continue; if(!products.has(pid)){const p=rowFromDb((await tx.execute(txSelect('productos',pid))).rows[0]); if(!p) throw new Error('Un producto de la operación ya no existe en Turso.'); products.set(pid,p);}}
+    for(const m of effectiveMovements){
+      const pid=String(m.productoId||'');
+      if(!pid || products.has(pid)) continue;
+      const p=rowFromDb((await tx.execute(txSelect('productos',pid))).rows[0]);
+      if(!p) throw new Error('Un producto de la operación ya no existe en Turso.');
+      products.set(pid,p);
+    }
+
+    // ============================================================
+    // CxC: una devolución/anulación reduce el saldo pendiente de la
+    // factura a crédito. No crea un cobro ni un reembolso ficticio.
+    // ============================================================
+    let updatedDebt:any=null;
+    const debtRows=await tx.execute({
+      sql:"SELECT id,data_json FROM cxc WHERE json_extract(data_json,'$.ventaId')=? OR json_extract(data_json,'$.facturaId')=? ORDER BY id LIMIT 10",
+      args:[String(saleId),String(saleId)],
+    });
+    const debtRowsMapped=debtRows.rows.map(rowFromDb).filter(Boolean);
+    if(debtRowsMapped.length){
+      const debt=debtRowsMapped[0];
+      const currentSaldo=Math.max(0,Number(debt.saldoUSD)||0);
+      const reversal=Math.min(currentSaldo,effectiveTotal);
+      const nuevoSaldo=Math.max(0,Math.round((currentSaldo-reversal+Number.EPSILON)*100)/100);
+      updatedDebt={
+        ...debt,
+        saldoUSD:nuevoSaldo,
+        estado:nuevoSaldo<=0.001?'pagada':'parcial',
+        ...(operationType==='ANULACION' && nuevoSaldo<=0.001 ? {cancelada:true, canceladaFecha:String(operationDoc?.fecha||new Date().toISOString())} : {}),
+      };
+      // No alteramos abonadoUSD: los pagos reales siguen siendo pagos reales.
+      // La devolución solo reduce la obligación todavía pendiente.
+    }
+
+    const field=operationType==='DEVOLUCION'?'proximaDevolucion':'proximaAnulacion';
+    const label=operationType==='DEVOLUCION'?'DEV':'ANU';
+    const counter=Number(terminal?.[field])||1;
+    const canonicalId=terminal
+      ? terminalSeries(await terminalUniquePrefix(tx,terminal,terminalId),label,counter,6)
+      : terminalSeries('GLOBAL',label,Date.now(),6);
+    const table=operationType==='DEVOLUCION'?'devoluciones':'anulaciones';
+    if((await tx.execute(txSelect(table,canonicalId))).rows.length)
+      throw new Error('Esta operación ya fue registrada.');
+
+    const canonicalOperationDoc=clean({
+      ...operationDoc,
+      id:canonicalId,
+      ventaId:String(saleId),
+      terminalId:terminalId||operationDoc?.terminalId||'GLOBAL',
+      terminalName:terminal?.nombre||operationDoc?.terminalName||'SISTEMA GLOBAL',
+      items:effectiveItems,
+      totalUSD:effectiveTotal,
+      ...(operationType==='ANULACION' ? { totalRevertidoUSD:effectiveTotal } : {}),
+    });
+
+    // Si la venta era a crédito y no tenía pagos, nunca puede existir un
+    // egreso de dinero por una devolución/anulación.
+    const originalPaid=Array.isArray(sale.payments)
+      ? sale.payments.reduce((sum:number,p:any)=>sum+(Number(p?.montoUSD)||0),0)
+      : 0;
+    if(updatedDebt && originalPaid<=0.001){
+      delete canonicalOperationDoc.refundPayments;
+      canonicalOperationDoc.metodoReembolso='nota_credito';
+    }
+
     const statements:TursoStatement[]=[];
-    for(const m of movements){const pid=String(m.productoId),p=products.get(pid); const before=Number(p.stock)||0; const after=before+(Number(m.cantidad)||0); const persisted={...m,id:String(m.id||('MOV-'+crypto.randomUUID())),productoId:pid,stockAntes:before,stockDespues:after}; products.set(pid,{...p,stock:after}); statements.push(rowStatement('movimientos',persisted));}
+
+    for(const m of effectiveMovements){
+      const pid=String(m.productoId);
+      const p=products.get(pid);
+      const before=Number(p.stock)||0;
+      const after=before+(Number(m.cantidad)||0);
+      const persisted={...m,productoId:pid,stockAntes:before,stockDespues:after,id:String(m.id||('MOV-'+crypto.randomUUID()))};
+      products.set(pid,{...p,stock:after});
+      statements.push(rowStatement('movimientos',persisted));
+    }
+
     for(const p of products.values()) statements.push(rowStatement('productos',p));
-    statements.push(rowStatement(table,{...operationDoc,id:canonicalId,terminalId:terminalId||operationDoc?.terminalId,terminalName:terminal?.nombre||operationDoc?.terminalName}));
-    statements.push(rowStatement('ventas',{...sale,estado:operationType==='ANULACION'?'anulada':'parcialmente_devuelta'}));
-    if(journal?.id) statements.push(rowStatement('libroDiario',{...journal,referencia:canonicalId,terminalId:terminalId||journal.terminalId,terminalName:terminal?.nombre||journal.terminalName}));
+
+    // Solo el monto realmente devuelto en efectivo/tarjeta/etc. genera
+    // asiento de egreso. Nota de crédito sin pago no mueve caja.
+    const refundTotal=Array.isArray(canonicalOperationDoc.refundPayments)
+      ? canonicalOperationDoc.refundPayments.reduce((sum:number,p:any)=>sum+(Number(p?.montoUSD)||0),0)
+      : 0;
+
+    const canonicalJournal=journal && refundTotal>0.001
+      ? {...journal,montoUSD:refundTotal,referencia:canonicalId,terminalId:terminalId||journal.terminalId,terminalName:terminal?.nombre||journal.terminalName}
+      : null;
+
+    statements.push(rowStatement(table,canonicalOperationDoc));
+    statements.push(rowStatement('ventas',{
+      ...sale,
+      estado:operationType==='ANULACION'?'anulada':'parcialmente_devuelta'
+    }));
+    if(updatedDebt) statements.push(rowStatement('cxc',updatedDebt));
+    if(canonicalJournal) statements.push(rowStatement('libroDiario',canonicalJournal));
     if(terminal) statements.push(rowStatement('terminales',{...terminal,[field]:counter+1}));
-    statements.push({sql:'INSERT INTO operaciones(id,prefijo,operation_id,data_json) VALUES(?,?,?,?)',args:[operationType+'-'+operationId,operationType,operationId,JSON.stringify({tipo:operationType,operationId,referencia:canonicalId,terminalId:terminalId||'GLOBAL'})],wantRows:false});
-    for(const s of statements) await tx.execute(s);
-    return {operationId,operationType,receiptId:canonicalId,operationDoc:{...operationDoc,id:canonicalId},products:[...products.values()],terminal:terminal?{...terminal,id:terminalId,[field]:counter+1}:null};
+
+    statements.push({
+      sql:'INSERT INTO operaciones(id,prefijo,operation_id,data_json) VALUES(?,?,?,?)',
+      args:[
+        operationType+'-'+operationId,
+        operationType,
+        operationId,
+        JSON.stringify({tipo:operationType,operationId,referencia:canonicalId,terminalId:terminalId||'GLOBAL'})
+      ],
+      wantRows:false
+    });
+
+    if(statements.length>450) throw new Error('La operación contiene demasiados movimientos para una sola transacción.');
+    for(const statement of statements) await tx.execute(statement);
+
+    return {
+      operationId,
+      operationType,
+      receiptId:canonicalId,
+      operationDoc:canonicalOperationDoc,
+      products:[...products.values()],
+      movements:effectiveMovements,
+      debt:updatedDebt,
+      journal:canonicalJournal,
+      terminal:terminal?{...terminal,id:terminalId,[field]:counter+1}:null,
+      remainingAfter: operationType==='ANULACION' ? 0 : effectiveItems.reduce((s:number,i:any)=>s+(Number(i.cantidad)||0),0),
+    };
   });
 }
 
