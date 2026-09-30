@@ -28,6 +28,7 @@ import {
   createCustomerDebtTransaction,
   createSupplierDebtTransaction,
   processReturnOrCancellationTransaction,
+  repairReturnInventoryAndCxcTransaction,
   reverseDebtPaymentTransaction,
   deleteCustomerAndDebtsTransaction,
   deleteCustomerDebtTransaction,
