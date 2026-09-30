@@ -1552,6 +1552,7 @@ export async function repairReturnInventoryAndCxcTransaction(params:{saleId:stri
     // cada movimiento, no la cantidad declarada. Así las mermas (delta 0) no
     // alteran stock y el doble reingreso desaparece realmente.
     const products:any[]=[];
+    const rebuiltAllMovements:any[]=[];
     for(const pid of affectedProducts){
       const rows=(await tx.execute({
         sql:"SELECT id,data_json FROM movimientos WHERE json_extract(data_json,'$.productoId')=? ORDER BY COALESCE(fecha,''),id",
@@ -1568,6 +1569,7 @@ export async function repairReturnInventoryAndCxcTransaction(params:{saleId:stri
         running=before+delta;
         const fixed={...movement,stockAntes:before,stockDespues:running};
         rebuilt.push(fixed);
+        rebuiltAllMovements.push(fixed);
         await tx.execute(rowStatement('movimientos',fixed));
       }
       const p=rowFromDb((await tx.execute(txSelect('productos',pid))).rows[0]);
@@ -1605,6 +1607,7 @@ export async function repairReturnInventoryAndCxcTransaction(params:{saleId:stri
       anulaciones:correctedAnulaciones,
       correctedOperations:correctedOps.length,
       affectedProducts:[...affectedProducts],
+      movimientos:rebuiltAllMovements,
     };
   });
 }
