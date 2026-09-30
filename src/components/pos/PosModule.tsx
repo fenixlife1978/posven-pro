@@ -52,9 +52,31 @@ import { cn } from '@/lib/utils';
 // ✅ ELIMINADO: El declare global ya está en ReceiptModal.tsx
 
 export default function SalesModule({ state, updateState }: { state: AppState, updateState: (s: Partial<AppState>) => void }) {
-  // Mismo cargador que Administración -> CxC: el POS debe tener la deuda
-  // completa desde Turso antes de abrir su historial, incluidos sus items.
-  useEffect(() => { void Store.ensureLoaded('cxc'); }, []);
+  // Consultar Deudas debe consultar directamente el conjunto histórico de CxC
+  // en Turso al entrar a la vista. El cache inicial del POS contiene solo deudas
+  // activas/recentes para no cargar todo el histórico durante el arranque.
+  const [creditDebts, setCreditDebts] = useState<Debt[]>(state.cxc || []);
+  useEffect(() => {
+    if (view !== 'credits') return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const response = await fetch('/api/turso/store?table=cxc&limit=2000', {
+          credentials: 'include',
+          cache: 'no-store',
+        });
+        const body: any = await response.json();
+        if (!response.ok || body?.ok === false) throw new Error(String(body?.error || 'Turso rechazó la lectura de CxC.'));
+        const records = Array.isArray(body?.records) ? body.records : [];
+        const active = records.filter((x: any) => ['pendiente', 'parcial'].includes(String(x?.estado || '')));
+        if (!cancelled) setCreditDebts(active as Debt[]);
+      } catch (e) {
+        console.error('[POS] No se pudo cargar el histórico de CxC:', e);
+        if (!cancelled) setCreditDebts((Store.get().cxc || state.cxc || []) as Debt[]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [view]);
   const [search, setSearch] = useState('');
   const [view, setView] = useState<'pos' | 'history' | 'credits' | 'returns'>('pos');
   const [showReportType, setShowReportType] = useState<'REPORT_X' | 'REPORT_Z' | null>(null);
@@ -593,14 +615,14 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
 
   const groupedCredits = useMemo(() => {
     const groups: Record<string, { totalUSD: number; debts: Debt[] }> = {};
-    (state.cxc || []).filter(esDeudaActiva).forEach(debt => {
+    (creditDebts || []).filter(esDeudaActiva).forEach(debt => {
       const name = debt.cliente || 'DESCONOCIDO';
       if (!groups[name]) groups[name] = { totalUSD: 0, debts: [] };
       groups[name].totalUSD += saldoActualDeuda(debt);
       groups[name].debts.push(debt);
     });
     return groups;
-  }, [state.cxc]);
+  }, [creditDebts]);
 
   const getStockDisponible = (p: Product) => {
     let avail = p.stock || 0;
@@ -1423,7 +1445,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                       </tr>
                     </thead>
                     <tbody>
-                      {state.cxc.filter(d => d.cliente === showClientHistory).sort((a,b) => b.fecha.localeCompare(a.fecha)).map(d => (
+                      {creditDebts.filter(d => d.cliente === showClientHistory).sort((a,b) => b.fecha.localeCompare(a.fecha)).map(d => (
                         <tr key={d.id} className="border-b border-line/30 hover:bg-surface-warm/20 transition-colors">
                           <td className="p-4 text-xs font-black">{Utils.fmtFecha(d.fecha)}</td>
                           <td className="p-4 text-xs font-black mono">{d.id}</td>
