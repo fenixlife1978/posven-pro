@@ -719,69 +719,6 @@ function ReporteDevoluciones({ state, updateState }: { state: AppState, updateSt
     d.fecha && d.fecha.slice(0, 10) >= rango.desde && d.fecha.slice(0, 10) <= rango.hasta
   );
   const totalUSD = devoluciones.reduce((acc, d) => acc + d.totalUSD, 0);
-  const [repairing, setRepairing] = useState(false);
-
-  const repararFactura = async () => {
-    if (state.user?.rol !== 'administrador') return;
-    const saleId = prompt('Factura a reparar (ej.: C5-V-000000066):', 'C5-V-000000066')?.trim();
-    if (!saleId || repairing) return;
-    if (!confirm(
-      'Esta operación corregirá únicamente la factura indicada.\\n\\n' +
-      '• eliminará el doble reingreso de inventario;\\n' +
-      '• corregirá el detalle histórico de devolución/anulación;\\n' +
-      '• recalculará Kardex y stock de los productos afectados;\\n' +
-      '• recalculará CxC y la deuda del cliente.\\n\\n' +
-      '¿Desea continuar?'
-    )) return;
-
-    setRepairing(true);
-    try {
-      const response = await fetch('/api/turso/store', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          operation: 'repairReturnInventoryAndCxc',
-          saleId,
-          operationId: 'REPAIR-' + saleId + '-' + Date.now(),
-        }),
-      });
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok || body?.ok === false) throw new Error(String(body?.error || 'Turso rechazó la reparación.'));
-
-      const nextProducts = Array.isArray(body.products)
-        ? state.productos.map(p => body.products.find((x:any) => String(x.id) === String(p.id)) || p)
-        : state.productos;
-      const nextReturns = Array.isArray(body.devoluciones)
-        ? state.devoluciones.map(d => body.devoluciones.find((x:any) => String(x.id) === String(d.id)) || d)
-        : state.devoluciones;
-      const nextAnulaciones = Array.isArray(body.anulaciones)
-        ? state.anulaciones.map(a => body.anulaciones.find((x:any) => String(x.id) === String(a.id)) || a)
-        : state.anulaciones;
-
-      const affectedIds = new Set((body.affectedProducts || []).map((id:any) => String(id)));
-      const nextMovements = Array.isArray(body.movimientos)
-        ? [...state.movimientos.filter((m:any) => !affectedIds.has(String(m.productoId))), ...body.movimientos]
-        : state.movimientos;
-
-      updateState({
-        productos: nextProducts,
-        movimientos: nextMovements,
-        devoluciones: nextReturns,
-        anulaciones: nextAnulaciones,
-        ...(body.debt ? { cxc: state.cxc.map((d:any) => String(d.id) === String(body.debt.id) ? body.debt : d) } : {}),
-        ...(body.customer ? { clientes: state.clientes.map((c:any) => String(c.id) === String(body.customer.id) ? body.customer : c) } : {}),
-        ...(body.sale?.id ? { ventas: state.ventas.map((v:any) => String(v.id) === String(body.sale.id) ? body.sale : v) } : {}),
-      });
-
-      alert('Reparación aplicada en Turso y Kardex recalculado correctamente.');
-    } catch (error:any) {
-      alert(String(error?.message || error));
-    } finally {
-      setRepairing(false);
-    }
-  };
-
   return (
     <div className="space-y-4">
       <Card className="p-5 bg-white border-line shadow-sm rounded-xl no-print">
@@ -792,15 +729,6 @@ function ReporteDevoluciones({ state, updateState }: { state: AppState, updateSt
         <div className="card-head bg-ink border-b border-white/10 px-6 py-4 flex justify-between items-center text-white">
           <h3 className="font-black text-xs uppercase italic tracking-tighter">HISTORIAL DE DEVOLUCIONES</h3>
           <div className="flex items-center gap-2">
-            {state.user?.rol === 'administrador' && (
-              <button
-                className="btn btn-secondary h-8 px-4 font-black text-[9px]"
-                onClick={repararFactura}
-                disabled={repairing}
-              >
-                {repairing ? 'REPARANDO...' : 'REPARAR FACTURA / KARDEX'}
-              </button>
-            )}
             <button className="btn btn-secondary h-8 px-4 font-black text-[9px]" onClick={() => exportarPDFDevoluciones(devoluciones, state.empresa, 'Histórico', { totalUSD })}>PDF</button>
           </div>
         </div>
