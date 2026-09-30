@@ -44,6 +44,27 @@ import GlobalControlModule from '@/components/modules/GlobalControlModule';
 import SuppliersModule from '@/components/modules/SuppliersModule';
 import AccountingModule from '@/components/modules/AccountingModule';
 
+const POSVEN_TAB_SESSION_KEY = 'posven_session_id';
+
+function installPosvenTabSessionFetch() {
+  if (typeof window === 'undefined' || (window as any).__posvenTabFetchInstalled) return;
+  (window as any).__posvenTabFetchInstalled = true;
+  const nativeFetch = window.fetch.bind(window);
+  window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+    const rawUrl = input instanceof Request ? input.url : String(input);
+    let sameOrigin = false;
+    try { sameOrigin = rawUrl.startsWith('/') || new URL(rawUrl, window.location.href).origin === window.location.origin; } catch {}
+    if (!sameOrigin) return nativeFetch(input, init);
+    const headers = new Headers(input instanceof Request ? input.headers : undefined);
+    if (init?.headers) new Headers(init.headers).forEach((value, key) => headers.set(key, value));
+    headers.set('x-posven-session-mode', 'tab');
+    const sessionId = sessionStorage.getItem(POSVEN_TAB_SESSION_KEY);
+    if (sessionId) headers.set('x-posven-session', sessionId);
+    else headers.delete('x-posven-session');
+    return nativeFetch(input, { ...init, headers });
+  };
+}
+
 export default function LicoreriaPOS() {
   const router = useRouter();
   const [state, setState] = useState<AppState>(initialState);
@@ -68,6 +89,7 @@ export default function LicoreriaPOS() {
 
   useEffect(() => {
     setMounted(true);
+    installPosvenTabSessionFetch();
 
     const captureError = (e: ErrorEvent) => {
       try {
@@ -284,7 +306,7 @@ export default function LicoreriaPOS() {
     if (confirm('¿Cerrar sesión del sistema?')) {
       setLoading(true);
       try {
-        if (typeof sessionStorage !== 'undefined') sessionStorage.clear();
+        if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem(POSVEN_TAB_SESSION_KEY);
         await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
         router.push('/login');
       } catch (e) {
