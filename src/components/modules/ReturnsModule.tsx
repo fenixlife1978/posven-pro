@@ -97,10 +97,33 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
     processingRef.current = true;
     setIsProcessing(true);
     try {
-      const totalDevuelto = returnItems.reduce((s, i) => s + (i.cantidad * i.precioUnitUSD), 0);
-      const refundTotal = refundPayments.reduce((s, p) => s + (refundMethodCurrency(p.metodo) === 'BS' ? (Number(p.montoBS) || 0) / (Number(state.tasa) || 1) : (Number(p.montoUSD) || 0)), 0);
-      if (Math.abs(refundTotal - totalDevuelto) > 0.005) { alert('La distribución del reembolso debe sumar exactamente ' + Utils.fmtUSD(totalDevuelto) + '.'); return; }
-      const refundPaymentsFinal = refundPayments.map(p => ({ ...p, montoUSD: refundMethodCurrency(p.metodo) === 'BS' ? (Number(p.montoBS) || 0) / (Number(state.tasa) || 1) : (Number(p.montoUSD) || 0), montoBS: refundMethodCurrency(p.metodo) === 'BS' ? (Number(p.montoBS) || 0) : (Number(p.montoUSD) || 0) * (Number(state.tasa) || 1) }));
+      const totalDevuelto = returnItems.reduce((s, i) => (s + (i.cantidad * i.precioUnitUSD)), 0);
+      const saleIsCredit = String(selectedSale.metodoPago || '').toLowerCase() === 'credito' || String(selectedSale.type || '').toLowerCase() === 'credito';
+      const salePaidUSD = Array.isArray(selectedSale.payments)
+        ? selectedSale.payments.reduce((sum, p) => sum + (Number(p?.montoUSD) || 0), 0)
+        : 0;
+
+      // Una venta a crédito sin pagos no tiene dinero que devolver. La
+      // devolución se registra como nota de crédito y reduce CxC; no toca caja.
+      const refundPaymentsFinal = saleIsCredit && salePaidUSD <= 0.001
+        ? []
+        : refundPayments.map(p => ({
+            ...p,
+            montoUSD: refundMethodCurrency(p.metodo) === 'BS'
+              ? (Number(p.montoBS) || 0) / (Number(state.tasa) || 1)
+              : (Number(p.montoUSD) || 0),
+            montoBS: refundMethodCurrency(p.metodo) === 'BS'
+              ? (Number(p.montoBS) || 0)
+              : (Number(p.montoUSD) || 0) * (Number(state.tasa) || 1)
+          }));
+
+      if (refundPaymentsFinal.length) {
+        const refundTotal = refundPaymentsFinal.reduce((s, p) => s + (Number(p.montoUSD) || 0), 0);
+        if (Math.abs(refundTotal - totalDevuelto) > 0.005) {
+          alert('La distribución del reembolso debe sumar exactamente ' + Utils.fmtUSD(totalDevuelto) + '.');
+          return;
+        }
+      }
       const terminal = state.terminales.find(t => t.id === terminalId);
       const prefijo = Utils.prefijoCaja(terminal, state.terminales);
       const idDev = 'DEV-OP-' + Store.uid().toUpperCase().slice(0, 10);
@@ -112,7 +135,7 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
         fecha: ahoraStr,
         items: [...returnItems],
         totalUSD: totalDevuelto,
-        metodoReembolso: refundPaymentsFinal.length === 1 ? refundPaymentsFinal[0].metodo : 'mixto',
+        metodoReembolso: refundPaymentsFinal.length === 0 ? 'nota_credito' : (refundPaymentsFinal.length === 1 ? refundPaymentsFinal[0].metodo : 'mixto'),
         refundPayments: refundPaymentsFinal,
         motivo: reason,
         terminalId: terminalId || 'GLOBAL'
@@ -173,10 +196,21 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
       updateState({
         devoluciones: [devolucionFinal, ...(state.devoluciones || [])],
         ventas: nuevasVentas,
+        productos: Array.isArray(resultadoDev?.products) && resultadoDev.products.length
+          ? state.productos.map(p => resultadoDev.products.find((rp:any) => String(rp.id) === String(p.id)) || p)
+          : state.productos,
+        movimientos: Array.isArray(resultadoDev?.movements) && resultadoDev.movements.length
+          ? [...resultadoDev.movements, ...(state.movimientos || [])]
+          : state.movimientos,
+        cxc: resultadoDev?.debt
+          ? state.cxc.map((d:any) => String(d.id) === String(resultadoDev.debt.id) ? resultadoDev.debt : d)
+          : state.cxc,
         terminales: resultadoDev?.terminal?.id
           ? Utils.patchTerminal(state.terminales, resultadoDev.terminal.id, resultadoDev.terminal)
           : state.terminales,
-        libroDiario: [nuevoAsiento, ...(state.libroDiario || [])]
+        libroDiario: resultadoDev?.journal
+          ? [resultadoDev.journal, ...(state.libroDiario || [])]
+          : state.libroDiario
       });
 
       alert(`Devolución ${idDev} procesada con éxito`);
@@ -234,9 +268,21 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
       }
       const anulacionFinal = resultadoAnu?.operationDoc || nuevaAnulacion;
       updateState({
-        ventas: nuevasVentas, anulaciones: [anulacionFinal, ...(state.anulaciones || [])],
+        ventas: nuevasVentas,
+        anulaciones: [anulacionFinal, ...(state.anulaciones || [])],
+        productos: Array.isArray(resultadoAnu?.products) && resultadoAnu.products.length
+          ? state.productos.map(p => resultadoAnu.products.find((rp:any) => String(rp.id) === String(p.id)) || p)
+          : state.productos,
+        movimientos: Array.isArray(resultadoAnu?.movements) && resultadoAnu.movements.length
+          ? [...resultadoAnu.movements, ...(state.movimientos || [])]
+          : state.movimientos,
+        cxc: resultadoAnu?.debt
+          ? state.cxc.map((d:any) => String(d.id) === String(resultadoAnu.debt.id) ? resultadoAnu.debt : d)
+          : state.cxc,
         terminales: resultadoAnu?.terminal?.id ? Utils.patchTerminal(state.terminales, resultadoAnu.terminal.id, resultadoAnu.terminal) : state.terminales,
-        libroDiario: refundFinal.length ? [...nuevosAsientosDiario, ...(state.libroDiario || [])] : state.libroDiario
+        libroDiario: resultadoAnu?.journal
+          ? [resultadoAnu.journal, ...(state.libroDiario || [])]
+          : state.libroDiario
       });
       toast({ title: "Factura Anulada", description: `El documento ${selectedSale.id} ha sido invalidado bajo el registro ${idAnu}.` });
       setView('list'); setSelectedSale(null); setRefundPayments([{ metodo: 'efectivo_usd', montoUSD: 0, montoBS: 0 }]);
@@ -251,6 +297,19 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
     const pin = prompt('AUTORIZACIÓN REQUERIDA: Ingrese PIN de Seguridad:');
     if (pin !== state.pinDevolucion) return alert('PIN Incorrecto');
     if (!confirm(`¿ESTÁ SEGURO DE ANULAR LA FACTURA ${selectedSale.id}?\nEsta acción devolverá todo el stock al inventario.`)) return;
+    const saleIsCredit = String(selectedSale.metodoPago || '').toLowerCase() === 'credito' || String(selectedSale.type || '').toLowerCase() === 'credito';
+    const salePaidUSD = Array.isArray(selectedSale.payments)
+      ? selectedSale.payments.reduce((sum, p) => sum + (Number(p?.montoUSD) || 0), 0)
+      : 0;
+
+    // Si es crédito y no hubo pagos, la anulación cancela la obligación
+    // restante. No se pregunta por un reintegro de efectivo porque no existe
+    // dinero pagado que devolver.
+    if (saleIsCredit && salePaidUSD <= 0.001) {
+      await ejecutarAnulacion([]);
+      return;
+    }
+
     const representaEgreso = confirm("¿Esta anulación requiere el REINTEGRO DE DINERO físico al cliente?\n(Si confirma, se solicitará la distribución por método de pago)");
     if (representaEgreso) {
       setRefundPayments([{ metodo: (selectedSale.metodoPago || 'efectivo_usd') as PaymentMethod, montoUSD: Number(selectedSale.totalUSD) || 0, montoBS: (Number(selectedSale.totalUSD) || 0) * (Number(state.tasa) || 1) }]);
