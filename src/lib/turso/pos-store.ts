@@ -138,7 +138,7 @@ export async function listRecords(
   options: { limit?: number; terminalId?: string; estado?: string } = {},
 ): Promise<any[]> {
   assertTursoReady();
-  const limit = Math.min(Math.max(Number(options.limit) || 500, 1), 2000);
+  const limit = Math.min(Math.max(Number(options.limit) || 500, 1), 10000);
   const args: any[] = [];
   const filters: string[] = [];
   if (options.terminalId) {
