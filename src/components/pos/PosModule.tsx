@@ -63,7 +63,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     let cancelled = false;
     (async () => {
       try {
-        const response = await fetch('/api/turso/store?table=cxc&limit=2000', {
+        const response = await fetch('/api/turso/store?table=cxc&limit=10000', {
           credentials: 'include',
           cache: 'no-store',
         });
