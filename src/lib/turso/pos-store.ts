@@ -1412,15 +1412,23 @@ export async function repairReturnInventoryAndCxcTransaction(params:{saleId:stri
       };
       correctedOps.push({kind:operation.kind,doc:corrected,original:doc});
 
-      // Corregimos SOLO los movimientos generados por esta operación.
-      // Los identificamos por su referencia histórica que contiene el ID
-      // de la operación y la factura. Esto conserva cualquier otro movimiento.
-      const pattern='%'+String(doc.id||'')+'%';
+      // Corregimos SOLO los movimientos de esta operación. Las versiones
+      // antiguas usaban el ID temporal (DEV-OP/ANU-OP) dentro de la referencia,
+      // mientras la operación persistida usa el ID canónico; por eso la
+      // identificación se hace por factura + tipo + fecha, con fallback al ID.
+      const salePattern='%'+saleId+'%';
       const movementRows=(await tx.execute({
-        sql:"SELECT id,data_json FROM movimientos WHERE json_extract(data_json,'$.tipo') IN ('devolucion','anulacion') AND json_extract(data_json,'$.referencia') LIKE ?",
-        args:[pattern],
+        sql:"SELECT id,data_json FROM movimientos WHERE json_extract(data_json,'$.tipo')=? AND json_extract(data_json,'$.referencia') LIKE ? ORDER BY COALESCE(fecha,''),id",
+        args:[operation.kind==='ANULACION'?'anulacion':'devolucion',salePattern],
       })).rows.map(rowFromDb).filter(Boolean);
 
+      const operationRows=movementRows.filter((m:any)=>
+        String(m?.fecha||'')===String(doc?.fecha||'') ||
+        String(m?.referencia||'').includes(String(doc?.id||'')) ||
+        String(m?.referencia||'').includes(operation.kind==='ANULACION'?'ANULACIÓN TOTAL FACTURA':'DEVOLUCIÓN')
+      );
+      const candidateRows=operationRows.length?operationRows:movementRows.filter((m:any)=>!String(m?.reparadoPorOperacion||'').trim());
+      const usedMovementIds=new Set<string>();
       const byProduct=new Map<string,any>();
       for(const item of effective){
         const pid=String(item?.productoId||'');
@@ -1431,12 +1439,14 @@ export async function repairReturnInventoryAndCxcTransaction(params:{saleId:stri
         affectedProducts.add(pid);
       }
 
-      const usedMovementIds=new Set<string>();
-      for(const movement of movementRows){
+      for(const movement of candidateRows){
         const pid=String(movement?.productoId||'');
         const item=byProduct.get(pid);
         if(!item || usedMovementIds.has(String(movement.id))){
-          await tx.execute({sql:'DELETE FROM movimientos WHERE id=?',args:[String(movement.id)],wantRows:false});
+          // Solo eliminamos una fila si sabemos que pertenece a esta operación.
+          if(String(movement?.fecha||'')===String(doc?.fecha||'') || String(movement?.referencia||'').includes(String(doc?.id||''))){
+            await tx.execute({sql:'DELETE FROM movimientos WHERE id=?',args:[String(movement.id)],wantRows:false});
+          }
           continue;
         }
 
@@ -1445,31 +1455,33 @@ export async function repairReturnInventoryAndCxcTransaction(params:{saleId:stri
           : String(item?.estadoProducto||movement?.estadoProducto||'REINTEGRADO_STOCK')==='REINTEGRADO_STOCK';
 
         if(!reintegrado){
-          // La merma no cambia stock; conserva el registro de auditoría pero
-          // deja explícito el efecto físico en cero.
           await tx.execute(rowStatement('movimientos',{
             ...movement,
             cantidad:Number(item.cantidad)||0,
             stockDespues:Number(movement.stockAntes)||0,
             efectoStock:0,
+            reparadoPorOperacion:String(doc.id||''),
           }));
         }else{
           await tx.execute(rowStatement('movimientos',{
             ...movement,
             cantidad:Number(item.cantidad)||0,
             stockDespues:Number(movement.stockAntes||0)+(Number(item.cantidad)||0),
+            reparadoPorOperacion:String(doc.id||''),
           }));
         }
         usedMovementIds.add(String(movement.id));
       }
 
-      // Si una operación válida perdió su movimiento, lo reconstruimos para
-      // que el Kardex represente exactamente lo que muestran Devoluciones.
+      // Si la operación tenía una devolución/anulación válida pero no quedó
+      // movimiento físico persistido, lo reconstruimos exactamente una vez.
       for(const [pid,item] of byProduct){
         const reintegrado=operation.kind==='ANULACION'
           ? true
           : String(item?.estadoProducto||'REINTEGRADO_STOCK')==='REINTEGRADO_STOCK';
-        if(!reintegrado || [...usedMovementIds].some(id=>movementRows.some((m:any)=>String(m.id)===id&&String(m.productoId)===pid))) continue;
+        if(!reintegrado) continue;
+        const hasMovement=[...usedMovementIds].some(id=>candidateRows.some((m:any)=>String(m.id)===id&&String(m.productoId)===pid));
+        if(hasMovement) continue;
         const p=rowFromDb((await tx.execute(txSelect('productos',pid))).rows[0]);
         const movement={
           id:'REPAIR-MOV-'+crypto.randomUUID(),
@@ -1486,6 +1498,7 @@ export async function repairReturnInventoryAndCxcTransaction(params:{saleId:stri
           reparado:true,
         };
         await tx.execute(rowStatement('movimientos',movement));
+        usedMovementIds.add(String(movement.id));
       }
 
       if(JSON.stringify(corrected)!==JSON.stringify(doc))
