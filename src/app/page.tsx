@@ -51,16 +51,30 @@ function installPosvenTabSessionFetch() {
   (window as any).__posvenTabFetchInstalled = true;
   const nativeFetch = window.fetch.bind(window);
   window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
-    const rawUrl = input instanceof Request ? input.url : String(input);
+    // Solo intervenimos en llamadas a la API de PosVEN. El wrapper de sesión
+    // no debe alterar otros fetch del navegador ni asumir que el primer
+    // argumento es un Request con headers disponibles.
+    const rawUrl =
+      typeof input === 'string'
+        ? input
+        : input instanceof URL
+          ? input.toString()
+          : (input && typeof input === 'object' && 'url' in input ? String((input as Request).url) : '');
     let sameOrigin = false;
-    try { sameOrigin = rawUrl.startsWith('/') || new URL(rawUrl, window.location.href).origin === window.location.origin; } catch {}
-    if (!sameOrigin) return nativeFetch(input, init);
-    const headers = new Headers(input instanceof Request ? input.headers : undefined);
-    if (init?.headers) new Headers(init.headers).forEach((value, key) => headers.set(key, value));
+    try {
+      sameOrigin = rawUrl.startsWith('/') || new URL(rawUrl, window.location.href).origin === window.location.origin;
+    } catch {}
+    if (!sameOrigin || !rawUrl.startsWith('/api/')) return nativeFetch(input, init);
+
+    const sourceHeaders =
+      init?.headers ??
+      (input && typeof input === 'object' && 'headers' in input ? (input as Request).headers : undefined);
+    const headers = new Headers(sourceHeaders);
     headers.set('x-posven-session-mode', 'tab');
     const sessionId = sessionStorage.getItem(POSVEN_TAB_SESSION_KEY);
     if (sessionId) headers.set('x-posven-session', sessionId);
     else headers.delete('x-posven-session');
+
     return nativeFetch(input, { ...init, headers });
   };
 }
