@@ -85,7 +85,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     assertTursoReady();
-    const user = await requireUser();
+    const user = await requireUser(request);
     const body = await request.json();
 
     switch (String(body?.operation || '')) {
