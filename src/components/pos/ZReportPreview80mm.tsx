@@ -102,8 +102,16 @@ export default function ZReportPreview80mm({ data, onClose }: Props) {
   const printHtml = async () => {
     const html = printRef.current?.innerHTML;
     if (!html) return;
-    const css = '@page{size:80mm auto;margin:0}*{box-sizing:border-box}html,body{margin:0;padding:0;background:#fff}body{width:80mm;min-height:80mm;padding:7mm;color:#000;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;font-size:10px;line-height:1.25}.thermal-report{width:100%}.row{display:flex;justify-content:space-between;gap:8px}.row>:last-child{text-align:right}.center{text-align:center}.bold{font-weight:900}.dash{border-top:1px dashed #000;margin:8px 0}.double{border-top:3px double #000;margin:8px 0}';
-    const fullHtml = '<!doctype html><html><head><meta charset="UTF-8"><title>Reporte Z</title><style>' + css + '</style></head><body>' + html + '</body></html>';
+    const css = '@page{size:80mm auto;margin:0}*{box-sizing:border-box}html,body{margin:0;padding:0;background:#fff}body{width:80mm;min-height:80mm;color:#000;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;font-size:10px;line-height:1.25}.thermal-report{width:80mm;min-height:80mm;box-sizing:border-box}.flex{display:flex}.justify-between{justify-content:space-between}.gap-2{gap:8px}.text-center{text-align:center}.font-black{font-weight:900}.font-bold{font-weight:700}.border-t{border-top-width:1px}.border-dashed{border-top-style:dashed}.border-double{border-top-style:double}.border-black{border-color:#000}.my-2{margin-top:8px;margin-bottom:8px}.mt-0\\.5{margin-top:2px}.mt-1{margin-top:4px}.text-\\[8px\\]{font-size:8px}.text-\\[10px\\]{font-size:10px}.text-\\[13px\\]{font-size:13px}.tracking-tight{letter-spacing:-.025em}.leading-\\[1\\.25\\]{line-height:1.25}.p-\\[7mm\\]{padding:7mm}.mx-auto{margin-left:auto;margin-right:auto}.bg-white{background:#fff}.text-black{color:#000}.font-mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace}';
+    let appStyles = '';
+    try {
+      appStyles = Array.from(document.styleSheets).flatMap((sheet) => {
+        try { return Array.from(sheet.cssRules).map((rule) => rule.cssText); } catch { return []; }
+      }).join('\\n');
+    } catch {
+      appStyles = '';
+    }
+    const fullHtml = '<!doctype html><html><head><meta charset="UTF-8"><title>Reporte Z</title><style>' + appStyles + '\\n' + css + '</style></head><body>' + html + '</body></html>';
 
     if (window.electronAPI?.printTicket) {
       try {
