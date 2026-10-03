@@ -53,6 +53,7 @@ import ReturnsModule from '@/components/modules/ReturnsModule';
 import { Pagination } from '@/components/ui/pagination';
 import { cn } from '@/lib/utils';
 import CashZArqueoModal from '@/components/pos/CashZArqueoModal';
+import ZReportPreview80mm from '@/components/pos/ZReportPreview80mm';
 
 // ============================================================
 // UTILIDADES DE NORMALIZACIÓN DE CÉDULA (integradas)
@@ -604,7 +605,22 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     // Conservamos el snapshot previo para que el reporte tenga todos los
     // detalles calculados del período, y añadimos los datos definitivos del Z.
     setShowZArqueo(false);
-    setReportSnapshot({ ...data, ...nuevoZ, numeroZ: nuevoZ.numeroZ });
+    // Conservamos los datos de la sesión recién cerrada para la vista/impresión
+    // térmica 80 mm del Z. La caja ya queda cerrada; esto es solo el comprobante
+    // visual del cierre que acaba de ejecutarse.
+    const session = tc.cashData;
+    setReportSnapshot({
+      ...data,
+      ...nuevoZ,
+      numeroZ: nuevoZ.numeroZ,
+      generatedAt: ahora,
+      closedAt: ahora,
+      closedBy: data.cajeroNombre,
+      openedAt: session?.openDate || session?.openedAt || session?.fechaApertura || data.openedAt,
+      openedBy: session?.openedBy || session?.usuarioApertura || data.cajeroNombre,
+      differenceBs: Number(diff.bs) || 0,
+      differenceUSD: Number(diff.usd) || 0,
+    });
     setShowReportType('REPORT_Z');
   };
 
@@ -1498,6 +1514,16 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
           }}
           reportData={reportSnapshot}
           type="REPORT_X"
+        />
+      )}
+
+      {showReportType === 'REPORT_Z' && reportSnapshot && (
+        <ZReportPreview80mm
+          data={reportSnapshot}
+          onClose={() => {
+            setShowReportType(null);
+            setReportSnapshot(null);
+          }}
         />
       )}
 
