@@ -153,8 +153,8 @@ export default function ZReportPreview80mm({ data, onClose }: Props) {
             <div className="text-center font-bold mt-0.5">CONTROL DE CAJA</div>
             <div className="border-t border-dashed border-black my-2" />
 
-            <div className="text-center font-black">DISTRIBUIDORA LA GRAN BODEGA M&amp;S</div>
-            <div className="text-center">CONTROL OPERATIVO DE CAJA</div>
+            <div className="text-center font-black">{String(data?.businessName || data?.empresaNombre || data?.companyName || data?.nombreEmpresa || 'POSVEN PRO')}</div>
+            <div className="text-center">{String(data?.businessSubtitle || data?.empresaSubtitulo || 'CONTROL OPERATIVO DE CAJA')}</div>
             <div className="border-t border-dashed border-black my-2" />
 
             <div className="flex justify-between"><span>Terminal</span><b>{terminal}</b></div>
