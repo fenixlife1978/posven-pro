@@ -474,6 +474,21 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     const ventasCreditoUSD=vActivas.filter(v=>String(v.metodoPago||'').toLowerCase()==='credito'||(Array.isArray(v.payments)&&v.payments.some((p:any)=>p.metodo==='credito'))).reduce((s,v)=>s+(Number(v.totalUSD)||0),0);
     const cobrosDeudaUSD=cobroDeudaVentas.reduce((s,v)=>s+getSaleCurrencyTotals(v).usd,0);
     const cobrosDeudaBS=cobroDeudaVentas.reduce((s,v)=>s+getSaleCurrencyTotals(v).bs,0);
+    const cobrosDeudaPorMetodoMap: Record<string, { metodo:string; montoBS:number; montoUSD:number }> = {};
+    cobroDeudaVentas.forEach((v:any) => {
+      const pays = Array.isArray(v.payments) && v.payments.length
+        ? v.payments
+        : [{ metodo:v.metodoPago || 'otros', montoUSD:v.totalUSD, montoBS:v.totalBS }];
+      pays.forEach((p:any) => {
+        const metodo = normalizarMetodo(p?.metodo || p?.method || 'otros');
+        const key = metodo;
+        if (!cobrosDeudaPorMetodoMap[key]) cobrosDeudaPorMetodoMap[key] = { metodo, montoBS:0, montoUSD:0 };
+        const x = addPaymentTo(p);
+        cobrosDeudaPorMetodoMap[key].montoBS += x.bs;
+        cobrosDeudaPorMetodoMap[key].montoUSD += x.usd;
+      });
+    });
+    const cobrosDeudaPorMetodo = Object.values(cobrosDeudaPorMetodoMap);
 
     // Neto físico: solo efectivo físico de la moneda original. No se convierte
     // tarjeta/Zelle/Pago Móvil/transferencia a efectivo y se incluyen apertura,
@@ -487,7 +502,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
 
     const terminalName=resolvedTerminal?.nombre||'CAJA NO IDENTIFICADA';
 
-    return {brUSD,devUSD,descUSD,netUSD,igtfUSD,ivaUSD,baseImponibleUSD,exentoUSD,paymentMethods:paymentMethodsMap,manualSalidas:totalSalidasCaja,manualEntradas:totalEntradasCaja,manualSalidasBS:totalSalidasCajaBS,manualSalidasUSD:totalSalidasCajaUSD,manualEntradasBS:totalEntradasCajaBS,manualEntradasUSD:totalEntradasCajaUSD,cobrosDeudaUSD,cobrosDeudaBS,fondoAperturaUSD:fondoUSD,fondoAperturaBS:fondoBS,desdeFactura,hastaFactura,desdeNC,hastaNC,stats:{facturas:vActivas.length,devoluciones:dHoy.length,anulaciones:vAnuladas.length,ticketPromedio:vActivas.length?(netUSD/vActivas.length):0},fecha:Utils.ahora(),terminalName,terminalId:termId,cajeroId:assignedUserId || sessionUser?.uid || sessionUser?.id || '',cajeroNombre,numeroZ:(tc.ultimoZ||0)+1,acumuladoHistoricoUSD:(tc.acumuladoHistorico||0)+netUSD,totalVentasUSD:brUSD,metodosArqueo,ventasCreditoUSD,totalNetoEfectivoBS,totalNetoEfectivoUSD,estimadoEfectivoBS:{entradas:totalEntradasCajaBS,egresos:totalSalidasCajaBS,total:totalNetoEfectivoBS},estimadoEfectivoUSD:{entradas:totalEntradasCajaUSD,egresos:totalSalidasCajaUSD,total:totalNetoEfectivoUSD},tasaBCV:freshState.tasa||0};
+    return {brUSD,devUSD,descUSD,netUSD,igtfUSD,ivaUSD,baseImponibleUSD,exentoUSD,paymentMethods:paymentMethodsMap,cobrosDeudaPorMetodo,manualSalidas:totalSalidasCaja,manualEntradas:totalEntradasCaja,manualSalidasBS:totalSalidasCajaBS,manualSalidasUSD:totalSalidasCajaUSD,manualEntradasBS:totalEntradasCajaBS,manualEntradasUSD:totalEntradasCajaUSD,cobrosDeudaUSD,cobrosDeudaBS,fondoAperturaUSD:fondoUSD,fondoAperturaBS:fondoBS,desdeFactura,hastaFactura,desdeNC,hastaNC,stats:{facturas:vActivas.length,devoluciones:dHoy.length,anulaciones:vAnuladas.length,ticketPromedio:vActivas.length?(netUSD/vActivas.length):0},fecha:Utils.ahora(),terminalName,terminalId:termId,cajeroId:assignedUserId || sessionUser?.uid || sessionUser?.id || '',cajeroNombre,numeroZ:(tc.ultimoZ||0)+1,acumuladoHistoricoUSD:(tc.acumuladoHistorico||0)+netUSD,totalVentasUSD:brUSD,metodosArqueo,ventasCreditoUSD,totalNetoEfectivoBS,totalNetoEfectivoUSD,estimadoEfectivoBS:{entradas:totalEntradasCajaBS,egresos:totalSalidasCajaBS,total:totalNetoEfectivoBS},estimadoEfectivoUSD:{entradas:totalEntradasCajaUSD,egresos:totalSalidasCajaUSD,total:totalNetoEfectivoUSD},tasaBCV:freshState.tasa||0};
   };
 
   const handleOpenReport = async (type: 'REPORT_X' | 'REPORT_Z') => {
