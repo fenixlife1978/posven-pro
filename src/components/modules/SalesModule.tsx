@@ -52,6 +52,7 @@ import { Utils, Store } from '@/lib/db-store';
 import ReturnsModule from '@/components/modules/ReturnsModule';
 import { Pagination } from '@/components/ui/pagination';
 import { cn } from '@/lib/utils';
+import CashZArqueoModal from '@/components/pos/CashZArqueoModal';
 
 // ============================================================
 // UTILIDADES DE NORMALIZACIÓN DE CÉDULA (integradas)
@@ -148,6 +149,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   const [showReportType, setShowReportType] = useState<'REPORT_X' | 'REPORT_Z' | null>(null);
   const [reportSnapshot, setReportSnapshot] = useState<any>(null);
   const [reportLoadingType, setReportLoadingType] = useState<'REPORT_X' | 'REPORT_Z' | null>(null);
+  const [showZArqueo, setShowZArqueo] = useState(false);
   const [globalCreditCustomer, setGlobalCreditCustomer] = useState<{ name: string; cedula?: string; totalUSD: number; totalBS: number } | null>(null);
   const [cliente, setCliente] = useState('Consumidor final');
   const [isFullScreen, setIsFullScreen] = useState(false);
@@ -511,7 +513,11 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       
       const data = getFreshReportData();
       setReportSnapshot(data);
-      setShowReportType(type);
+      if (type === 'REPORT_Z') {
+        setShowZArqueo(true);
+      } else {
+        setShowReportType(type);
+      }
     } catch (e) {
       console.error('Error abriendo reporte X/Z:', e);
       toast({ variant: 'destructive', title: 'Error', description: 'No se pudieron cargar los datos del reporte. Reintenta.' });
@@ -520,33 +526,54 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     }
   };
 
-  const ejecutarCierreZ = () => {
+  const ejecutarCierreZ = (real: Record<string, string> = {}, diffOverride?: { bs: number; usd: number }) => {
     const data = reportSnapshot;
     if (!data) return;
     const ahora = Utils.ahora();
-    // Correlativo Z de ESTA caja (cada caja lleva su propia secuencia).
     const tc = Utils.getTerminalCash(currentTerminal);
     const numeroZ = tc.ultimoZ + 1;
     const termId = currentTerminal?.id || 'GLOBAL';
+    const diff = diffOverride || { bs: 0, usd: 0 };
+
+    // El arqueo previo sigue la misma regla de tienda-pos: cada medio de pago
+    // se concilia en su moneda original y el cierre físico usa efectivo Bs/USD.
+    const realBs = Number(String(real.efectivo_bs || '').replace(',', '.')) || 0;
+    const realUSD = Number(String(real.efectivo_usd || '').replace(',', '.')) || 0;
+
     const nuevoZ: ReportZ = {
-      id: 'Z-' + String(numeroZ).padStart(6, '0'), fecha: ahora, numeroZ, terminalId: termId, terminalName: data.terminalName,
-      desdeFactura: data.desdeFactura, hastaFactura: data.hastaFactura, desdeNotaCredito: data.desdeNC, hastaNotaCredito: data.hastaNC,
-      cantidadAnuladas: data.stats.anulaciones, ventaBrutaUSD: data.brUSD, descuentoUSD: data.descUSD, devolucionesUSD: data.devUSD,
-      ventaNetaUSD: data.netUSD, baseImponibleUSD: data.baseImponibleUSD, ivaUSD: data.ivaUSD, exentoUSD: data.exentoUSD,
-      igtfUSD: data.igtfUSD, metodosPago: { ...data.paymentMethods },
+      id: 'Z-' + String(numeroZ).padStart(6, '0'),
+      fecha: ahora,
+      numeroZ,
+      terminalId: termId,
+      terminalName: data.terminalName,
+      desdeFactura: data.desdeFactura,
+      hastaFactura: data.hastaFactura,
+      desdeNotaCredito: data.desdeNC,
+      hastaNotaCredito: data.hastaNC,
+      cantidadAnuladas: data.stats.anulaciones,
+      ventaBrutaUSD: data.brUSD,
+      descuentoUSD: data.descUSD,
+      devolucionesUSD: data.devUSD,
+      ventaNetaUSD: data.netUSD,
+      baseImponibleUSD: data.baseImponibleUSD,
+      ivaUSD: data.ivaUSD,
+      exentoUSD: data.exentoUSD,
+      igtfUSD: data.igtfUSD,
+      metodosPago: { ...data.paymentMethods },
       cobrosDeudaUSD: Number(data.cobrosDeudaUSD) || 0,
-      // Se conserva el campo histórico BS por compatibilidad de datos, pero el
-      // recibo Z ya no lo presenta. El importe físico final se calcula por moneda.
       cobrosDeudaBS: Number(data.cobrosDeudaBS) || 0,
-      totalNetoEfectivoBS: Number(data.totalNetoEfectivoBS) || 0,
-      totalNetoEfectivoUSD: Number(data.totalNetoEfectivoUSD) || 0,
-      salidasCajaUSD: data.manualSalidas, entradasCajaUSD: data.manualEntradas,
-      fondoAperturaUSD: data.fondoAperturaUSD, fondoAperturaBS: data.fondoAperturaBS, acumuladoHistoricoUSD: data.acumuladoHistoricoUSD, stats: { ...data.stats }
+      totalNetoEfectivoBS: realBs,
+      totalNetoEfectivoUSD: realUSD,
+      salidasCajaUSD: data.manualSalidas,
+      entradasCajaUSD: data.manualEntradas,
+      fondoAperturaUSD: data.fondoAperturaUSD,
+      fondoAperturaBS: data.fondoAperturaBS,
+      acumuladoHistoricoUSD: data.acumuladoHistoricoUSD,
+      stats: { ...data.stats }
     };
-    
+
     if (typeof localStorage !== 'undefined') localStorage.removeItem('posven_apertura_done');
-    
-    // El corte Z solo resetea la ventana/caja de ESTE terminal, nunca de las demás.
+
     updateState({
       reportesZ: [...(state.reportesZ || []), nuevoZ],
       terminales: Utils.patchTerminal(state.terminales, termId, (() => {
@@ -554,11 +581,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         const sesion = terminal?.cashData;
         const historial = Array.isArray(terminal?.cashHistory) ? terminal.cashHistory : [];
         const cierreSesion = sesion
-          ? {
-              ...sesion,
-              closeDate: ahora,
-              closeNotes: 'Cierre por Corte Z ' + nuevoZ.id,
-            }
+          ? { ...sesion, closeDate: ahora, closeNotes: 'Cierre por Corte Z ' + nuevoZ.id }
           : null;
         return {
           ultimoZ: numeroZ,
@@ -566,16 +589,17 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
           acumuladoHistorico: data.acumuladoHistoricoUSD,
           fondoCajaHoyBS: 0,
           fondoCajaHoyUSD: 0,
-          // El Z es el evento que cierra la jornada. La siguiente entrada
-          // del cajero debe volver a mostrar Apertura de Caja.
           isCashOpen: false,
           cashData: null,
           cashHistory: cierreSesion ? [cierreSesion, ...historial] : historial,
         };
       })())
     });
-    toast({ title: `Cierre Fiscal ${nuevoZ.id} Exitoso` });
+
+    toast({ title: `Corte Z ${nuevoZ.id} ejecutado`, description: `Diferencia Bs. ${Utils.fmtBS(diff.bs)} · USD ${Utils.fmtUSD(diff.usd)}` });
+    setShowZArqueo(false);
     setShowReportType(null);
+    setReportSnapshot(null);
   };
 
   const handleOpenGlobalCreditPayment = (clientName: string, debts: Debt[]) => {
@@ -1459,15 +1483,28 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         />
       )}
       
-      {showReportType && reportSnapshot && (
-        <ReceiptModal 
-          isOpen={!!showReportType} 
-          onClose={() => { 
-            if (showReportType === 'REPORT_Z') ejecutarCierreZ(); 
-            setShowReportType(null); 
-          }} 
-          reportData={reportSnapshot} 
-          type={showReportType} 
+      {showReportType === 'REPORT_X' && reportSnapshot && (
+        <ReceiptModal
+          isOpen={true}
+          onClose={() => {
+            setShowReportType(null);
+            setReportSnapshot(null);
+          }}
+          reportData={reportSnapshot}
+          type="REPORT_X"
+        />
+      )}
+
+      {showZArqueo && reportSnapshot && (
+        <CashZArqueoModal
+          open={showZArqueo}
+          report={reportSnapshot}
+          onCancel={() => {
+            setShowZArqueo(false);
+            setShowReportType(null);
+            setReportSnapshot(null);
+          }}
+          onConfirm={(real, diff) => ejecutarCierreZ(real, diff)}
         />
       )}
       
