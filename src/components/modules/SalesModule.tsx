@@ -613,6 +613,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       ...data,
       ...nuevoZ,
       numeroZ: nuevoZ.numeroZ,
+      empresa: state.empresa,
       generatedAt: ahora,
       closedAt: ahora,
       closedBy: data.cajeroNombre,
