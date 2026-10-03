@@ -597,9 +597,15 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     });
 
     toast({ title: `Corte Z ${nuevoZ.id} ejecutado`, description: `Diferencia Bs. ${Utils.fmtBS(diff.bs)} · USD ${Utils.fmtUSD(diff.usd)}` });
+
+    // Después de confirmar el arqueo, el Z NO desaparece sin comprobante:
+    // se muestra inmediatamente la vista previa térmica 80mm del Reporte Z,
+    // usando el mismo ReceiptModal que maneja la impresión térmica del POS.
+    // Conservamos el snapshot previo para que el reporte tenga todos los
+    // detalles calculados del período, y añadimos los datos definitivos del Z.
     setShowZArqueo(false);
-    setShowReportType(null);
-    setReportSnapshot(null);
+    setReportSnapshot({ ...data, ...nuevoZ, numeroZ: nuevoZ.numeroZ });
+    setShowReportType('REPORT_Z');
   };
 
   const handleOpenGlobalCreditPayment = (clientName: string, debts: Debt[]) => {
