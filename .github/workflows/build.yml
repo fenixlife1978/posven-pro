@@ -61,8 +61,10 @@ jobs:
         env:
           TURSO_MIGRATION_BUILD: ${{ (github.ref == 'refs/heads/turso-migration' || github.ref == 'refs/heads/optimización-turso') && '1' || '0' }}
 
-      - name: Verify Next.js output
-        if: github.ref != 'refs/heads/turso-migration'
+      # La salida estática solo aplica a ramas que compilan con export.
+      # Las ramas Turso usan el runtime de servidor y no deben exigir out/index.html.
+      - name: Verify static Next.js output
+        if: github.ref != 'refs/heads/turso-migration' && github.ref != 'refs/heads/optimización-turso'
         shell: pwsh
         run: |
           echo "=== Verificando bundle Next.js estático ==="
@@ -80,21 +82,31 @@ jobs:
             exit 1
           }
 
+      - name: Verify Turso server build output
+        if: github.ref == 'refs/heads/turso-migration' || github.ref == 'refs/heads/optimización-turso'
+        shell: pwsh
+        run: |
+          echo "=== Verificando salida Next.js para runtime de servidor ==="
+          if ((Test-Path ".next/BUILD_ID") -and (Test-Path ".next/server")) {
+            Write-Host "✅ Build de servidor encontrado"
+          } else {
+            Write-Host "❌ ERROR: faltan artefactos .next/BUILD_ID o .next/server"
+            exit 1
+          }
+
       - name: Build Electron installer
         shell: pwsh
         run: |
-          # Solo publica en GitHub Releases cuando es push a main/master o tag.
-          # Para PRs y feature branches, solo sube el .exe como artefacto.
+          # En ramas de trabajo solo se sube el .exe como artefacto; no se publica release.
           $publish = "never"
-          if ("${{ github.event_name }}" -ne "pull_request" -and "${{ github.ref }}" -notlike "refs/heads/fix/*" -and "${{ github.ref }}" -notlike "refs/heads/feature/*") {
+          if ("${{ github.event_name }}" -ne "pull_request" -and "${{ github.ref }}" -notlike "refs/heads/fix/*" -and "${{ github.ref }}" -notlike "refs/heads/feature/*" -and "${{ github.ref }}" -notlike "refs/heads/optimización-turso" -and "${{ github.ref }}" -notlike "refs/heads/turso-migration") {
             $publish = "always"
-            Write-Host "ℹ️  main/master/tag: publicación completa con release"
+            Write-Host "ℹ️ Publicación habilitada para main/master/tag"
           } else {
-            Write-Host "ℹ️  PR/feature branch: solo artefacto, no release"
+            Write-Host "ℹ️ Rama de trabajo/PR: solo artefacto, sin publicar release"
           }
 
-          # GitHub/Electron puede responder HTTP 5xx temporalmente al descargar
-          # el runtime. Reintentar sin cambiar versión ni configuración.
+          # Reintentar descargas del runtime ante errores transitorios de GitHub.
           for ($attempt = 1; $attempt -le 3; $attempt++) {
             Write-Host "🔧 electron-builder intento $attempt de 3"
             npx electron-builder --win --publish $publish
@@ -103,7 +115,7 @@ jobs:
               exit 0
             }
             if ($attempt -lt 3) {
-              Write-Host "⚠️  Falló electron-builder. Reintentando en 15 segundos..."
+              Write-Host "⚠️ Falló electron-builder. Reintentando en 15 segundos..."
               Start-Sleep -Seconds 15
             }
           }
