@@ -360,7 +360,29 @@ export async function createSaleTransaction(params: {
 
   return tursoInteractiveTransaction(async tx => {
     const opCheck = await tx.execute({
-      sql: 'SELECT id FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',
+      sql: 'SELECT id,data_json FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',
+      args: ['VENTA', operationId],
+    });
+    // Si el servidor confirmó la venta pero la respuesta se perdió, devolver la
+    // venta original. Nunca volver a descontar stock ni duplicar caja/CxC.
+    if (opCheck.rows.length) {
+      const operation = rowFromDb(opCheck.rows[0]);
+      let metadata: any = {};
+      try { metadata = JSON.parse(String(operation?.data_json || '{}')); } catch { metadata = {}; }
+      const existingSaleId = String(metadata?.referencia || '');
+      if (!existingSaleId) throw new Error('La operación ya existe pero no contiene referencia de venta; requiere revisión.');
+      const existingSale = rowFromDb((await tx.execute(txSelect('ventas', existingSaleId))).rows[0]);
+      if (!existingSale) throw new Error('La operación ya existe pero su venta no está disponible; requiere revisión.');
+      return {
+        sale: existingSale,
+        debt: null,
+        journals: [],
+        products: [],
+        nextNumber: null,
+        terminal: null,
+        idempotentReplay: true,
+      };
+    }
       args: ['VENTA', operationId],
     });
     if (opCheck.rows.length) throw new Error('Esta operación ya fue procesada. No se registrará nuevamente.');
