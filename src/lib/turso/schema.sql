@@ -188,3 +188,14 @@ CREATE TABLE IF NOT EXISTS migration_runs (
   counts_json TEXT NOT NULL DEFAULT '{}',
   notes TEXT
 );
+
+-- Índices para evitar escaneos completos en listados cronológicos y filtros por caja.
+CREATE INDEX IF NOT EXISTS idx_productos_updated_at ON productos(updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ventas_fecha ON ventas(fecha DESC);
+CREATE INDEX IF NOT EXISTS idx_ventas_terminal_fecha ON ventas(json_extract(data_json,'$.terminalId'), fecha DESC);
+CREATE INDEX IF NOT EXISTS idx_libro_diario_fecha ON libro_diario(fecha DESC);
+CREATE INDEX IF NOT EXISTS idx_libro_diario_terminal_fecha ON libro_diario(json_extract(data_json,'$.terminalId'), fecha DESC);
+CREATE INDEX IF NOT EXISTS idx_movimientos_fecha ON movimientos(fecha DESC);
+CREATE INDEX IF NOT EXISTS idx_devoluciones_fecha ON devoluciones(fecha DESC);
+CREATE INDEX IF NOT EXISTS idx_anulaciones_fecha ON anulaciones(fecha DESC);
+CREATE INDEX IF NOT EXISTS idx_compras_fecha ON compras(fecha DESC);
