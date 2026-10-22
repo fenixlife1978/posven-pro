@@ -59,7 +59,7 @@ jobs:
       - name: Build Next.js
         run: npm run build
         env:
-          TURSO_MIGRATION_BUILD: ${{ github.ref == 'refs/heads/turso-migration' && '1' || '0' }}
+          TURSO_MIGRATION_BUILD: ${{ (github.ref == 'refs/heads/turso-migration' || github.ref == 'refs/heads/optimización-turso') && '1' || '0' }}
 
       - name: Verify Next.js output
         if: github.ref != 'refs/heads/turso-migration'
