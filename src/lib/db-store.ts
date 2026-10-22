@@ -31,6 +31,20 @@ const rtdbGet: any = servidorTursoRetirado;
 
 const STORAGE_KEY = 'posven_pro_session_data_cache';
 const PAGE_SIZE = 50;
+
+// Caché efímera de respuestas GET para evitar lecturas duplicadas al abrir/cambiar módulos.
+// Se invalida en cuanto una operación de escritura confirma éxito; nunca confirma operaciones.
+const TURSO_READ_CACHE_MS = 10_000;
+const tursoReadCache = new Map<string, { expiresAt: number; value: any }>();
+function readCachedTurso(key: string): any | undefined {
+  const item = tursoReadCache.get(key);
+  if (!item) return undefined;
+  if (item.expiresAt <= Date.now()) { tursoReadCache.delete(key); return undefined; }
+  return JSON.parse(JSON.stringify(item.value));
+}
+function cacheTursoRead(key: string, value: any): void {
+  tursoReadCache.set(key, { expiresAt: Date.now() + TURSO_READ_CACHE_MS, value: JSON.parse(JSON.stringify(value)) });
+}
 const CONFIG_COLLECTION = 'config';
 const CONFIG_DOC_ID = 'general';
 const CATALOGOS_COLLECTION = 'catalogos';
@@ -85,6 +99,8 @@ async function tryTursoOperation(operation: string, payload: any): Promise<any |
   let body: any = null;
   try { body = await response.json(); } catch {}
   if (!response.ok || body?.ok === false) throw new Error(String(body?.error || ('Turso rechazó la operación (' + response.status + ').')));
+  // Toda escritura confirmada invalida las lecturas previas del navegador.
+  tursoReadCache.clear();
   return body;
 }
 
@@ -92,24 +108,32 @@ async function tryTursoSpecialRead(kind: 'config' | 'catalog', name = ''): Promi
   if (typeof window === 'undefined') return null;
   const params = new URLSearchParams({ special: kind });
   if (kind === 'catalog') params.set('name', name);
+  const cacheKey = '/api/turso/store?' + params.toString();
+  const cached = readCachedTurso(cacheKey);
+  if (cached !== undefined) return cached;
   let response: Response;
   try { response = await fetch('/api/turso/store?' + params.toString(), { credentials: 'include', cache: 'no-store' }); }
   catch { throw new Error('No se pudo consultar Turso.'); }
   if (response.status === 503) throw new Error('Turso no está configurado o no está disponible. servidor Turso no se utilizará como respaldo.');
   let body: any = null; try { body = await response.json(); } catch {}
   if (!response.ok || body?.ok === false) throw new Error(String(body?.error || 'Turso rechazó la lectura.'));
-  return kind === 'config' ? (body.config || {}) : (Array.isArray(body.lista) ? body.lista : []);
+  const value = kind === 'config' ? (body.config || {}) : (Array.isArray(body.lista) ? body.lista : []);
+  cacheTursoRead(cacheKey, value);
+  return value;
 }
 async function tryTursoRead(table: string, options: { limit?: number; terminalId?: string; estado?: string } = {}): Promise<any[] | null> {
   if (typeof window === 'undefined') return null;
+  const params = new URLSearchParams();
+  params.set('table', table);
+  if (options.limit) params.set('limit', String(options.limit));
+  if (options.terminalId) params.set('terminalId', String(options.terminalId));
+  if (options.estado) params.set('estado', String(options.estado));
+  const cacheKey = '/api/turso/store?' + params.toString();
+  const cached = readCachedTurso(cacheKey);
+  if (cached !== undefined) return cached;
   let response: Response;
   try {
-    const params = new URLSearchParams();
-    params.set('table', table);
-    if (options.limit) params.set('limit', String(options.limit));
-    if (options.terminalId) params.set('terminalId', String(options.terminalId));
-    if (options.estado) params.set('estado', String(options.estado));
-    response = await fetch('/api/turso/store?' + params.toString(), {
+    response = await fetch(cacheKey, {
       method: 'GET',
       credentials: 'include',
       cache: 'no-store',
@@ -123,7 +147,9 @@ async function tryTursoRead(table: string, options: { limit?: number; terminalId
   if (!response.ok || body?.ok === false) {
     throw new Error(String(body?.error || ('Turso rechazó la lectura (' + response.status + ').')));
   }
-  return Array.isArray(body?.records) ? body.records : [];
+  const records = Array.isArray(body?.records) ? body.records : [];
+  cacheTursoRead(cacheKey, records);
+  return records;
 }
 
 
