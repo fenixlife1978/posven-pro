@@ -38,15 +38,17 @@ function load(): OfflineOperation[] {
   } catch { return []; }
 }
 
-function save(items: OfflineOperation[]) {
-  if (typeof window === 'undefined') return;
+function save(items: OfflineOperation[]): boolean {
+  if (typeof window === 'undefined') return false;
   try {
     localStorage.setItem(QUEUE_KEY, JSON.stringify(items));
   } catch (e) {
-    // Do not silently pretend the operation was durably queued.
+    // A caller must never report an operation as queued if persistence failed.
     console.error('[offline-queue] No se pudo guardar la cola:', e);
+    return false;
   }
   listeners.forEach(fn => { try { fn(items); } catch {} });
+  return true;
 }
 
 export function getOfflineQueue(): OfflineOperation[] { return load(); }
@@ -57,7 +59,9 @@ export function enqueueOfflineOperation(type: string, payload: any, operationId:
   const existing = items.find(x => x.operationId === operationId);
   if (existing) return existing;
   const item: OfflineOperation = { operationId, type, payload, createdAt: new Date().toISOString(), status: 'pending', attempts: 0 };
-  save([...items, item]);
+  if (!save([...items, item])) {
+    throw new Error('No se pudo guardar la operación pendiente en este equipo. Libera espacio del navegador y vuelve a intentarlo; la operación no quedó encolada.');
+  }
   return item;
 }
 
