@@ -366,9 +366,8 @@ export async function createSaleTransaction(params: {
     // Si el servidor confirmó la venta pero la respuesta se perdió, devolver la
     // venta original. Nunca volver a descontar stock ni duplicar caja/CxC.
     if (opCheck.rows.length) {
-      const operation = rowFromDb(opCheck.rows[0]);
       let metadata: any = {};
-      try { metadata = JSON.parse(String(operation?.data_json || '{}')); } catch { metadata = {}; }
+      try { metadata = JSON.parse(String(opCheck.rows[0]?.data_json || '{}')); } catch { metadata = {}; }
       const existingSaleId = String(metadata?.referencia || '');
       if (!existingSaleId) throw new Error('La operación ya existe pero no contiene referencia de venta; requiere revisión.');
       const existingSale = rowFromDb((await tx.execute(txSelect('ventas', existingSaleId))).rows[0]);
