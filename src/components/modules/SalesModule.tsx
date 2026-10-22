@@ -992,6 +992,21 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         cajeroId: (state as any).user?.id || (state as any).user?.uid
       });
 
+      if (result?.queuedOffline === true) {
+        // La operación ya quedó persistida en la cola local, pero todavía no
+        // existe una factura confirmada por Turso. No mostrar recibo definitivo.
+        if (typeof window !== 'undefined') sessionStorage.removeItem('posven_current_cart');
+        setPagos([]);
+        setCliente('Consumidor final');
+        setSelectedProductDisplay(null);
+        updateState({ carrito: [] });
+        toast({
+          title: 'Venta pendiente de sincronización',
+          description: 'La venta quedó guardada en este navegador. No es todavía una factura confirmada; se enviará a Turso cuando vuelva la conexión.'
+        });
+        return;
+      }
+
       if (!result?.sale) throw new Error('La venta no pudo confirmarse en la base de datos.');
 
       if (typeof window !== 'undefined') sessionStorage.removeItem('posven_current_cart');
