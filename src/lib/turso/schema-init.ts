@@ -34,17 +34,34 @@ const SCHEMA_STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS migration_runs (id TEXT PRIMARY KEY, source TEXT NOT NULL, backup_version INTEGER, started_at TEXT NOT NULL, finished_at TEXT, status TEXT NOT NULL, counts_json TEXT NOT NULL DEFAULT '{}', notes TEXT)`,
 ];
 
+// Índices de acceso para reducir lecturas completas en filtros por caja y listados cronológicos.
+// Se aplican también a bases existentes; IF NOT EXISTS evita recrearlos.
+const OPTIMIZATION_INDEXES = [
+  `CREATE INDEX IF NOT EXISTS idx_productos_updated_at ON productos(updated_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_ventas_fecha ON ventas(fecha DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_ventas_terminal_fecha ON ventas(json_extract(data_json,'$.terminalId'), fecha DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_libro_diario_fecha ON libro_diario(fecha DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_libro_diario_terminal_fecha ON libro_diario(json_extract(data_json,'$.terminalId'), fecha DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_movimientos_fecha ON movimientos(fecha DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_devoluciones_fecha ON devoluciones(fecha DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_anulaciones_fecha ON anulaciones(fecha DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_compras_fecha ON compras(fecha DESC)`,
+];
+
 let initialized = false;
 let initializing: Promise<void> | null = null;
 
 async function initialize() {
   const probe = await tursoExecute({ sql: "SELECT name FROM sqlite_master WHERE type='table' AND name='users' LIMIT 1" });
   if (probe.rows.length) {
+    // Las bases existentes también reciben los índices de rendimiento sin borrar ni migrar datos.
+    await tursoBatch(OPTIMIZATION_INDEXES.map(sql => ({ sql, wantRows: false })));
     initialized = true;
     return;
   }
 
   await tursoBatch(SCHEMA_STATEMENTS.map(sql => ({ sql, wantRows: false })));
+  await tursoBatch(OPTIMIZATION_INDEXES.map(sql => ({ sql, wantRows: false })));
 
   const verify = await tursoExecute({ sql: "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('users','sessions','terminales','ventas','caja') ORDER BY name" });
   const names = new Set(verify.rows.map((row: any) => String(row.name)));
