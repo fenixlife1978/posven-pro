@@ -382,9 +382,6 @@ export async function createSaleTransaction(params: {
         idempotentReplay: true,
       };
     }
-      args: ['VENTA', operationId],
-    });
-    if (opCheck.rows.length) throw new Error('Esta operación ya fue procesada. No se registrará nuevamente.');
 
     const terminal = terminalId
       ? rowFromDb((await tx.execute(txSelect('terminales', terminalId))).rows[0])
