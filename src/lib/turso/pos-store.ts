@@ -708,11 +708,10 @@ export async function applyInventoryMovementsTransaction(params: {
 }
 
 
-function assertTerminalAccess(user: { rol: string; id: string; firebaseUid?: string | null }, terminal: any) {
+function assertTerminalAccess(user: { rol: string; id: string }, terminal: any) {
   if (user.rol === 'administrador') return;
   const assigned = String(terminal?.usuarioId || '');
-  const allowed = new Set([String(user.id), user.firebaseUid ? String(user.firebaseUid) : '']);
-  if (!assigned || !allowed.has(assigned)) throw new Error('Esta terminal no está asignada al usuario autenticado.');
+  if (!assigned || assigned !== String(user.id)) throw new Error('Esta terminal no está asignada al usuario autenticado.');
 }
 
 export async function patchTerminalTransaction(params: {
