@@ -94,7 +94,12 @@ jobs:
             exit 1
           }
 
+      # IMPORTANTE: no empaquetar el build Turso como si fuera la app estática legacy.
+      # main.js aún carga out/ y no arranca el runtime .next; generar un EXE aquí daría
+      # un instalador que puede abrir en blanco o no ejecutar las API. Se reactivará
+      # cuando el runtime de escritorio + SQLite/outbox esté integrado y probado.
       - name: Build Electron installer
+        if: github.ref != 'refs/heads/turso-migration' && github.ref != 'refs/heads/optimización-turso'
         shell: pwsh
         run: |
           # En ramas de trabajo solo se sube el .exe como artefacto; no se publica release.
@@ -126,6 +131,7 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
       - name: Verify installer exists
+        if: github.ref != 'refs/heads/turso-migration' && github.ref != 'refs/heads/optimización-turso'
         shell: pwsh
         run: |
           echo "=== Verificando instalador generado ==="
@@ -139,6 +145,7 @@ jobs:
           }
 
       - name: Upload installer artifact
+        if: github.ref != 'refs/heads/turso-migration' && github.ref != 'refs/heads/optimización-turso'
         uses: actions/upload-artifact@v4
         continue-on-error: true
         with:
