@@ -1764,13 +1764,36 @@ export const Store = {
   },
 
   async createSaleTransaction(params: any): Promise<any> {
-    // El POS opera exclusivamente contra Turso. Este puente faltaba en el
-    // Store aunque la transacción y el endpoint de Turso sí existen.
+    // Las ventas no se bloquean por una caída de red. Se encolan con el mismo
+    // operationId y se confirman en Turso al reconectar. La cola solo indica
+    // "pendiente de sincronizar"; no afirma que Turso ya haya confirmado la venta.
     if (typeof window === 'undefined') {
-      throw new Error('Las ventas solo pueden registrarse desde el cliente mediante Turso.');
+      throw new Error('Las ventas solo pueden registrarse desde el cliente.');
     }
 
-    const result = await tryTursoOperation('sale', params);
+    if (!params?.operationId) {
+      throw new Error('La venta requiere un identificador único para evitar duplicados al sincronizar.');
+    }
+
+    if (params.fromOfflineQueue !== true && typeof navigator !== 'undefined' && navigator.onLine === false) {
+      enqueueOfflineOperation('VENTA', { ...params, fromOfflineQueue: true }, String(params.operationId));
+      return { queuedOffline: true, operationId: String(params.operationId), pendingSync: true };
+    }
+
+    let result: any;
+    try {
+      result = await tryTursoOperation('sale', params);
+    } catch (error) {
+      // Si la red cae durante el envío, conservar la operación localmente.
+      // El endpoint usa operationId para idempotencia; la misma clave se
+      // reutiliza al reintentar, evitando crear otra venta.
+      if (params.fromOfflineQueue === true) throw error;
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        enqueueOfflineOperation('VENTA', { ...params, fromOfflineQueue: true }, String(params.operationId));
+        return { queuedOffline: true, operationId: String(params.operationId), pendingSync: true };
+      }
+      throw error;
+    }
     if (!result?.sale) {
       throw new Error('Turso no confirmó el registro de la venta.');
     }
