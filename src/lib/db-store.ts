@@ -389,22 +389,25 @@ async function applyInventoryMovementsTransaction(params: {
   productPatches?: Record<string, any>;
   fromOfflineQueue?: boolean;
 }): Promise<any> {
-  const tursoResult = await tryTursoOperation('inventory', params);
-  if (tursoResult) {
-    if (Array.isArray(tursoResult.products) && tursoResult.products.length) applyPatch({ productos: mergeById(cache.productos, tursoResult.products) });
-    if (Array.isArray(tursoResult.movements) && tursoResult.movements.length) applyPatch({ movimientos: mergeById(cache.movimientos, tursoResult.movements) });
-    return tursoResult;
-  }
-
   const { operationId, operationType, movements, productPatches = {}, fromOfflineQueue } = params;
   if (!movements?.length) throw new Error('No hay movimientos de inventario para registrar.');
 
+  // La comprobación offline debe ocurrir ANTES de intentar llamar a la API:
+  // tryTursoOperation rechaza inmediatamente sin red, lo que hacía inalcanzable
+  // la cola offline de ajustes de inventario.
   if (!fromOfflineQueue && typeof window !== 'undefined' && navigator.onLine === false) {
     if (!['AJUSTE-INVENTARIO', 'AJUSTE-INVENTARIO-POS'].includes(operationType)) {
       throw new Error('Esta operación requiere conexión para proteger la consistencia de ventas/devoluciones.');
     }
     enqueueOfflineOperation('INVENTARIO', { operationId, operationType, movements, productPatches, fromOfflineQueue: true }, operationId);
     return { queuedOffline: true, operationId, movements, products: [] };
+  }
+
+  const tursoResult = await tryTursoOperation('inventory', params);
+  if (tursoResult) {
+    if (Array.isArray(tursoResult.products) && tursoResult.products.length) applyPatch({ productos: mergeById(cache.productos, tursoResult.products) });
+    if (Array.isArray(tursoResult.movements) && tursoResult.movements.length) applyPatch({ movimientos: mergeById(cache.movimientos, tursoResult.movements) });
+    return tursoResult;
   }
 
   const productIds = [...new Set(movements.map(m => String(m.productoId || '')).filter(Boolean))];
