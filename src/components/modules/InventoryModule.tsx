@@ -58,20 +58,10 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
   const [selectedCPPId, setSelectedCPPId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
 
-  const stockKardexSyncDone = useRef(false);
-
   useEffect(() => {
-    // La reconciliación con Kardex se ejecuta una sola vez al montar el módulo.
-    // Si se ejecutara cada vez que volvemos a Productos/CPP, el updateState
-    // provoca un rerender mientras el usuario abre un <select>, haciendo que
-    // el menú nativo se cierre/intermitente.
-    if (!stockKardexSyncDone.current) {
-      stockKardexSyncDone.current = true;
-      void Store.syncProductsStockFromKardex().catch((error: any) => {
-        console.error('No fue posible sincronizar stock desde Kardex:', error);
-      });
-    }
-
+    // Las operaciones transaccionales de Turso actualizan stock y Kardex
+    // en el mismo commit. No ejecutar aquí una reconciliación global:
+    // al entrar al módulo se escaneaban productos y movimientos repetidamente.
     if (activeTab !== 'productos') {
       void Store.ensureLoaded('movimientos');
     }
