@@ -47,7 +47,7 @@ export default function LoginPage() {
     const checkTursoSession = async () => {
       setStatusMessage("Inicializando Base de Datos Turso...");
       try {
-        const response = await fetch("/api/auth/session", { cache: "no-store", credentials: "same-origin" });
+        const response = await fetch("/api/auth/session", { cache: "no-store", credentials: "same-origin", signal: AbortSignal.timeout(12000) });
         if (response.ok) {
           setStatusMessage("Sesión Turso encontrada. Ingresando...");
           router.push("/");
@@ -55,7 +55,7 @@ export default function LoginPage() {
         }
         if (!cancelled) setStatusMessage(response.status === 503 ? "Turso no está disponible." : "Turso respondió, pero no hay sesión activa.");
       } catch {
-        if (!cancelled) setStatusMessage("No fue posible conectar con Turso.");
+        if (!cancelled) setStatusMessage("Turso no respondió en 12 segundos. Verifique la conexión y reintente.");
       } finally {
         if (!cancelled) setAuthChecked(true);
       }
