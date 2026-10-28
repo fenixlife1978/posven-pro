@@ -112,116 +112,48 @@ export default function LicoreriaPOS() {
       }
     }, 8000);
 
-    if (!auth || !db) {
-      setLoading(false);
-      return;
-    }
-
-    const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
-      if (!currentUser) {
-        router.push('/login');
-      } else {
-        try {
-          if (profileUnsubRef.current) profileUnsubRef.current();
-          profileUnsubRef.current = onSnapshot(doc(db, 'users', currentUser.uid), (docSnap) => {
-            if (!auth.currentUser) return;
-
-            if (docSnap.exists()) {
-              const data = docSnap.data();
-              
-              if (data.accesoBloqueado) {
-                signOut(auth).then(() => {
-                  if (typeof sessionStorage !== 'undefined') sessionStorage.clear();
-                  router.push('/login');
-                });
-                return;
-              }
-
-              if (!moduleInitialized.current) {
-                const savedModule = sessionStorage.getItem('posven_active_module');
-                // ✅ FIX: Usar el estado de caja de ESTE terminal (no un estado global).
-                // Así, abrir la caja 2 no muestra la interfaz de la caja 1, y el corte Z
-                // de una caja no borra la información de la otra.
-                if (data.rol === 'cajero') {
-                   getDocs(query(collection(db, 'terminales'), where('usuarioId', '==', currentUser.uid))).then(async configSnap => {
-                      const terminals = configSnap.docs.map(d => d.data()) as Terminal[];
-                      const hasTerminal = terminals.some((t: Terminal) => t.usuarioId === currentUser.uid);
-                      
-                      if (!hasTerminal) {
-                         signOut(auth).then(() => {
-                           alert("ACCESO RESTRINGIDO: Su usuario no tiene un terminal asignado.");
-                           router.push('/login');
-                         });
-                         return;
-                      }
-                      
-                      const myTerm = terminals.find((t: Terminal) => t.usuarioId === currentUser.uid);
-                      if (myTerm?.id) Store.startTerminalSync(myTerm.id, false, [myTerm]);
-                      const cajaEstaAbierta = !!myTerm?.isCashOpen;
-                      // La caja abierta en Firestore es la fuente autoritativa. Nunca
-                      // volver a exigir apertura por la ausencia de un flag local:
-                      // un corte eléctrico/reinicio no debe crear una nueva jornada.
-                      const debeMostrarApertura = !cajaEstaAbierta;
-
-                      // Si existía una marca de ejecución que no pudo limpiarse con
-                      // beforeunload, tratamos el arranque como recuperación de una
-                      // interrupción abrupta. Esto no afirma que fue un corte de luz;
-                      // deja trazabilidad de que el equipo reinició con la caja abierta.
-                      try {
-                        const rawRuntime = localStorage.getItem('posven_runtime_marker');
-                        const previousRuntime = rawRuntime ? JSON.parse(rawRuntime) : null;
-                        if (previousRuntime?.terminalId === myTerm?.id && cajaEstaAbierta) {
-                          const detectedAt = new Date().toISOString();
-                          const auditId = `REC-${String(myTerm.id)}-${Date.now()}`;
-                          await setDoc(doc(db, 'auditoriaSistema', auditId), {
-                            id: auditId,
-                            tipo: 'RECUPERACION_INTERRUPCION',
-                            terminalId: myTerm.id,
-                            terminalName: myTerm.nombre || 'S/T',
-                            usuarioId: currentUser.uid,
-                            fecha: detectedAt,
-                            ultimaActividadDetectada: previousRuntime.heartbeatAt || previousRuntime.startedAt || null,
-                            cajaSeguíaAbierta: true,
-                            detalle: 'El sistema inició nuevamente y detectó una caja que permanecía abierta. La jornada fue recuperada sin exigir una nueva apertura.'
-                          }, { merge: false });
-                        }
-                        localStorage.setItem('posven_runtime_marker', JSON.stringify({ terminalId: myTerm?.id || null, startedAt: new Date().toISOString(), heartbeatAt: new Date().toISOString() }));
-                      } catch (auditError) {
-                        console.warn('No se pudo registrar recuperación de jornada:', auditError);
-                      }
-
-                      const target = savedModule || 'ventas';
-                      setActiveTab(target);
-                      setShowApertura(debeMostrarApertura);
-                      setLoading(false);
-                   }).catch(() => setLoading(false));
-                } else {
-                   Store.startTerminalSync(undefined, true);
-                   const target = savedModule || 'dashboard';
-                   setActiveTab(target);
-                   setShowApertura(false);
-                   setLoading(false);
-                }
-                moduleInitialized.current = true;
-              }
-
-              setUserRole(data.rol);
-              setUserProfile(data);
-              setUser(currentUser);
-            } else {
-              signOut(auth).then(() => router.push('/login'));
-            }
-          }, (err) => {
-            console.error("Sync error:", err);
-            setLoading(false);
-          });
-
-        } catch (error) {
-          console.error("Auth process error:", error);
+    let sessionCancelled = false;
+    const unsubscribeAuth = () => { sessionCancelled = true; };
+    const loadTursoSession = async () => {
+      try {
+        const response = await fetch('/api/auth/session', {
+          cache: 'no-store',
+          credentials: 'same-origin',
+          signal: AbortSignal.timeout(12000),
+        });
+        if (sessionCancelled) return;
+        if (!response.ok) {
+          router.replace('/login');
           setLoading(false);
+          return;
+        }
+        const payload = await response.json();
+        if (!payload?.authenticated || !payload?.user) {
+          router.replace('/login');
+          setLoading(false);
+          return;
+        }
+        const data = payload.user;
+        setUser({ uid: data.id || data.userId || data.username });
+        setUserRole(data.rol || null);
+        setUserProfile(data);
+        const savedModule = sessionStorage.getItem('posven_active_module');
+        const target = data.rol === 'cajero' ? 'ventas' : (savedModule || 'dashboard');
+        setActiveTab(target);
+        setShowApertura(false);
+        moduleInitialized.current = true;
+        setLoading(false);
+        // Turso session is authoritative for access. Store data migration is separate;
+        // do not let Firebase Auth redirect a valid Turso session back to login.
+      } catch (error) {
+        if (!sessionCancelled) {
+          console.error('[POSVEN] No se pudo recuperar la sesión Turso:', error);
+          setLoading(false);
+          router.replace('/login');
         }
       }
-    });
+    };
+    void loadTursoSession();
 
     const unsubscribeStore = Store.subscribe((dbUpdate: Partial<AppState>) => {
       setState(prev => ({ ...prev, ...dbUpdate }) as AppState);
