@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createSession, ensureSeedAdmin, getUserWithSecret, verifyPassword } from '@/lib/auth/turso-auth';
+import { createSession, getUserWithSecret, verifyPassword } from '@/lib/auth/turso-auth';
 import { isTursoConfigured } from '@/lib/turso/client';
 
 export const runtime = 'nodejs';
@@ -13,11 +13,9 @@ export async function POST(request: Request) {
     const password = String(body?.password || '');
     const role = String(body?.role || '');
 
-    if (!identifier || !password) {
-      return NextResponse.json({ error: 'Usuario/correo y contraseña son obligatorios.' }, { status: 400 });
+    if (!identifier || !password || !['administrador', 'cajero'].includes(role)) {
+      return NextResponse.json({ error: 'Usuario/correo, contraseña y un rol válido son obligatorios.' }, { status: 400 });
     }
-
-    await ensureSeedAdmin();
 
     const row = await getUserWithSecret(identifier);
     if (!row || Number(row.acceso_bloqueado || 0) === 1 || !verifyPassword(password, String(row.password_hash))) {
