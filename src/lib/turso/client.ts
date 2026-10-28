@@ -102,6 +102,7 @@ async function pipeline(requests: unknown[], baton: string | null = null): Promi
     },
     body: JSON.stringify({ baton, requests }),
     cache: 'no-store',
+    signal: AbortSignal.timeout(12000),
   });
 
   const payload = await response.json().catch(() => null);
