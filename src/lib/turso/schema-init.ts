@@ -38,17 +38,27 @@ let initialized = false;
 let initializing: Promise<void> | null = null;
 
 async function initialize() {
-  const probe = await tursoExecute({ sql: "SELECT name FROM sqlite_master WHERE type='table' AND name='users' LIMIT 1" });
-  if (probe.rows.length) {
-    initialized = true;
-    return;
-  }
-
+  // No usar la existencia de "users" como prueba de que todo el esquema está
+  // instalado: una base parcialmente inicializada puede tener users y carecer
+  // de tablas posteriores (por ejemplo user_identity_map). Ejecutar siempre
+  // CREATE TABLE/INDEX IF NOT EXISTS repara esas instalaciones sin borrar datos.
   await tursoBatch(SCHEMA_STATEMENTS.map(sql => ({ sql, wantRows: false })));
 
-  const verify = await tursoExecute({ sql: "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('users','sessions','terminales','ventas','caja') ORDER BY name" });
+  const requiredTables = [
+    'users', 'sessions', 'terminales', 'ventas', 'caja',
+    'user_identity_map', 'app_config', 'catalogos', 'productos',
+    'movimientos', 'cxc', 'cxp', 'clientes', 'proveedores',
+    'devoluciones', 'anulaciones', 'libro_diario', 'reportes_z',
+    'compras', 'operaciones', 'auditoria_sistema', 'legacy_documents',
+    'migration_runs',
+  ];
+  const placeholders = requiredTables.map(() => '?').join(',');
+  const verify = await tursoExecute({
+    sql: `SELECT name FROM sqlite_master WHERE type='table' AND name IN (${placeholders})`,
+    args: requiredTables,
+  });
   const names = new Set(verify.rows.map((row: any) => String(row.name)));
-  for (const required of ['users', 'sessions', 'terminales', 'ventas', 'caja']) {
+  for (const required of requiredTables) {
     if (!names.has(required)) throw new Error(`La inicialización de Turso no creó la tabla requerida: ${required}`);
   }
   initialized = true;
