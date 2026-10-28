@@ -25,6 +25,7 @@ const SCHEMA_STATEMENTS = [
   `CREATE INDEX IF NOT EXISTS idx_auditoria_terminal_fecha ON auditoria_sistema(terminal_id, fecha)`,
   `CREATE INDEX IF NOT EXISTS idx_auditoria_usuario_fecha ON auditoria_sistema(usuario_id, fecha)`,
   `CREATE TABLE IF NOT EXISTS legacy_documents (path TEXT PRIMARY KEY, data_json TEXT NOT NULL DEFAULT '{}', present INTEGER NOT NULL DEFAULT 1, imported_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
+  `CREATE TABLE IF NOT EXISTS user_identity_map (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, provider TEXT NOT NULL, provider_user_id TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(provider, provider_user_id))`,
   `CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, expires_at TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, last_seen_at TEXT, revoked_at TEXT)`,
   `CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id)`,
   `CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at)`,
@@ -51,14 +52,8 @@ let initialized = false;
 let initializing: Promise<void> | null = null;
 
 async function initialize() {
-  const probe = await tursoExecute({ sql: "SELECT name FROM sqlite_master WHERE type='table' AND name='users' LIMIT 1" });
-  if (probe.rows.length) {
-    // Las bases existentes también reciben los índices de rendimiento sin borrar ni migrar datos.
-    await tursoBatch(OPTIMIZATION_INDEXES.map(sql => ({ sql, wantRows: false })));
-    initialized = true;
-    return;
-  }
-
+  // Aplicar el esquema idempotente también a bases ya existentes. CREATE IF NOT EXISTS
+  // repara tablas auxiliares ausentes sin borrar datos ni reinicializar usuarios.
   await tursoBatch(SCHEMA_STATEMENTS.map(sql => ({ sql, wantRows: false })));
   await tursoBatch(OPTIMIZATION_INDEXES.map(sql => ({ sql, wantRows: false })));
 
