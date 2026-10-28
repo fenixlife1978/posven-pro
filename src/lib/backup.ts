@@ -118,8 +118,11 @@ export async function leerArchivoRespaldo(file: File): Promise<BackupFile | null
   if (!file) return null;
   const text = await file.text();
   const parsed = JSON.parse(text) as BackupFile;
-  if (!parsed || parsed.app !== 'posven-pro' || typeof parsed.data !== 'object') {
+  if (!parsed || parsed.app !== 'posven-pro' || !parsed.data || typeof parsed.data !== 'object' || Array.isArray(parsed.data)) {
     throw new Error('El archivo no es un respaldo válido de POSVEN-Pro.');
+  }
+  if (parsed.version != null && (!Number.isInteger(parsed.version) || parsed.version < 1 || parsed.version > 3)) {
+    throw new Error('La versión de este respaldo no es compatible con esta versión de POSVEN-Pro.');
   }
   return parsed;
 }
@@ -139,6 +142,39 @@ async function restaurarBackupTurso(
     const source = name === 'caja' ? backup.data.cashHistory ?? backup.data.caja : backup.data[name];
     return Array.isArray(source) ? source as any[] : [];
   };
+
+  // Validación completa antes de ejecutar "reset": nunca borrar el destino si
+  // el archivo tiene filas inválidas, identificadores ausentes o duplicados.
+  // Esto no sustituye una transacción de restauración integral, pero evita los
+  // fallos de formato más comunes antes de la primera escritura destructiva.
+  if (!backup || backup.app !== 'posven-pro' || !backup.data || typeof backup.data !== 'object') {
+    throw new Error('El respaldo no contiene una estructura válida. No se modificó la base de datos.');
+  }
+  for (const name of TABLES) {
+    const rows = backupRowsForTable(name);
+    const seen = new Set<string>();
+    for (let index = 0; index < rows.length; index++) {
+      const row = rows[index];
+      if (!row || typeof row !== 'object' || Array.isArray(row) || row.id == null || !String(row.id).trim()) {
+        throw new Error('Respaldo inválido: ' + name + ', registro ' + (index + 1) + ' no tiene un id válido. No se modificó la base de datos.');
+      }
+      const id = String(row.id);
+      if (seen.has(id)) {
+        throw new Error('Respaldo inválido: id duplicado "' + id + '" en ' + name + '. No se modificó la base de datos.');
+      }
+      seen.add(id);
+      try {
+        JSON.stringify(row);
+      } catch {
+        throw new Error('Respaldo inválido: no se puede serializar un registro de ' + name + '. No se modificó la base de datos.');
+      }
+    }
+  }
+  for (const name of CATALOGS) {
+    if (backup.data[name] !== undefined && !Array.isArray(backup.data[name])) {
+      throw new Error('Respaldo inválido: el catálogo ' + name + ' no es una lista. No se modificó la base de datos.');
+    }
+  }
 
   const totalRows = TABLES.reduce((sum, name) => sum + backupRowsForTable(name).length, 0)
     + CATALOGS.reduce((sum, name) => sum + (Array.isArray(backup.data[name]) ? (backup.data[name] as any[]).length : 0), 0) + 1;
