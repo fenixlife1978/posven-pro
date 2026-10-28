@@ -173,6 +173,20 @@ export async function countRecords(table: TursoStoreTable): Promise<number> {
 export async function factoryResetTransaction(params: { user: { rol: string } }) {
   assertTursoReady();
   if (params.user.rol !== 'administrador') throw new Error('Se requiere administrador.');
+  // Autorreparación defensiva: una base Turso existente puede carecer de esta
+  // tabla auxiliar aunque el resto del esquema ya esté creado. Debe crearse
+  // antes del reset, sin borrar datos ni depender del estado del inicializador.
+  await tursoExecute({
+    sql: `CREATE TABLE IF NOT EXISTS user_identity_map (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      provider TEXT NOT NULL,
+      provider_user_id TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(provider, provider_user_id)
+    )`,
+    wantRows: false,
+  });
   return tursoInteractiveTransaction(async tx => {
     const tables = [
       'productos','movimientos','ventas','cxc','cxp','clientes','proveedores',
