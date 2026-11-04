@@ -111,7 +111,7 @@ function descargarCredencialesTemporales(credentials: Array<{ username: string; 
     'Usuario | Rol | Contraseña temporal',
     ...credentials.map(item => item.username + ' | ' + item.rol + ' | ' + item.password),
   ];
-  const blob = new Blob([lines.join('\\n')], { type: 'text/plain;charset=utf-8' });
+  const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
