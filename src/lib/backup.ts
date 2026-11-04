@@ -101,6 +101,27 @@ export async function crearRespaldo(): Promise<BackupFile> {
   };
 }
 
+function descargarCredencialesTemporales(credentials: Array<{ username: string; password: string; rol: string }>) {
+  if (!credentials.length) return;
+  const lines = [
+    'POSVEN PRO - CREDENCIALES TEMPORALES DE USUARIOS RESTAURADOS',
+    'Cambie cada contraseña después del primer inicio de sesión.',
+    'Guarde este archivo en un lugar privado y elimínelo cuando ya no lo necesite.',
+    '',
+    'Usuario | Rol | Contraseña temporal',
+    ...credentials.map(item => item.username + ' | ' + item.rol + ' | ' + item.password),
+  ];
+  const blob = new Blob([lines.join('\\n')], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'POSVEN_credenciales_temporales.txt';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 export function descargarRespaldo(backup: BackupFile) {
   const nombre = 'Respaldo_POSVEN_' + new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-') + '.json';
   const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
@@ -140,8 +161,10 @@ async function restaurarBackupTurso(
     return Array.isArray(source) ? source as any[] : [];
   };
 
+  const backupUsers = Array.isArray(backup.data.users) ? backup.data.users as any[] : [];
   const totalRows = TABLES.reduce((sum, name) => sum + backupRowsForTable(name).length, 0)
-    + CATALOGS.reduce((sum, name) => sum + (Array.isArray(backup.data[name]) ? (backup.data[name] as any[]).length : 0), 0) + 1;
+    + CATALOGS.reduce((sum, name) => sum + (Array.isArray(backup.data[name]) ? (backup.data[name] as any[]).length : 0), 0)
+    + backupUsers.length + 1;
   let completed = 0;
 
   const report = (stage: string, detail: string) => {
@@ -188,8 +211,17 @@ async function restaurarBackupTurso(
   const config: Record<string, unknown> = {};
   for (const key of CONFIG_KEYS) if (backup.data[key] !== undefined) config[key] = backup.data[key];
   if (Object.keys(config).length) await post({ action: 'config', config });
+  let restoredUsers = 0;
+  if (backupUsers.length) {
+    const result = await post({ action: 'users', rows: backupUsers });
+    const credentials = Array.isArray(result?.credentials) ? result.credentials : [];
+    restoredUsers = Number(result?.restored || 0);
+    descargarCredencialesTemporales(credentials);
+    completed += backupUsers.length;
+    report('Usuarios', restoredUsers + ' cuentas recuperadas. Se descargó el archivo privado de contraseñas temporales.');
+  }
   await post({ action: 'finish' });
-  onProgress?.({ percent: 100, stage: 'Completado', detail: 'Restauración finalizada correctamente en Turso.' });
+  onProgress?.({ percent: 100, stage: 'Completado', detail: 'Restauración finalizada en Turso. Usuarios recuperados: ' + restoredUsers + '. Revise el archivo de credenciales temporales descargado.' });
 }
 
 export async function restaurarRespaldo(backup: BackupFile): Promise<void> {
