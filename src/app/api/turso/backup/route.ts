@@ -105,6 +105,7 @@ export async function POST(request: Request) {
           rol,
           blocked: row?.accesoBloqueado === true || Number(row?.acceso_bloqueado || 0) === 1,
           created: row?.fechaCreacion ? String(row.fechaCreacion) : new Date().toISOString(),
+          dataJson: (() => { const value = row?.data; return value && typeof value === 'object' && !Array.isArray(value) ? JSON.stringify(value) : '{}'; })(),
           password: randomBytes(15).toString('base64url'),
         };
       }).filter((row: any) => row.username !== 'admin');
@@ -137,14 +138,14 @@ export async function POST(request: Request) {
           await tx.execute({
             sql: `INSERT INTO users
               (id, username, email, nombre, rol, password_hash, acceso_bloqueado, is_seed_admin, fecha_creacion, data_json, updated_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, '{}', ?)
+              VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)
               ON CONFLICT(id) DO UPDATE SET
                 username=excluded.username, email=excluded.email, nombre=excluded.nombre,
                 rol=excluded.rol, password_hash=excluded.password_hash,
                 acceso_bloqueado=excluded.acceso_bloqueado,
-                fecha_creacion=excluded.fecha_creacion, updated_at=excluded.updated_at
+                fecha_creacion=excluded.fecha_creacion, data_json=excluded.data_json, updated_at=excluded.updated_at
             `,
-            args: [row.id, row.username, row.email, row.nombre, row.rol, passwordHash, row.blocked ? 1 : 0, row.created, now],
+            args: [row.id, row.username, row.email, row.nombre, row.rol, passwordHash, row.blocked ? 1 : 0, row.created, row.dataJson, now],
             wantRows: false,
           });
           await tx.execute({
