@@ -35,16 +35,49 @@ export interface BackupFile {
   };
 }
 
-async function readTursoTable(table: string, limit = 10000): Promise<any[]> {
-  const response = await fetch('/api/turso/store?table=' + encodeURIComponent(table) + '&limit=' + limit, {
-    credentials: 'include',
-    cache: 'no-store',
-  });
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok || body?.ok === false) {
-    throw new Error(body?.error || 'No se pudo leer la tabla ' + table + ' desde Turso.');
+async function readTursoTable(table: string, pageSize = 10000): Promise<any[]> {
+  const request = async (params: URLSearchParams) => {
+    const response = await fetch('/api/turso/store?' + params.toString(), {
+      credentials: 'include',
+      cache: 'no-store',
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok || body?.ok === false) {
+      throw new Error(body?.error || 'No se pudo leer la tabla ' + table + ' desde Turso.');
+    }
+    return body;
+  };
+
+  // El total se consulta por separado para no confundir el límite máximo de
+  // una página con el total real de registros de la tabla.
+  const count = await request(new URLSearchParams({ table, special: 'count' }));
+  const expected = Number(count?.total);
+  if (!Number.isSafeInteger(expected) || expected < 0) {
+    throw new Error('Turso devolvió un total inválido para la tabla ' + table + '.');
   }
-  return Array.isArray(body?.records) ? body.records : [];
+
+  const records: any[] = [];
+  for (let offset = 0; offset < expected; offset += pageSize) {
+    const params = new URLSearchParams({
+      table,
+      limit: String(Math.min(pageSize, expected - offset)),
+      offset: String(offset),
+    });
+    const page = await request(params);
+    const rows = Array.isArray(page?.records) ? page.records : [];
+    if (!rows.length) {
+      throw new Error('El respaldo de ' + table + ' quedó incompleto: se esperaban ' + expected + ' registros y la lectura se detuvo en ' + records.length + '.');
+    }
+    records.push(...rows);
+  }
+
+  // Detecta altas/bajas concurrentes durante la exportación en vez de entregar
+  // silenciosamente un respaldo con un conteo inconsistente.
+  const finalCount = await request(new URLSearchParams({ table, special: 'count' }));
+  if (Number(finalCount?.total) !== expected || records.length !== expected) {
+    throw new Error('La tabla ' + table + ' cambió mientras se generaba el respaldo. Vuelva a generar la copia para evitar datos incompletos.');
+  }
+  return records;
 }
 
 async function readTursoSpecial(kind: 'config' | 'catalog', name = ''): Promise<any> {
