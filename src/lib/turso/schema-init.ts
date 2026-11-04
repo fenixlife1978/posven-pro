@@ -54,6 +54,8 @@ let initializing: Promise<void> | null = null;
 async function initialize() {
   const probe = await tursoExecute({ sql: "SELECT name FROM sqlite_master WHERE type='table' AND name='users' LIMIT 1" });
   if (probe.rows.length) {
+    // Las bases existentes reciben esta tabla auxiliar idempotente sin borrar ni migrar datos.
+    await tursoExecute({ sql: `CREATE TABLE IF NOT EXISTS admin_recovery_state (id TEXT PRIMARY KEY, used_at TEXT NOT NULL)`, wantRows: false });
     // Las bases existentes también reciben los índices de rendimiento sin borrar ni migrar datos.
     await tursoBatch(OPTIMIZATION_INDEXES.map(sql => ({ sql, wantRows: false })));
     initialized = true;
