@@ -190,10 +190,17 @@ export async function revokeSession(sessionId: string | null | undefined) {
 export async function listUsers() {
   await ensureTursoSchema();
   const result = await tursoExecute({
-    sql: `SELECT id, username, email, nombre, rol, acceso_bloqueado, is_seed_admin, fecha_creacion
+    sql: `SELECT id, username, email, nombre, rol, acceso_bloqueado, is_seed_admin, fecha_creacion, data_json
       FROM users ORDER BY lower(nombre), lower(username)`,
   });
-  return result.rows.map(mapUser);
+  return result.rows.map((row: any) => {
+    let data: Record<string, unknown> = {};
+    try {
+      const parsed = JSON.parse(String(row.data_json || '{}'));
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) data = parsed;
+    } catch {}
+    return { ...mapUser(row), data };
+  });
 }
 
 export async function setUserBlocked(id: string, blocked: boolean) {
