@@ -1,6 +1,6 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { NextResponse } from 'next/server';
-import { createSession, hashPassword } from '@/lib/auth/turso-auth';
+import { hashPassword } from '@/lib/auth/turso-auth';
 import { ensureTursoSchema } from '@/lib/turso/schema-init';
 import { tursoInteractiveTransaction } from '@/lib/turso/client';
 
@@ -32,8 +32,10 @@ export async function POST(request: Request) {
     const temporaryPassword = randomBytes(18).toString('base64url');
     const passwordHash = hashPassword(temporaryPassword);
     const now = new Date().toISOString();
+    const sessionId = randomBytes(32).toString('hex');
+    const sessionExpires = new Date(Date.now() + 7 * 86400000).toISOString();
 
-    const userId = await tursoInteractiveTransaction(async tx => {
+    await tursoInteractiveTransaction(async tx => {
       const used = await tx.execute({
         sql: "SELECT id FROM admin_recovery_state WHERE id='edwin' LIMIT 1",
       });
@@ -58,26 +60,28 @@ export async function POST(request: Request) {
         wantRows: false,
       });
       await tx.execute({
+        sql: 'INSERT INTO sessions (id, user_id, expires_at, created_at, last_seen_at) VALUES (?, ?, ?, ?, ?)',
+        args: [sessionId, String(user.id), sessionExpires, now, now],
+        wantRows: false,
+      });
+      await tx.execute({
         sql: "INSERT INTO admin_recovery_state (id, used_at) VALUES ('edwin', ?)",
         args: [now],
         wantRows: false,
       });
-      return String(user.id);
     });
-
-    const session = await createSession(userId);
     const response = NextResponse.json({
       ok: true,
       username: 'edwin',
       temporaryPassword,
       message: 'Contraseña temporal generada. Inicie sesión y cámbiela inmediatamente.',
     });
-    response.cookies.set('posven_session', session.id, {
+    response.cookies.set('posven_session', sessionId, {
       httpOnly: true,
       sameSite: 'lax',
       secure: process.env.NODE_ENV === 'production',
       path: '/',
-      expires: new Date(session.expires),
+      expires: new Date(sessionExpires),
     });
     return response;
   } catch (error: any) {
