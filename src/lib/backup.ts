@@ -32,6 +32,7 @@ export interface BackupFile {
     tursoTables: Record<string, number>;
     catalogs: Record<string, number>;
     source: 'turso';
+    complete?: boolean;
   };
 }
 
@@ -130,7 +131,7 @@ export async function crearRespaldo(): Promise<BackupFile> {
     version: 3,
     createdAt: new Date().toISOString(),
     data,
-    meta: { tursoTables, catalogs, source: 'turso' },
+    meta: { tursoTables, catalogs, source: 'turso', complete: true },
   };
 }
 
@@ -195,6 +196,19 @@ async function restaurarBackupTurso(
   };
 
   const backupUsers = Array.isArray(backup.data.users) ? backup.data.users as any[] : [];
+
+  // Los respaldos antiguos leían cada tabla con un máximo de 10.000 filas.
+  // Si una tabla llegó exactamente a ese tope y no tiene la marca de exportación
+  // completa, no se permite borrar la base destino con una copia posiblemente truncada.
+  if (backup.meta?.source === 'turso' && backup.meta.complete !== true) {
+    const capped = Object.entries(backup.meta.tursoTables || {})
+      .filter(([, count]) => Number(count) >= 10000)
+      .map(([name]) => name);
+    if (capped.length) {
+      throw new Error('Restauración cancelada por seguridad: el respaldo antiguo alcanzó el límite de 10.000 registros en ' + capped.join(', ') + '. Genere una nueva copia con la exportación paginada antes de restaurar; así evitamos perder movimientos históricos.');
+    }
+  }
+
   const totalRows = TABLES.reduce((sum, name) => sum + backupRowsForTable(name).length, 0)
     + CATALOGS.reduce((sum, name) => sum + (Array.isArray(backup.data[name]) ? (backup.data[name] as any[]).length : 0), 0)
     + backupUsers.length + 1;
