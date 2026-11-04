@@ -29,6 +29,7 @@ const SCHEMA_STATEMENTS = [
   `CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id)`,
   `CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at)`,
   `CREATE TABLE IF NOT EXISTS migration_runs (id TEXT PRIMARY KEY, source TEXT NOT NULL, backup_version INTEGER, started_at TEXT NOT NULL, finished_at TEXT, status TEXT NOT NULL, counts_json TEXT NOT NULL DEFAULT '{}', notes TEXT)`,
+  `CREATE TABLE IF NOT EXISTS admin_recovery_state (id TEXT PRIMARY KEY, used_at TEXT NOT NULL)`,
 ];
 
 // Índices de acceso para reducir lecturas completas en filtros por caja y listados cronológicos.
