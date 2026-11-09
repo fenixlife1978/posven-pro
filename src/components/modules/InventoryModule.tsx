@@ -1139,7 +1139,7 @@ function ReporteMovimientosSalidaPeriodicos({ state }: { state: AppState }) {
     return [m.id, { costo: costo > 0 ? String(costo) : '', tasa: tasa > 0 ? String(tasa) : '' }];
   })), [filas, state.ventas]);
   const valorDato = (id: string, campo: 'costo' | 'tasa') => datos[id]?.[campo] ?? datosDetectados[id]?.[campo] ?? '';
-  const pendientes = filas.filter(x => !(Number(valorDato(x.m.id,'costo')) > 0) || !(Number(valorDato(x.m.id,'tasa')) > 0)).length;
+  const pendientes = filas.filter(x => !String(x.p.codigo || '').trim() || !(Number(valorDato(x.m.id,'costo')) > 0) || !(Number(valorDato(x.m.id,'tasa')) > 0)).length;
   const unidades = filas.reduce((s,x) => s + Math.abs(Number(x.m.cantidad) || 0), 0);
   const setDato = (id: string, campo: 'costo' | 'tasa', valor: string) => setDatos(prev => ({...prev,[id]:{...(prev[id] || {}),[campo]:valor}}));
   const registros = () => filas.map(({m,p}) => ({
@@ -1149,7 +1149,7 @@ function ReporteMovimientosSalidaPeriodicos({ state }: { state: AppState }) {
     unitCostBs: Number(valorDato(m.id,'costo')), bcvRate: Number(valorDato(m.id,'tasa'))
   }));
   const descargar = (tipo: 'json' | 'csv') => {
-    if (!filas.length || pendientes) { alert('No hay registros o faltan costos unitarios/tasas BCV históricos por revisar.'); return; }
+    if (!filas.length || pendientes) { alert('No hay registros completos. Revise el código del producto, el costo unitario y la tasa BCV de cada salida.'); return; }
     const rows = registros();
     const nombre = 'POSVEN_Salidas_Inventario_' + desde + '_' + hasta;
     let blob: Blob, ext: string;
@@ -1176,7 +1176,7 @@ function ReporteMovimientosSalidaPeriodicos({ state }: { state: AppState }) {
     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
       <Card className="p-4 bg-white border-line"><p className="text-[10px] uppercase font-black text-ink/40">Movimientos de salida</p><p className="text-2xl font-black text-ink">{filas.length}</p></Card>
       <Card className="p-4 bg-white border-line"><p className="text-[10px] uppercase font-black text-ink/40">Unidades de salida</p><p className="text-2xl font-black text-ink">{unidades.toLocaleString('es-VE')}</p></Card>
-      <Card className="p-4 border border-amber-200 bg-amber-50"><p className="text-[10px] uppercase font-black text-ink/50">Datos históricos pendientes</p><p className="text-2xl font-black text-amber-700">{pendientes}</p><p className="text-[10px] text-ink/50">Costo unitario y/o tasa BCV</p></Card>
+      <Card className="p-4 border border-amber-200 bg-amber-50"><p className="text-[10px] uppercase font-black text-ink/50">Datos históricos pendientes</p><p className="text-2xl font-black text-amber-700">{pendientes}</p><p className="text-[10px] text-ink/50">Código, costo unitario y/o tasa BCV</p></Card>
     </div>
     <Card className="overflow-hidden bg-white border-line shadow-sm rounded-xl">
       <div className="p-4 bg-ink text-white flex flex-wrap justify-between gap-2 items-center"><div><h4 className="font-black text-xs uppercase">Revisión previa de movimientos</h4><p className="text-[10px] text-white/60">Se recuperan snapshots de compra/venta y tasas guardadas en la factura; lo no documentado queda para revisión manual.</p></div><div className="flex gap-2"><Button variant="secondary" onClick={()=>descargar('csv')} disabled={!filas.length || pendientes>0} className="font-black uppercase text-[10px]"><Download className="w-4 h-4"/> CSV</Button><Button onClick={()=>descargar('json')} disabled={!filas.length || pendientes>0} className="bg-brand-gold text-ink hover:bg-brand-gold-deep font-black uppercase text-[10px]"><FileSpreadsheet className="w-4 h-4"/> JSON</Button></div></div>
@@ -1189,7 +1189,7 @@ function ReporteMovimientosSalidaPeriodicos({ state }: { state: AppState }) {
         </TableRow>)}
         {!filas.length && <TableRow><TableCell colSpan={7} className="py-16 text-center text-ink/30 font-black uppercase">No hay salidas para los filtros seleccionados</TableCell></TableRow>}
       </TableBody></Table></div>
-      <div className="p-4 border-t border-line text-xs"><span className="text-ink/50">Total costo revisado: <b className="text-ink">{filas.reduce((s,x)=>s+Math.abs(x.m.cantidad)*(Number(valorDato(x.m.id,'costo'))||0),0).toLocaleString('es-VE',{minimumFractionDigits:2,maximumFractionDigits:2})} Bs.</b></span><p className={pendientes?'text-amber-700 font-bold':'text-status-success font-bold'}>{pendientes?'Complete los datos históricos pendientes para exportar.':'Revisión completa: exportación habilitada.'}</p></div>
+      <div className="p-4 border-t border-line text-xs"><span className="text-ink/50">Total costo revisado: <b className="text-ink">{filas.reduce((s,x)=>s+Math.abs(x.m.cantidad)*(Number(valorDato(x.m.id,'costo'))||0),0).toLocaleString('es-VE',{minimumFractionDigits:2,maximumFractionDigits:2})} Bs.</b></span><p className={pendientes?'text-amber-700 font-bold':'text-status-success font-bold'}>{pendientes?'Complete los códigos y datos históricos pendientes para exportar.':'Revisión completa: exportación habilitada.'}</p></div>
     </Card>
     <p className="text-[10px] text-ink/40">Se exportan código y descripción del producto, no su ID interno de POSVEN-PRO, porque SICOVEN mantiene identificadores propios.</p>
   </div>;
