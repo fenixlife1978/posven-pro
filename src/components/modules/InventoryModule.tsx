@@ -361,7 +361,10 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
                 cantidad: diferencia, stockAntes, stockDespues: nuevoStock,
                 fecha: Utils.ahora(),
                 referencia: `CONTEO FISICO | ${a.motivo}`,
-                terminalId: 'ADMIN'
+                terminalId: 'ADMIN',
+                costoUnitarioUSD: Number(producto.costoUSD) || 0,
+                costoUnitarioBs: (Number(producto.costoUSD) || 0) * Number(state.tasa || 0),
+                tasaBCV: Number(state.tasa) || 0
               } as Movimiento;
             }).filter((m): m is Movimiento => Boolean(m));
             if (!movimientos.length) { setShowConteoFisico(false); return; }
@@ -405,7 +408,10 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
                   stockDespues: 0,
                   fecha: ahora,
                   referencia: `${mov.tipo.replace('_', ' ').toUpperCase()} KIT: ${productoOriginal.nombre} - REF: ${mov.referencia}`,
-                  terminalId: 'ADMIN'
+                  terminalId: 'ADMIN',
+                  costoUnitarioUSD: Number(state.productos.find(p => p.id === ki.productoId)?.costoUSD) || 0,
+                  costoUnitarioBs: (Number(state.productos.find(p => p.id === ki.productoId)?.costoUSD) || 0) * Number(state.tasa || 0),
+                  tasaBCV: Number(state.tasa) || 0
                 });
               });
             } else {
@@ -420,7 +426,12 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
                   : Number(nuevoCosto);
               }
               productPatches[mov.productoId] = patch;
-              movimientos.push({ ...mov, id: Store.uid(), stockAntes: 0, stockDespues: 0, fecha: ahora });
+              movimientos.push({
+                ...mov, id: Store.uid(), stockAntes: 0, stockDespues: 0, fecha: ahora,
+                costoUnitarioUSD: Number(productoOriginal.costoUSD) || 0,
+                costoUnitarioBs: (Number(productoOriginal.costoUSD) || 0) * Number(state.tasa || 0),
+                tasaBCV: Number(state.tasa) || 0
+              });
             }
 
             try {
@@ -1127,7 +1138,7 @@ function ReporteMovimientosSalidaPeriodicos({ state }: { state: AppState }) {
   const setDato = (id: string, campo: 'costo' | 'tasa', valor: string) => setDatos(prev => ({...prev,[id]:{...(prev[id] || {}),[campo]:valor}}));
   const registros = () => filas.map(({m,p}) => ({
     productCode: p.codigo, productName: p.nombre, date: m.fecha.slice(0,10), type: 'SALIDA',
-    concept: m.tipo === 'venta' ? 'VENTA' : (m.tipo === 'consumo' ? 'AUTOCONSUMO' : 'MERMA'),
+    concept: m.tipo === 'venta' ? 'VENTA' : (['consumo','colaboracion'].includes(m.tipo) ? 'AUTOCONSUMO' : 'MERMA'),
     documentRef: m.referencia || m.id, quantity: Math.abs(Number(m.cantidad)),
     unitCostBs: Number(valorDato(m.id,'costo')), bcvRate: Number(valorDato(m.id,'tasa'))
   }));
