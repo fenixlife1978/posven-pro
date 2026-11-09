@@ -957,7 +957,7 @@ function startMasterSync(name: string): () => void {
       collection(db, col),
       (snap: any) => {
         const items = snap.docs
-          .map(d => sanitizeForFirestore(d.data()))
+          .map((d: any) => sanitizeForFirestore(d.data()))
           .filter(Boolean);
         applyPatch({ [name]: items });
         if (name === 'clientes' || name === 'proveedores') loadedAll[name] = true;
