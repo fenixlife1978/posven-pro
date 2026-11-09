@@ -585,7 +585,7 @@ export async function createSaleTransaction(params: {
     for (const statement of writes) await tx.execute(statement);
 
     return {
-      sale, debt, journals, products: [...productUpdates.values()],
+      sale, debt, journals, movements, products: [...productUpdates.values()],
       nextNumber: nextNumber + 1,
       terminal: terminal ? { ...terminal, id: terminalId, proximoRecibo: nextNumber + 1 } : null,
     };
