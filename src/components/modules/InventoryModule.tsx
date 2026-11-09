@@ -1108,14 +1108,28 @@ function ReporteMovimientosSalidaPeriodicos({ state }: { state: AppState }) {
     .filter(x => !categoria || x.p.categoria === categoria)
     .filter(x => !busqueda || [x.p.codigo, x.p.nombre, x.m.referencia].some(v => String(v || '').toLowerCase().includes(busqueda.toLowerCase())))
     .sort((a,b) => a.m.fecha.localeCompare(b.m.fecha)), [state.movimientos,state.productos,desde,hasta,categoria,busqueda]);
-  const pendientes = filas.filter(x => !(Number(datos[x.m.id]?.costo) > 0) || !(Number(datos[x.m.id]?.tasa) > 0)).length;
+  const datosDetectados = useMemo(() => Object.fromEntries(filas.map(({m}) => {
+    // La tasa histórica de una venta está guardada en su factura (campo tasa).
+    // El costo solo se toma de snapshots históricos; nunca del costo actual del catálogo.
+    const sale = m.tipo === 'venta'
+      ? (state.ventas || []).find(v => String(m.referencia || '').includes(String(v.id || '')))
+      : undefined;
+    const saleItem = sale?.items?.find(item => String(item.productoId) === String(m.productoId));
+    const tasa = Number(m.tasaBCV || saleItem?.tasaBCV || sale?.tasa) || 0;
+    const costoBsDirecto = Number(m.costoUnitarioBs || saleItem?.costoUnitarioBs) || 0;
+    const costoUSD = Number(m.costoUnitarioUSD || saleItem?.costoUnitarioUSD) || 0;
+    const costo = costoBsDirecto > 0 ? costoBsDirecto : (costoUSD > 0 && tasa > 0 ? costoUSD * tasa : 0);
+    return [m.id, { costo: costo > 0 ? String(costo) : '', tasa: tasa > 0 ? String(tasa) : '' }];
+  })), [filas, state.ventas]);
+  const valorDato = (id: string, campo: 'costo' | 'tasa') => datos[id]?.[campo] ?? datosDetectados[id]?.[campo] ?? '';
+  const pendientes = filas.filter(x => !(Number(valorDato(x.m.id,'costo')) > 0) || !(Number(valorDato(x.m.id,'tasa')) > 0)).length;
   const unidades = filas.reduce((s,x) => s + Math.abs(Number(x.m.cantidad) || 0), 0);
-  const setDato = (id: string, campo: 'costo' | 'tasa', valor: string) => setDatos(prev => ({...prev,[id]:{...(prev[id] || {costo:'',tasa:''}),[campo]:valor}}));
+  const setDato = (id: string, campo: 'costo' | 'tasa', valor: string) => setDatos(prev => ({...prev,[id]:{...(prev[id] || {}),[campo]:valor}}));
   const registros = () => filas.map(({m,p}) => ({
     productCode: p.codigo, productName: p.nombre, date: m.fecha.slice(0,10), type: 'SALIDA',
     concept: m.tipo === 'venta' ? 'VENTA' : (m.tipo === 'consumo' ? 'AUTOCONSUMO' : 'MERMA'),
     documentRef: m.referencia || m.id, quantity: Math.abs(Number(m.cantidad)),
-    unitCostBs: Number(datos[m.id]?.costo), bcvRate: Number(datos[m.id]?.tasa)
+    unitCostBs: Number(valorDato(m.id,'costo')), bcvRate: Number(valorDato(m.id,'tasa'))
   }));
   const descargar = (tipo: 'json' | 'csv') => {
     if (!filas.length || pendientes) { alert('No hay registros o faltan costos unitarios/tasas BCV históricos por revisar.'); return; }
@@ -1148,17 +1162,17 @@ function ReporteMovimientosSalidaPeriodicos({ state }: { state: AppState }) {
       <Card className="p-4 border border-amber-200 bg-amber-50"><p className="text-[10px] uppercase font-black text-ink/50">Datos históricos pendientes</p><p className="text-2xl font-black text-amber-700">{pendientes}</p><p className="text-[10px] text-ink/50">Costo unitario y/o tasa BCV</p></Card>
     </div>
     <Card className="overflow-hidden bg-white border-line shadow-sm rounded-xl">
-      <div className="p-4 bg-ink text-white flex flex-wrap justify-between gap-2 items-center"><div><h4 className="font-black text-xs uppercase">Revisión previa de movimientos</h4><p className="text-[10px] text-white/60">Los datos históricos faltantes se completan manualmente; nunca se sustituyen por valores actuales.</p></div><div className="flex gap-2"><Button variant="secondary" onClick={()=>descargar('csv')} disabled={!filas.length || pendientes>0} className="font-black uppercase text-[10px]"><Download className="w-4 h-4"/> CSV</Button><Button onClick={()=>descargar('json')} disabled={!filas.length || pendientes>0} className="bg-brand-gold text-ink hover:bg-brand-gold-deep font-black uppercase text-[10px]"><FileSpreadsheet className="w-4 h-4"/> JSON</Button></div></div>
+      <div className="p-4 bg-ink text-white flex flex-wrap justify-between gap-2 items-center"><div><h4 className="font-black text-xs uppercase">Revisión previa de movimientos</h4><p className="text-[10px] text-white/60">Se recuperan snapshots de compra/venta y tasas guardadas en la factura; lo no documentado queda para revisión manual.</p></div><div className="flex gap-2"><Button variant="secondary" onClick={()=>descargar('csv')} disabled={!filas.length || pendientes>0} className="font-black uppercase text-[10px]"><Download className="w-4 h-4"/> CSV</Button><Button onClick={()=>descargar('json')} disabled={!filas.length || pendientes>0} className="bg-brand-gold text-ink hover:bg-brand-gold-deep font-black uppercase text-[10px]"><FileSpreadsheet className="w-4 h-4"/> JSON</Button></div></div>
       <div className="table-wrap"><Table><TableHeader><TableRow className="bg-surface-soft">
         <TableHead className="text-[10px] font-black uppercase">Fecha</TableHead><TableHead className="text-[10px] font-black uppercase">Código / Producto</TableHead><TableHead className="text-[10px] font-black uppercase">Concepto</TableHead><TableHead className="text-[10px] font-black uppercase text-right">Cantidad</TableHead><TableHead className="text-[10px] font-black uppercase">Referencia</TableHead><TableHead className="text-[10px] font-black uppercase">Costo unit. Bs.</TableHead><TableHead className="text-[10px] font-black uppercase">Tasa BCV</TableHead>
       </TableRow></TableHeader><TableBody>
         {filas.map(({m,p})=><TableRow key={m.id} className="border-b border-line/30">
           <TableCell className="text-xs font-bold whitespace-nowrap">{m.fecha.slice(0,10)}</TableCell><TableCell className="min-w-48"><p className="text-xs font-black">{p.codigo}</p><p className="text-[10px] text-ink/50">{p.nombre}</p></TableCell><TableCell><p className="text-[10px] font-black uppercase">SALIDA</p><p className="text-[10px] text-ink/50">{m.tipo==='venta'?'VENTA':(m.tipo==='consumo'?'AUTOCONSUMO':'MERMA')}</p></TableCell><TableCell className="text-right font-black text-status-danger">{Math.abs(m.cantidad)}</TableCell><TableCell className="text-[10px] min-w-36">{m.referencia || m.id}</TableCell>
-          <TableCell className="min-w-36"><Input type="number" min="0" step="0.0001" value={datos[m.id]?.costo || ''} onChange={e=>setDato(m.id,'costo',e.target.value)} placeholder="Requerido" className="h-9 min-w-28 bg-white text-right"/></TableCell><TableCell className="min-w-32"><Input type="number" min="0" step="0.0001" value={datos[m.id]?.tasa || ''} onChange={e=>setDato(m.id,'tasa',e.target.value)} placeholder="Requerida" className="h-9 min-w-24 bg-white text-right"/></TableCell>
+          <TableCell className="min-w-36"><Input type="number" min="0" step="0.0001" value={valorDato(m.id,'costo')} onChange={e=>setDato(m.id,'costo',e.target.value)} placeholder="Requerido" className="h-9 min-w-28 bg-white text-right"/></TableCell><TableCell className="min-w-32"><Input type="number" min="0" step="0.0001" value={valorDato(m.id,'tasa')} onChange={e=>setDato(m.id,'tasa',e.target.value)} placeholder="Requerida" className="h-9 min-w-24 bg-white text-right"/></TableCell>
         </TableRow>)}
         {!filas.length && <TableRow><TableCell colSpan={7} className="py-16 text-center text-ink/30 font-black uppercase">No hay salidas para los filtros seleccionados</TableCell></TableRow>}
       </TableBody></Table></div>
-      <div className="p-4 border-t border-line text-xs"><span className="text-ink/50">Total costo revisado: <b className="text-ink">{filas.reduce((s,x)=>s+Math.abs(x.m.cantidad)*(Number(datos[x.m.id]?.costo)||0),0).toLocaleString('es-VE',{minimumFractionDigits:2,maximumFractionDigits:2})} Bs.</b></span><p className={pendientes?'text-amber-700 font-bold':'text-status-success font-bold'}>{pendientes?'Complete los datos históricos pendientes para exportar.':'Revisión completa: exportación habilitada.'}</p></div>
+      <div className="p-4 border-t border-line text-xs"><span className="text-ink/50">Total costo revisado: <b className="text-ink">{filas.reduce((s,x)=>s+Math.abs(x.m.cantidad)*(Number(valorDato(x.m.id,'costo'))||0),0).toLocaleString('es-VE',{minimumFractionDigits:2,maximumFractionDigits:2})} Bs.</b></span><p className={pendientes?'text-amber-700 font-bold':'text-status-success font-bold'}>{pendientes?'Complete los datos históricos pendientes para exportar.':'Revisión completa: exportación habilitada.'}</p></div>
     </Card>
     <p className="text-[10px] text-ink/40">Se exportan código y descripción del producto, no su ID interno de POSVEN-PRO, porque SICOVEN mantiene identificadores propios.</p>
   </div>;
