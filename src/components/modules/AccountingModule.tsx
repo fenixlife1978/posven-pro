@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 import { exportarPDFLibroDiario } from '@/lib/pdf-generator';
 
-export default function AccountingModule({ state, updateState }: { state: AppState, updateState: (s: Partial<AppState>) => void,  }) {
+export default function AccountingModule({ state, updateState }: { state: AppState; updateState: (s: Partial<AppState>) => void; terminalId?: string; terminalName?: string; }) {
   useEffect(() => { Store.ensureLoaded('libroDiario'); Store.ensureLoaded('ventas'); }, []);
   // Estados de Filtro
   const [filterType, setFilterType] = useState<'hoy' | 'ayer' | 'mes' | 'rango'>('hoy');

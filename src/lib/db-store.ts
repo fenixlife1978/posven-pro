@@ -383,7 +383,7 @@ async function applyInventoryMovementsTransaction(params: {
 
   const productIds = [...new Set(movements.map(m => String(m.productoId || '')).filter(Boolean))];
   let result: any = null;
-  await runTransaction(db, async tx => {
+  await runTransaction(db, async (tx: any) => {
     const operationRef = await claimOperation(tx, operationType, operationId);
     const remoteProducts = new Map<string, any>();
     for (const pid of productIds) {
@@ -475,7 +475,7 @@ function syncProductosRTDB(prevArr: any[] | undefined, newArr: any[] | undefined
   const payload: Record<string, any> = { ...updates };
   removals.forEach(id => { payload[id] = null; });
   return update(rootRef, payload)
-    .catch(e => console.error('RTDB sync productos:', e));
+    .catch((e: any) => console.error('RTDB sync productos:', e));
 }
 
 // Sincroniza el espejo RTDB con Firestore (migración y sanado):
@@ -523,7 +523,7 @@ async function loadCollection(name: string): Promise<any[]> {
   if (tursoItems !== null) return tursoItems.map(sanitizeForFirestore).filter(Boolean);
   if (!db) return [];
   const snap = await getDocs(collection(db, name));
-  return snap.docs.map(d => sanitizeForFirestore(d.data())).filter(Boolean);
+  return snap.docs.map((d: any) => sanitizeForFirestore(d.data())).filter(Boolean);
 }
 
 // Carga COMPLETA de una colección paginada de 500 (evita leer doc a doc en loops).
@@ -545,7 +545,7 @@ async function loadAll(name: string): Promise<void> {
 // compartan la misma carga (evita que la segunda retorne "ya cargado"
 // cuando en realidad la primera aún no terminó — race condition que
 // causaba Reportes X/Z en $0 tras reinicio).
-const loadingPromises: Record<string, Promise<void>> = {};
+const loadingPromises: Partial<Record<string, Promise<void>>> = {};
 async function ensureLoaded(name: string): Promise<void> {
   if (loadedAll[name]) return;
   if (loadingPromises[name]) return loadingPromises[name];
@@ -615,7 +615,7 @@ async function loadReportWindow(name: string, terminalId: string, cutoff: string
           : query(collection(db, COLLECTIONS[name]), ...fallbackFilters, orderBy('fecha', 'asc'), limit(1000));
         snap = await getDocs(fallbackQuery);
       }
-      const items = snap.docs.map(d => sanitizeForFirestore(d.data())).filter(Boolean)
+      const items = snap.docs.map((d: any) => sanitizeForFirestore(d.data())).filter(Boolean)
         .filter((item: any) => name !== 'ventas' && name !== 'libroDiario' || String(item.terminalId || '') === terminalId);
       if (items.length) applyPatch({ [name]: mergeById((cache as any)[name], items) });
       if (snap.docs.length < 1000) break;
@@ -690,7 +690,7 @@ async function ensureReportRange(name: string, desde: string, hasta: string, ter
         ? query(collection(db, COLLECTIONS[name]), ...filters, orderBy('fecha', 'asc'), startAfter(cursor), limit(1000))
         : query(collection(db, COLLECTIONS[name]), ...filters, orderBy('fecha', 'asc'), limit(1000));
       const snap = await getDocs(q);
-      const items = snap.docs.map(d => sanitizeForFirestore(d.data())).filter(Boolean);
+      const items = snap.docs.map((d: any) => sanitizeForFirestore(d.data())).filter(Boolean);
       if (items.length) applyPatch({ [name]: mergeById((cache as any)[name], items) });
       if (snap.docs.length < 1000) break;
       cursor = snap.docs[snap.docs.length - 1];
@@ -718,7 +718,7 @@ async function loadMore(name: string, pageSize: number = PAGE_SIZE): Promise<num
       ? query(collection(db, col), orderBy('fecha', 'desc'), startAfter(last), limit(pageSize))
       : query(collection(db, col), orderBy('fecha', 'desc'), limit(pageSize));
     const snap = await getDocs(q);
-    const items = snap.docs.map(d => sanitizeForFirestore(d.data())).filter(Boolean);
+    const items = snap.docs.map((d: any) => sanitizeForFirestore(d.data())).filter(Boolean);
     cursors[name] = snap.docs.length > 0 ? snap.docs[snap.docs.length - 1] : null;
     applyPatch({ [name]: mergeById((cache as any)[name], items) });
     return items.length;
@@ -748,7 +748,7 @@ async function kardex(productoId: string, max = 100): Promise<any[]> {
         orderBy('fecha', 'desc'),
         limit(max)
       ));
-      return snap.docs.map(d => sanitizeForFirestore(d.data())).filter(Boolean);
+      return snap.docs.map((d: any) => sanitizeForFirestore(d.data())).filter(Boolean);
     } catch (e: any) {
       if (e?.code === 'failed-precondition' || /index/i.test(String(e?.message || ''))) {
         await ensureLoaded('movimientos');
@@ -955,14 +955,14 @@ function startMasterSync(name: string): () => void {
     const col = COLLECTIONS[name];
     const unsub = onSnapshot(
       collection(db, col),
-      (snap) => {
+      (snap: any) => {
         const items = snap.docs
           .map(d => sanitizeForFirestore(d.data()))
           .filter(Boolean);
         applyPatch({ [name]: items });
         if (name === 'clientes' || name === 'proveedores') loadedAll[name] = true;
       },
-      (err) => {
+      (err: any) => {
         if (err.code !== 'permission-denied') console.warn("Sync maestro " + name + ":", err);
       }
     );
@@ -1023,11 +1023,11 @@ function init() {
   void (async () => {
     const usingTurso = await bootstrapProductos();
     if (usingTurso || !rtdb) return;
-    teardownFns.push(onValue(ref(rtdb, RTDB_PRODUCTS_PATH), (snap) => {
+    teardownFns.push(onValue(ref(rtdb, RTDB_PRODUCTS_PATH), (snap: any) => {
       const val = snap.val() || {};
-      const items = Object.values(val).filter(Boolean);
+      const items = Object.values(val).filter(Boolean) as any[];
       applyPatch({ productos: items });
-    }, (err) => { if (err?.code !== 'permission-denied') console.warn("RTDB productos:", err); }));
+    }, (err: any) => { if (err?.code !== 'permission-denied') console.warn("RTDB productos:", err); }));
   })();
 
   // 3) LISTAS VIVAS ENTRE CAJAS.
@@ -1048,10 +1048,10 @@ function init() {
         const col = COLLECTIONS[name];
         teardownFns.push(onSnapshot(
           query(collection(db, col), where('estado', 'in', ['pendiente', 'parcial'])),
-          (snap) => {
+          (snap: any) => {
             const currentArr = [...((cache as any)[name] || [])];
             const map = new Map<string, any>(currentArr.map(x => [String(x.id), x]));
-            snap.docChanges().forEach(change => {
+            snap.docChanges().forEach((change: any) => {
               const item = sanitizeForFirestore(change.doc.data());
               const id = String(item?.id || change.doc.id);
               if (change.type === 'removed') {
@@ -1060,7 +1060,7 @@ function init() {
             });
             applyPatch({ [name]: [...map.values()] });
           },
-          (err) => { if (err.code !== 'permission-denied') console.warn("Sync " + name + ":", err); }
+          (err: any) => { if (err.code !== 'permission-denied') console.warn("Sync " + name + ":", err); }
         ));
       } catch (e) {
         console.error("[db-store] Error leyendo " + name + " desde Turso:", e);
@@ -1088,10 +1088,10 @@ function init() {
         const col = COLLECTIONS[name];
         teardownFns.push(onSnapshot(
           query(collection(db, col), orderBy('fecha', 'desc'), limit(100)),
-          (snap) => {
+          (snap: any) => {
             const currentArr = [...((cache as any)[name] || [])];
             const map = new Map<string, any>(currentArr.map(x => [String(x.id), x]));
-            snap.docChanges().forEach(change => {
+            snap.docChanges().forEach((change: any) => {
               const item = sanitizeForFirestore(change.doc.data());
               if (!item || !item.id) return;
               if (change.type === 'removed') map.delete(String(item.id));
@@ -1099,7 +1099,7 @@ function init() {
             });
             applyPatch({ [name]: [...map.values()] });
           },
-          (err) => { if (err.code !== 'permission-denied') console.warn("Sync " + name + ":", err); }
+          (err: any) => { if (err.code !== 'permission-denied') console.warn("Sync " + name + ":", err); }
         ));
       } catch (e) {
         console.error("[db-store] Error leyendo " + name + " desde Turso:", e);
@@ -1236,7 +1236,7 @@ export const Store = {
     if (tursoResult) return tursoResult;
 
     let result: any = null;
-    await runTransaction(db, async tx => {
+    await runTransaction(db, async (tx: any) => {
       const operationRef = await claimOperation(tx, operationType, operationId);
       const saleRef = doc(db, 'ventas', String(saleId));
       const saleSnap = await tx.get(saleRef);
@@ -1289,7 +1289,7 @@ export const Store = {
     payment: any;
     journal?: any;
     terminalId?: string;
-  }): Promise<{ appliedUSD: number; debts: any[]; receiptId?: string }> {
+  }): Promise<{ appliedUSD: number; appliedBS?: number; queuedOffline?: boolean; debts: any[]; receiptId?: string }> {
     if (typeof window === 'undefined') return { appliedUSD: 0, debts: [] };
     const { operationId, provider, amountUSD, payment, journal, terminalId } = params;
     if (!(amountUSD > 0)) return { appliedUSD: 0, debts: [] };
@@ -1303,9 +1303,9 @@ export const Store = {
 
     const effectiveTerminalId = String(terminalId || '').trim();
     const q = query(collection(db, 'cxp'), where('proveedor', '==', provider));
-    let result = { appliedUSD: 0, debts: [] as any[] };
+    let result = { appliedUSD: 0, appliedBS: 0, debts: [] as any[], receiptId: '' as string };
     const opId = String(operationId || payment?.id || (provider + '|' + amountUSD + '|' + payment?.fecha + '|' + payment?.metodo));
-    await runTransaction(db, async tx => {
+    await runTransaction(db, async (tx: any) => {
       const operationRef = await claimOperation(tx, 'PAGO-CXP-GLOBAL', opId);
       const terminalRef = effectiveTerminalId ? doc(db, 'terminales', effectiveTerminalId) : null;
       const terminalSnap = terminalRef ? await tx.get(terminalRef) : null;
@@ -1314,7 +1314,7 @@ export const Store = {
       // IMPORTANTE: Firestore puede reintentar esta función completa si detecta
       // concurrencia. Todo el resultado se reconstruye en cada intento para no
       // duplicar appliedUSD/debts en memoria.
-      const nextResult = { appliedUSD: 0, debts: [] as any[], receiptId: '' as string };
+      const nextResult = { appliedUSD: 0, appliedBS: 0, debts: [] as any[], receiptId: '' as string };
       const nextCounter = Number(terminalRemote?.proximoPagoProveedor) || 1;
       nextResult.receiptId = terminalRemote
         ? terminalSeries(terminalPrefix(terminalRemote, terminalId), 'CXP', nextCounter, 6)
@@ -1322,9 +1322,9 @@ export const Store = {
       const snap = await tx.get(q);
 
       const docs = snap.docs
-        .map(d => ({ ref: d.ref, data: sanitizeForFirestore(d.data()) as any }))
-        .filter(x => (Number(x.data.saldoUSD) || 0) > 0.001 && x.data.estado !== 'pagada')
-        .sort((a, b) => {
+        .map((d: any) => ({ ref: d.ref, data: sanitizeForFirestore(d.data()) as any }))
+        .filter((x: any) => (Number(x.data.saldoUSD) || 0) > 0.001 && x.data.estado !== 'pagada')
+        .sort((a: any, b: any) => {
           const fecha = String(a.data.fecha || '').localeCompare(String(b.data.fecha || ''));
           return fecha !== 0 ? fecha : String(a.data.id || '').localeCompare(String(b.data.id || ''));
         });
@@ -1365,6 +1365,7 @@ export const Store = {
         tx.set(item.ref, sanitizeForFirestore(updated), { merge: true });
         nextResult.debts.push({ ...updated, appliedUSD: pago });
         nextResult.appliedUSD += pago;
+        nextResult.appliedBS += pago * (Number(payment?.tasaAplicada) || 0);
       }
 
       if (nextResult.appliedUSD <= 0.001) {
@@ -1397,11 +1398,13 @@ export const Store = {
     amountUSD: number;
     amountBS?: number;
     payment: any;
+    paymentParts?: any[];
     journal?: any;
     terminalId?: string;
   }): Promise<{ appliedUSD: number; appliedBS: number; debts: any[]; receiptId?: string }> {
     if (typeof window === 'undefined') return { appliedUSD: 0, appliedBS: 0, debts: [] };
     const { operationId, customerName, customerCedula, amountUSD, amountBS, payment, journal, terminalId } = params;
+    const effectiveTerminalId = String(terminalId || '').trim();
     if (!(amountUSD > 0)) return { appliedUSD: 0, appliedBS: 0, debts: [] };
     const tursoResult = await tryTursoOperation('globalCustomerPayment', params);
     if (tursoResult) {
@@ -1422,7 +1425,7 @@ export const Store = {
     let result = { appliedUSD: 0, appliedBS: 0, debts: [] as any[], receiptId: '' as string };
     const opId = String(operationId || payment?.id || ('CXC-GLOBAL|' + customerLabel + '|' + amountUSD + '|' + payment?.fecha + '|' + payment?.metodo));
 
-    await runTransaction(db, async tx => {
+    await runTransaction(db, async (tx: any) => {
       const operationRef = await claimOperation(tx, 'PAGO-CXC-GLOBAL', opId);
       const terminalRef = terminalId ? doc(db, 'terminales', terminalId) : null;
       const terminalSnap = terminalRef ? await tx.get(terminalRef) : null;
@@ -1437,9 +1440,9 @@ export const Store = {
 
       const snap = await tx.get(q);
       const docs = snap.docs
-        .map(d => ({ ref: d.ref, data: sanitizeForFirestore(d.data()) as any }))
-        .filter(x => (Number(x.data.saldoUSD) || 0) > 0.001 && x.data.estado !== 'pagada')
-        .sort((a, b) => {
+        .map((d: any) => ({ ref: d.ref, data: sanitizeForFirestore(d.data()) as any }))
+        .filter((x: any) => (Number(x.data.saldoUSD) || 0) > 0.001 && x.data.estado !== 'pagada')
+        .sort((a: any, b: any) => {
           const fecha = String(a.data.fecha || '').localeCompare(String(b.data.fecha || ''));
           return fecha !== 0 ? fecha : String(a.data.id || '').localeCompare(String(b.data.id || ''));
         });
@@ -1594,7 +1597,7 @@ export const Store = {
     const debtRef = doc(db, collectionName, debtId);
     let result: any = null;
     const opId = String(operationId || payment?.id || (collectionName + '|' + debtId + '|' + amountUSD + '|' + payment?.metodo + '|' + payment?.fecha));
-    await runTransaction(db, async tx => {
+    await runTransaction(db, async (tx: any) => {
       const operationRef = await claimOperation(tx, 'PAGO-DEUDA', opId);
       const terminalRef = terminalId ? doc(db, 'terminales', terminalId) : null;
       const terminalSnap = terminalRef ? await tx.get(terminalRef) : null;
@@ -1688,7 +1691,7 @@ export const Store = {
     const debtRef = doc(db, 'cxp', debt.id);
     let result: any = null;
     const opId = String(operationId || debt.id);
-    await runTransaction(db, async tx => {
+    await runTransaction(db, async (tx: any) => {
       const operationRef = await claimOperation(tx, 'DEUDA-CXP', opId);
       const existing = await tx.get(debtRef);
       if (existing.exists()) throw new Error('La deuda de proveedor ya existe en otra caja. Actualice y vuelva a intentar.');
@@ -1910,7 +1913,7 @@ export const Store = {
     const customerRef = doc(db, 'clientes', customerId);
     let result: any = null;
     const opId = String(operationId || customerId);
-    await runTransaction(db, async tx => {
+    await runTransaction(db, async (tx: any) => {
       const operationRef = await claimOperation(tx, 'ELIMINAR-CLIENTE', opId);
       const customerSnap = await tx.get(customerRef);
       if (!customerSnap.exists()) throw new Error('El cliente ya no existe o fue eliminado en otra caja.');
@@ -1947,12 +1950,12 @@ export const Store = {
         debtsSnap = await tx.get(query(collection(db, 'cxc')));
       }
       const debts = debtsSnap.docs;
-      const active = debts.find(d => {
+      const active = debts.find((d: any) => {
         const debt = d.data() as any;
         return debt.estado !== 'pagada' && (Number(debt.saldoUSD) || 0) > 0.001;
       });
       if (active) throw new Error('El cliente tiene una deuda pendiente en otra caja. Actualice y vuelva a intentar.');
-      debts.forEach(d => tx.delete(d.ref));
+      debts.forEach((d: any) => tx.delete(d.ref));
       tx.delete(customerRef);
       tx.set(operationRef, { tipo: 'ELIMINAR-CLIENTE', operationId: opId, fecha: new Date().toISOString(), referencia: customerId }, { merge: false });
       result = { customer, deletedDebts: debts.length };
@@ -1973,7 +1976,7 @@ export const Store = {
     const debtRef = doc(db, 'cxc', debtId);
     let result: any = null;
     const opId = String(operationId || debtId);
-    await runTransaction(db, async tx => {
+    await runTransaction(db, async (tx: any) => {
       const operationRef = await claimOperation(tx, 'ELIMINAR-CXC', opId);
       const debtSnap = await tx.get(debtRef);
       if (!debtSnap.exists()) throw new Error('La deuda ya no existe o fue eliminada en otra caja.');
@@ -2032,7 +2035,7 @@ export const Store = {
     const debtRef = doc(db, 'cxc', debt.id);
     let result: any = null;
     const opId = String(operationId || debt.id);
-    await runTransaction(db, async tx => {
+    await runTransaction(db, async (tx: any) => {
       const operationRef = await claimOperation(tx, 'DEUDA-CXC', opId);
       const existing = await tx.get(debtRef);
       if (existing.exists()) throw new Error('La deuda ya existe en otra caja. Actualice y vuelva a intentar.');
@@ -2090,7 +2093,7 @@ export const Store = {
     let journalResult: any = null;
     const opId = String(operationId || (collectionName + '|' + debtId + '|' + paymentId + '|REVERSE'));
 
-    await runTransaction(db, async tx => {
+    await runTransaction(db, async (tx: any) => {
       const operationRef = await claimOperation(tx, 'REVERSAR-PAGO', opId);
       // Cada reintento debe reconstruir completamente el resultado a partir
       // del estado remoto para evitar residuos de un intento anterior.

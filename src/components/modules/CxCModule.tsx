@@ -35,6 +35,7 @@ import CreditDetailModal from '@/components/modules/CreditDetailModal';
 interface CxCModuleProps {
   state: AppState;
   updateState: (s: Partial<AppState>) => void;
+  terminalId?: string;
 }
 
 export default function CxCModule({ state, updateState }: CxCModuleProps) {

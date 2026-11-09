@@ -38,6 +38,14 @@ import { Pagination } from '@/components/ui/pagination';
 import { DateRangeFilter, DateRange } from '@/components/ui/date-range-filter';
 import { toast } from '@/hooks/use-toast';
 
+const mergeById = (current: any[] = [], incoming: any[] = []) => {
+  const merged = new Map<string, any>();
+  [...current, ...incoming].forEach(item => {
+    if (item?.id !== undefined && item?.id !== null) merged.set(String(item.id), item);
+  });
+  return Array.from(merged.values());
+};
+
 interface PurchaseItemTemp {
   productoId: string;
   nombre: string;

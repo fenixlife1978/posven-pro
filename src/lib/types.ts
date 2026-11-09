@@ -173,6 +173,7 @@ export interface Sale {
   exentoUSD?: number;
   igtfUSD?: number;
   tasa: number;
+  tasaAplicada?: number;
 }
 
 export interface Customer {
@@ -192,6 +193,10 @@ export interface Debt {
   proveedor?: string;
   numeroFactura?: string;
   montoUSD: number;
+  subtotalUSD?: number;
+  totalUSD?: number;
+  totalBS?: number;
+  tasa?: number;
   abonadoUSD: number;
   saldoUSD: number;
   estado: 'pendiente' | 'parcial' | 'pagada';
@@ -215,6 +220,10 @@ export interface LibroDiarioEntry {
   tipo: 'ingreso' | 'egreso';
   categoria: string;
   concepto: string;
+  descripcion?: string;
+  motivo?: string;
+  observacion?: string;
+  nota?: string;
   montoUSD: number;
   montoBS: number;
   metodo: string;
@@ -391,6 +400,10 @@ export interface Config {
 export interface CashSession {
   terminalId?: string;
   terminalName?: string;
+  openedAt?: string;
+  fechaApertura?: string;
+  openedBy?: string;
+  usuarioApertura?: string;
   openDate: string;
   openAmount: number;
   openAmountBs: number;
