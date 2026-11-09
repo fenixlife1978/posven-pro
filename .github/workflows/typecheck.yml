@@ -6,7 +6,7 @@ on:
       - turso-migration
   pull_request:
     branches:
-      - turso-migration
+      - main
   workflow_dispatch:
 
 jobs:
