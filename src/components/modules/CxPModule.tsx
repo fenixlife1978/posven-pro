@@ -164,10 +164,13 @@ export default function CxPModule({ state, updateState, terminalId }: CxPModuleP
     }
     const montoBS = esMetodoBS ? rawMonto : rawMonto * state.tasa;
     const amount = esMetodoBS ? rawMonto / state.tasa : rawMonto;
-    if (amount > (showPaymentModal.saldoUSD + 0.001)) {
+    const amountCents = Math.round(amount * 100);
+    const saldoCents = Math.round((Number(showPaymentModal.saldoUSD) || 0) * 100);
+    if (amountCents > saldoCents) {
       toast({ variant: "destructive", title: "Error", description: "El monto no puede ser mayor al saldo pendiente." });
       return;
     }
+    const amountNormalizado = amountCents / 100;
 
     if (isProcessing || processingRef.current) return;
     processingRef.current = true;
@@ -178,28 +181,27 @@ export default function CxPModule({ state, updateState, terminalId }: CxPModuleP
     const reciboId = `PEND-CXP-${Store.uid().toUpperCase().slice(0, 8)}`;
     const pago = {
       id: 'PAYS-' + Store.uid().toUpperCase().slice(0, 6),
-      asientoId, fecha: ahoraStr, montoUSD: amount, montoBS,
+      asientoId, fecha: ahoraStr, montoUSD: amountNormalizado, montoBS,
       metodo: paymentMethod, reciboId
     };
     const nuevoAsiento: LibroDiarioEntry = {
       id: asientoId, fecha: ahoraStr, tipo: 'egreso',
       categoria: 'PAGO_PROVEEDOR' as any,
       concepto: `PAGO DEUDA A: ${showPaymentModal.proveedor.toUpperCase()} - REF FACT: ${showPaymentModal.numeroFactura || 'S/N'}`,
-      montoUSD: amount, montoBS, metodo: paymentMethod, referencia: showPaymentModal.id
+      montoUSD: amountNormalizado, montoBS, metodo: paymentMethod, referencia: showPaymentModal.id
     };
 
     try {
       const resultadoPago = await Store.applyDebtPaymentTransaction({
         collection: 'cxp',
         debtId: showPaymentModal.id,
-        amountUSD: amount,
-        payment: pago,
-        journal: nuevoAsiento,
-        terminalId
+        amountUSD: amountNormalizado,
+        payment: { ...pago, montoUSD: amountNormalizado },
+        journal: nuevoAsiento
       });
       if (!resultadoPago) throw new Error('No se pudo registrar el pago al proveedor.');
       if (resultadoPago.queuedOffline) { toast({ title: 'Pago guardado sin conexión', description: 'Quedó pendiente y se sincronizará automáticamente al regresar Internet.' }); setShowPaymentModal(null); setPaymentAmount(''); return; }
-      toast({ title: "Pago registrado", description: `Se abonó ${Utils.fmtUSD(amount)}${esMetodoBS ? ' (' + Utils.fmtBS(rawMonto) + ')' : ''} a ${showPaymentModal.proveedor.toUpperCase()}` });
+      toast({ title: "Pago registrado", description: `Se abonó ${Utils.fmtUSD(amountNormalizado)}${esMetodoBS ? ' (' + Utils.fmtBS(rawMonto) + ')' : ''} a ${showPaymentModal.proveedor.toUpperCase()}` });
       setShowPaymentModal(null);
       setPaymentAmount('');
     } catch (e: any) {
@@ -281,8 +283,7 @@ export default function CxPModule({ state, updateState, terminalId }: CxPModuleP
         provider: globalProvider.proveedor,
         amountUSD: amount,
         payment: pagoBase,
-        journal: nuevoAsiento,
-        terminalId
+        journal: nuevoAsiento
       });
 
       if (resultadoPago.queuedOffline) { toast({ title: 'Pago global guardado sin conexión', description: 'Quedó pendiente y se sincronizará automáticamente al regresar Internet.' }); return; }
@@ -294,7 +295,7 @@ export default function CxPModule({ state, updateState, terminalId }: CxPModuleP
 
       const remanente = Math.max(0, amount - totalAplicado);
       const aplicados = resultadoPago.debts;
-      const aplicadoBS = totalAplicado * tasaAplicada;
+      const aplicadoBS = Number(resultadoPago.appliedBS) > 0 ? Number(resultadoPago.appliedBS) : totalAplicado * tasaAplicada;
 
       toast({
         title: "Pago global registrado",
@@ -311,7 +312,7 @@ export default function CxPModule({ state, updateState, terminalId }: CxPModuleP
       toast({
         variant: "destructive",
         title: "No se pudo registrar el pago global",
-        description: e?.message || 'Las deudas cambiaron en otra caja. Actualice y vuelva a intentar.'
+        description: e?.message || 'No se pudo completar la operación contra Turso.'
       });
     } finally {
       processingRef.current = false;
@@ -826,6 +827,8 @@ export default function CxPModule({ state, updateState, terminalId }: CxPModuleP
                <div className="bg-surface-soft p-5 rounded-[20px] text-center border border-line shadow-inner">
                   <p className="text-ink text-[9px] font-black uppercase tracking-[0.2em] mb-2">TOTAL PENDIENTE</p>
                   <p className="text-3xl font-black text-status-danger">{Utils.fmtUSD(globalProvider.total)}</p>
+                  <p className="text-base font-black text-ink mt-1">{Utils.fmtBS(globalProvider.total * (Number(state.tasa) || 0))}</p>
+                  <p className="text-[9px] font-black text-ink/70 mt-0.5 uppercase">Equivalente en BS · Tasa BCV {Number(state.tasa || 0).toFixed(2)} Bs/USD</p>
                   <p className="text-[9px] font-black text-ink mt-2 uppercase tracking-tight italic">
                     Se liquidarán las deudas desde la más antigua; el excedente se aplica como abono.
                   </p>

@@ -55,7 +55,7 @@ export default function LoginPage() {
         }
         if (!cancelled) setStatusMessage(response.status === 503 ? "Turso no está disponible." : "Turso respondió, pero no hay sesión activa.");
       } catch {
-        if (!cancelled) setStatusMessage("Turso no respondió en 12 segundos. Verifique la conexión y reintente.");
+        if (!cancelled) setStatusMessage("No fue posible conectar con Turso.");
       } finally {
         if (!cancelled) setAuthChecked(true);
       }

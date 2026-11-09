@@ -214,14 +214,15 @@ export function InventoryModule({ state, updateState }: InventoryModuleProps) {
         </div>
       </Card>
 
-      <ProductFormModal 
-        isOpen={isModalOpen} 
-        onClose={() => setIsModalOpen(false)} 
-        product={selectedProduct}
-        onSave={refreshData}
-        state={state}
-        updateState={updateState}
-      />
+      {isModalOpen && (
+        <ProductFormModal
+          producto={selectedProduct}
+          state={state}
+          onClose={() => setIsModalOpen(false)}
+          onSave={() => { refreshData(); setIsModalOpen(false); }}
+          onUpdateLists={updateState}
+        />
+      )}
     </div>
   );
 }

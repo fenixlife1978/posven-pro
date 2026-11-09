@@ -29,6 +29,8 @@ import {
   Check,
   RotateCcw,
   HandCoins,
+  ArrowDownCircle,
+  ArrowUpCircle,
   Calculator,
   TrendingUp,
   BarChart3,
@@ -41,7 +43,6 @@ import {
   Loader2,
   Hash
 } from 'lucide-react';
-import { auth } from '@/lib/firebase';
 import { ReceiptModal } from '@/components/pos/ReceiptModal';
 import { CreditModal } from '@/components/pos/CreditSaleModal';
 import FloatingPaymentModal from '@/components/pos/FloatingPaymentModal';
@@ -51,6 +52,8 @@ import { Utils, Store } from '@/lib/db-store';
 import ReturnsModule from '@/components/modules/ReturnsModule';
 import { Pagination } from '@/components/ui/pagination';
 import { cn } from '@/lib/utils';
+import CashZArqueoModal from '@/components/pos/CashZArqueoModal';
+import ZReportPreview80mm from '@/components/pos/ZReportPreview80mm';
 
 // ============================================================
 // UTILIDADES DE NORMALIZACIÓN DE CÉDULA (integradas)
@@ -141,11 +144,13 @@ function extractDocType(cedula: string): string {
 
 export default function SalesModule({ state, updateState }: { state: AppState, updateState: (s: Partial<AppState>) => void }) {
   const [search, setSearch] = useState('');
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [view, setView] = useState<'pos' | 'history' | 'credits' | 'returns'>('pos');
   const [histPage, setHistPage] = useState(1);
   const [showReportType, setShowReportType] = useState<'REPORT_X' | 'REPORT_Z' | null>(null);
   const [reportSnapshot, setReportSnapshot] = useState<any>(null);
   const [reportLoadingType, setReportLoadingType] = useState<'REPORT_X' | 'REPORT_Z' | null>(null);
+  const [showZArqueo, setShowZArqueo] = useState(false);
   const [globalCreditCustomer, setGlobalCreditCustomer] = useState<{ name: string; cedula?: string; totalUSD: number; totalBS: number } | null>(null);
   const [cliente, setCliente] = useState('Consumidor final');
   const [isFullScreen, setIsFullScreen] = useState(false);
@@ -168,6 +173,20 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
 
   // ===== ESTADOS PARA CREDIT MODAL =====
   const [isCreditModalOpen, setIsCreditModalOpen] = useState(false);
+  const [showCashMovementModal, setShowCashMovementModal] = useState(false);
+  const [cashMovement, setCashMovement] = useState<{
+    tipo: 'ingreso' | 'egreso';
+    metodo: 'efectivo_bs' | 'efectivo_usd';
+    monto: string;
+    concepto: string;
+    observacion: string;
+  }>({
+    tipo: 'egreso',
+    metodo: 'efectivo_usd',
+    monto: '',
+    concepto: '',
+    observacion: ''
+  });
   const [clientSearch, setClientSearch] = useState('');
   const [selectedClient, setSelectedClient] = useState<Customer | null>(null);
   const [showNewClientForm, setShowNewClientForm] = useState(false);
@@ -178,128 +197,312 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
 
   const [expandedClient, setExpandedClient] = useState<string | null>(null);
   const [showClientHistory, setShowClientHistory] = useState<string | null>(null);
+  const [creditSearch, setCreditSearch] = useState('');
+
+  // Historial completo de CxC usado EXCLUSIVAMENTE por Consultar Créditos.
+  // No depende del cache reducido que se carga al iniciar el POS.
+  const [creditDebts, setCreditDebts] = useState<Debt[]>(state.cxc || []);
+
+  useEffect(() => {
+    if (view !== 'credits') return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const pageSize = 2000;
+        const allRecords: any[] = [];
+        for (let offset = 0; ; offset += pageSize) {
+          const response = await fetch(
+            '/api/turso/store?table=cxc&limit=' + pageSize + '&offset=' + offset,
+            { credentials: 'include', cache: 'no-store' }
+          );
+          const body: any = await response.json();
+          if (!response.ok || body?.ok === false) {
+            throw new Error(String(body?.error || 'Turso rechazó la lectura histórica de CxC.'));
+          }
+          const page = Array.isArray(body?.records) ? body.records : [];
+          allRecords.push(...page);
+          if (page.length < pageSize) break;
+        }
+        if (!cancelled) setCreditDebts(allRecords as Debt[]);
+      } catch (e) {
+        console.error('[POS Ventas] No se pudo cargar el histórico completo de CxC:', e);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [view]);
 
   useEffect(() => {
     setHistPage(1);
+    if (view !== 'credits') setCreditSearch('');
   }, [view]);
 
   const currentTerminal = useMemo(() => {
-    return auth?.currentUser ? state.terminales.find(t => t.usuarioId === auth.currentUser!.uid) : null;
-  }, [state.terminales]);
+    const appUser: any = (state as any).user || null;
+    const explicitTerminalId = String(appUser?.terminalId || '').trim();
+    if (explicitTerminalId) {
+      return state.terminales.find(t => String(t.id) === explicitTerminalId) || null;
+    }
+    const ids = [appUser?.id, appUser?.uid].filter(Boolean).map(String);
+    return ids.length
+      ? state.terminales.find(t => ids.includes(String(t.usuarioId || ''))) || null
+      : null;
+  }, [state.terminales, (state as any).user]);
 
   const histVentas = useMemo(() => {
     const tc = Utils.getTerminalCash(currentTerminal);
-    return (state.ventas || [])
-      .filter(v => v.terminalId === currentTerminal?.id && v.fecha > (tc.fechaUltimoZ || ''))
-      .sort((a, b) => b.fecha.localeCompare(a.fecha));
-  }, [state.ventas, currentTerminal?.id]);
+    const desde = tc.fechaUltimoZ || '';
+    const ventas = (state.ventas || [])
+      .filter(v => v.terminalId === currentTerminal?.id && v.fecha > desde)
+      .map(v => ({ ...v, esMovimientoCaja: false }));
+    const movimientos = (state.libroDiario || [])
+      .filter(e => e.terminalId === currentTerminal?.id && e.fecha > desde && e.categoria === 'MOVIMIENTO_CAJA')
+      .map(e => ({
+        id: e.id,
+        fecha: e.fecha,
+        cliente: e.concepto || e.descripcion || e.motivo || 'MOVIMIENTO DE CAJA',
+        concepto: e.concepto || e.descripcion || e.motivo || 'MOVIMIENTO DE CAJA',
+        observacion: e.observacion || e.nota || '',
+        items: [],
+        subtotalUSD: e.montoUSD,
+        descuentoUSD: 0,
+        totalUSD: e.montoUSD,
+        totalBS: e.montoBS,
+        metodoPago: e.metodo,
+        estado: e.tipo,
+        type: 'MOVIMIENTO CAJA',
+        terminalId: e.terminalId,
+        terminalName: e.terminalName,
+        esMovimientoCaja: true
+      } as any));
+    return [...ventas, ...movimientos].sort((a, b) => b.fecha.localeCompare(a.fecha));
+  }, [state.ventas, state.libroDiario, currentTerminal?.id]);
 
   const histPageSize = 10;
   const histTotalPages = Math.max(1, Math.ceil(histVentas.length / histPageSize));
   const histSafePage = Math.min(histPage, histTotalPages);
   const histPageVentas = histVentas.slice((histSafePage - 1) * histPageSize, histSafePage * histPageSize);
 
-  const searchInputRef = useRef<HTMLInputElement>(null);
-
-  // ===== CORREGIDO: Formato de cédula según tipo =====
-  const formatCedulaByType = (val: string, type: string) => {
-    if (type !== 'V' && type !== 'E') {
-      return val.replace(/\D/g, '');
-    }
-    const digits = val.replace(/\D/g, '');
-    if (digits.length <= 2) return digits;
-    if (digits.length <= 5) return digits.slice(0, 2) + '.' + digits.slice(2);
-    if (digits.length <= 8) return digits.slice(0, 2) + '.' + digits.slice(2, 5) + '.' + digits.slice(5);
-    return digits.slice(0, 2) + '.' + digits.slice(2, 5) + '.' + digits.slice(5, 8);
-  };
-
-  const handleNewClientCedulaChange = (val: string) => {
-    const formatted = formatCedulaByType(val, newClient.tipoDoc);
-    setNewClient({ ...newClient, cedula: formatted });
-  };
-
-  const handleNewClientTipoDocChange = (tipo: string) => {
-    const cleanNumber = newClient.cedula.replace(/\./g, '');
-    const formatted = formatCedulaByType(cleanNumber, tipo);
-    setNewClient({ ...newClient, tipoDoc: tipo, cedula: formatted });
+  const getSaleCurrencyTotals = (v: any) => {
+    const rate = Number(v?.tasaAplicada || v?.tasa || state.tasa || 1) || 1;
+    const pays = Array.isArray(v?.payments) && v.payments.length
+      ? v.payments
+      : [{ metodo: v?.metodoPago || 'otros', montoUSD: v?.totalUSD || 0, montoBS: v?.totalBS }];
+    let usd = 0;
+    let bs = 0;
+    pays.forEach((p:any) => {
+      const method = String(p?.metodo || p?.method || '').toLowerCase();
+      const pUsd = Number(p?.montoUSD) || Number(p?.usdAmount) || (
+        ['efectivo_bs','pagomovil','punto_venta','biopago','transferencia'].includes(method)
+          ? (Number(p?.amount) || Number(p?.totalBS) || 0) / rate
+          : 0
+      );
+      const pBs = Number(p?.montoBS) || Number(p?.totalBS) || (
+        Number(p?.amount) || (
+          ['efectivo_usd','zelle'].includes(method) ? pUsd * rate : 0
+        )
+      );
+      usd += pUsd;
+      bs += pBs;
+    });
+    return { usd, bs };
   };
 
   const getFreshReportData = () => {
-    // ✅ FIX: Obtener datos frescos del Store para evitar inconsistencias
     const freshState = Store.get();
-    // Cada caja usa SU PROPIO corte Z / fondo de apertura / correlativo Z.
-    const tc = Utils.getTerminalCash(currentTerminal);
-    const corteTimestamp = tc.fechaUltimoZ || '';
-    const termId = currentTerminal?.id || 'GLOBAL';
-    
-    // Usar datos frescos del Store en lugar del state del componente
+
+    // El terminal que ya resolvió la pantalla POS es la fuente de verdad para
+    // X/Z. Nunca permitimos que un usuario cacheado de Store.get() cambie de
+    // caja el reporte (p.ej. Rosmary/Barra 2 -> Newman/Barra 3).
+    const activeTerminalId = String(currentTerminal?.id || '').trim();
+    const resolvedTerminal =
+      (activeTerminalId
+        ? (freshState.terminales || []).find((t:any) => String(t?.id || '') === activeTerminalId)
+        : null) || currentTerminal;
+    const termId = String(resolvedTerminal?.id || activeTerminalId || '').trim();
+
+    // El cajero queda ligado a la caja activa. Para la sesión normal, el usuario
+    // actual debe coincidir con el usuario asignado al terminal.
+    const sessionUser: any = (state as any).user || null;
+    const assignedUserId = String(resolvedTerminal?.usuarioId || '').trim();
+    const sessionUserIds = [sessionUser?.uid, sessionUser?.id].filter(Boolean).map(String);
+    const cajeroNombre =
+      assignedUserId && sessionUserIds.includes(assignedUserId)
+        ? String(sessionUser?.nombre || sessionUser?.name || sessionUser?.displayName || sessionUser?.email || 'Cajero')
+        : String(sessionUser?.nombre || sessionUser?.name || sessionUser?.displayName || sessionUser?.email || 'Cajero');
+    const tc = Utils.getTerminalCash(resolvedTerminal);
+    const corteTimestamp = tc.fechaUltimoZ || freshState.fechaUltimoZ || '';
+
     const allVentas = freshState.ventas || [];
     const allDevoluciones = freshState.devoluciones || [];
+    const allAnulaciones = freshState.anulaciones || [];
     const allLibroDiario = freshState.libroDiario || [];
-    
-    const vActivas = allVentas.filter(v => v.fecha > corteTimestamp && v.estado !== 'anulada' && v.terminalId === termId);
-    const vAnuladas = allVentas.filter(v => v.fecha > corteTimestamp && v.estado === 'anulada' && v.terminalId === termId);
-    const dHoy = allDevoluciones.filter(d => d.fecha > corteTimestamp && (allVentas.find(v => v.id === d.ventaId)?.terminalId === termId));
-    
-    const brUSD = vActivas.reduce((s, v) => s + v.totalUSD, 0);
-    const devUSD = dHoy.reduce((s, d) => s + d.totalUSD, 0);
-    const descUSD = vActivas.reduce((s, v) => s + (v.descuentoUSD || 0), 0);
-    const netUSD = brUSD - devUSD - descUSD;
+    const inWindow = (fecha:string) => fecha > corteTimestamp;
 
-    const baseImponibleUSD = vActivas.reduce((s, v) => s + (v.baseImponibleUSD || 0), 0);
-    const ivaUSD = vActivas.reduce((s, v) => s + (v.ivaUSD || 0), 0);
-    const exentoUSD = vActivas.reduce((s, v) => s + (v.exentoUSD || 0), 0);
-    const igtfUSD = vActivas.reduce((s, v) => s + (v.igtfUSD || 0), 0);
+    const esCobroDeuda = (v:any) => {
+      const tipo = String(v?.type || '').trim().toUpperCase();
+      return tipo === 'COBRO DEUDA' || tipo === 'ABONO DEUDA' || tipo === 'COBRO_DEUDA';
+    };
+    const vActivas = allVentas.filter(v => inWindow(v.fecha) && v.estado !== 'anulada' && String(v.terminalId || '') === termId && !esCobroDeuda(v));
+    const vAnuladas = allVentas.filter(v => inWindow(v.fecha) && v.estado === 'anulada' && String(v.terminalId || '') === termId && !esCobroDeuda(v));
+    const dHoy = allDevoluciones.filter(d => inWindow(d.fecha) && String(allVentas.find(v => v.id === d.ventaId)?.terminalId || '') === termId);
+    const aHoy = allAnulaciones.filter(a => inWindow(a.fecha) && String(allVentas.find(v => v.id === a.ventaId)?.terminalId || '') === termId);
+
+    const brUSD = vActivas.reduce((s,v) => s + (Number(v.totalUSD)||0), 0);
+    const devUSD = dHoy.reduce((s,d) => s + (Number(d.totalUSD)||0), 0) + aHoy.reduce((s,a) => s + (Number(a.totalUSD)||0), 0);
+    const descUSD = vActivas.reduce((s,v) => s + (Number(v.descuentoUSD)||0), 0);
+    const netUSD = brUSD - devUSD - descUSD;
+    const baseImponibleUSD = vActivas.reduce((s,v) => s + (Number(v.baseImponibleUSD)||0), 0);
+    const ivaUSD = vActivas.reduce((s,v) => s + (Number(v.ivaUSD)||0), 0);
+    const exentoUSD = vActivas.reduce((s,v) => s + (Number(v.exentoUSD)||0), 0);
+    const igtfUSD = vActivas.reduce((s,v) => s + (Number(v.igtfUSD)||0), 0);
 
     const paymentMethodsMap: Record<string, number> = {};
-    vActivas.forEach(v => {
-      if (v.payments && v.payments.length > 0) {
-        v.payments.forEach(p => {
-          paymentMethodsMap[p.metodo] = (paymentMethodsMap[p.metodo] || 0) + p.montoUSD;
-        });
-      } else if (v.metodoPago) {
-        paymentMethodsMap[v.metodoPago] = (paymentMethodsMap[v.metodoPago] || 0) + v.totalUSD;
+    vActivas.forEach(v => (Array.isArray(v.payments) && v.payments.length ? v.payments : [{metodo:v.metodoPago||'otros',montoUSD:v.totalUSD}]).forEach((p:any) => {
+      const m=String(p.metodo||'otros');
+      paymentMethodsMap[m]=(paymentMethodsMap[m]||0)+(Number(p.montoUSD)||Number(p.usdAmount)||0);
+    }));
+
+    const sortedVentas=[...vActivas].sort((a,b)=>a.fecha.localeCompare(b.fecha));
+    const sortedDevs=[...dHoy].sort((a,b)=>a.fecha.localeCompare(b.fecha));
+    const desdeFactura=sortedVentas[0]?.id||'N/A';
+    const hastaFactura=sortedVentas[sortedVentas.length-1]?.id||'N/A';
+    const desdeNC=sortedDevs[0]?.id||'N/A';
+    const hastaNC=sortedDevs[sortedDevs.length-1]?.id||'N/A';
+
+    // Todos los métodos se normalizan antes de alimentar el arqueo. Esto evita
+    // que TARJETA/PUNTO DE VENTA terminen en filas distintas.
+    const normalizarMetodo=(m:any)=>{
+      const base=String(m||'otros').trim().toLowerCase()
+        .normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,'_');
+      if (['punto_venta','punto_de_venta','punto_pago','punto_de_pago','tarjeta_debito','tarjeta_credito'].includes(base)) return 'tarjeta';
+      if (base==='pago_movil') return 'pagomovil';
+      return base;
+    };
+    const esMetodoUSD=(m:string)=>['efectivo_usd','zelle','usd','dolar','dolares'].includes(normalizarMetodo(m));
+    const esMetodoBS=(m:string)=>['efectivo_bs','efectivo','bs','bolivares','tarjeta','pagomovil','biopago','transferencia'].includes(normalizarMetodo(m));
+    const addPaymentTo=(p:any,factor=1)=>{
+      const metodo=normalizarMetodo(p?.metodo||p?.method||'otros');
+      const usd=Number(p?.montoUSD??p?.usdAmount??0)||0;
+      const bs=Number(p?.montoBS??p?.amountBS??p?.totalBS??0)||(
+        esMetodoBS(metodo) ? (Number(p?.amount)||0) :
+        esMetodoUSD(metodo) ? 0 : 0
+      );
+      return {metodo,usd:usd*factor,bs:bs*factor};
+    };
+    const relevantDiario=allLibroDiario.filter(e=>inWindow(e.fecha)&&String(e.terminalId||'')===termId);
+    const totalSalidasCaja=relevantDiario.filter(e=>e.tipo==='egreso').reduce((s,e)=>s+(Number(e.montoUSD)||0),0);
+    const totalEntradasCaja=relevantDiario.filter(e=>e.tipo==='ingreso'&&e.categoria!=='VENTA'&&e.categoria!=='COBRO_DEUDA').reduce((s,e)=>s+(Number(e.montoUSD)||0),0);
+    const esMovimientoCaja=(e:any)=>{
+      const categoria=String(e?.categoria||'').trim().toUpperCase().replace(/Á/g,'A');
+      return categoria==='MOVIMIENTO_CAJA' || categoria==='MOVIMIENTO DE CAJA' || String(e?.type||'').toUpperCase()==='MOVIMIENTO CAJA';
+    };
+    const movimientosCaja=relevantDiario.filter((e:any)=>
+      esMovimientoCaja(e) &&
+      (e.tipo==='ingreso'||e.tipo==='egreso')
+    );
+    const totalSalidasCajaBS=movimientosCaja.filter(e=>e.tipo==='egreso'&&normalizarMetodo(e.metodo)==='efectivo_bs').reduce((s,e)=>s+(Number(e.montoBS)||0),0);
+    const totalSalidasCajaUSD=movimientosCaja.filter(e=>e.tipo==='egreso'&&normalizarMetodo(e.metodo)==='efectivo_usd').reduce((s,e)=>s+(Number(e.montoUSD)||0),0);
+    const totalEntradasCajaBS=movimientosCaja.filter(e=>e.tipo==='ingreso'&&normalizarMetodo(e.metodo)==='efectivo_bs').reduce((s,e)=>s+(Number(e.montoBS)||0),0);
+    const totalEntradasCajaUSD=movimientosCaja.filter(e=>e.tipo==='ingreso'&&normalizarMetodo(e.metodo)==='efectivo_usd').reduce((s,e)=>s+(Number(e.montoUSD)||0),0);
+
+    const arqueoMap:Record<string,any>={};
+    const ensureArqueo=(metodo:string)=>{
+      if(!arqueoMap[metodo]) arqueoMap[metodo]={ventasBS:0,ventasUSD:0,cobrosBS:0,cobrosUSD:0,devBS:0,devUSD:0,movPlusBS:0,movPlusUSD:0,movMinusBS:0,movMinusUSD:0};
+      return arqueoMap[metodo];
+    };
+
+    vActivas.forEach(v=>{
+      const pays=Array.isArray(v.payments)&&v.payments.length?v.payments:[{metodo:v.metodoPago||'otros',montoUSD:v.totalUSD,montoBS:v.totalBS,tasaAplicada:v.tasaAplicada}];
+      pays.forEach((p:any)=>{const x=addPaymentTo(p);if(x.metodo==='credito')return;const row=ensureArqueo(x.metodo);if(esMetodoUSD(x.metodo))row.ventasUSD+=x.usd;else row.ventasBS+=x.bs;});
+    });
+
+    const cobroDeudaVentas=allVentas.filter(v=>inWindow(v.fecha)&&String(v.terminalId||'')===termId&&esCobroDeuda(v));
+    cobroDeudaVentas.forEach(v=>{
+      const pays=Array.isArray(v.payments)&&v.payments.length?v.payments:[{metodo:v.metodoPago||'otros',montoUSD:v.totalUSD,montoBS:v.totalBS,tasaAplicada:v.tasaAplicada}];
+      pays.forEach((p:any)=>{const x=addPaymentTo(p);const row=ensureArqueo(x.metodo);if(esMetodoUSD(x.metodo))row.cobrosUSD+=x.usd;else row.cobrosBS+=x.bs;});
+    });
+
+    // Las anulaciones/devoluciones descuentan del método REAL utilizado para el reintegro.
+    // Se prioriza refundPayments (nuevo formato); los documentos históricos usan el método de venta como fallback.
+    aHoy.forEach((a:any)=>{
+      const sale:any=allVentas.find(v=>v.id===a.ventaId);
+      const pays=Array.isArray(a.refundPayments)&&a.refundPayments.length
+        ? a.refundPayments
+        : (sale&&Array.isArray(sale.payments)&&sale.payments.length
+          ? sale.payments
+          : [{metodo:sale?.metodoPago||'otros',montoUSD:a.totalUSD,montoBS:sale?.totalBS,tasaAplicada:sale?.tasaAplicada}]);
+      pays.forEach((p:any)=>{const x=addPaymentTo(p);const row=ensureArqueo(x.metodo);if(esMetodoUSD(x.metodo))row.devUSD+=x.usd;else row.devBS+=x.bs;});
+    });
+
+    // Evita duplicar anulaciones históricas que todavía no tienen documento en anulaciones.
+    const anulacionIds=new Set(aHoy.map((a:any)=>String(a.ventaId||'')));
+    vAnuladas.filter(v=>!anulacionIds.has(String(v.id))).forEach(v=>{
+      const pays=Array.isArray(v.payments)&&v.payments.length?v.payments:[{metodo:v.metodoPago||'otros',montoUSD:v.totalUSD,montoBS:v.totalBS,tasaAplicada:v.tasaAplicada}];
+      pays.forEach((p:any)=>{const x=addPaymentTo(p);const row=ensureArqueo(x.metodo);if(esMetodoUSD(x.metodo))row.devUSD+=x.usd;else row.devBS+=x.bs;});
+    });
+
+    dHoy.forEach(d=>{
+      const sale:any=allVentas.find(v=>v.id===d.ventaId);
+      const pays=Array.isArray(d.refundPayments)&&d.refundPayments.length
+        ? d.refundPayments
+        : (sale&&Array.isArray(sale.payments)&&sale.payments.length
+          ? sale.payments
+          : [{metodo:sale?.metodoPago||'otros',montoUSD:d.totalUSD,montoBS:(Number(d.totalUSD)||0)*(Number(freshState.tasa)||1),tasaAplicada:sale?.tasaAplicada}]);
+      if (Array.isArray(d.refundPayments)&&d.refundPayments.length) {
+        pays.forEach((p:any)=>{const x=addPaymentTo(p);const row=ensureArqueo(x.metodo);if(esMetodoUSD(x.metodo))row.devUSD+=x.usd;else row.devBS+=x.bs;});
+      } else {
+        const saleTotal=Math.max(Number(sale?.totalUSD)||0.000001,0.000001);
+        pays.forEach((p:any)=>{const x=addPaymentTo(p,(Number(d.totalUSD)||0)/saleTotal);const row=ensureArqueo(x.metodo);if(esMetodoUSD(x.metodo))row.devUSD+=x.usd;else row.devBS+=x.bs;});
       }
     });
 
-    const sortedVentas = vActivas.sort((a,b) => a.fecha.localeCompare(b.fecha));
-    const desdeFactura = sortedVentas.length > 0 ? sortedVentas[0].id : 'N/A';
-    const hastaFactura = sortedVentas.length > 0 ? sortedVentas[sortedVentas.length - 1].id : 'N/A';
-    
-    const sortedDevs = dHoy.sort((a,b) => a.fecha.localeCompare(b.fecha));
-    const desdeNC = sortedDevs.length > 0 ? sortedDevs[0].id : 'N/A';
-    const hastaNC = sortedDevs.length > 0 ? sortedDevs[sortedDevs.length - 1].id : 'N/A';
+    movimientosCaja.forEach((e:any)=>{
+      const metodo=normalizarMetodo(e?.metodo||'otros');
+      const row=ensureArqueo(metodo);
+      const montoUSD=Number(e?.montoUSD)||0;
+      const montoBS=Number(e?.montoBS)||0;
+      if(e.tipo==='ingreso'){
+        if(esMetodoUSD(metodo)) row.movPlusUSD+=montoUSD;
+        else if(esMetodoBS(metodo)) row.movPlusBS+=montoBS;
+      } else if(e.tipo==='egreso'){
+        if(esMetodoUSD(metodo)) row.movMinusUSD+=montoUSD;
+        else if(esMetodoBS(metodo)) row.movMinusBS+=montoBS;
+      }
+    });
 
-    // Movimientos de caja del periodo SOLO de ESTA caja. Cada asiento generado
-    // por el POS lleva su terminalId, así ninguna caja ve las entradas/salidas
-    // de otra. Los asientos manuales (contabilidad) se registran por terminal si
-    // el operador tiene uno asignado; si no, quedan como globales.
-    const relevantDiario = allLibroDiario.filter(e => e.fecha > corteTimestamp && e.terminalId === termId);
-    const totalSalidasCaja = relevantDiario.filter(e => e.tipo === 'egreso').reduce((s, e) => s + e.montoUSD, 0);
-    const totalEntradasCaja = relevantDiario.filter(e => e.tipo === 'ingreso' && e.categoria !== 'VENTA' && e.categoria !== 'COBRO_DEUDA').reduce((s, e) => s + e.montoUSD, 0);
-    // Cobros de deuda (ingresos de caja por cobros de créditos).
-    const cobrosDeudaUSD = relevantDiario.filter(e => e.tipo === 'ingreso' && e.categoria === 'COBRO_DEUDA').reduce((s, e) => s + e.montoUSD, 0);
-    const cobrosDeudaBS = relevantDiario.filter(e => e.tipo === 'ingreso' && e.categoria === 'COBRO_DEUDA').reduce((s, e) => s + e.montoBS, 0);
+    const metodosArqueo=Object.entries(arqueoMap).map(([metodo,val]:any)=>({metodo,...val,moneda:esMetodoUSD(metodo)?'USD':esMetodoBS(metodo)?'BS':'USD'}));
+    const ventasCreditoUSD=vActivas.filter(v=>String(v.metodoPago||'').toLowerCase()==='credito'||(Array.isArray(v.payments)&&v.payments.some((p:any)=>p.metodo==='credito'))).reduce((s,v)=>s+(Number(v.totalUSD)||0),0);
+    const cobrosDeudaUSD=cobroDeudaVentas.reduce((s,v)=>s+getSaleCurrencyTotals(v).usd,0);
+    const cobrosDeudaBS=cobroDeudaVentas.reduce((s,v)=>s+getSaleCurrencyTotals(v).bs,0);
+    const cobrosDeudaPorMetodoMap: Record<string, { metodo:string; montoBS:number; montoUSD:number }> = {};
+    cobroDeudaVentas.forEach((v:any) => {
+      const pays = Array.isArray(v.payments) && v.payments.length
+        ? v.payments
+        : [{ metodo:v.metodoPago || 'otros', montoUSD:v.totalUSD, montoBS:v.totalBS }];
+      pays.forEach((p:any) => {
+        const metodo = normalizarMetodo(p?.metodo || p?.method || 'otros');
+        const key = metodo;
+        if (!cobrosDeudaPorMetodoMap[key]) cobrosDeudaPorMetodoMap[key] = { metodo, montoBS:0, montoUSD:0 };
+        const x = addPaymentTo(p);
+        cobrosDeudaPorMetodoMap[key].montoBS += x.bs;
+        cobrosDeudaPorMetodoMap[key].montoUSD += x.usd;
+      });
+    });
+    const cobrosDeudaPorMetodo = Object.values(cobrosDeudaPorMetodoMap);
 
-    const terminalName = currentTerminal ? currentTerminal.nombre : 'SISTEMA GLOBAL';
+    // Neto físico: solo efectivo físico de la moneda original. No se convierte
+    // tarjeta/Zelle/Pago Móvil/transferencia a efectivo y se incluyen apertura,
+    // cobros de deuda, movimientos y devoluciones/anulaciones.
+    const efectivoBS=ensureArqueo('efectivo_bs');
+    const efectivoUSD=ensureArqueo('efectivo_usd');
+    const fondoBS=Number(tc.fondoCajaHoyBS)||0;
+    const fondoUSD=Number(tc.fondoCajaHoyUSD)||0;
+    const totalNetoEfectivoBS=fondoBS+Number(efectivoBS.ventasBS||0)+Number(efectivoBS.cobrosBS||0)+Number(efectivoBS.movPlusBS||0)-Number(efectivoBS.devBS||0)-Number(efectivoBS.movMinusBS||0);
+    const totalNetoEfectivoUSD=fondoUSD+Number(efectivoUSD.ventasUSD||0)+Number(efectivoUSD.cobrosUSD||0)+Number(efectivoUSD.movPlusUSD||0)-Number(efectivoUSD.devUSD||0)-Number(efectivoUSD.movMinusUSD||0);
 
-    return { 
-      brUSD, devUSD, descUSD, netUSD, igtfUSD, ivaUSD, baseImponibleUSD, exentoUSD,
-      paymentMethods: paymentMethodsMap,
-      manualSalidas: totalSalidasCaja,
-      manualEntradas: totalEntradasCaja,
-      cobrosDeudaUSD,
-      cobrosDeudaBS,
-      fondoAperturaUSD: tc.fondoCajaHoyUSD || 0,
-      fondoAperturaBS: tc.fondoCajaHoyBS || 0,
-      desdeFactura, hastaFactura, desdeNC, hastaNC,
-      stats: { facturas: vActivas.length, devoluciones: dHoy.length, anulaciones: vAnuladas.length, ticketPromedio: vActivas.length > 0 ? (netUSD / vActivas.length) : 0 },
-      fecha: Utils.ahora(), terminalName, terminalId: termId, numeroZ: tc.ultimoZ + 1, acumuladoHistoricoUSD: tc.acumuladoHistorico + netUSD,
-      // Total explícito en USD del día (ventas brutas, antes de descuentos/devoluciones).
-      // Suma de v.totalUSD: ya incluye conversión BS→USD por la tasa de la venta.
-      totalVentasUSD: brUSD,
-      tasaBCV: freshState.tasa || 0
-    };
+    const terminalName=resolvedTerminal?.nombre||'CAJA NO IDENTIFICADA';
+
+    return {brUSD,devUSD,descUSD,netUSD,igtfUSD,ivaUSD,baseImponibleUSD,exentoUSD,paymentMethods:paymentMethodsMap,cobrosDeudaPorMetodo,manualSalidas:totalSalidasCaja,manualEntradas:totalEntradasCaja,manualSalidasBS:totalSalidasCajaBS,manualSalidasUSD:totalSalidasCajaUSD,manualEntradasBS:totalEntradasCajaBS,manualEntradasUSD:totalEntradasCajaUSD,cobrosDeudaUSD,cobrosDeudaBS,fondoAperturaUSD:fondoUSD,fondoAperturaBS:fondoBS,desdeFactura,hastaFactura,desdeNC,hastaNC,stats:{facturas:vActivas.length,devoluciones:dHoy.length,anulaciones:vAnuladas.length,ticketPromedio:vActivas.length?(netUSD/vActivas.length):0},fecha:Utils.ahora(),terminalName,terminalId:termId,cajeroId:assignedUserId || sessionUser?.uid || sessionUser?.id || '',cajeroNombre,numeroZ:(tc.ultimoZ||0)+1,acumuladoHistoricoUSD:(tc.acumuladoHistorico||0)+netUSD,totalVentasUSD:brUSD,metodosArqueo,ventasCreditoUSD,devEfectivoBS:Number(efectivoBS.devBS||0),devEfectivoUSD:Number(efectivoUSD.devUSD||0),totalNetoEfectivoBS,totalNetoEfectivoUSD,estimadoEfectivoBS:{entradas:totalEntradasCajaBS,egresos:totalSalidasCajaBS,total:totalNetoEfectivoBS},estimadoEfectivoUSD:{entradas:totalEntradasCajaUSD,egresos:totalSalidasCajaUSD,total:totalNetoEfectivoUSD},tasaBCV:freshState.tasa||0};
   };
 
   const handleOpenReport = async (type: 'REPORT_X' | 'REPORT_Z') => {
@@ -326,7 +529,11 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       
       const data = getFreshReportData();
       setReportSnapshot(data);
-      setShowReportType(type);
+      if (type === 'REPORT_Z') {
+        setShowZArqueo(true);
+      } else {
+        setShowReportType(type);
+      }
     } catch (e) {
       console.error('Error abriendo reporte X/Z:', e);
       toast({ variant: 'destructive', title: 'Error', description: 'No se pudieron cargar los datos del reporte. Reintenta.' });
@@ -335,45 +542,117 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     }
   };
 
-  const ejecutarCierreZ = () => {
+  const ejecutarCierreZ = (real: Record<string, string> = {}, diffOverride?: { bs: number; usd: number }) => {
     const data = reportSnapshot;
     if (!data) return;
     const ahora = Utils.ahora();
-    // Correlativo Z de ESTA caja (cada caja lleva su propia secuencia).
     const tc = Utils.getTerminalCash(currentTerminal);
     const numeroZ = tc.ultimoZ + 1;
     const termId = currentTerminal?.id || 'GLOBAL';
+    const diff = diffOverride || { bs: 0, usd: 0 };
+
+    // El arqueo previo sigue la misma regla de tienda-pos: cada medio de pago
+    // se concilia en su moneda original y el cierre físico usa efectivo Bs/USD.
+    const realBs = Number(String(real.efectivo_bs || '').replace(',', '.')) || 0;
+    const realUSD = Number(String(real.efectivo_usd || '').replace(',', '.')) || 0;
+
     const nuevoZ: ReportZ = {
-      id: 'Z-' + String(numeroZ).padStart(6, '0'), fecha: ahora, numeroZ, terminalId: termId, terminalName: data.terminalName,
-      desdeFactura: data.desdeFactura, hastaFactura: data.hastaFactura, desdeNotaCredito: data.desdeNC, hastaNotaCredito: data.hastaNC,
-      cantidadAnuladas: data.stats.anulaciones, ventaBrutaUSD: data.brUSD, descuentoUSD: data.descUSD, devolucionesUSD: data.devUSD,
-      ventaNetaUSD: data.netUSD, baseImponibleUSD: data.baseImponibleUSD, ivaUSD: data.ivaUSD, exentoUSD: data.exentoUSD,
-      igtfUSD: data.igtfUSD, metodosPago: { ...data.paymentMethods }, salidasCajaUSD: data.manualSalidas, entradasCajaUSD: data.manualEntradas,
-      fondoAperturaUSD: data.fondoAperturaUSD, fondoAperturaBS: data.fondoAperturaBS, acumuladoHistoricoUSD: data.acumuladoHistoricoUSD, stats: { ...data.stats }
+      id: 'Z-' + String(numeroZ).padStart(6, '0'),
+      fecha: ahora,
+      numeroZ,
+      terminalId: termId,
+      terminalName: data.terminalName,
+      desdeFactura: data.desdeFactura,
+      hastaFactura: data.hastaFactura,
+      desdeNotaCredito: data.desdeNC,
+      hastaNotaCredito: data.hastaNC,
+      cantidadAnuladas: data.stats.anulaciones,
+      ventaBrutaUSD: data.brUSD,
+      descuentoUSD: data.descUSD,
+      devolucionesUSD: data.devUSD,
+      ventaNetaUSD: data.netUSD,
+      baseImponibleUSD: data.baseImponibleUSD,
+      ivaUSD: data.ivaUSD,
+      exentoUSD: data.exentoUSD,
+      igtfUSD: data.igtfUSD,
+      metodosPago: { ...data.paymentMethods },
+      metodosArqueo: Array.isArray(data.metodosArqueo) ? data.metodosArqueo.map((m:any) => ({ ...m })) : [],
+      cobrosDeudaUSD: Number(data.cobrosDeudaUSD) || 0,
+      cobrosDeudaBS: Number(data.cobrosDeudaBS) || 0,
+      cobrosDeudaPorMetodo: Array.isArray(data.cobrosDeudaPorMetodo) ? data.cobrosDeudaPorMetodo.map((m:any) => ({ ...m })) : [],
+      manualSalidasBS: Number(data.manualSalidasBS) || 0,
+      manualSalidasUSD: Number(data.manualSalidasUSD) || 0,
+      manualEntradasBS: Number(data.manualEntradasBS) || 0,
+      manualEntradasUSD: Number(data.manualEntradasUSD) || 0,
+      devEfectivoBS: Number(data.devEfectivoBS) || 0,
+      devEfectivoUSD: Number(data.devEfectivoUSD) || 0,
+      totalNetoEfectivoBS: realBs,
+      totalNetoEfectivoUSD: realUSD,
+      salidasCajaUSD: data.manualSalidas,
+      entradasCajaUSD: data.manualEntradas,
+      fondoAperturaUSD: data.fondoAperturaUSD,
+      fondoAperturaBS: data.fondoAperturaBS,
+      acumuladoHistoricoUSD: data.acumuladoHistoricoUSD,
+      stats: { ...data.stats }
     };
-    
+
     if (typeof localStorage !== 'undefined') localStorage.removeItem('posven_apertura_done');
-    
-    // El corte Z solo resetea la ventana/caja de ESTE terminal, nunca de las demás.
+
     updateState({
       reportesZ: [...(state.reportesZ || []), nuevoZ],
-      terminales: Utils.patchTerminal(state.terminales, termId, {
-        ultimoZ: numeroZ,
-        fechaUltimoZ: ahora,
-        acumuladoHistorico: data.acumuladoHistoricoUSD,
-        fondoCajaHoyBS: 0,
-        fondoCajaHoyUSD: 0,
-      })
+      terminales: Utils.patchTerminal(state.terminales, termId, (() => {
+        const terminal = state.terminales.find(t => t.id === termId);
+        const sesion = terminal?.cashData;
+        const historial = Array.isArray(terminal?.cashHistory) ? terminal.cashHistory : [];
+        const cierreSesion = sesion
+          ? { ...sesion, closeDate: ahora, closeNotes: 'Cierre por Corte Z ' + nuevoZ.id }
+          : null;
+        return {
+          ultimoZ: numeroZ,
+          fechaUltimoZ: ahora,
+          acumuladoHistorico: data.acumuladoHistoricoUSD,
+          fondoCajaHoyBS: 0,
+          fondoCajaHoyUSD: 0,
+          isCashOpen: false,
+          cashData: null,
+          cashHistory: cierreSesion ? [cierreSesion, ...historial] : historial,
+        };
+      })())
     });
-    toast({ title: `Cierre Fiscal ${nuevoZ.id} Exitoso` });
-    setShowReportType(null);
+
+    toast({ title: `Corte Z ${nuevoZ.id} ejecutado`, description: `Diferencia Bs. ${Utils.fmtBS(diff.bs)} · USD ${Utils.fmtUSD(diff.usd)}` });
+
+    // Después de confirmar el arqueo, el Z NO desaparece sin comprobante:
+    // se muestra inmediatamente la vista previa térmica 80mm del Reporte Z,
+    // usando el mismo ReceiptModal que maneja la impresión térmica del POS.
+    // Conservamos el snapshot previo para que el reporte tenga todos los
+    // detalles calculados del período, y añadimos los datos definitivos del Z.
+    setShowZArqueo(false);
+    // Conservamos los datos de la sesión recién cerrada para la vista/impresión
+    // térmica 80 mm del Z. La caja ya queda cerrada; esto es solo el comprobante
+    // visual del cierre que acaba de ejecutarse.
+    const session = tc.cashData;
+    setReportSnapshot({
+      ...data,
+      ...nuevoZ,
+      numeroZ: nuevoZ.numeroZ,
+      empresa: state.empresa,
+      generatedAt: ahora,
+      closedAt: ahora,
+      closedBy: data.cajeroNombre,
+      openedAt: session?.openDate || session?.openedAt || session?.fechaApertura || data.openedAt,
+      openedBy: session?.openedBy || session?.usuarioApertura || data.cajeroNombre,
+      differenceBs: Number(diff.bs) || 0,
+      differenceUSD: Number(diff.usd) || 0,
+    });
+    setShowReportType('REPORT_Z');
   };
 
   const handleOpenGlobalCreditPayment = (clientName: string, debts: Debt[]) => {
     const activeDebts = debts
       .filter(d => d.estado !== 'pagada' && (Number(d.saldoUSD) || 0) > 0.001)
       .sort((a, b) => a.fecha.localeCompare(b.fecha) || a.id.localeCompare(b.id));
-    if (activeDebts.length <= 1) return;
+    if (activeDebts.length === 0) return;
     const totalUSD = activeDebts.reduce((sum, d) => sum + (Number(d.saldoUSD) || 0), 0);
     if (totalUSD <= 0.001) return;
     const cedulaMatch = String(activeDebts[0]?.cliente || '').match(/\[([^\]]+)\]\s*$/);
@@ -401,22 +680,79 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         metodo: payments.length > 1 ? 'mixto' : payments[0].method,
         tasaAplicada: state.tasa, terminalId: terminal?.id
       };
+      const paymentParts = payments.map((p: any) => ({
+        id: receiptId + '-' + String(p.method || 'OTROS'),
+        metodo: p.method,
+        montoUSD: Number(p.usdAmount) || (Number(p.amount) || 0) / state.tasa,
+        montoBS: Number(p.amount) || 0,
+        tasaAplicada: state.tasa,
+        terminalId: terminal?.id,
+      }));
       const result = await Store.applyGlobalCustomerPaymentTransaction({
         operationId,
         customerName: globalCreditCustomer.name,
         customerCedula: globalCreditCustomer.cedula,
         amountUSD: totalUSD,
         amountBS: totalBS,
-        payment,
+        payment: { ...payment, paymentParts },
+        paymentParts,
         journal: {
           id: 'JD-' + Store.uid(), fecha: Utils.ahora(), tipo: 'ingreso',
           categoria: 'COBRO_DEUDA', montoUSD: totalUSD, montoBS: totalBS,
+          metodo: payments.length > 1 ? 'mixto' : payments[0].method,
+          paymentParts,
           descripcion: 'PAGO GLOBAL CxC', terminalId: terminal?.id
         },
         terminalId: terminal?.id
       });
       if (!result) throw new Error('No se pudo registrar el Pago Global.');
-      toast({ title: 'Pago Global registrado', description: `Aplicado: ${Utils.fmtUSD(result.appliedUSD)} · ${Utils.fmtBS(result.appliedBS)}` });
+
+      // PAGO GLOBAL CxC también debe emitir comprobante. Esta ruta es la que
+      // utiliza el módulo Ventas activo; anteriormente solo mostraba el toast
+      // y cerraba el formulario, dejando el cobro sin ticket.
+      const aplicadoUSD = Number(result.appliedUSD) || 0;
+      const aplicadoBS = Number(result.appliedBS) || 0;
+      const cajeroNombre = String(
+        (state as any).user?.nombre ||
+        (state as any).user?.name ||
+        (state as any).user?.displayName ||
+        (state as any).user?.email ||
+        ''
+      ).trim() || 'Cajero';
+      const ticketPagoGlobal: any = {
+        id: result.receiptId || receiptId,
+        fecha: payment.fecha,
+        cliente: globalCreditCustomer.name,
+        items: [{
+          productoId: 'COBRO_CXC_GLOBAL',
+          nombre: `PAGO GLOBAL DE CxC - ${Array.isArray(result.debts) ? result.debts.length : 0} FACTURA(S)`,
+          cantidad: 1,
+          precioUnitUSD: aplicadoUSD,
+          subtotalUSD: aplicadoUSD
+        }],
+        subtotalUSD: aplicadoUSD,
+        descuentoUSD: 0,
+        totalUSD: aplicadoUSD,
+        totalBS: aplicadoBS,
+        metodoPago: payment.metodo,
+        estado: 'completada',
+        type: 'COBRO DEUDA',
+        payments: payments.map((p:any) => ({
+          metodo: p.method,
+          montoUSD: Number(p.usdAmount) || 0,
+          montoBS: Number(p.amount) || 0
+        })),
+        terminalId: terminal?.id,
+        terminalName: terminal?.nombre || 'SISTEMA GLOBAL',
+        cajeroNombre,
+        cajeroId: (state as any).user?.id || (state as any).user?.uid,
+        tasa: state.tasa,
+        reciboId: result.receiptId || receiptId
+      };
+      setLastProcessedSale(ticketPagoGlobal);
+      setShowReceiptModal(true);
+
+      toast({ title: 'Pago Global registrado', description: `Aplicado: ${Utils.fmtUSD(aplicadoUSD)} · ${Utils.fmtBS(aplicadoBS)}` });
       setGlobalCreditCustomer(null);
     } catch (err: any) {
       toast({ variant: 'destructive', title: 'Pago Global no registrado', description: err?.message || 'No se pudo registrar el cobro.' });
@@ -425,16 +761,74 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     }
   };
 
+  const handleOpenCreditDetails = async (debt: Debt) => {
+    setShowDetails(debt);
+    try {
+      const response = await fetch(
+        '/api/turso/store?table=cxc&id=' + encodeURIComponent(String(debt.id)),
+        { credentials: 'include', cache: 'no-store' }
+      );
+      const body: any = await response.json();
+      if (!response.ok || body?.ok === false) throw new Error(String(body?.error || 'Turso rechazó la lectura de la deuda.'));
+      const sourceDebt: any = body?.record || debt;
+      const saleId = String(sourceDebt?.ventaId || sourceDebt?.facturaId || '').trim();
+      let sale: any = null;
+      if (saleId) sale = await Store.getSaleById(saleId);
+      if (!sale) sale = await Store.getSaleById(String(sourceDebt?.id || debt.id));
+      if (sale) setShowDetails({ ...sourceDebt, __originalSale: sale });
+      else setShowDetails(sourceDebt);
+    } catch (e) {
+      console.error('[POS Ventas] No se pudo resolver el detalle histórico de CxC:', e);
+    }
+  };
+
   const groupedCredits = useMemo(() => {
     const groups: Record<string, { totalUSD: number; debts: Debt[] }> = {};
-    (state.cxc || []).filter(x => x.estado !== 'pagada' && (x.saldoUSD || 0) > 0.001).forEach(debt => {
+    // La consulta de créditos es histórica: aquí NO filtramos por estado ni por
+    // fecha. El Pago Global filtra sus deudas activas por separado.
+    (creditDebts || []).forEach(debt => {
       const name = debt.cliente || 'DESCONOCIDO';
       if (!groups[name]) groups[name] = { totalUSD: 0, debts: [] };
-      groups[name].totalUSD += debt.saldoUSD;
+      groups[name].totalUSD += Number(debt.saldoUSD) || 0;
       groups[name].debts.push(debt);
     });
     return groups;
-  }, [state.cxc]);
+  }, [creditDebts]);
+
+  const normalizeCreditSearch = (value: unknown) =>
+    String(value || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim();
+
+  const filteredGroupedCredits = useMemo(() => {
+    const term = normalizeCreditSearch(creditSearch);
+    if (!term) return groupedCredits;
+    const result: Record<string, { totalUSD: number; debts: Debt[] }> = {};
+    Object.entries(groupedCredits).forEach(([clientName, group]) => {
+      const customer = (state.clientes || []).find((c: any) =>
+        normalizeCreditSearch(c?.name) === normalizeCreditSearch(clientName) ||
+        normalizeCreditSearch(c?.cedula) === normalizeCreditSearch(clientName)
+      );
+      const haystack = [
+        clientName,
+        customer?.name,
+        customer?.cedula,
+        customer?.phone,
+        customer?.address,
+        ...group.debts.flatMap((d: any) => [
+          d?.cliente,
+          d?.id,
+          d?.motivo,
+          d?.facturaId,
+          d?.ventaId
+        ])
+      ].map(normalizeCreditSearch).join(' ');
+      if (haystack.includes(term)) result[clientName] = group;
+    });
+    return result;
+  }, [groupedCredits, state.clientes, creditSearch]);
 
   const getStockDisponible = (p: Product) => {
     let avail = p.stock || 0;
@@ -520,7 +914,10 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       stockDespues: nuevoStock,
       fecha: Utils.ahora(),
       referencia: 'AJUSTE MANUAL POS',
-      terminalId: getCurrentTerminal()?.id || 'GLOBAL'
+      terminalId: getCurrentTerminal()?.id || 'GLOBAL',
+      costoUnitarioUSD: Number(state.productos.find(p => p.id === stockEdit.id)?.costoUSD) || 0,
+      costoUnitarioBs: (Number(state.productos.find(p => p.id === stockEdit.id)?.costoUSD) || 0) * Number(state.tasa || 0),
+      tasaBCV: Number(state.tasa) || 0
     };
 
     try {
@@ -578,97 +975,42 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     setIsProcessing(true);
     try {
       const listadoPagos = pagosFinales || pagos;
-      const totalPagadoRecibido = listadoPagos.reduce((s, p) => s + p.montoUSD, 0);
       const terminal = getCurrentTerminal();
-      const nextNum = terminal?.proximoRecibo || state.proximoRecibo;
-      const prefijo = Utils.prefijoCaja(terminal, state.terminales);
-      const reciboId = prefijo + '-' + String(nextNum).padStart(9, '0');
-      const ahoraStr = Utils.ahora();
-      
-      let vExento = 0, vBase = 0, vIVA = 0;
-      let prodsActualizados = [...state.productos], nuevosMovimientos: Movimiento[] = [];
+      const operationId = 'VENTA-POS-' + Store.uid();
 
-      state.carrito.forEach(item => {
-        const pIdx = prodsActualizados.findIndex(x => x.id === item.productoId);
-        if (pIdx === -1) return;
-        const p = { ...prodsActualizados[pIdx] };
-        if (p.aplicaIVA) { const base = item.subtotalUSD / 1.16; vBase += base; vIVA += (item.subtotalUSD - base); } else { vExento += item.subtotalUSD; }
-        if (p.isKit && p.kitType === 'stock_componentes' && p.kitItems) {
-          p.kitItems.forEach(ki => {
-            const cpIdx = prodsActualizados.findIndex(cp => cp.id === ki.productoId);
-            if (cpIdx !== -1) {
-              const cp = { ...prodsActualizados[cpIdx] };
-              const qty = item.cantidad * ki.cantidad, stockAntes = cp.stock;
-              cp.stock -= qty;
-              nuevosMovimientos.push({ id: Store.uid(), productoId: cp.id, tipo: 'venta', cantidad: -qty, stockAntes, stockDespues: cp.stock, fecha: ahoraStr, referencia: `KIT: ${p.nombre} - VENTA ${reciboId}`, terminalId: terminal?.id || 'GLOBAL' });
-              prodsActualizados[cpIdx] = cp;
-            }
-          });
-        } else {
-          const stockAntes = p.stock;
-          p.stock -= item.cantidad;
-          nuevosMovimientos.push({ id: Store.uid(), productoId: item.productoId, tipo: 'venta', cantidad: -item.cantidad, stockAntes, stockDespues: p.stock, fecha: ahoraStr, referencia: `VENTA ${reciboId}`, terminalId: terminal?.id || 'GLOBAL' });
-          prodsActualizados[pIdx] = p;
-        }
+      // La venta NO se confirma con un simple Store.set() local.
+      // Debe pasar por la transacción atómica de Turso para que
+      // venta + stock + kardex + asiento + correlativo queden persistidos
+      // antes de mostrarla como completada.
+      const result = await Store.createSaleTransaction({
+        operationId,
+        cart: state.carrito.map(x => ({ ...x })),
+        payments: listadoPagos.map(x => ({ ...x })),
+        clientName: cliente,
+        terminalId: terminal?.id,
+        fallbackReceiptNumber: terminal?.proximoRecibo || state.proximoRecibo,
+        now: Utils.ahora(),
+        tasa: state.tasa,
+        saleType: 'VENTA',
+        cajeroId: (state as any).user?.id || (state as any).user?.uid
       });
 
-      const vIgtf = listadoPagos.filter(p => p.metodo === 'efectivo_usd' || p.metodo === 'zelle').reduce((acc, p) => acc + (p.montoUSD * 0.03), 0);
-      
-      const nuevaVenta: Sale = { 
-        id: reciboId, 
-        fecha: ahoraStr, 
-        cliente, 
-        items: [...state.carrito], 
-        subtotalUSD, 
-        descuentoUSD: 0, 
-        totalUSD: subtotalUSD, 
-        totalBS, 
-        metodoPago: listadoPagos.length > 1 ? 'mixto' : (listadoPagos[0]?.metodo || 'efectivo_usd'), 
-        estado: 'completada', 
-        type: 'VENTA', 
-        received: totalPagadoRecibido, 
-        change: Math.max(0, totalPagadoRecibido - subtotalUSD), 
-        payments: [...listadoPagos], 
-        terminalId: terminal?.id, 
-        terminalName: terminal?.nombre || 'SISTEMA GLOBAL', 
-        cajeroId: auth?.currentUser?.uid, 
-        baseImponibleUSD: Utils.round(vBase), 
-        ivaUSD: Utils.round(vIVA), 
-        exentoUSD: Utils.round(vExento), 
-        igtfUSD: Utils.round(vIgtf),
-        tasa: state.tasa
-      };
-      
-      const nuevasEntradasDiario: LibroDiarioEntry[] = listadoPagos.map(p => ({ 
-        id: 'ACC-' + Store.uid().toUpperCase().slice(0, 5), 
-        fecha: ahoraStr, 
-        tipo: 'ingreso', 
-        categoria: 'VENTA', 
-        concepto: `VENTA #${reciboId} - CLIENTE: ${cliente.toUpperCase()}`, 
-        montoUSD: p.montoUSD, 
-        montoBS: p.montoBS, 
-        metodo: p.metodo, 
-        referencia: reciboId + '-' + (terminal?.id || 'GLOBAL'),
-        terminalId: terminal?.id || 'GLOBAL',
-        terminalName: terminal?.nombre || 'SISTEMA GLOBAL'
-      }));
-      
-      await updateState({ 
-        productos: prodsActualizados, 
-        ventas: [...state.ventas, nuevaVenta], 
-        movimientos: [...state.movimientos, ...nuevosMovimientos], 
-        libroDiario: [...nuevasEntradasDiario, ...(state.libroDiario || [])], 
-        carrito: [], 
-        proximoRecibo: state.proximoRecibo + 1, 
-        terminales: state.terminales.map(t => t.id === terminal?.id ? { ...t, proximoRecibo: t.proximoRecibo + 1 } : t) 
-      });
+      if (!result?.sale) throw new Error('La venta no pudo confirmarse en la base de datos.');
+
       if (typeof window !== 'undefined') sessionStorage.removeItem('posven_current_cart');
-      
-      setLastProcessedSale(nuevaVenta); 
-      setShowReceiptModal(true); 
-      setPagos([]); 
-      setCliente('Consumidor final'); 
+
+      setLastProcessedSale(result.sale);
+      setShowReceiptModal(true);
+      setPagos([]);
+      setCliente('Consumidor final');
       setSelectedProductDisplay(null);
+      updateState({ carrito: [] });
+    } catch (e: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Venta no registrada',
+        description: e?.message || 'No se pudo completar la venta. No se modificó el stock.'
+      });
     } finally {
       setIsProcessing(false);
     }
@@ -728,6 +1070,9 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       if (Math.abs(appliedUSD - totalAbonado) > 0.001) throw new Error('El saldo cambió mientras se registraba el abono. La operación fue limitada al saldo real.');
 
       const saleFinal = resultadoPago.sale || { ...saleAbono, id: resultadoPago.receiptId || saleAbono.id };
+      if (resultadoPago.sale?.payments?.length) {
+        saleFinal.payments = resultadoPago.sale.payments.map((p: any) => ({ ...p }));
+      }
       setLastProcessedSale(saleFinal); 
       setShowReceiptModal(true); 
       setShowAbonoModal(null);
@@ -736,7 +1081,71 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     }
   };
 
-  // ===== CORREGIDO: FUNCIÓN PARA EJECUTAR VENTA A CRÉDITO CON CLIENTE =====
+  const registrarMovimientoCaja = () => {
+    const terminal = getCurrentTerminal();
+    if (!terminal?.id) {
+      toast({ variant: 'destructive', title: 'Caja no identificada', description: 'No se puede registrar un movimiento sin una caja/terminal activa.' });
+      return;
+    }
+
+    const monto = Number(String(cashMovement.monto).replace(',', '.')) || 0;
+    if (monto <= 0) {
+      toast({ variant: 'destructive', title: 'Monto inválido', description: 'Indique un monto mayor que cero.' });
+      return;
+    }
+    if (!cashMovement.concepto.trim()) {
+      toast({ variant: 'destructive', title: 'Concepto requerido', description: 'Indique el motivo del movimiento de caja.' });
+      return;
+    }
+
+    const tasa = Number(state.tasa) || 1;
+    const montoBS = cashMovement.metodo === 'efectivo_bs' ? monto : monto * tasa;
+    const montoUSD = cashMovement.metodo === 'efectivo_bs' ? monto / tasa : monto;
+    const ahora = Utils.ahora();
+
+    const entry: LibroDiarioEntry = {
+      id: 'MOV-CAJA-' + Store.uid().toUpperCase().slice(0, 8),
+      fecha: ahora,
+      tipo: cashMovement.tipo,
+      categoria: 'MOVIMIENTO_CAJA',
+      concepto: cashMovement.concepto.trim().toUpperCase(),
+      montoUSD: Utils.round(montoUSD),
+      montoBS: Utils.round(montoBS),
+      metodo: cashMovement.metodo,
+      referencia: 'POS-' + String(terminal.id),
+      terminalId: terminal.id,
+      terminalName: terminal.nombre,
+      ...(cashMovement.observacion.trim() ? { observacion: cashMovement.observacion.trim() } : {})
+    } as LibroDiarioEntry;
+
+    void (async () => {
+      try {
+        const result = await Store.createCashMovementTransaction({
+          operationId: 'MOVIMIENTO-CAJA-' + Store.uid(),
+          movement: entry,
+          terminalId: terminal.id,
+        });
+        updateState({ libroDiario: [...(state.libroDiario || []), result.movement] });
+        toast({
+          title: cashMovement.tipo === 'egreso' ? 'Egreso registrado' : 'Ingreso registrado',
+          description: `${cashMovement.tipo === 'egreso' ? 'Salida' : 'Entrada'} de ${cashMovement.metodo === 'efectivo_bs' ? Utils.fmtBS(monto) : Utils.fmtUSD(monto)} registrada en ${terminal.nombre}.`
+        });
+      } catch (e: any) {
+        toast({ variant: 'destructive', title: 'Movimiento no registrado', description: e?.message || 'No se pudo persistir el movimiento en Turso.' });
+      }
+    })();
+
+    setCashMovement({
+      tipo: 'egreso',
+      metodo: 'efectivo_usd',
+      monto: '',
+      concepto: '',
+      observacion: ''
+    });
+    setShowCashMovementModal(false);
+  };
+
+  // ===== VENTA A CRÉDITO: MISMA TRANSACCIÓN TURSO QUE UNA VENTA NORMAL =====
   const ejecutarVentaACredito = async (customer: Customer) => {
     if (state.carrito.length === 0 || isProcessing) return;
     if (!customer) return alert("Seleccione un cliente.");
@@ -744,110 +1153,38 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     setIsProcessing(true);
     try {
       const terminal = getCurrentTerminal();
-      const nextNum = terminal?.proximoRecibo || state.proximoRecibo;
-      const prefijo = Utils.prefijoCaja(terminal, state.terminales);
-      const reciboId = prefijo + '-' + String(nextNum).padStart(9, '0');
-      const ahoraStr = Utils.ahora();
-      
-      let vExento = 0, vBase = 0, vIVA = 0;
-      let prodsActualizados = [...state.productos], nuevosMovimientos: Movimiento[] = [];
-      
-      state.carrito.forEach(item => {
-        const pIdx = prodsActualizados.findIndex(x => x.id === item.productoId);
-        if (pIdx === -1) return;
-        const p = { ...prodsActualizados[pIdx] };
-        if (p.aplicaIVA) { const base = item.subtotalUSD / 1.16; vBase += base; vIVA += (item.subtotalUSD - base); } else { vExento += item.subtotalUSD; }
-        if (p.isKit && p.kitType === 'stock_componentes' && p.kitItems) {
-          p.kitItems.forEach(ki => {
-            const cpIdx = prodsActualizados.findIndex(cp => cp.id === ki.productoId);
-            if (cpIdx !== -1) {
-              const cp = { ...prodsActualizados[cpIdx] };
-              const qty = item.cantidad * ki.cantidad, stockAntes = cp.stock;
-              cp.stock -= qty;
-              nuevosMovimientos.push({ id: Store.uid(), productoId: cp.id, tipo: 'venta', cantidad: -qty, stockAntes, stockDespues: cp.stock, fecha: ahoraStr, referencia: `KIT: ${p.nombre} - CRÉDITO ${reciboId}`, terminalId: terminal?.id || 'GLOBAL' });
-              prodsActualizados[cpIdx] = cp;
-            }
-          });
-        } else {
-          const stockAntes = p.stock;
-          p.stock -= item.cantidad;
-          nuevosMovimientos.push({ id: Store.uid(), productoId: item.productoId, tipo: 'venta', cantidad: -item.cantidad, stockAntes, stockDespues: p.stock, fecha: ahoraStr, referencia: `CRÉDITO ${reciboId}`, terminalId: terminal?.id || 'GLOBAL' });
-          prodsActualizados[pIdx] = p;
+      const cedulaNormalizada = normalizeCedula(customer.cedula, extractDocType(customer.cedula));
+      const result = await Store.createSaleTransaction({
+        operationId: 'VENTA-CREDITO-POS-' + Store.uid(),
+        cart: state.carrito.map(x => ({ ...x })),
+        payments: [],
+        clientName: customer.name,
+        terminalId: terminal?.id,
+        fallbackReceiptNumber: terminal?.proximoRecibo || state.proximoRecibo,
+        now: Utils.ahora(),
+        tasa: state.tasa,
+        saleType: 'VENTA CRÉDITO',
+        cajeroId: (state as any).user?.id || (state as any).user?.uid,
+        credit: {
+          customer: { ...customer, cedula: cedulaNormalizada },
+          debtId: 'CRD-PENDIENTE'
         }
       });
-      
-      const nuevaVenta: Sale = { 
-        id: reciboId, 
-        fecha: ahoraStr, 
-        cliente: customer.name, 
-        items: [...state.carrito], 
-        subtotalUSD, 
-        descuentoUSD: 0, 
-        totalUSD: subtotalUSD, 
-        totalBS, 
-        metodoPago: 'credito', 
-        estado: 'completada', 
-        type: 'VENTA CRÉDITO', 
-        received: 0, 
-        change: 0, 
-        terminalId: terminal?.id, 
-        terminalName: terminal?.nombre || 'SISTEMA GLOBAL', 
-        cajeroId: auth?.currentUser?.uid, 
-        baseImponibleUSD: Utils.round(vBase), 
-        ivaUSD: Utils.round(vIVA), 
-        exentoUSD: Utils.round(vExento), 
-        igtfUSD: 0,
-        tasa: state.tasa
-      };
-      
-      // Normalizar cédula para la deuda (asegurar formato correcto)
-      const cedulaNormalizada = normalizeCedula(customer.cedula, extractDocType(customer.cedula));
-      const nombreCliente = customer.name;
-      
-      const nuevaDeuda: Debt = { 
-        id: 'CRD-' + reciboId.slice(-6), 
-        fecha: ahoraStr.slice(0, 10), 
-        fechaVencimiento: '2099-12-31', 
-        cliente: `${nombreCliente} [${cedulaNormalizada}]`, 
-        montoUSD: subtotalUSD, 
-        abonadoUSD: 0, 
-        saldoUSD: subtotalUSD, 
-        estado: 'pendiente' as 'pendiente', 
-        historialPagos: [], 
-        ventaId: reciboId 
-      };
-      
-      // Asegurar que el cliente quede registrado en la cartera (upsert) y su saldo
-      // refleje la nueva deuda, para que persista en todos los usuarios/dispositivos.
-      const clientesBase = state.clientes || [];
-      const clienteIdx = clientesBase.findIndex(c => c.id === customer.id);
-      const clientesActualizados = clienteIdx >= 0
-        ? clientesBase.map(c => c.id === customer.id ? { ...c, debt: (c.debt || 0) + subtotalUSD } : c)
-        : [...clientesBase, {
-            id: customer.id,
-            name: nombreCliente,
-            cedula: cedulaNormalizada,
-            phone: customer.phone || '',
-            address: customer.address || '',
-            debt: subtotalUSD
-          }];
 
-      await updateState({ 
-        productos: prodsActualizados, 
-        ventas: [...state.ventas, nuevaVenta], 
-        movimientos: [...state.movimientos, ...nuevosMovimientos], 
-        cxc: [...state.cxc, nuevaDeuda], 
-        clientes: clientesActualizados, 
-        proximoRecibo: state.proximoRecibo + 1, 
-        terminales: state.terminales.map(t => t.id === terminal?.id ? { ...t, proximoRecibo: t.proximoRecibo + 1 } : t), 
-        carrito: [] 
-      });
+      if (!result?.sale || !result?.debt) throw new Error('La venta a crédito no pudo confirmarse en Turso.');
       if (typeof window !== 'undefined') sessionStorage.removeItem('posven_current_cart');
-      
-      setLastProcessedSale(nuevaVenta); 
-      setShowReceiptModal(true); 
-      setIsCreditModalOpen(false); 
+
+      setLastProcessedSale(result.sale);
+      setShowReceiptModal(true);
+      setIsCreditModalOpen(false);
       setSelectedClient(null);
+      updateState({ carrito: [] });
+    } catch (e: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Venta a crédito no registrada',
+        description: e?.message || 'No se pudo confirmar la venta en Turso.'
+      });
     } finally {
       setIsProcessing(false);
     }
@@ -879,8 +1216,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         <button onClick={() => setView('pos')} className={`btn btn-sm ${view === 'pos' ? 'btn-primary shadow-md' : 'bg-white text-ink font-bold border-line border'}`}><ShoppingCart className="w-3.5 h-3.5"/> Punto de Venta</button>
         <button onClick={() => setView('history')} className={`btn btn-sm ${view === 'history' ? 'btn-primary shadow-md' : 'bg-white text-ink font-bold border-line border'}`}><History className="w-3.5 h-3.5"/> Historial</button>
         <button onClick={() => setView('credits')} className={`btn btn-sm ${view === 'credits' ? 'btn-primary shadow-md' : 'bg-white text-ink font-bold border-line border'}`}><ClipboardList className="w-3.5 h-3.5"/> Consultar Créditos</button>
-        <button onClick={() => handleOpenReport('REPORT_X')} disabled={!!reportLoadingType} className="btn btn-sm bg-white text-ink font-bold border-line border disabled:opacity-50"><FileText className="w-3.5 h-3.5"/> {reportLoadingType === 'REPORT_X' ? 'Cargando…' : 'Reporte X'}</button>
-        <button onClick={() => handleOpenReport('REPORT_Z')} disabled={!!reportLoadingType} className="btn btn-sm bg-white text-ink font-bold border-line border disabled:opacity-50"><Receipt className="w-3.5 h-3.5"/> {reportLoadingType === 'REPORT_Z' ? 'Cargando…' : 'Reporte Z'}</button>
+        <button onClick={() => handleOpenReport('REPORT_X')} disabled={!!reportLoadingType} className={`btn btn-sm font-bold border-line border disabled:opacity-50 ${showReportType === 'REPORT_X' ? 'bg-orange-500 text-white border-orange-500 shadow-md' : 'bg-white text-ink'}`}><FileText className="w-3.5 h-3.5"/> {reportLoadingType === 'REPORT_X' ? 'Cargando…' : 'Reporte X'}</button>
+        <button onClick={() => handleOpenReport('REPORT_Z')} disabled={!!reportLoadingType} className={`btn btn-sm font-bold border-line border disabled:opacity-50 ${showReportType === 'REPORT_Z' ? 'bg-orange-500 text-white border-orange-500 shadow-md' : 'bg-white text-ink'}`}><Receipt className="w-3.5 h-3.5"/> {reportLoadingType === 'REPORT_Z' ? 'Cargando…' : 'Reporte Z'}</button>
         <button onClick={() => setView('returns')} className={`btn btn-sm ${view === 'returns' ? 'btn-primary shadow-md' : 'bg-white text-ink font-bold border-line border'}`}><RotateCcw className="w-3.5 h-3.5"/> Devoluciones y Anulaciones</button>
         
         {view === 'pos' && (
@@ -943,9 +1280,14 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                        <div className="p-3 bg-brand-gold-soft/30 border border-brand-gold-soft/30 rounded-xl text-center"><span className="text-[9px] font-black uppercase text-brand-gold-deep block mb-1">EQUIVALENTE EN BOLÍVARES</span><span className="text-2xl font-black text-brand-gold-deep">{Utils.fmtBS(selectedProductDisplay.precioUSD * state.tasa)}</span></div>
                     </div>
                   )}
-                  {state.carrito.length > 0 && (
-                    <button onClick={() => setIsCreditModalOpen(true)} className="w-full h-10 border-2 border-status-info text-status-info hover:bg-status-info-soft font-black uppercase text-[10px] rounded-xl transition-all mt-4">Cargar a Crédito</button>
-                  )}
+                  <div className="grid grid-cols-2 gap-2 mt-4">
+                    {state.carrito.length > 0 && (
+                      <button onClick={() => setIsCreditModalOpen(true)} className="w-full h-10 border-2 border-status-info text-status-info hover:bg-status-info-soft font-black uppercase text-[10px] rounded-xl transition-all">Cargar a Crédito</button>
+                    )}
+                    <button onClick={() => setShowCashMovementModal(true)} className={`w-full h-10 border-2 border-status-success text-status-success hover:bg-status-success/10 font-black uppercase text-[10px] rounded-xl transition-all ${state.carrito.length === 0 ? 'col-span-2' : ''}`}>
+                      Movimiento de Caja
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1008,12 +1350,12 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
           <div className="card-head px-6 py-4 bg-ink border-b border-white/10 flex justify-between items-center"><h3 className="text-white font-black uppercase italic tracking-tighter flex items-center gap-2 text-xs"><History className="w-5 h-5 text-brand-gold" /> HISTORIAL TERMINAL: {currentTerminal?.nombre || 'S/T'}</h3><button onClick={() => setView('pos')} className="btn btn-sm bg-white text-ink hover:bg-surface-soft flex items-center gap-2 font-black uppercase text-[10px] rounded-lg border-none px-4"><ArrowLeft className="w-3.5 h-3.5"/> Volver al POS</button></div>
           <div className="table-wrap flex-1 overflow-y-auto">
             <table>
-              <thead><tr><th>Recibo</th><th>Hora</th><th>Terminal</th><th>Cliente</th><th>Tipo</th><th className="text-right">Monto USD</th><th>Método</th><th className="text-center">Estado</th><th className="text-center">Acciones</th></tr></thead>
+              <thead><tr><th>Recibo</th><th>Hora</th><th>Terminal</th><th>Cliente</th><th>Tipo</th><th className="text-right">Monto USD</th><th className="text-right">Equiv. BS</th><th>Método</th><th className="text-center">Estado</th><th className="text-center">Acciones</th></tr></thead>
               <tbody>
                 {histPageVentas.length === 0 ? (
-                  <tr><td colSpan={9} className="text-center py-20 text-ink/20 font-black italic uppercase">Sin ventas registradas en esta terminal</td></tr>
+                  <tr><td colSpan={10} className="text-center py-20 text-ink/20 font-black italic uppercase">Sin ventas registradas en esta terminal</td></tr>
                 ) : histPageVentas.map(v => (
-                  <tr key={v.id} className="border-b border-line/40 hover:bg-surface-warm/20"><td className="text-ink font-black text-xs mono">{v.id}</td><td className="text-ink font-bold text-xs">{v.fecha.split('T')[1]?.slice(0, 5)}</td><td className="text-ink font-black text-[10px] uppercase">{v.terminalName || state.terminales.find(t => t.id === v.terminalId)?.nombre || '-'}</td><td className="text-ink font-black text-xs uppercase truncate max-w-[150px]">{v.cliente}</td><td className="text-ink font-black text-[9px] uppercase"><span className={`badge ${v.type === 'COBRO DEUDA' ? 'badge-info' : 'badge-neutral'}`}>{v.type || 'VENTA'}</span></td><td className="text-brand-gold-deep font-black text-xs text-right">{Utils.fmtUSD(v.totalUSD)}</td><td className="text-ink font-bold text-[10px] uppercase">{Utils.metodoLabel(v.metodoPago)}</td><td className="text-center"><span className={`badge ${v.estado === 'pendiente' ? 'badge-warn' : (v.estado === 'anulada' ? 'badge-err' : 'badge-ok')} font-black text-[9px] uppercase`}>{v.estado}</span></td><td className="text-center"><button onClick={() => setShowSaleDetail(v)} className="w-7 h-7 rounded-full flex items-center justify-center text-status-success hover:bg-status-success/10 transition-colors" title="Ver ítems y detalle de venta"><Eye className="w-4 h-4" /></button></td></tr>
+                  <tr key={v.id} className="border-b border-line/40 hover:bg-surface-warm/20"><td className="text-ink font-black text-xs mono">{v.id}</td><td className="text-ink font-bold text-xs">{v.fecha.split('T')[1]?.slice(0, 5)}</td><td className="text-ink font-black text-[10px] uppercase">{v.terminalName || state.terminales.find(t => t.id === v.terminalId)?.nombre || '-'}</td><td className="text-ink font-black text-xs uppercase truncate max-w-[150px]">{v.cliente}</td><td className="text-ink font-black text-[9px] uppercase"><span className={`badge ${v.esMovimientoCaja ? 'badge-warn' : (v.type === 'COBRO DEUDA' ? 'badge-info' : 'badge-neutral')}`}>{v.type || 'VENTA'}</span></td><td className="text-brand-gold-deep font-black text-xs text-right">{Utils.fmtUSD(getSaleCurrencyTotals(v).usd)}</td><td className="text-ink font-black text-xs text-right">{Utils.fmtBS(getSaleCurrencyTotals(v).bs)}</td><td className="text-ink font-bold text-[10px] uppercase">{Utils.metodoLabel(v.metodoPago)}</td><td className="text-center"><span className={`badge ${v.esMovimientoCaja ? (v.estado === 'egreso' ? 'badge-err' : 'badge-ok') : (v.estado === 'pendiente' ? 'badge-warn' : (v.estado === 'anulada' ? 'badge-err' : 'badge-ok'))} font-black text-[9px] uppercase`}>{v.esMovimientoCaja ? (v.estado === 'egreso' ? 'EGRESO' : 'INGRESO') : v.estado}</span></td><td className="text-center">{v.esMovimientoCaja ? <button onClick={() => alert(`Concepto del movimiento:\n\n${v.concepto || v.cliente || v.descripcion || v.motivo || 'Sin concepto registrado'}${v.observacion ? `\n\nObservación:\n${v.observacion}` : ''}`)} className="w-7 h-7 rounded-full flex items-center justify-center text-status-success hover:bg-status-success/10 transition-colors" title="Ver motivo del movimiento"><Eye className="w-4 h-4" /></button> : <button onClick={() => setShowSaleDetail(v)} className="w-7 h-7 rounded-full flex items-center justify-center text-status-success hover:bg-status-success/10 transition-colors" title="Ver ítems y detalle de venta"><Eye className="w-4 h-4" /></button>}</td></tr>
                 ))}
               </tbody>
             </table>
@@ -1023,6 +1365,23 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       ) : view === 'credits' ? (
         <div className="card flex-1 bg-white flex flex-col overflow-hidden animate-in slide-in-from-bottom-2 duration-300 rounded-xl">
           <div className="card-head px-6 py-4 bg-ink border-b border-white/10 flex justify-between items-center"><h3 className="text-white font-black uppercase italic tracking-tighter flex items-center gap-2 text-xs"><ClipboardList className="w-5 h-5 text-brand-gold" /> CONSULTA CRÉDITOS Y COBRANZA (GLOBAL)</h3><button onClick={() => setView('pos')} className="btn btn-sm bg-white text-ink hover:bg-surface-soft flex items-center gap-2 font-black uppercase text-[10px] rounded-lg border-none px-4"><ArrowLeft className="w-3.5 h-3.5"/> Volver al POS</button></div>
+          <div className="px-5 py-3 bg-white border-b border-line">
+            <div className="relative max-w-xl">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink/40" />
+              <input
+                value={creditSearch}
+                onChange={e => setCreditSearch(e.target.value)}
+                className="w-full h-10 pl-10 pr-10 bg-surface-soft border border-line rounded-xl text-xs font-black uppercase text-ink outline-none focus:border-brand-gold"
+                placeholder="BUSCAR CLIENTE: NOMBRE, PALABRA CLAVE O CÉDULA..."
+                aria-label="Buscar cliente con deuda por nombre, palabra clave o cédula"
+              />
+              {creditSearch && (
+                <button onClick={() => setCreditSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-ink/40 hover:text-ink" aria-label="Limpiar búsqueda">
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          </div>
           <div className="table-wrap flex-1 overflow-y-auto">
             <table className="w-full">
               <thead>
@@ -1036,10 +1395,10 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                 </tr>
               </thead>
               <tbody>
-                {Object.entries(groupedCredits).length === 0 ? (
+                {Object.entries(filteredGroupedCredits).length === 0 ? (
                   <tr><td colSpan={6} className="text-center py-20 text-ink font-black uppercase italic">No hay deudas registradas</td></tr>
                 ) : (
-                  Object.entries(groupedCredits).map(([clientName, group]) => (
+                  Object.entries(filteredGroupedCredits).map(([clientName, group]) => (
                     <React.Fragment key={clientName}>
                       <tr className="border-b border-line hover:bg-surface-warm/20 transition-colors">
                         <td className="px-6 py-4">
@@ -1050,11 +1409,9 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                         <td className="text-right py-4 font-black text-status-info text-base">{Utils.fmtUSD(group.totalUSD)}</td>
                         <td className="text-right py-4 font-black text-ink">{Utils.fmtBS(group.totalUSD * state.tasa)}</td>
                         <td className="text-center py-4"><div className="flex items-center justify-center gap-2">
-                          {group.debts.length > 1 && (
-                            <button onClick={() => handleOpenGlobalCreditPayment(clientName, group.debts)} className="h-10 px-3 rounded-full flex items-center justify-center gap-1.5 bg-brand-gold text-black border-2 border-brand-gold hover:bg-brand-gold-deep transition-all shadow-md font-black text-[9px] uppercase whitespace-nowrap" title="PAGO GLOBAL" aria-label="PAGO GLOBAL">
-                              <HandCoins className="w-4 h-4" /><span>PAGO GLOBAL</span>
-                            </button>
-                          )}
+                          <button onClick={() => handleOpenGlobalCreditPayment(clientName, group.debts)} className="h-10 px-3 rounded-full flex items-center justify-center gap-1.5 bg-brand-gold text-black border-2 border-brand-gold hover:bg-brand-gold-deep transition-all shadow-md font-black text-[9px] uppercase whitespace-nowrap" title="PAGO GLOBAL" aria-label="PAGO GLOBAL">
+                            <HandCoins className="w-4 h-4" /><span>PAGO GLOBAL</span>
+                          </button>
                           <button onClick={() => setShowClientHistory(clientName)} className="w-10 h-10 rounded-full flex items-center justify-center bg-white text-status-success border-2 border-status-success/20 hover:bg-status-success hover:text-white transition-all shadow-md"><Eye className="w-5 h-5" /></button>
                         </div></td>
                       </tr>
@@ -1062,10 +1419,38 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                         <tr className="bg-surface-soft/40 animate-in slide-in-from-top-1 duration-200">
                            <td colSpan={6} className="px-12 py-4">
                               <div className="card border-line bg-white shadow-inner rounded-xl overflow-hidden">
-                                 <table className="w-full">
-                                    <thead className="bg-ink/5"><tr><th className="text-[9px] font-black uppercase p-2 text-left">Emisión</th><th className="text-[9px] font-black uppercase p-2 text-left">Vencimiento</th><th className="text-[9px] font-black uppercase p-2 text-right">Saldo USD</th><th className="text-[9px] font-black uppercase p-2 text-center">Acciones</th></tr></thead>
-                                    <tbody>{group.debts.map(d => (<tr key={d.id} className="border-b border-line/20"><td className="text-[10px] font-black p-2">{Utils.fmtFecha(d.fecha)}</td><td className={`text-[10px] font-black p-2 ${d.saldoUSD > 0.001 && d.fechaVencimiento < Utils.hoy() ? 'text-status-danger' : 'text-ink'}`}>{d.fechaVencimiento === '2099-12-31' ? 'ABIERTA' : Utils.fmtFecha(d.fechaVencimiento)}</td><td className="text-[10px] font-black p-2 text-right text-brand-gold-deep">{Utils.fmtUSD(d.saldoUSD)}</td><td className="p-2 text-center"><div className="flex justify-center gap-2"><button onClick={() => setShowDetails(d)} className="w-8 h-8 rounded-full flex items-center justify-center text-status-success hover:bg-status-success/10"><Eye className="w-4 h-4"/></button><button onClick={() => { setShowAbonoModal(d); }} className="btn btn-sm btn-primary h-7 px-3 text-[8px] uppercase">Abonar</button></div></td></tr>))}</tbody>
-                                 </table>
+                                 <div className="overflow-x-auto">
+                                   <table data-credit-history-version="sales-v1" className="w-full min-w-[780px]">
+                                      <thead className="bg-ink/5">
+                                        <tr>
+                                          <th className="text-[9px] font-black uppercase p-2 text-left">Emisión</th>
+                                          <th className="text-[9px] font-black uppercase p-2 text-left">Vencimiento</th>
+                                          <th className="text-[9px] font-black uppercase p-2 text-left">ID Factura</th>
+                                          <th className="text-[9px] font-black uppercase p-2 text-right">Monto</th>
+                                          <th className="text-[9px] font-black uppercase p-2 text-right">Saldo USD</th>
+                                          <th className="text-[9px] font-black uppercase p-2 text-center">Estado</th>
+                                          <th className="text-[9px] font-black uppercase p-2 text-center">Auditoría</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {group.debts.map(d => (
+                                          <tr key={d.id} className="border-b border-line/20">
+                                            <td className="text-[10px] font-black p-2">{Utils.fmtFecha(d.fecha)}</td>
+                                            <td className={`text-[10px] font-black p-2 ${Number(d.saldoUSD) > 0.001 && d.fechaVencimiento < Utils.hoy() ? 'text-status-danger' : 'text-ink'}`}>{d.fechaVencimiento === '2099-12-31' ? 'ABIERTA' : Utils.fmtFecha(d.fechaVencimiento)}</td>
+                                            <td className="text-[10px] font-black p-2 mono">{d.id}</td>
+                                            <td className="text-[10px] font-black p-2 text-right">{Utils.fmtUSD(d.montoUSD)}</td>
+                                            <td className="text-[10px] font-black p-2 text-right text-brand-gold-deep">{Utils.fmtUSD(d.saldoUSD)}</td>
+                                            <td className="text-[10px] font-black p-2 text-center uppercase">{d.estado}</td>
+                                            <td className="p-2 text-center">
+                                              <button onClick={() => { void handleOpenCreditDetails(d); }} className="w-8 h-8 rounded-full flex items-center justify-center text-status-success hover:bg-status-success/10" title="Auditar factura">
+                                                <Eye className="w-4 h-4"/>
+                                              </button>
+                                            </td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                   </table>
+                                 </div>
                               </div>
                            </td>
                         </tr>
@@ -1147,15 +1532,38 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         />
       )}
       
-      {showReportType && reportSnapshot && (
-        <ReceiptModal 
-          isOpen={!!showReportType} 
-          onClose={() => { 
-            if (showReportType === 'REPORT_Z') ejecutarCierreZ(); 
-            setShowReportType(null); 
-          }} 
-          reportData={reportSnapshot} 
-          type={showReportType} 
+      {showReportType === 'REPORT_X' && reportSnapshot && (
+        <ReceiptModal
+          isOpen={true}
+          onClose={() => {
+            setShowReportType(null);
+            setReportSnapshot(null);
+          }}
+          reportData={reportSnapshot}
+          type="REPORT_X"
+        />
+      )}
+
+      {showReportType === 'REPORT_Z' && reportSnapshot && (
+        <ZReportPreview80mm
+          data={reportSnapshot}
+          onClose={() => {
+            setShowReportType(null);
+            setReportSnapshot(null);
+          }}
+        />
+      )}
+
+      {showZArqueo && reportSnapshot && (
+        <CashZArqueoModal
+          open={showZArqueo}
+          report={reportSnapshot}
+          onCancel={() => {
+            setShowZArqueo(false);
+            setShowReportType(null);
+            setReportSnapshot(null);
+          }}
+          onConfirm={(real, diff) => ejecutarCierreZ(real, diff)}
         />
       )}
       
@@ -1191,6 +1599,97 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
             }))); 
           }} 
         />
+      )}
+
+      {showCashMovementModal && (
+        <div className="fixed inset-0 z-[160] bg-black/60 flex items-center justify-center p-4 animate-in fade-in-50">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border-2 border-line">
+            <div className="px-5 py-4 bg-ink text-white flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-black uppercase italic tracking-tight">Movimiento de Caja</h3>
+                <p className="text-[9px] text-white/50 font-bold uppercase mt-1">{currentTerminal?.nombre || 'Caja no identificada'}</p>
+              </div>
+              <button onClick={() => setShowCashMovementModal(false)} className="p-1 text-white/60 hover:text-white"><X className="w-5 h-5" /></button>
+            </div>
+
+            <div className="p-5 space-y-4 max-h-[75vh] overflow-y-auto">
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => setCashMovement(v => ({ ...v, tipo: 'egreso' }))}
+                  className={`h-11 rounded-xl border-2 font-black uppercase text-[10px] flex items-center justify-center gap-2 ${cashMovement.tipo === 'egreso' ? 'border-status-danger bg-status-danger/10 text-status-danger' : 'border-line text-ink/50'}`}
+                >
+                  <ArrowDownCircle className="w-4 h-4" /> Egreso
+                </button>
+                <button
+                  onClick={() => setCashMovement(v => ({ ...v, tipo: 'ingreso' }))}
+                  className={`h-11 rounded-xl border-2 font-black uppercase text-[10px] flex items-center justify-center gap-2 ${cashMovement.tipo === 'ingreso' ? 'border-status-success bg-status-success/10 text-status-success' : 'border-line text-ink/50'}`}
+                >
+                  <ArrowUpCircle className="w-4 h-4" /> Ingreso
+                </button>
+              </div>
+
+              <div>
+                <label className="text-[9px] font-black uppercase text-ink/50 block mb-1">Método de pago</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => setCashMovement(v => ({ ...v, metodo: 'efectivo_bs' }))}
+                    className={`h-12 rounded-xl border-2 font-black uppercase text-[10px] ${cashMovement.metodo === 'efectivo_bs' ? 'border-brand-gold bg-brand-gold-soft text-brand-gold-deep' : 'border-line text-ink/60'}`}
+                  >Efectivo Bs.</button>
+                  <button
+                    onClick={() => setCashMovement(v => ({ ...v, metodo: 'efectivo_usd' }))}
+                    className={`h-12 rounded-xl border-2 font-black uppercase text-[10px] ${cashMovement.metodo === 'efectivo_usd' ? 'border-brand-gold bg-brand-gold-soft text-brand-gold-deep' : 'border-line text-ink/60'}`}
+                  >Efectivo USD</button>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[9px] font-black uppercase text-ink/50 block mb-1">Monto ({cashMovement.metodo === 'efectivo_bs' ? 'Bs.' : 'USD'})</label>
+                <input
+                  autoFocus
+                  inputMode="decimal"
+                  value={cashMovement.monto}
+                  onChange={e => setCashMovement(v => ({ ...v, monto: e.target.value.replace(/[^0-9.,]/g, '') }))}
+                  className="w-full h-12 px-4 bg-surface-soft border border-line rounded-xl text-lg font-black text-right outline-none focus:border-brand-gold"
+                  placeholder={cashMovement.metodo === 'efectivo_bs' ? '0,00' : '0.00'}
+                />
+                <p className="text-[9px] font-bold text-ink/50 mt-1 text-right">
+                  Equiv. {cashMovement.metodo === 'efectivo_bs' ? 'USD' : 'Bs.'}: {
+                    cashMovement.metodo === 'efectivo_bs'
+                      ? Utils.fmtUSD((Number(String(cashMovement.monto).replace(',', '.')) || 0) / (Number(state.tasa) || 1))
+                      : Utils.fmtBS((Number(String(cashMovement.monto).replace(',', '.')) || 0) * (Number(state.tasa) || 1))
+                  }
+                </p>
+              </div>
+
+              <div>
+                <label className="text-[9px] font-black uppercase text-ink/50 block mb-1">Concepto</label>
+                <input
+                  value={cashMovement.concepto}
+                  onChange={e => setCashMovement(v => ({ ...v, concepto: e.target.value }))}
+                  className="w-full h-11 px-4 bg-white border border-line rounded-xl text-xs font-black uppercase outline-none focus:border-brand-gold"
+                  placeholder="Ej.: Entrega al administrador"
+                />
+              </div>
+
+              <div>
+                <label className="text-[9px] font-black uppercase text-ink/50 block mb-1">Observación (opcional)</label>
+                <textarea
+                  value={cashMovement.observacion}
+                  onChange={e => setCashMovement(v => ({ ...v, observacion: e.target.value }))}
+                  className="w-full min-h-[70px] px-4 py-3 bg-white border border-line rounded-xl text-xs font-bold outline-none focus:border-brand-gold resize-none"
+                  placeholder="Detalle adicional del movimiento..."
+                />
+              </div>
+            </div>
+
+            <div className="p-4 bg-surface-soft border-t border-line flex justify-end gap-2">
+              <button onClick={() => setShowCashMovementModal(false)} className="px-5 h-10 rounded-xl font-black uppercase text-[10px] text-ink/60 hover:bg-white">Cancelar</button>
+              <button onClick={registrarMovimientoCaja} className="px-6 h-10 rounded-xl bg-brand-gold text-black font-black uppercase text-[10px] hover:bg-brand-gold-deep shadow-md">
+                Registrar Movimiento
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {showSaleDetail && (
@@ -1293,7 +1792,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
               </div>
 
               {(() => {
-                const sale = state.ventas.find(v => v.id === showDetails.ventaId || v.id === showDetails.id);
+                const sale = showDetails.__originalSale || state.ventas.find(v => v.id === showDetails.ventaId || v.id === showDetails.id);
                 if (!sale) return null;
                 return (
                   <div className="space-y-3 animate-in slide-in-from-top-2 duration-300">
@@ -1380,7 +1879,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                       </tr>
                     </thead>
                     <tbody>
-                      {state.cxc.filter(d => d.cliente === showClientHistory).sort((a,b) => b.fecha.localeCompare(a.fecha)).map(d => (
+                      {creditDebts.filter(d => d.cliente === showClientHistory).sort((a,b) => b.fecha.localeCompare(a.fecha)).map(d => (
                         <tr key={d.id} className="border-b border-line/30 hover:bg-surface-warm/20 transition-colors">
                           <td className="p-4 text-xs font-black">{Utils.fmtFecha(d.fecha)}</td>
                           <td className="p-4 text-xs font-black mono">{d.id}</td>
@@ -1393,7 +1892,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                             </span>
                           </td>
                           <td className="p-4 text-center">
-                             <button onClick={() => setShowDetails(d)} className="w-10 h-10 rounded-full flex items-center justify-center bg-white text-status-success border-2 border-status-success/20 hover:bg-status-success hover:text-white transition-all shadow-md"><Eye className="w-5 h-5"/></button>
+                             <button onClick={() => { void handleOpenCreditDetails(d); }} className="w-10 h-10 rounded-full flex items-center justify-center bg-white text-status-success border-2 border-status-success/20 hover:bg-status-success hover:text-white transition-all shadow-md"><Eye className="w-5 h-5"/></button>
                           </td>
                         </tr>
                       ))}

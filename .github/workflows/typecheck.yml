@@ -1,0 +1,28 @@
+name: TypeScript validation
+
+on:
+  push:
+    branches:
+      - turso-migration
+      - integration/posven-turso-reconciled
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  typecheck:
+    name: TypeScript strict check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Validate TypeScript
+        run: npx tsc --noEmit --pretty false

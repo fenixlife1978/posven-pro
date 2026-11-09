@@ -70,16 +70,20 @@ export function DateRangeFilter({ value, onChange, className }: DateRangeFilterP
         <CalendarDays className="w-4 h-4 text-ink/30" />
         <input
           type="date"
+          aria-label="Fecha Desde"
           className="form-input h-8 text-xs font-bold"
-          value={value.desde}
-          onChange={e => onChange({ ...value, desde: e.target.value })}
+          value={value.desde || ''}
+          onChange={e => onChange({ desde: e.target.value, hasta: value.hasta || e.target.value })}
+          onInput={e => onChange({ desde: (e.currentTarget as HTMLInputElement).value, hasta: value.hasta || (e.currentTarget as HTMLInputElement).value })}
         />
         <span className="text-ink/30 text-xs font-black">→</span>
         <input
           type="date"
+          aria-label="Fecha Hasta"
           className="form-input h-8 text-xs font-bold"
-          value={value.hasta}
-          onChange={e => onChange({ ...value, hasta: e.target.value })}
+          value={value.hasta || ''}
+          onChange={e => onChange({ desde: value.desde || e.target.value, hasta: e.target.value })}
+          onInput={e => onChange({ desde: value.desde || (e.currentTarget as HTMLInputElement).value, hasta: (e.currentTarget as HTMLInputElement).value })}
         />
       </div>
     </div>

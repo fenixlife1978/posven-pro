@@ -17,8 +17,6 @@ import {
   RefreshCw,
   Database
 } from 'lucide-react';
-import { db } from '@/lib/firebase';
-import { collection, doc, updateDoc, onSnapshot, getDocs, setDoc, deleteDoc } from 'firebase/firestore';
 import { toast } from '@/hooks/use-toast';
 
 export default function GlobalControlModule({ state, updateState }: { state: AppState, updateState: (s: Partial<AppState>) => void }) {
@@ -29,83 +27,66 @@ export default function GlobalControlModule({ state, updateState }: { state: App
   const [showAddTerminal, setShowAddTerminal] = useState(false);
 
   useEffect(() => {
-    if (!db) return;
-    
+    let cancelled = false;
     setLoadingUsers(true);
-    const unsubscribe = onSnapshot(collection(db, 'users'), (snapshot) => {
-      const list: any[] = [];
-      snapshot.forEach(doc => {
-        list.push({ id: doc.id, ...doc.data() });
-      });
-      setUsers(list);
-      setLoadingUsers(false);
-    }, (error) => {
-      console.error("Error monitoreando usuarios:", error);
-      setLoadingUsers(false);
-    });
 
-    return () => unsubscribe();
+    (async () => {
+      try {
+        const response = await fetch('/api/users', { credentials: 'include', cache: 'no-store' });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data?.error || 'No se pudieron cargar los usuarios desde Turso.');
+        if (!cancelled) {
+          setUsers(Array.isArray(data.usuarios) ? data.usuarios : (Array.isArray(data.users) ? data.users : []));
+          setLoadingUsers(false);
+        }
+      } catch (error) {
+        console.error("Error cargando usuarios desde Turso:", error);
+        if (!cancelled) setLoadingUsers(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const toggleAccess = async (userId: string, currentStatus: boolean) => {
     try {
       const newStatus = !currentStatus;
-      const userRef = doc(db, 'users', userId);
-      
-      // Actualización directa y forzada en Firestore
-      await updateDoc(userRef, { 
-        accesoBloqueado: newStatus 
+      const response = await fetch('/api/users/' + encodeURIComponent(userId), {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accesoBloqueado: newStatus }),
       });
-      
-      toast({ 
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || body?.ok === false) {
+        if (response.status === 503) throw new Error('Turso no está configurado.');
+        throw new Error(String(body?.error || 'No se pudo actualizar el acceso.'));
+      }
+      toast({
         title: newStatus ? "Acceso Bloqueado" : "Acceso Concedido",
-        description: `El estado del operador ha sido sincronizado en la nube.`
+        description: 'El estado del operador fue actualizado en Turso.'
       });
     } catch (e: any) {
       console.error("Error al actualizar acceso:", e);
-      toast({ 
-        variant: "destructive", 
-        title: "Error de Seguridad", 
-        description: "No tiene permisos suficientes para realizar esta acción." 
+      toast({
+        variant: "destructive",
+        title: "Error de Seguridad",
+        description: e?.message || "No tiene permisos suficientes para realizar esta acción."
       });
     }
   };
 
   const migrateUserIds = async () => {
-    if (!confirm('Esta acción migrará los usuarios que usan el correo como ID hacia el UID de Auth. ¿Desea continuar?')) return;
-    
-    setIsMigrating(true);
-    try {
-      const querySnapshot = await getDocs(collection(db, 'users'));
-      let migratedCount = 0;
-      
-      for (const userDoc of querySnapshot.docs) {
-        const data = userDoc.data();
-        const docId = userDoc.id;
-        
-        if (docId.includes('@') && data.uid) {
-           await setDoc(doc(db, 'users', data.uid), {
-             ...data,
-             email: data.email?.toLowerCase()
-           });
-           await deleteDoc(doc(db, 'users', docId));
-           migratedCount++;
-        }
-      }
-      
-      toast({ 
-        title: "Migración Exitosa", 
-        description: `Se han actualizado ${migratedCount} registros de usuario.` 
-      });
-    } catch (e) {
-      console.error("Error en migración:", e);
-      toast({ variant: "destructive", title: "Fallo en Migración", description: "Fallo al procesar los IDs de usuario." });
-    } finally {
-      setIsMigrating(false);
-    }
+    toast({
+      title: "Migración no requerida",
+      description: "La gestión de usuarios y sus identificadores ya se realiza mediante Turso."
+    });
   };
 
-  const createTerminal = () => {
+
+  const createTerminal = async () => {
     if (!newTerminalName.trim()) return;
     // Prefijo de caja correlativo (C1, C2, ...) para numeración de facturas independiente por caja.
     const usedPrefixes = (state.terminales || [])
@@ -114,7 +95,7 @@ export default function GlobalControlModule({ state, updateState }: { state: App
       .filter(n => !isNaN(n) && n > 0);
     const nextNum = (usedPrefixes.length ? Math.max(...usedPrefixes) : 0) + 1;
     const newTerm: Terminal = {
-      id: 'TRM-' + Store.uid().toUpperCase().slice(0, 4),
+      id: 'TRM-' + Store.uid().toUpperCase(),
       nombre: newTerminalName.toUpperCase(),
       usuarioId: null,
       activo: true,
@@ -133,23 +114,72 @@ export default function GlobalControlModule({ state, updateState }: { state: App
       fechaUltimoZ: '',
       acumuladoHistorico: 0
     };
-    updateState({ terminales: [...(state.terminales || []), newTerm] });
-    setNewTerminalName('');
-    setShowAddTerminal(false);
-    toast({ title: "Terminal Creado" });
+    try {
+      const response = await fetch('/api/turso/store', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ operation: 'terminalUpsert', terminal: newTerm }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || body?.ok === false) {
+        throw new Error(String(body?.error || 'No se pudo crear el terminal.'));
+      }
+      const persisted = body?.terminal || newTerm;
+      updateState({ terminales: [...(state.terminales || []).filter(t => t.id !== persisted.id), persisted] });
+      setNewTerminalName('');
+      setShowAddTerminal(false);
+      toast({ title: "Terminal Creado", description: "Terminal guardado en Turso." });
+    } catch (e: any) {
+      console.error("Error creando terminal:", e);
+      toast({ variant: "destructive", title: "Error al crear terminal", description: e?.message || "No se pudo guardar el terminal." });
+    }
   };
 
-  const deleteTerminal = (id: string) => {
+  const deleteTerminal = async (id: string) => {
     if (!confirm('¿Eliminar este terminal?')) return;
-    updateState({ terminales: state.terminales.filter(t => t.id !== id) });
+    try {
+      const response = await fetch('/api/turso/store', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ operation: 'terminalDelete', terminalId: id }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || body?.ok === false) {
+        throw new Error(String(body?.error || 'No se pudo eliminar el terminal.'));
+      }
+      updateState({ terminales: state.terminales.filter(t => t.id !== id) });
+      toast({ title: "Terminal Eliminado", description: "Terminal eliminado de Turso." });
+    } catch (e: any) {
+      console.error("Error eliminando terminal:", e);
+      toast({ variant: "destructive", title: "Error al eliminar terminal", description: e?.message || "No se pudo eliminar el terminal." });
+    }
   };
 
-  const assignUserToTerminal = (terminalId: string, userId: string | null) => {
-    const updated = state.terminales.map(t => 
-      t.id === terminalId ? { ...t, usuarioId: userId === 'none' ? null : userId } : t
-    );
-    updateState({ terminales: updated });
-    toast({ title: "Asignación Actualizada" });
+  const assignUserToTerminal = async (terminalId: string, userId: string | null) => {
+    const assignedUserId = userId === 'none' ? null : userId;
+    try {
+      const response = await fetch('/api/turso/store', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ operation: 'terminalPatch', terminalId, patch: { usuarioId: assignedUserId } }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || body?.ok === false) {
+        throw new Error(String(body?.error || 'No se pudo actualizar la asignación.'));
+      }
+      const persisted = body?.terminal;
+      const updated = state.terminales.map(t =>
+        t.id === terminalId ? (persisted || { ...t, usuarioId: assignedUserId }) : t
+      );
+      updateState({ terminales: updated });
+      toast({ title: "Asignación Actualizada", description: "Responsable guardado en Turso." });
+    } catch (e: any) {
+      console.error("Error actualizando asignación:", e);
+      toast({ variant: "destructive", title: "Error de asignación", description: e?.message || "No se pudo guardar la asignación." });
+    }
   };
 
   return (
