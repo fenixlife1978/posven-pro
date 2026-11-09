@@ -914,7 +914,10 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       stockDespues: nuevoStock,
       fecha: Utils.ahora(),
       referencia: 'AJUSTE MANUAL POS',
-      terminalId: getCurrentTerminal()?.id || 'GLOBAL'
+      terminalId: getCurrentTerminal()?.id || 'GLOBAL',
+      costoUnitarioUSD: Number(state.productos.find(p => p.id === stockEdit.id)?.costoUSD) || 0,
+      costoUnitarioBs: (Number(state.productos.find(p => p.id === stockEdit.id)?.costoUSD) || 0) * Number(state.tasa || 0),
+      tasaBCV: Number(state.tasa) || 0
     };
 
     try {
