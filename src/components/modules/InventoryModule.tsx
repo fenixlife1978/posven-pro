@@ -26,7 +26,9 @@ import {
   LayoutGrid,
   Monitor,
   Eye,
-  ShieldAlert
+  ShieldAlert,
+  Download,
+  FileSpreadsheet
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -267,6 +269,7 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
       case 'historial_ajustes': return <HistorialAjustes state={state} />;
       case 'kardex': return <ReporteKardex state={state} selectedId={selectedKardexId} onSelect={setSelectedKardexId} />;
       case 'consumo_colab': return <ReporteConsumo state={state} />;
+      case 'reporte_salidas_periodicas': return <ReporteMovimientosSalidaPeriodicos state={state} />;
       default: return null;
     }
   };
@@ -281,6 +284,7 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
         <button onClick={() => setActiveTab('kardex')} className={`tab ${activeTab === 'kardex' ? 'active' : 'text-ink font-black'}`}>Kardex Fiscal</button>
         <button onClick={() => setActiveTab('historial_ajustes')} className={`tab ${activeTab === 'historial_ajustes' ? 'active' : 'text-ink font-black'}`}>Ajustes</button>
         <button onClick={() => setActiveTab('consumo_colab')} className={`tab ${activeTab === 'consumo_colab' ? 'active' : 'text-ink font-black'}`}>Consumo / Colaboraciones</button>
+        <button onClick={() => setActiveTab('reporte_salidas_periodicas')} className={`tab ${activeTab === 'reporte_salidas_periodicas' ? 'active' : 'text-ink font-black'}`}>Salidas periódicas SICOVEN</button>
       </div>
 
       <div className="animate-in fade-in duration-300">
@@ -1088,6 +1092,78 @@ function ReporteKardex({ state, selectedId, onSelect }: { state: AppState, selec
     </div>
   );
 }
+
+
+function ReporteMovimientosSalidaPeriodicos({ state }: { state: AppState }) {
+  const hoy = Utils.hoy();
+  const [desde, setDesde] = useState(hoy.slice(0, 8) + '01');
+  const [hasta, setHasta] = useState(hoy);
+  const [categoria, setCategoria] = useState('');
+  const [busqueda, setBusqueda] = useState('');
+  const [datos, setDatos] = useState<Record<string, { costo: string; tasa: string }>>({});
+  const filas = useMemo(() => (state.movimientos || [])
+    .filter(m => Number(m.cantidad) < 0 && m.fecha && m.fecha.slice(0,10) >= desde && m.fecha.slice(0,10) <= hasta)
+    .map(m => ({ m, p: (state.productos || []).find(p => p.id === m.productoId) }))
+    .filter((x): x is { m: Movimiento; p: Product } => Boolean(x.p))
+    .filter(x => !categoria || x.p.categoria === categoria)
+    .filter(x => !busqueda || [x.p.codigo, x.p.nombre, x.m.referencia].some(v => String(v || '').toLowerCase().includes(busqueda.toLowerCase())))
+    .sort((a,b) => a.m.fecha.localeCompare(b.m.fecha)), [state.movimientos,state.productos,desde,hasta,categoria,busqueda]);
+  const pendientes = filas.filter(x => !(Number(datos[x.m.id]?.costo) > 0) || !(Number(datos[x.m.id]?.tasa) > 0)).length;
+  const unidades = filas.reduce((s,x) => s + Math.abs(Number(x.m.cantidad) || 0), 0);
+  const setDato = (id: string, campo: 'costo' | 'tasa', valor: string) => setDatos(prev => ({...prev,[id]:{...(prev[id] || {costo:'',tasa:''}),[campo]:valor}}));
+  const registros = () => filas.map(({m,p}) => ({
+    productCode: p.codigo, productName: p.nombre, date: m.fecha.slice(0,10), type: 'SALIDA',
+    concept: m.tipo === 'venta' ? 'VENTA' : (m.tipo === 'consumo' || m.tipo === 'colaboracion' ? 'MERMA' : 'AJUSTE'),
+    documentRef: m.referencia || m.id, quantity: Math.abs(Number(m.cantidad)),
+    unitCostBs: Number(datos[m.id]?.costo), bcvRate: Number(datos[m.id]?.tasa)
+  }));
+  const descargar = (tipo: 'json' | 'csv') => {
+    if (!filas.length || pendientes) { alert('No hay registros o faltan costos unitarios/tasas BCV históricos por revisar.'); return; }
+    const rows = registros();
+    const nombre = 'POSVEN_Salidas_Inventario_' + desde + '_' + hasta;
+    let blob: Blob, ext: string;
+    if (tipo === 'json') {
+      blob = new Blob([JSON.stringify({format:'SICOVEN_INVENTORY_MOVEMENTS',version:1,period:{from:desde,to:hasta},movements:rows},null,2)],{type:'application/json;charset=utf-8'}); ext='json';
+    } else {
+      const cols = ['productCode','productName','date','type','concept','documentRef','quantity','unitCostBs','bcvRate'];
+      const q = (v: unknown) => '"' + String(v ?? '').replace(/"/g,'""') + '"';
+      blob = new Blob(['\uFEFF' + [cols.join(','),...rows.map(r=>cols.map(k=>q((r as any)[k])).join(','))].join('\r\n')],{type:'text/csv;charset=utf-8'}); ext='csv';
+    }
+    const url=URL.createObjectURL(blob), a=document.createElement('a');
+    a.href=url; a.download=nombre+'.'+ext; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  };
+  return <div className="space-y-4">
+    <Card className="p-5 bg-white border-line shadow-sm rounded-xl space-y-4 no-print">
+      <div><h3 className="font-black text-sm uppercase text-ink">Reporte periódico de movimientos de salida</h3><p className="text-xs text-ink/50 mt-1">Consulta de solo lectura del Kardex para preparar importación en SICOVEN.</p></div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="form-group mb-0"><Label className="text-[10px] font-black uppercase">Desde</Label><Input type="date" value={desde} max={hasta} onChange={e=>setDesde(e.target.value)} className="h-10 bg-white"/></div>
+        <div className="form-group mb-0"><Label className="text-[10px] font-black uppercase">Hasta</Label><Input type="date" value={hasta} min={desde} onChange={e=>setHasta(e.target.value)} className="h-10 bg-white"/></div>
+        <div className="form-group mb-0"><Label className="text-[10px] font-black uppercase">Categoría</Label><select className="form-select h-10 w-full" value={categoria} onChange={e=>setCategoria(e.target.value)}><option value="">Todas</option>{Array.from(new Set((state.productos||[]).map(p=>p.categoria).filter(Boolean))).sort().map(x=><option key={x} value={x}>{x}</option>)}</select></div>
+        <div className="form-group mb-0"><Label className="text-[10px] font-black uppercase">Buscar</Label><Input value={busqueda} onChange={e=>setBusqueda(e.target.value)} placeholder="Código, producto o referencia" className="h-10 bg-white"/></div>
+      </div>
+    </Card>
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <Card className="p-4 bg-white border-line"><p className="text-[10px] uppercase font-black text-ink/40">Movimientos de salida</p><p className="text-2xl font-black text-ink">{filas.length}</p></Card>
+      <Card className="p-4 bg-white border-line"><p className="text-[10px] uppercase font-black text-ink/40">Unidades de salida</p><p className="text-2xl font-black text-ink">{unidades.toLocaleString('es-VE')}</p></Card>
+      <Card className="p-4 border border-amber-200 bg-amber-50"><p className="text-[10px] uppercase font-black text-ink/50">Datos históricos pendientes</p><p className="text-2xl font-black text-amber-700">{pendientes}</p><p className="text-[10px] text-ink/50">Costo unitario y/o tasa BCV</p></Card>
+    </div>
+    <Card className="overflow-hidden bg-white border-line shadow-sm rounded-xl">
+      <div className="p-4 bg-ink text-white flex flex-wrap justify-between gap-2 items-center"><div><h4 className="font-black text-xs uppercase">Revisión previa de movimientos</h4><p className="text-[10px] text-white/60">Los datos históricos faltantes se completan manualmente; nunca se sustituyen por valores actuales.</p></div><div className="flex gap-2"><Button variant="secondary" onClick={()=>descargar('csv')} disabled={!filas.length || pendientes>0} className="font-black uppercase text-[10px]"><Download className="w-4 h-4"/> CSV</Button><Button onClick={()=>descargar('json')} disabled={!filas.length || pendientes>0} className="bg-brand-gold text-ink hover:bg-brand-gold-deep font-black uppercase text-[10px]"><FileSpreadsheet className="w-4 h-4"/> JSON</Button></div></div>
+      <div className="table-wrap"><Table><TableHeader><TableRow className="bg-surface-soft">
+        <TableHead className="text-[10px] font-black uppercase">Fecha</TableHead><TableHead className="text-[10px] font-black uppercase">Código / Producto</TableHead><TableHead className="text-[10px] font-black uppercase">Concepto</TableHead><TableHead className="text-[10px] font-black uppercase text-right">Cantidad</TableHead><TableHead className="text-[10px] font-black uppercase">Referencia</TableHead><TableHead className="text-[10px] font-black uppercase">Costo unit. Bs.</TableHead><TableHead className="text-[10px] font-black uppercase">Tasa BCV</TableHead>
+      </TableRow></TableHeader><TableBody>
+        {filas.map(({m,p})=><TableRow key={m.id} className="border-b border-line/30">
+          <TableCell className="text-xs font-bold whitespace-nowrap">{m.fecha.slice(0,10)}</TableCell><TableCell className="min-w-48"><p className="text-xs font-black">{p.codigo}</p><p className="text-[10px] text-ink/50">{p.nombre}</p></TableCell><TableCell><p className="text-[10px] font-black uppercase">SALIDA</p><p className="text-[10px] text-ink/50">{m.tipo==='venta'?'VENTA':(m.tipo==='consumo'||m.tipo==='colaboracion'?'MERMA':'AJUSTE')}</p></TableCell><TableCell className="text-right font-black text-status-danger">{Math.abs(m.cantidad)}</TableCell><TableCell className="text-[10px] min-w-36">{m.referencia || m.id}</TableCell>
+          <TableCell className="min-w-36"><Input type="number" min="0" step="0.0001" value={datos[m.id]?.costo || ''} onChange={e=>setDato(m.id,'costo',e.target.value)} placeholder="Requerido" className="h-9 min-w-28 bg-white text-right"/></TableCell><TableCell className="min-w-32"><Input type="number" min="0" step="0.0001" value={datos[m.id]?.tasa || ''} onChange={e=>setDato(m.id,'tasa',e.target.value)} placeholder="Requerida" className="h-9 min-w-24 bg-white text-right"/></TableCell>
+        </TableRow>)}
+        {!filas.length && <TableRow><TableCell colSpan={7} className="py-16 text-center text-ink/30 font-black uppercase">No hay salidas para los filtros seleccionados</TableCell></TableRow>}
+      </TableBody></Table></div>
+      <div className="p-4 border-t border-line text-xs"><span className="text-ink/50">Total costo revisado: <b className="text-ink">{filas.reduce((s,x)=>s+Math.abs(x.m.cantidad)*(Number(datos[x.m.id]?.costo)||0),0).toLocaleString('es-VE',{minimumFractionDigits:2,maximumFractionDigits:2})} Bs.</b></span><p className={pendientes?'text-amber-700 font-bold':'text-status-success font-bold'}>{pendientes?'Complete los datos históricos pendientes para exportar.':'Revisión completa: exportación habilitada.'}</p></div>
+    </Card>
+    <p className="text-[10px] text-ink/40">Se exportan código y descripción del producto, no su ID interno de POSVEN-PRO, porque SICOVEN mantiene identificadores propios.</p>
+  </div>;
+}
+
 
 type ConteoFisicoAjuste = { productoId: string; nuevoStock: number; motivo: string };
 
