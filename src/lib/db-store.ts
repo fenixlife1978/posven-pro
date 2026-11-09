@@ -100,13 +100,14 @@ async function tryTursoSpecialRead(kind: 'config' | 'catalog', name = ''): Promi
   if (!response.ok || body?.ok === false) throw new Error(String(body?.error || 'Turso rechazó la lectura.'));
   return kind === 'config' ? (body.config || {}) : (Array.isArray(body.lista) ? body.lista : []);
 }
-async function tryTursoRead(table: string, options: { limit?: number; terminalId?: string; estado?: string } = {}): Promise<any[] | null> {
+async function tryTursoRead(table: string, options: { limit?: number; offset?: number; terminalId?: string; estado?: string } = {}): Promise<any[] | null> {
   if (typeof window === 'undefined') return null;
   let response: Response;
   try {
     const params = new URLSearchParams();
     params.set('table', table);
     if (options.limit) params.set('limit', String(options.limit));
+    if (options.offset !== undefined) params.set('offset', String(Math.max(0, Number(options.offset) || 0)));
     if (options.terminalId) params.set('terminalId', String(options.terminalId));
     if (options.estado) params.set('estado', String(options.estado));
     response = await fetch('/api/turso/store?' + params.toString(), {
@@ -518,8 +519,24 @@ async function bootstrapProductos(): Promise<boolean> {
 const loadedAll: Record<string, boolean> = {};
 const cursors: Record<string, QueryDocumentSnapshot<DocumentData> | null> = {};
 
+async function tryTursoReadAll(table: string): Promise<any[] | null> {
+  const pageSize = 500;
+  const records: any[] = [];
+  let offset = 0;
+  while (true) {
+    const page = await tryTursoRead(table, { limit: pageSize, offset });
+    if (page === null) return null;
+    records.push(...page);
+    if (page.length < pageSize) break;
+    offset += page.length;
+  }
+  return records;
+}
+
 async function loadCollection(name: string): Promise<any[]> {
-  const tursoItems = await tryTursoRead(name);
+  // Los reportes, Kardex y catálogos necesitan la colección completa; el endpoint
+  // entrega páginas de 500 y el offset evita truncar silenciosamente el historial.
+  const tursoItems = await tryTursoReadAll(name);
   if (tursoItems !== null) return tursoItems.map(sanitizeForFirestore).filter(Boolean);
   if (!db) return [];
   const snap = await getDocs(collection(db, name));
