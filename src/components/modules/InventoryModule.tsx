@@ -77,7 +77,7 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
     if (activeTab !== 'productos') {
       void Store.ensureLoaded('movimientos');
     }
-    if (activeTab === 'reporte_ventas' || activeTab === 'reporte_devoluciones') {
+    if (activeTab === 'reporte_ventas' || activeTab === 'reporte_devoluciones' || activeTab === 'reporte_salidas_periodicas') {
       void Store.ensureLoaded('ventas');
     }
   }, [activeTab]);
@@ -1122,8 +1122,14 @@ function ReporteMovimientosSalidaPeriodicos({ state }: { state: AppState }) {
   const datosDetectados = useMemo(() => Object.fromEntries(filas.map(({m}) => {
     // La tasa histórica de una venta está guardada en su factura (campo tasa).
     // El costo solo se toma de snapshots históricos; nunca del costo actual del catálogo.
+    const referencia = String(m.referencia || '').trim();
     const sale = m.tipo === 'venta'
-      ? (state.ventas || []).find(v => String(m.referencia || '').includes(String(v.id || '')))
+      ? (state.ventas || []).find(v => {
+          const saleId = String(v.id || '').trim();
+          if (!saleId) return false;
+          const prefix = String(v.type || 'VENTA').trim() + ' ' + saleId;
+          return referencia === saleId || referencia === prefix || referencia.startsWith(prefix + ' ');
+        })
       : undefined;
     const saleItem = sale?.items?.find(item => String(item.productoId) === String(m.productoId));
     const tasa = Number(m.tasaBCV || saleItem?.tasaBCV || sale?.tasa) || 0;
@@ -1178,7 +1184,7 @@ function ReporteMovimientosSalidaPeriodicos({ state }: { state: AppState }) {
         <TableHead className="text-[10px] font-black uppercase">Fecha</TableHead><TableHead className="text-[10px] font-black uppercase">Código / Producto</TableHead><TableHead className="text-[10px] font-black uppercase">Concepto</TableHead><TableHead className="text-[10px] font-black uppercase text-right">Cantidad</TableHead><TableHead className="text-[10px] font-black uppercase">Referencia</TableHead><TableHead className="text-[10px] font-black uppercase">Costo unit. Bs.</TableHead><TableHead className="text-[10px] font-black uppercase">Tasa BCV</TableHead>
       </TableRow></TableHeader><TableBody>
         {filas.map(({m,p})=><TableRow key={m.id} className="border-b border-line/30">
-          <TableCell className="text-xs font-bold whitespace-nowrap">{m.fecha.slice(0,10)}</TableCell><TableCell className="min-w-48"><p className="text-xs font-black">{p.codigo}</p><p className="text-[10px] text-ink/50">{p.nombre}</p></TableCell><TableCell><p className="text-[10px] font-black uppercase">SALIDA</p><p className="text-[10px] text-ink/50">{m.tipo==='venta'?'VENTA':(m.tipo==='consumo'?'AUTOCONSUMO':'MERMA')}</p></TableCell><TableCell className="text-right font-black text-status-danger">{Math.abs(m.cantidad)}</TableCell><TableCell className="text-[10px] min-w-36">{m.referencia || m.id}</TableCell>
+          <TableCell className="text-xs font-bold whitespace-nowrap">{m.fecha.slice(0,10)}</TableCell><TableCell className="min-w-48"><p className="text-xs font-black">{p.codigo}</p><p className="text-[10px] text-ink/50">{p.nombre}</p></TableCell><TableCell><p className="text-[10px] font-black uppercase">SALIDA</p><p className="text-[10px] text-ink/50">{m.tipo==='venta'?'VENTA':(['consumo','colaboracion'].includes(m.tipo)?'AUTOCONSUMO':'MERMA')}</p></TableCell><TableCell className="text-right font-black text-status-danger">{Math.abs(m.cantidad)}</TableCell><TableCell className="text-[10px] min-w-36">{m.referencia || m.id}</TableCell>
           <TableCell className="min-w-36"><Input type="number" min="0" step="0.0001" value={valorDato(m.id,'costo')} onChange={e=>setDato(m.id,'costo',e.target.value)} placeholder="Requerido" className="h-9 min-w-28 bg-white text-right"/></TableCell><TableCell className="min-w-32"><Input type="number" min="0" step="0.0001" value={valorDato(m.id,'tasa')} onChange={e=>setDato(m.id,'tasa',e.target.value)} placeholder="Requerida" className="h-9 min-w-24 bg-white text-right"/></TableCell>
         </TableRow>)}
         {!filas.length && <TableRow><TableCell colSpan={7} className="py-16 text-center text-ink/30 font-black uppercase">No hay salidas para los filtros seleccionados</TableCell></TableRow>}
