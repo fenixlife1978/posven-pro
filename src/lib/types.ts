@@ -103,6 +103,10 @@ export interface Movimiento {
   fecha: string;
   referencia: string;
   terminalId?: string;
+  /** Fotografía histórica del costo y la tasa al registrar el movimiento. */
+  costoUnitarioUSD?: number;
+  costoUnitarioBs?: number;
+  tasaBCV?: number;
 }
 
 export interface SaleItem {
@@ -111,6 +115,10 @@ export interface SaleItem {
   cantidad: number;
   precioUnitUSD: number;
   subtotalUSD: number;
+  /** Costo capturado al confirmar la venta; no depende del catálogo futuro. */
+  costoUnitarioUSD?: number;
+  costoUnitarioBs?: number;
+  tasaBCV?: number;
 }
 
 export interface PurchaseItem {
