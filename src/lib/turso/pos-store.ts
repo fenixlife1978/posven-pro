@@ -519,6 +519,10 @@ export async function createSaleTransaction(params: {
         fecha: now,
         referencia: saleType + ' ' + reciboId + (deduction.references.length > 1 ? ' - SALIDA AGRUPADA' : ''),
         terminalId: terminalId || 'GLOBAL',
+        // Snapshot del costo promedio vigente en la misma transacción que descuenta stock.
+        costoUnitarioUSD: Number(p.costoUSD) || 0,
+        costoUnitarioBs: (Number(p.costoUSD) || 0) * Number(tasa),
+        tasaBCV: Number(tasa),
       });
     }
 
@@ -527,7 +531,11 @@ export async function createSaleTransaction(params: {
       .reduce((s, p) => s + (Number(p.montoUSD) || 0) * 0.03, 0);
 
     const sale = {
-      id: reciboId, fecha: now, cliente: clientName, items: cart.map(x => ({ ...x })),
+      id: reciboId, fecha: now, cliente: clientName, items: cart.map((x: any) => {
+        const product = products.get(String(x.productoId));
+        const costUSD = Number(product?.costoUSD) || 0;
+        return { ...x, costoUnitarioUSD: costUSD, costoUnitarioBs: costUSD * Number(tasa), tasaBCV: Number(tasa) };
+      }),
       subtotalUSD: totals.total, descuentoUSD: 0, totalUSD: totals.total, totalBS: totals.total * tasa,
       metodoPago: credit ? 'credito' : (payments.length > 1 ? 'mixto' : (payments[0]?.metodo || 'efectivo_usd')),
       estado: 'completada', type: saleType, received: totalPaid,
@@ -1713,7 +1721,7 @@ export async function createPurchaseTransaction(params:any){
     const statements:TursoStatement[]=[rowStatement('compras',purchase)];
     const updatedProducts:any[]=[];
     for(const pid of ids){const p=rowFromDb((await tx.execute(txSelect('productos',pid))).rows[0]);if(!p)throw new Error('El producto '+pid+' ya no existe en Turso.');const i=itemBy.get(pid),qty=Number(i.cantidad)||0,cost=Number(i.costoUnitarioUSD)||0,oldStock=Number(p.stock)||0,oldCost=Number(p.costoUSD)||0,newStock=oldStock+qty,newCost=newStock>0?Math.round((((oldStock*oldCost)+(qty*cost))/newStock+Number.EPSILON)*10000)/10000:cost;
-      const latestRow=(await tx.execute({sql:"SELECT id,data_json FROM movimientos WHERE json_extract(data_json,'$.productoId')=? ORDER BY fecha DESC,id DESC LIMIT 1",args:[pid]})).rows[0]; const latest=latestRow?rowFromDb(latestRow):null; const mv={id:String(items.find((x:any)=>String(x.productoId)===pid)?.movementId||('MOV-'+crypto.randomUUID())),productoId:pid,tipo:'compra',cantidad:qty,costoUnitarioUSD:cost,subtotalUSD:Number(i.subtotalUSD)||qty*cost,stockAntes:0,stockDespues:0,fecha:purchaseDateTime,referencia:`COMPRA FACT: ${invoiceNumber} - PROV: ${supplier}`,terminalId:String(purchase.terminalId||'ADMIN')}; const latestFecha=String(latest?.fecha||''); const compraEsCronologicamenteUltima=!latestFecha||String(purchaseDateTime||'')>=latestFecha; if(compraEsCronologicamenteUltima){mv.stockAntes=oldStock;mv.stockDespues=newStock;statements.push(rowStatement('movimientos',mv));}else{const rows=(await tx.execute({sql:"SELECT id,data_json FROM movimientos WHERE json_extract(data_json,'$.productoId')=? ORDER BY fecha ASC,id ASC",args:[pid]})).rows.map(rowFromDb); const combined=[...rows.map((d:any)=>({id:d.id,data:d})),{id:mv.id,data:mv}].sort((a:any,b:any)=>String(a.data.fecha||'').localeCompare(String(b.data.fecha||''))); let running=rows.length?Number(rows[0].stockAntes)||0:0; for(const e of combined){const before=running;running=before+(Number(e.data.cantidad)||0);statements.push(rowStatement('movimientos',{...e.data,id:e.id,stockAntes:before,stockDespues:running}));}} statements.push(rowStatement('productos',{...p,id:pid,stock:newStock,costoUSD:newCost}));}
+      const latestRow=(await tx.execute({sql:"SELECT id,data_json FROM movimientos WHERE json_extract(data_json,'$.productoId')=? ORDER BY fecha DESC,id DESC LIMIT 1",args:[pid]})).rows[0]; const latest=latestRow?rowFromDb(latestRow):null; const mv={id:String(items.find((x:any)=>String(x.productoId)===pid)?.movementId||('MOV-'+crypto.randomUUID())),productoId:pid,tipo:'compra',cantidad:qty,costoUnitarioUSD:cost,costoUnitarioBs:cost*Number(exchangeRate),tasaBCV:Number(exchangeRate),subtotalUSD:Number(i.subtotalUSD)||qty*cost,stockAntes:0,stockDespues:0,fecha:purchaseDateTime,referencia:`COMPRA FACT: ${invoiceNumber} - PROV: ${supplier}`,terminalId:String(purchase.terminalId||'ADMIN')}; const latestFecha=String(latest?.fecha||''); const compraEsCronologicamenteUltima=!latestFecha||String(purchaseDateTime||'')>=latestFecha; if(compraEsCronologicamenteUltima){mv.stockAntes=oldStock;mv.stockDespues=newStock;statements.push(rowStatement('movimientos',mv));}else{const rows=(await tx.execute({sql:"SELECT id,data_json FROM movimientos WHERE json_extract(data_json,'$.productoId')=? ORDER BY fecha ASC,id ASC",args:[pid]})).rows.map(rowFromDb); const combined=[...rows.map((d:any)=>({id:d.id,data:d})),{id:mv.id,data:mv}].sort((a:any,b:any)=>String(a.data.fecha||'').localeCompare(String(b.data.fecha||''))); let running=rows.length?Number(rows[0].stockAntes)||0:0; for(const e of combined){const before=running;running=before+(Number(e.data.cantidad)||0);statements.push(rowStatement('movimientos',{...e.data,id:e.id,stockAntes:before,stockDespues:running}));}} statements.push(rowStatement('productos',{...p,id:pid,stock:newStock,costoUSD:newCost}));}
     if(debt?.id) statements.push(rowStatement('cxp',debt)); if(journal?.id) statements.push(rowStatement('libroDiario',journal)); statements.push({sql:'INSERT INTO operaciones(id,prefijo,operation_id,data_json) VALUES(?,?,?,?)',args:['COMPRA-'+opId,'COMPRA',opId,JSON.stringify({tipo:'COMPRA',operationId:opId,referencia:purchase.id})],wantRows:false}); if(statements.length>450)throw new Error('La compra tiene demasiados movimientos históricos para una sola transacción.'); for(const s of statements)await tx.execute(s); return {purchase,journal:journal||null,debt:debt||null,products:updatedProducts};
   });
 }
