@@ -1113,7 +1113,7 @@ function ReporteMovimientosSalidaPeriodicos({ state }: { state: AppState }) {
   const setDato = (id: string, campo: 'costo' | 'tasa', valor: string) => setDatos(prev => ({...prev,[id]:{...(prev[id] || {costo:'',tasa:''}),[campo]:valor}}));
   const registros = () => filas.map(({m,p}) => ({
     productCode: p.codigo, productName: p.nombre, date: m.fecha.slice(0,10), type: 'SALIDA',
-    concept: m.tipo === 'venta' ? 'VENTA' : (m.tipo === 'consumo' || m.tipo === 'colaboracion' ? 'MERMA' : 'AJUSTE'),
+    concept: m.tipo === 'venta' ? 'VENTA' : (m.tipo === 'consumo' ? 'AUTOCONSUMO' : 'MERMA'),
     documentRef: m.referencia || m.id, quantity: Math.abs(Number(m.cantidad)),
     unitCostBs: Number(datos[m.id]?.costo), bcvRate: Number(datos[m.id]?.tasa)
   }));
@@ -1153,7 +1153,7 @@ function ReporteMovimientosSalidaPeriodicos({ state }: { state: AppState }) {
         <TableHead className="text-[10px] font-black uppercase">Fecha</TableHead><TableHead className="text-[10px] font-black uppercase">Código / Producto</TableHead><TableHead className="text-[10px] font-black uppercase">Concepto</TableHead><TableHead className="text-[10px] font-black uppercase text-right">Cantidad</TableHead><TableHead className="text-[10px] font-black uppercase">Referencia</TableHead><TableHead className="text-[10px] font-black uppercase">Costo unit. Bs.</TableHead><TableHead className="text-[10px] font-black uppercase">Tasa BCV</TableHead>
       </TableRow></TableHeader><TableBody>
         {filas.map(({m,p})=><TableRow key={m.id} className="border-b border-line/30">
-          <TableCell className="text-xs font-bold whitespace-nowrap">{m.fecha.slice(0,10)}</TableCell><TableCell className="min-w-48"><p className="text-xs font-black">{p.codigo}</p><p className="text-[10px] text-ink/50">{p.nombre}</p></TableCell><TableCell><p className="text-[10px] font-black uppercase">SALIDA</p><p className="text-[10px] text-ink/50">{m.tipo==='venta'?'VENTA':(m.tipo==='consumo'||m.tipo==='colaboracion'?'MERMA':'AJUSTE')}</p></TableCell><TableCell className="text-right font-black text-status-danger">{Math.abs(m.cantidad)}</TableCell><TableCell className="text-[10px] min-w-36">{m.referencia || m.id}</TableCell>
+          <TableCell className="text-xs font-bold whitespace-nowrap">{m.fecha.slice(0,10)}</TableCell><TableCell className="min-w-48"><p className="text-xs font-black">{p.codigo}</p><p className="text-[10px] text-ink/50">{p.nombre}</p></TableCell><TableCell><p className="text-[10px] font-black uppercase">SALIDA</p><p className="text-[10px] text-ink/50">{m.tipo==='venta'?'VENTA':(m.tipo==='consumo'?'AUTOCONSUMO':'MERMA')}</p></TableCell><TableCell className="text-right font-black text-status-danger">{Math.abs(m.cantidad)}</TableCell><TableCell className="text-[10px] min-w-36">{m.referencia || m.id}</TableCell>
           <TableCell className="min-w-36"><Input type="number" min="0" step="0.0001" value={datos[m.id]?.costo || ''} onChange={e=>setDato(m.id,'costo',e.target.value)} placeholder="Requerido" className="h-9 min-w-28 bg-white text-right"/></TableCell><TableCell className="min-w-32"><Input type="number" min="0" step="0.0001" value={datos[m.id]?.tasa || ''} onChange={e=>setDato(m.id,'tasa',e.target.value)} placeholder="Requerida" className="h-9 min-w-24 bg-white text-right"/></TableCell>
         </TableRow>)}
         {!filas.length && <TableRow><TableCell colSpan={7} className="py-16 text-center text-ink/30 font-black uppercase">No hay salidas para los filtros seleccionados</TableCell></TableRow>}
