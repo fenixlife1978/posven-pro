@@ -28,6 +28,19 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email) WHERE email IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_firebase_uid ON users(firebase_uid) WHERE firebase_uid IS NOT NULL;
 
+-- Para usuarios migrados desde Firebase, id = firebase UID siempre que no exista conflicto.
+-- Así terminales, ventas y demás históricos que ya guardan ese UID continúan
+-- apuntando al mismo usuario sin reescribir registros históricos.
+CREATE TABLE IF NOT EXISTS user_identity_map (
+  source TEXT NOT NULL,
+  legacy_user_id TEXT NOT NULL,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  firebase_uid TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (source, legacy_user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_user_identity_map_user ON user_identity_map(user_id);
+
 -- El administrador semilla se crea también por código de inicialización/reset.
 -- La contraseña se almacena como hash, nunca como texto plano.
 
@@ -178,16 +191,6 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
-
--- Mapeo de identidades externas; debe existir incluso en bases Turso recién creadas.
-CREATE TABLE IF NOT EXISTS user_identity_map (
-  id TEXT PRIMARY KEY,
-  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  provider TEXT NOT NULL,
-  provider_user_id TEXT NOT NULL,
-  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE(provider, provider_user_id)
-);
 
 -- Registro de migración para poder verificar conteos y repetir pasos de forma segura.
 CREATE TABLE IF NOT EXISTS migration_runs (

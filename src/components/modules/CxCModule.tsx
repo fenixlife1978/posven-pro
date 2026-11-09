@@ -30,6 +30,7 @@ import {
 import { exportarPDFCxC } from '@/lib/pdf-generator';
 import { useToast } from '@/hooks/use-toast';
 import { Pagination } from '@/components/ui/pagination';
+import CreditDetailModal from '@/components/modules/CreditDetailModal';
 
 interface CxCModuleProps {
   state: AppState;
@@ -41,10 +42,10 @@ export default function CxCModule({ state, updateState }: CxCModuleProps) {
   useEffect(() => { void Store.ensureLoaded('cxc'); }, []);
   const [showModal, setShowModal] = useState(false);
   const [showDetails, setShowDetails] = useState<any>(null);
-  const [showDetailsSale, setShowDetailsSale] = useState<any>(null);
   const [expandedClient, setExpandedClient] = useState<string | null>(null);
   const [showClientHistory, setShowClientHistory] = useState<string | null>(null);
   const [filterEstado, setFilterEstado] = useState<'todos' | 'pendiente' | 'pagada' | 'parcial'>('todos');
+  const [searchClient, setSearchClient] = useState('');
   const [page, setPage] = useState(1);
   const [isProcessing, setIsProcessing] = useState(false);
   const processingRef = useRef(false);
@@ -52,7 +53,7 @@ export default function CxCModule({ state, updateState }: CxCModuleProps) {
 
   useEffect(() => {
     setPage(1);
-  }, [filterEstado]);
+  }, [filterEstado, searchClient]);
 
   const [nuevaDeuda, setNuevaDeuda] = useState({
     cliente: '',
@@ -180,7 +181,24 @@ export default function CxCModule({ state, updateState }: CxCModuleProps) {
     return sortedGroups;
   }, [todasLasDeudas, allCustomers, filterEstado]);
 
-  const creditEntries = Object.entries(groupedCredits);
+  const normalizedSearch = searchClient.trim().toLocaleLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '');
+  const filteredCreditEntries = useMemo(() => {
+    if (!normalizedSearch) return Object.entries(groupedCredits);
+    return Object.entries(groupedCredits).filter(([name, group]) => {
+      const customer = group.customer || ({} as Customer);
+      const haystack = [
+        name,
+        customer.name,
+        customer.cedula,
+        customer.phone,
+        customer.address,
+        ...group.debts.map((d: Debt) => d.cliente),
+      ].filter(Boolean).join(' ').toLocaleLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '');
+      return haystack.includes(normalizedSearch);
+    });
+  }, [groupedCredits, normalizedSearch]);
+
+  const creditEntries = filteredCreditEntries;
   const creditTotalPages = Math.max(1, Math.ceil(creditEntries.length / pageSize));
   const creditSafePage = Math.min(page, creditTotalPages);
   const pageCreditEntries = creditEntries.slice((creditSafePage - 1) * pageSize, creditSafePage * pageSize);
@@ -365,6 +383,32 @@ export default function CxCModule({ state, updateState }: CxCModuleProps) {
         </div>
       </div>
 
+      {/* BÚSQUEDA INTELIGENTE */}
+      <div className="bg-white p-4 rounded-xl border border-line shadow-sm">
+        <div className="flex items-center gap-3">
+          <div className="relative flex-1">
+            <User className="absolute left-3 top-3 w-4 h-4 text-ink/40" />
+            <input
+              type="search"
+              value={searchClient}
+              onChange={e => setSearchClient(e.target.value)}
+              placeholder="BUSCAR CLIENTE POR NOMBRE, PALABRA O CÉDULA..."
+              className="form-input h-11 pl-10 text-sm font-black text-ink w-full uppercase"
+            />
+          </div>
+          {searchClient && (
+            <button type="button" onClick={() => setSearchClient('')} className="btn btn-secondary h-11 px-4 font-black uppercase text-xs">
+              <X className="w-4 h-4 mr-1" /> Limpiar
+            </button>
+          )}
+        </div>
+        {searchClient && (
+          <div className="text-[9px] font-black uppercase text-ink/60 mt-2">
+            {creditEntries.length} cliente(s) encontrado(s)
+          </div>
+        )}
+      </div>
+
       {/* FILTROS */}
       <div className="flex items-center gap-4 bg-white p-3 rounded-xl border border-line shadow-sm flex-wrap">
         <span className="text-[10px] font-black uppercase text-ink">Filtrar por estado:</span>
@@ -542,7 +586,7 @@ export default function CxCModule({ state, updateState }: CxCModuleProps) {
                                              </td>
                                              <td className="p-2 text-center">
                                                 <div className="flex justify-center gap-1">
-                                                  <button onClick={async () => { setShowDetailsSale(null); setShowDetails(d); if (d?.ventaId || d?.id) setShowDetailsSale(await Store.getSaleById(d.ventaId || d.id)); }} className="text-ink hover:text-brand-gold p-1 transition-colors"><Eye className="w-3.5 h-3.5"/></button>
+                                                  <button onClick={() => setShowDetails(d)} className="text-ink hover:text-brand-gold p-1 transition-colors"><Eye className="w-3.5 h-3.5"/></button>
                                                   {d.estado !== 'pagada' && (
                                                     <button onClick={() => eliminarDeuda(d)} disabled={isProcessing} className="text-ink hover:text-status-danger p-1"><Trash2 className="w-3.5 h-3.5" /></button>
                                                   )}
@@ -566,90 +610,11 @@ export default function CxCModule({ state, updateState }: CxCModuleProps) {
         <Pagination page={creditSafePage} totalPages={creditTotalPages} total={creditEntries.length} pageSize={pageSize} onPageChange={setPage} />
       </div>
 
-      {/* MODAL DETALLES AVANZADOS */}
       {showDetails && (
-        <div className="modal show" style={{ zIndex: 100 }}><div className="modal-bg" onClick={() => { setShowDetails(null); setShowDetailsSale(null); }}></div>
-          <div className="modal-box max-w-[600px] bg-white border-2 border-line rounded-xl overflow-hidden shadow-2xl">
-            <div className="modal-head py-4 px-6 border-b border-line bg-ink flex justify-between items-center text-white">
-              <h3 className="font-black text-xs uppercase italic tracking-tighter flex items-center gap-2">
-                <Receipt className="w-5 h-5 text-brand-gold" /> HISTORIAL DETALLADO: {showDetails.id}
-              </h3>
-              <button onClick={() => { setShowDetails(null); setShowDetailsSale(null); }} className="text-white hover:text-brand-gold"><X className="w-5 h-5"/></button>
-            </div>
-            <div className="modal-body p-6 space-y-6 max-h-[75vh] overflow-y-auto bg-white">
-              <div className="grid grid-cols-2 gap-4">
-                 <div className="p-3 bg-surface-soft rounded-lg border border-line">
-                    <label className="text-[8px] font-black uppercase text-ink block mb-1">Monto Original</label>
-                    <p className="text-lg font-black text-ink">{Utils.fmtUSD(showDetails.montoUSD)}</p>
-                 </div>
-                 <div className="p-3 bg-brand-gold-soft border border-brand-gold/20 rounded-lg">
-                    <label className="text-[8px] font-black uppercase text-brand-gold-deep block mb-1">Saldo Actual</label>
-                    <p className="text-lg font-black text-brand-gold-deep">{Utils.fmtUSD(showDetails.saldoUSD)}</p>
-                 </div>
-              </div>
-
-              {(() => {
-                const sale = showDetailsSale;
-                if (!sale) return null;
-                return (
-                  <div className="space-y-3 animate-in slide-in-from-top-2 duration-300">
-                    <div className="flex justify-between items-center border-b border-line pb-2">
-                       <h4 className="text-[10px] font-black uppercase text-ink tracking-[0.2em]">DETALLE DE COMPRA ORIGINAL</h4>
-                       <span className="text-[9px] font-black text-ink uppercase">{Utils.fmtFecha(sale.fecha)} - {sale.fecha.split('T')[1]?.slice(0,5)}</span>
-                    </div>
-                    <div className="bg-surface-soft/50 rounded-lg overflow-hidden border border-line/30">
-                       <table className="w-full">
-                          <thead>
-                            <tr className="bg-ink/5">
-                               <th className="text-[8px] font-black uppercase p-2 text-left text-ink">Cant</th>
-                               <th className="text-[8px] font-black uppercase p-2 text-left text-ink">Descripción</th>
-                               <th className="text-[8px] font-black uppercase p-2 text-right text-ink">P. Unit</th>
-                               <th className="text-[8px] font-black uppercase p-2 text-right text-ink">Total</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {sale.items.map((it: any, idx: number) => (
-                              <tr key={idx} className="border-b border-line/20">
-                                 <td className="text-[9px] font-black p-2 text-ink">{it.cantidad}</td>
-                                 <td className="text-[9px] font-black uppercase p-2 text-ink truncate max-w-[180px]">{it.nombre}</td>
-                                 <td className="text-[9px] font-black p-2 text-right text-ink">{Utils.fmtUSD(it.precioUnitUSD)}</td>
-                                 <td className="text-[9px] font-black p-2 text-right text-brand-gold-deep">{Utils.fmtUSD(it.subtotalUSD)}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                       </table>
-                    </div>
-                  </div>
-                );
-              })()}
-
-              <div className="space-y-3">
-                 <h4 className="text-[10px] font-black uppercase text-ink tracking-[0.2em] border-b border-line pb-2">CRONOLOGÍA DE ABONOS</h4>
-                 <div className="max-h-[200px] overflow-y-auto space-y-2 pr-1">
-                    {(!showDetails.historialPagos || showDetails.historialPagos.length === 0) ? (
-                      <div className="py-10 text-center text-ink font-black uppercase italic text-[10px]">No se han registrado abonos aún</div>
-                    ) : (
-                      showDetails.historialPagos.map((p: any, idx: number) => (
-                        <div key={idx} className="flex justify-between items-center p-3 bg-surface-soft border border-line rounded-lg">
-                           <div className="space-y-0.5">
-                              <p className="text-[10px] font-black text-ink uppercase">{Utils.fmtFecha(p.fecha)} - {p.fecha.split('T')[1]?.slice(0,5)}</p>
-                              <p className="text-[8px] font-black text-ink mono">REF RECIBO: {p.reciboId}</p>
-                           </div>
-                           <div className="text-right">
-                              <p className="text-xs font-black text-status-success">+{Utils.fmtUSD(p.montoUSD)}</p>
-                              <p className="text-[8px] font-black text-ink uppercase">{Utils.metodoLabel(p.metodo || 'otros')}</p>
-                           </div>
-                        </div>
-                      ))
-                    )}
-                 </div>
-              </div>
-            </div>
-            <div className="modal-foot p-4 bg-surface-soft border-t border-line text-right">
-               <button onClick={() => { setShowDetails(null); setShowDetailsSale(null); }} className="btn btn-primary px-8 font-black uppercase text-[10px] rounded-lg shadow-md">Cerrar Ficha</button>
-            </div>
-          </div>
-        </div>
+        <CreditDetailModal
+          debt={showDetails}
+          onClose={() => setShowDetails(null)}
+        />
       )}
 
       {/* MODAL HISTORIAL COMPLETO DE CLIENTE */}

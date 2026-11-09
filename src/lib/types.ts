@@ -1,5 +1,9 @@
 export interface User {
   uid: string;
+  /** ID del terminal/caja asignado en Turso; es la identidad operativa del cajero. */
+  terminalId?: string | null;
+  firebaseUid?: string | null;
+  isSeedAdmin?: boolean;
   nombre: string;
   email: string;
   rol: 'administrador' | 'cajero';
@@ -99,6 +103,10 @@ export interface Movimiento {
   fecha: string;
   referencia: string;
   terminalId?: string;
+  /** Fotografía histórica del costo y la tasa al registrar el movimiento. */
+  costoUnitarioUSD?: number;
+  costoUnitarioBs?: number;
+  tasaBCV?: number;
 }
 
 export interface SaleItem {
@@ -107,6 +115,10 @@ export interface SaleItem {
   cantidad: number;
   precioUnitUSD: number;
   subtotalUSD: number;
+  /** Costo capturado al confirmar la venta; no depende del catálogo futuro. */
+  costoUnitarioUSD?: number;
+  costoUnitarioBs?: number;
+  tasaBCV?: number;
 }
 
 export interface PurchaseItem {
@@ -260,6 +272,8 @@ export interface Return {
   items: ReturnItem[];
   totalUSD: number;
   metodoReembolso: string;
+  /** Distribución real del reintegro por método de pago. */
+  refundPayments?: Array<{ metodo: PaymentMethod; montoUSD: number; montoBS?: number }>;
   motivo: string;
   terminalId?: string;
 }
@@ -269,6 +283,8 @@ export interface Anulacion {
   ventaId: string;
   fecha: string;
   totalUSD: number;
+  /** Distribución real del reintegro cuando la anulación devuelve dinero. */
+  refundPayments?: Array<{ metodo: PaymentMethod; montoUSD: number; montoBS?: number }>;
   motivo: string;
   items: any[];
   terminalId?: string;
@@ -294,6 +310,36 @@ export interface ReportZ {
   exentoUSD: number;
   igtfUSD: number;
   metodosPago: Record<string, number>;
+  metodosArqueo?: Array<{
+    metodo: string;
+    ventasBS: number;
+    ventasUSD: number;
+    cobrosBS: number;
+    cobrosUSD: number;
+    devBS: number;
+    devUSD: number;
+    movPlusBS: number;
+    movPlusUSD: number;
+    movMinusBS: number;
+    movMinusUSD: number;
+    moneda?: string;
+  }>;
+  cobrosDeudaUSD?: number;
+  cobrosDeudaBS?: number;
+  cobrosDeudaPorMetodo?: Array<{ metodo: string; montoBS: number; montoUSD: number }>;
+  manualSalidasBS?: number;
+  manualSalidasUSD?: number;
+  manualEntradasBS?: number;
+  manualEntradasUSD?: number;
+  devEfectivoBS?: number;
+  devEfectivoUSD?: number;
+  openedAt?: string;
+  openedBy?: string;
+  closedAt?: string;
+  closedBy?: string;
+  empresa?: { nombre?: string; rif?: string; subtitulo?: string };
+  totalNetoEfectivoBS?: number;
+  totalNetoEfectivoUSD?: number;
   salidasCajaUSD: number;
   entradasCajaUSD: number;
   fondoAperturaUSD: number;

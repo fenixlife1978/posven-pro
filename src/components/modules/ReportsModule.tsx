@@ -5,6 +5,7 @@ import { AppState } from '@/lib/types';
 import { Utils, Store } from '@/lib/db-store';
 import { FileText, TrendingUp, Calendar, Printer, ArrowLeft, Monitor } from 'lucide-react';
 import { exportarPDFVentasDetallado } from '@/lib/pdf-generator';
+import ZReportPreview80mm from '@/components/pos/ZReportPreview80mm';
 
 export default function ReportsModule({ state }: { state: AppState }) {
   useEffect(() => {
@@ -19,6 +20,7 @@ export default function ReportsModule({ state }: { state: AppState }) {
   const [desde, setDesde] = useState(Utils.hoy());
   const [hasta, setHasta] = useState(Utils.hoy());
   const [terminalFilter, setTerminalFilter] = useState('all');
+  const [reprintZ, setReprintZ] = useState<any | null>(null);
   
   useEffect(() => {
     // Reportes es histórico y puede abarcar meses. Cargar únicamente el rango
@@ -38,6 +40,25 @@ export default function ReportsModule({ state }: { state: AppState }) {
   });
 
   const totalVentasUSD = ventasFiltradas.reduce((s, v) => s + v.totalUSD, 0);
+
+  // En el historial se conserva la moneda original del pago. Para pagos
+  // originados en BS mostramos su equivalencia BS; para USD (Zelle/Efectivo
+  // USD) la columna BS queda neutra porque no corresponde a una conversión.
+  const metodosBS = new Set(['efectivo_bs', 'punto_venta', 'biopago', 'pagomovil', 'transferencia']);
+  const metodosUSD = new Set(['efectivo_usd', 'zelle']);
+  const getEquivalenciaBS = (v: any): number | null => {
+    const pagos = Array.isArray(v.payments) ? v.payments : [];
+    if (pagos.length > 0) {
+      const pagosBS = pagos.filter((p: any) => metodosBS.has(String(p?.metodo)));
+      if (pagosBS.length > 0) {
+        return pagosBS.reduce((s: number, p: any) => s + (Number(p?.montoBS) || 0), 0);
+      }
+      if (pagos.every((p: any) => metodosUSD.has(String(p?.metodo)))) return null;
+    }
+    if (metodosBS.has(String(v.metodoPago))) return Number(v.totalBS) || 0;
+    if (metodosUSD.has(String(v.metodoPago))) return null;
+    return Number(v.totalBS) > 0 ? Number(v.totalBS) : null;
+  };
   
   // Rentabilidad
   const totalCostoVentas = ventasFiltradas.reduce((s, v) => {
@@ -194,7 +215,7 @@ export default function ReportsModule({ state }: { state: AppState }) {
                         </span>
                       </td>
                       <td className="text-brand-gold-deep font-black text-sm text-right py-4">{Utils.fmtUSD(v.totalUSD)}</td>
-                      <td className="text-ink font-bold text-xs text-right py-4 px-6">{Utils.fmtBS(v.totalBS)}</td>
+                      <td className="text-ink font-bold text-xs text-right py-4 px-6">{(() => { const bs = getEquivalenciaBS(v); return bs === null ? '—' : Utils.fmtBS(bs); })()}</td>
                     </tr>
                   ))}
                   {ventasFiltradas.length === 0 && (
@@ -252,6 +273,7 @@ export default function ReportsModule({ state }: { state: AppState }) {
                   <th className="text-ink font-black text-[10px] uppercase py-4 text-right">Ventas netas</th>
                   <th className="text-ink font-black text-[10px] uppercase py-4 text-right">Facturas</th>
                   <th className="text-ink font-black text-[10px] uppercase py-4 px-6 text-right">Anulaciones</th>
+                  <th className="text-ink font-black text-[10px] uppercase py-4 text-center">Acción</th>
                 </tr></thead>
                 <tbody>
                   {reportesZFiltrados.map(z => (
@@ -262,9 +284,19 @@ export default function ReportsModule({ state }: { state: AppState }) {
                       <td className="text-brand-gold-deep font-black text-sm text-right py-4">{Utils.fmtUSD(z.ventaNetaUSD || 0)}</td>
                       <td className="text-ink font-black text-xs text-right py-4">{z.stats?.facturas || 0}</td>
                       <td className="text-ink font-black text-xs text-right py-4 px-6">{z.stats?.anulaciones || 0}</td>
+                      <td className="py-4 text-center">
+                        <button
+                          type="button"
+                          onClick={() => setReprintZ({ ...z, empresa: state.empresa })}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-white px-3 py-2 text-[10px] font-black uppercase tracking-wide text-ink hover:bg-surface-soft transition-colors"
+                          title="Reimprimir Corte Z en 80 mm"
+                        >
+                          <Printer className="w-3.5 h-3.5" /> Reimprimir Corte Z
+                        </button>
+                      </td>
                     </tr>
                   ))}
-                  {reportesZFiltrados.length === 0 && <tr><td colSpan={6} className="text-center py-24 text-ink/20 font-black uppercase italic tracking-widest">No hay cortes Z para los filtros seleccionados</td></tr>}
+                  {reportesZFiltrados.length === 0 && <tr><td colSpan={7} className="text-center py-24 text-ink/20 font-black uppercase italic tracking-widest">No hay cortes Z para los filtros seleccionados</td></tr>}
                 </tbody>
               </table>
             </div>
@@ -309,6 +341,12 @@ export default function ReportsModule({ state }: { state: AppState }) {
             </p>
           </div>
         </div>
+      )}
+      {reprintZ && (
+        <ZReportPreview80mm
+          data={{ ...reprintZ, empresa: state.empresa }}
+          onClose={() => setReprintZ(null)}
+        />
       )}
     </div>
   );

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { AppState, Return, Sale, ReturnItem, Movimiento, Anulacion, LibroDiarioEntry } from '@/lib/types';
+import { AppState, Return, Sale, ReturnItem, Movimiento, Anulacion, LibroDiarioEntry, PaymentMethod } from '@/lib/types';
 import { Utils, Store } from '@/lib/db-store';
 import { DateRangeFilter, DateRange } from '@/components/ui/date-range-filter';
 import { 
@@ -33,7 +33,17 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
   const [saleSearch, setSaleSearch] = useState('');
   const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
   const [returnItems, setReturnItems] = useState<ReturnItem[]>([]);
-  const [refundMethod, setRefundMethod] = useState<'EFECTIVO' | 'MISMO_METODO' | 'CREDITO_TIENDA'>('EFECTIVO');
+  type RefundPayment = { metodo: PaymentMethod; montoUSD: number; montoBS: number };
+  const refundMethodCurrency = (metodo: PaymentMethod): 'BS' | 'USD' => ['efectivo_bs','punto_venta','pagomovil','biopago','transferencia'].includes(metodo) ? 'BS' : 'USD';
+  const REFUND_METHODS: Array<{ value: PaymentMethod; label: string }> = [
+    { value: 'efectivo_usd', label: 'Efectivo USD' }, { value: 'efectivo_bs', label: 'Efectivo BS' },
+    { value: 'punto_venta', label: 'Punto de Venta' }, { value: 'pagomovil', label: 'Pago Móvil' },
+    { value: 'biopago', label: 'Biopago' }, { value: 'transferencia', label: 'Transferencia' },
+    { value: 'zelle', label: 'Zelle' }, { value: 'otros', label: 'Otros' }, { value: 'nota_credito', label: 'Nota de crédito' }
+  ];
+  const [refundPayments, setRefundPayments] = useState<RefundPayment[]>([{ metodo: 'efectivo_usd', montoUSD: 0, montoBS: 0 }]);
+  const [showCancellationRefund, setShowCancellationRefund] = useState(false);
+  const [pendingCancellation, setPendingCancellation] = useState(false);
   const [reason, setMotivo] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const processingRef = useRef(false);
@@ -46,6 +56,7 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
     
     setSelectedSale(sale);
     setReturnItems([]);
+    setRefundPayments([{ metodo: 'efectivo_usd', montoUSD: 0, montoBS: 0 }]);
   };
 
   const handleAddItem = (productoId: string, nombre: string, precioUnitUSD: number, maxQty: number) => {
@@ -86,7 +97,33 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
     processingRef.current = true;
     setIsProcessing(true);
     try {
-      const totalDevuelto = returnItems.reduce((s, i) => s + (i.cantidad * i.precioUnitUSD), 0);
+      const totalDevuelto = returnItems.reduce((s, i) => (s + (i.cantidad * i.precioUnitUSD)), 0);
+      const saleIsCredit = String(selectedSale.metodoPago || '').toLowerCase() === 'credito' || String(selectedSale.type || '').toLowerCase() === 'credito';
+      const salePaidUSD = Array.isArray(selectedSale.payments)
+        ? selectedSale.payments.reduce((sum, p) => sum + (Number(p?.montoUSD) || 0), 0)
+        : 0;
+
+      // Una venta a crédito sin pagos no tiene dinero que devolver. La
+      // devolución se registra como nota de crédito y reduce CxC; no toca caja.
+      const refundPaymentsFinal = saleIsCredit && salePaidUSD <= 0.001
+        ? []
+        : refundPayments.map(p => ({
+            ...p,
+            montoUSD: refundMethodCurrency(p.metodo) === 'BS'
+              ? (Number(p.montoBS) || 0) / (Number(state.tasa) || 1)
+              : (Number(p.montoUSD) || 0),
+            montoBS: refundMethodCurrency(p.metodo) === 'BS'
+              ? (Number(p.montoBS) || 0)
+              : (Number(p.montoUSD) || 0) * (Number(state.tasa) || 1)
+          }));
+
+      if (refundPaymentsFinal.length) {
+        const refundTotal = refundPaymentsFinal.reduce((s, p) => s + (Number(p.montoUSD) || 0), 0);
+        if (Math.abs(refundTotal - totalDevuelto) > 0.005) {
+          alert('La distribución del reembolso debe sumar exactamente ' + Utils.fmtUSD(totalDevuelto) + '.');
+          return;
+        }
+      }
       const terminal = state.terminales.find(t => t.id === terminalId);
       const prefijo = Utils.prefijoCaja(terminal, state.terminales);
       const idDev = 'DEV-OP-' + Store.uid().toUpperCase().slice(0, 10);
@@ -98,7 +135,8 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
         fecha: ahoraStr,
         items: [...returnItems],
         totalUSD: totalDevuelto,
-        metodoReembolso: refundMethod,
+        metodoReembolso: refundPaymentsFinal.length === 0 ? 'nota_credito' : (refundPaymentsFinal.length === 1 ? refundPaymentsFinal[0].metodo : 'mixto'),
+        refundPayments: refundPaymentsFinal,
         motivo: reason,
         terminalId: terminalId || 'GLOBAL'
       };
@@ -144,8 +182,8 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
         categoria: 'DEVOLUCION',
         concepto: `DEVOLUCIÓN DINERO ${idDev} - REF VENTA ${selectedSale.id}`,
         montoUSD: totalDevuelto,
-        montoBS: totalDevuelto * state.tasa,
-        metodo: refundMethod === 'EFECTIVO' ? 'efectivo_usd' : (refundMethod === 'MISMO_METODO' ? 'otros' : 'nota_credito'),
+        montoBS: refundPaymentsFinal.reduce((s, p) => s + (Number(p.montoBS) || 0), 0),
+        metodo: refundPaymentsFinal.length === 1 ? refundPaymentsFinal[0].metodo : 'mixto',
         referencia: idDev,
         terminalId: terminalId || 'GLOBAL',
         terminalName: terminal?.nombre || 'SISTEMA GLOBAL'
@@ -158,16 +196,28 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
       updateState({
         devoluciones: [devolucionFinal, ...(state.devoluciones || [])],
         ventas: nuevasVentas,
+        productos: Array.isArray(resultadoDev?.products) && resultadoDev.products.length
+          ? state.productos.map(p => resultadoDev.products.find((rp:any) => String(rp.id) === String(p.id)) || p)
+          : state.productos,
+        movimientos: Array.isArray(resultadoDev?.movements) && resultadoDev.movements.length
+          ? [...resultadoDev.movements, ...(state.movimientos || [])]
+          : state.movimientos,
+        cxc: resultadoDev?.debt
+          ? state.cxc.map((d:any) => String(d.id) === String(resultadoDev.debt.id) ? resultadoDev.debt : d)
+          : state.cxc,
         terminales: resultadoDev?.terminal?.id
           ? Utils.patchTerminal(state.terminales, resultadoDev.terminal.id, resultadoDev.terminal)
           : state.terminales,
-        libroDiario: [nuevoAsiento, ...(state.libroDiario || [])]
+        libroDiario: resultadoDev?.journal
+          ? [resultadoDev.journal, ...(state.libroDiario || [])]
+          : state.libroDiario
       });
 
       alert(`Devolución ${idDev} procesada con éxito`);
       setView('list');
       setSelectedSale(null);
       setReturnItems([]);
+      setRefundPayments([{ metodo: 'efectivo_usd', montoUSD: 0, montoBS: 0 }]);
       setMotivo('');
     } finally {
       processingRef.current = false;
@@ -175,97 +225,97 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
     }
   };
 
-  const anularFacturaCompleta = async () => {
+  const ejecutarAnulacion = async (refundFinal: Array<{ metodo: PaymentMethod; montoUSD: number; montoBS: number }>) => {
     if (!selectedSale || isProcessing || processingRef.current) return;
-    const pin = prompt('AUTORIZACIÓN REQUERIDA: Ingrese PIN de Seguridad:');
-    if (pin !== state.pinDevolucion) return alert('PIN Incorrecto');
-
-    if (!confirm(`¿ESTÁ SEGURO DE ANULAR LA FACTURA ${selectedSale.id}?\nEsta acción devolverá todo el stock al inventario.`)) return;
-
-    const representaEgreso = confirm("¿Esta anulación requiere el REINTEGRO DE DINERO físico al cliente?\n(Si confirma, se generará un asiento de EGRESO en contabilidad)");
-
     processingRef.current = true;
     setIsProcessing(true);
     try {
       const ahoraStr = Utils.ahora();
       const nuevosProductos = [...state.productos];
       const nuevosMovimientos: Movimiento[] = [];
-
       selectedSale.items.forEach(item => {
         const pIdx = nuevosProductos.findIndex(p => p.id === item.productoId);
         if (pIdx >= 0) {
           const p = nuevosProductos[pIdx];
           const stockAntes = p.stock;
           nuevosProductos[pIdx] = { ...p, stock: p.stock + item.cantidad };
-          
-          nuevosMovimientos.push({
-            id: Store.uid(),
-            productoId: item.productoId,
-            tipo: 'anulacion',
-            cantidad: item.cantidad,
-            stockAntes,
-            stockDespues: nuevosProductos[pIdx].stock,
-            fecha: ahoraStr,
-            referencia: `ANULACIÓN TOTAL FACTURA #${selectedSale.id}`,
-            terminalId: terminalId || 'GLOBAL'
-          });
+          nuevosMovimientos.push({ id: Store.uid(), productoId: item.productoId, tipo: 'anulacion', cantidad: item.cantidad, stockAntes, stockDespues: nuevosProductos[pIdx].stock, fecha: ahoraStr, referencia: `ANULACIÓN TOTAL FACTURA #${selectedSale.id}`, terminalId: terminalId || 'GLOBAL' });
         }
       });
-
-      const nuevasVentas = state.ventas.map(v => 
-        v.id === selectedSale.id ? { ...v, estado: 'anulada' } : v
-      );
-
+      const nuevasVentas = state.ventas.map(v => v.id === selectedSale.id ? { ...v, estado: 'anulada' } : v);
       const terminal = state.terminales.find(t => t.id === terminalId);
-      const prefijo = Utils.prefijoCaja(terminal, state.terminales);
       const idAnu = 'ANU-OP-' + Store.uid().toUpperCase().slice(0, 10);
       const nuevaAnulacion: Anulacion = {
-        id: idAnu,
-        ventaId: selectedSale.id,
-        fecha: ahoraStr,
-        totalUSD: selectedSale.totalUSD,
-        motivo: 'ANULACIÓN TOTAL DE FACTURA POR OPERADOR',
-        items: [...selectedSale.items],
-        terminalId: terminalId || 'GLOBAL'
+        id: idAnu, ventaId: selectedSale.id, fecha: ahoraStr, totalUSD: selectedSale.totalUSD,
+        motivo: 'ANULACIÓN TOTAL DE FACTURA POR OPERADOR', items: [...selectedSale.items], terminalId: terminalId || 'GLOBAL',
+        ...(refundFinal.length ? { refundPayments: refundFinal, metodoReembolso: refundFinal.length === 1 ? refundFinal[0].metodo : 'mixto' } : {})
       };
-
-      let nuevosAsientosDiario: LibroDiarioEntry[] = [];
-      if (representaEgreso) {
-        nuevosAsientosDiario.push({
-          id: 'ACC-' + Store.uid().toUpperCase().slice(0, 5),
-          fecha: ahoraStr,
-          tipo: 'egreso',
-          categoria: 'ANULACION',
-          concepto: `REINTEGRO POR ANULACIÓN FACTURA #${selectedSale.id}`,
-          montoUSD: selectedSale.totalUSD,
-          montoBS: selectedSale.totalBS,
-          metodo: selectedSale.metodoPago || 'otros',
-          referencia: idAnu,
-          terminalId: terminalId || 'GLOBAL',
-          terminalName: terminal?.nombre || 'SISTEMA GLOBAL'
-        });
+      const nuevosAsientosDiario: LibroDiarioEntry[] = refundFinal.length ? [{
+        id: 'ACC-' + Store.uid().toUpperCase().slice(0, 5), fecha: ahoraStr, tipo: 'egreso', categoria: 'ANULACION',
+        concepto: `REINTEGRO POR ANULACIÓN FACTURA #${selectedSale.id}`,
+        montoUSD: refundFinal.reduce((s, p) => s + p.montoUSD, 0),
+        montoBS: refundFinal.reduce((s, p) => s + p.montoBS, 0),
+        metodo: refundFinal.length === 1 ? refundFinal[0].metodo : 'mixto', referencia: idAnu,
+        terminalId: terminalId || 'GLOBAL', terminalName: terminal?.nombre || 'SISTEMA GLOBAL'
+      }] : [];
+      const resultadoAnu = await Store.processReturnOrCancellationTransaction({
+        operationId: idAnu, operationType: 'ANULACION', saleId: selectedSale.id, operationDoc: nuevaAnulacion,
+        movements: nuevosMovimientos, journal: nuevosAsientosDiario[0], fullCancellation: true
+      });
+      if (resultadoAnu?.queuedOffline) {
+        toast({ title: 'Anulación guardada sin conexión', description: 'Quedó pendiente de sincronización automática.' });
+        setView('list'); setSelectedSale(null); return;
       }
-
-      const resultadoAnu = await Store.processReturnOrCancellationTransaction({ operationId: idAnu, operationType: 'ANULACION', saleId: selectedSale.id, operationDoc: nuevaAnulacion, movements: nuevosMovimientos, journal: nuevosAsientosDiario[0], fullCancellation: true });
-      if (resultadoAnu?.queuedOffline) { toast({ title: 'Anulación guardada sin conexión', description: 'Quedó pendiente de sincronización automática.' }); setView('list'); setSelectedSale(null); return; }
-
       const anulacionFinal = resultadoAnu?.operationDoc || nuevaAnulacion;
       updateState({
         ventas: nuevasVentas,
         anulaciones: [anulacionFinal, ...(state.anulaciones || [])],
-        terminales: resultadoAnu?.terminal?.id
-          ? Utils.patchTerminal(state.terminales, resultadoAnu.terminal.id, resultadoAnu.terminal)
-          : state.terminales,
-        libroDiario: representaEgreso ? [...nuevosAsientosDiario, ...(state.libroDiario || [])] : state.libroDiario
+        productos: Array.isArray(resultadoAnu?.products) && resultadoAnu.products.length
+          ? state.productos.map(p => resultadoAnu.products.find((rp:any) => String(rp.id) === String(p.id)) || p)
+          : state.productos,
+        movimientos: Array.isArray(resultadoAnu?.movements) && resultadoAnu.movements.length
+          ? [...resultadoAnu.movements, ...(state.movimientos || [])]
+          : state.movimientos,
+        cxc: resultadoAnu?.debt
+          ? state.cxc.map((d:any) => String(d.id) === String(resultadoAnu.debt.id) ? resultadoAnu.debt : d)
+          : state.cxc,
+        terminales: resultadoAnu?.terminal?.id ? Utils.patchTerminal(state.terminales, resultadoAnu.terminal.id, resultadoAnu.terminal) : state.terminales,
+        libroDiario: resultadoAnu?.journal
+          ? [resultadoAnu.journal, ...(state.libroDiario || [])]
+          : state.libroDiario
       });
-
       toast({ title: "Factura Anulada", description: `El documento ${selectedSale.id} ha sido invalidado bajo el registro ${idAnu}.` });
-      setView('list');
-      setSelectedSale(null);
+      setView('list'); setSelectedSale(null); setRefundPayments([{ metodo: 'efectivo_usd', montoUSD: 0, montoBS: 0 }]);
+      setShowCancellationRefund(false); setPendingCancellation(false);
     } finally {
-      processingRef.current = false;
-      setIsProcessing(false);
+      processingRef.current = false; setIsProcessing(false);
     }
+  };
+
+  const anularFacturaCompleta = async () => {
+    if (!selectedSale || isProcessing || processingRef.current) return;
+    const pin = prompt('AUTORIZACIÓN REQUERIDA: Ingrese PIN de Seguridad:');
+    if (pin !== state.pinDevolucion) return alert('PIN Incorrecto');
+    if (!confirm(`¿ESTÁ SEGURO DE ANULAR LA FACTURA ${selectedSale.id}?\nEsta acción devolverá todo el stock al inventario.`)) return;
+    const saleIsCredit = String(selectedSale.metodoPago || '').toLowerCase() === 'credito' || String(selectedSale.type || '').toLowerCase() === 'credito';
+    const salePaidUSD = Array.isArray(selectedSale.payments)
+      ? selectedSale.payments.reduce((sum, p) => sum + (Number(p?.montoUSD) || 0), 0)
+      : 0;
+
+    // Si es crédito y no hubo pagos, la anulación cancela la obligación
+    // restante. No se pregunta por un reintegro de efectivo porque no existe
+    // dinero pagado que devolver.
+    if (saleIsCredit && salePaidUSD <= 0.001) {
+      await ejecutarAnulacion([]);
+      return;
+    }
+
+    const representaEgreso = confirm("¿Esta anulación requiere el REINTEGRO DE DINERO físico al cliente?\n(Si confirma, se solicitará la distribución por método de pago)");
+    if (representaEgreso) {
+      setRefundPayments([{ metodo: (selectedSale.metodoPago || 'efectivo_usd') as PaymentMethod, montoUSD: Number(selectedSale.totalUSD) || 0, montoBS: (Number(selectedSale.totalUSD) || 0) * (Number(state.tasa) || 1) }]);
+      setPendingCancellation(true); setShowCancellationRefund(true); return;
+    }
+    await ejecutarAnulacion([]);
   };
 
   const historialUnificado = useMemo(() => {
@@ -290,7 +340,7 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
   }, [state.devoluciones, state.anulaciones, state.ventas, state.terminales, terminalId, rango]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-h-[calc(100vh-120px)] overflow-y-auto pr-1">
       <div className="flex justify-between items-center bg-white p-4 rounded-xl border border-line shadow-sm">
         <div>
           <h2 className="text-ink font-black uppercase italic tracking-tighter text-xl flex items-center gap-2">
@@ -321,7 +371,7 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
             <label className="text-[10px] font-black uppercase text-ink/40 block mb-2">CONSULTAR POR PERÍODO</label>
             <DateRangeFilter value={rango} onChange={setRango} />
           </div>
-          <div className="table-wrap">
+          <div className="table-wrap max-h-[38vh] overflow-y-auto">
             <table>
               <thead>
                 <tr className="bg-surface-soft">
@@ -387,7 +437,7 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
                        <button onClick={() => setSelectedSale(null)} className="text-ink/40 hover:text-ink"><X className="w-4 h-4"/></button>
                     </div>
                   </div>
-                  <div className="table-wrap">
+                  <div className="table-wrap max-h-[38vh] overflow-y-auto">
                     <table>
                       <thead>
                         <tr className="bg-surface-soft">
@@ -424,7 +474,7 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
                       <Undo2 className="w-4 h-4"/> Ítems en la Devolución Actual
                     </h3>
                   </div>
-                  <div className="table-wrap">
+                  <div className="table-wrap max-h-[38vh] overflow-y-auto">
                     <table>
                       <thead>
                         <tr className="bg-surface-soft">
@@ -473,19 +523,30 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
                   <p className="text-3xl font-black text-status-danger">
                     {Utils.fmtUSD(returnItems.reduce((s, i) => s + (i.cantidad * i.precioUnitUSD), 0))}
                   </p>
+                  <p className="text-sm font-black text-ink/60 mt-1">
+                    Equiv. BS: {Utils.fmtBS(returnItems.reduce((s, i) => s + (i.cantidad * i.precioUnitUSD), 0) * (Number(state.tasa) || 1))}
+                  </p>
                 </div>
 
                 <div className="form-group">
-                  <label className="text-ink text-[10px] font-black uppercase block mb-1">Método de Reembolso</label>
-                  <select 
-                    className="form-select bg-white text-ink h-11 text-xs font-black uppercase border-line shadow-sm rounded-md w-full px-3"
-                    value={refundMethod}
-                    onChange={e => setRefundMethod(e.target.value as any)}
-                  >
-                    <option value="EFECTIVO">Efectivo de Caja</option>
-                    <option value="MISMO_METODO">Reverso (Mismo Método)</option>
-                    <option value="CREDITO_TIENDA">Crédito / Vale Interno</option>
-                  </select>
+                  <label className="text-ink text-[10px] font-black uppercase block mb-2">Método(s) de Reembolso</label>
+                  <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                    {refundPayments.map((p, idx) => (
+                      <div key={idx} className="grid grid-cols-[1fr_110px_32px] gap-2 items-center">
+                        <select className="form-select bg-white text-ink h-10 text-[10px] font-black uppercase border-line rounded-md px-2" value={p.metodo} onChange={e => setRefundPayments(refundPayments.map((x,i)=>i===idx?{...x,metodo:e.target.value as PaymentMethod}:x))}>
+                          {REFUND_METHODS.map(m=><option key={m.value} value={m.value}>{m.label}</option>)}
+                        </select>
+                        <input type="number" min="0" step="0.01" value={(refundMethodCurrency(p.metodo) === 'BS' ? p.montoBS : p.montoUSD) || ''} placeholder={refundMethodCurrency(p.metodo) === 'BS' ? 'BS' : 'USD'} onChange={e => setRefundPayments(refundPayments.map((x,i)=>i===idx
+                          ? (refundMethodCurrency(x.metodo) === 'BS'
+                            ? {...x,montoBS:Number(e.target.value)||0,montoUSD:(Number(e.target.value)||0)/(Number(state.tasa)||1)}
+                            : {...x,montoUSD:Number(e.target.value)||0,montoBS:(Number(e.target.value)||0)*(Number(state.tasa)||1)})
+                          : x))} className="form-input h-10 text-xs font-black text-right" />
+                        <button type="button" onClick={()=>setRefundPayments(refundPayments.filter((_,i)=>i!==idx))} disabled={refundPayments.length===1} className="h-9 text-ink/30 hover:text-status-danger disabled:opacity-20"><Trash2 className="w-4 h-4"/></button>
+                      </div>
+                    ))}
+                  </div>
+                  <button type="button" onClick={()=>setRefundPayments([...refundPayments,{metodo:'efectivo_usd',montoUSD:0,montoBS:0}])} className="mt-2 text-[9px] font-black uppercase text-status-info">+ Agregar otro método</button>
+                  <div className="mt-2 flex justify-between text-[9px] font-black uppercase"><span>Distribuido: {Utils.fmtUSD(refundPayments.reduce((s,p)=>s+(refundMethodCurrency(p.metodo)==='BS'?Number(p.montoBS)/(Number(state.tasa)||1):Number(p.montoUSD)||0),0))}</span><span>Falta: {Utils.fmtUSD(Math.max(0,returnItems.reduce((s,i)=>s+i.cantidad*i.precioUnitUSD,0)-refundPayments.reduce((s,p)=>s+(refundMethodCurrency(p.metodo)==='BS'?Number(p.montoBS)/(Number(state.tasa)||1):Number(p.montoUSD)||0),0)))}</span></div>
                 </div>
 
                 <div className="form-group">
@@ -516,6 +577,43 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
           </div>
         </div>
       )}
+      {showCancellationRefund && pendingCancellation && selectedSale && (
+        <div className="fixed inset-0 z-[100] bg-black/50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="w-full max-w-2xl bg-white rounded-xl shadow-2xl border border-line max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 z-10 bg-white border-b border-line px-6 py-4 flex items-center justify-between">
+              <div><h3 className="text-ink font-black uppercase text-sm">Reintegro por Anulación</h3><p className="text-[10px] text-ink/50 font-bold uppercase mt-1">Factura {selectedSale.id} · Seleccione uno o varios métodos</p></div>
+              <button type="button" onClick={() => { setShowCancellationRefund(false); setPendingCancellation(false); }} className="text-ink/40 hover:text-status-danger"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-6 space-y-5">
+              <div className="p-4 rounded-lg bg-surface-soft border border-line">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-black uppercase text-ink/60">Total a reintegrar</span>
+                  <span className="text-2xl font-black text-status-danger">{Utils.fmtUSD(selectedSale.totalUSD)}</span>
+                </div>
+                <div className="text-right text-sm font-black text-ink/60 mt-1">
+                  Equiv. BS: {Utils.fmtBS((Number(selectedSale.totalUSD) || 0) * (Number(state.tasa) || 1))}
+                </div>
+              </div>
+              <div className="space-y-2 max-h-[42vh] overflow-y-auto pr-1">
+                {refundPayments.map((p, idx) => (
+                  <div key={idx} className="grid grid-cols-[1fr_120px_36px] gap-2 items-center">
+                    <select className="form-select bg-white text-ink h-10 text-[10px] font-black uppercase border-line rounded-md px-2" value={p.metodo} onChange={e => setRefundPayments(refundPayments.map((x,i)=>i===idx?{...x,metodo:e.target.value as PaymentMethod}:x))}>{REFUND_METHODS.map(m=><option key={m.value} value={m.value}>{m.label}</option>)}</select>
+                    <input type="number" min="0" step="0.01" value={(refundMethodCurrency(p.metodo) === 'BS' ? p.montoBS : p.montoUSD) || ''} onChange={e => setRefundPayments(refundPayments.map((x,i)=>i===idx?(refundMethodCurrency(p.metodo) === 'BS'?{...x,montoBS:Number(e.target.value)||0,montoUSD:(Number(e.target.value)||0)/(Number(state.tasa)||1)}:{...x,montoUSD:Number(e.target.value)||0,montoBS:(Number(e.target.value)||0)*(Number(state.tasa)||1)}):x))} className="form-input h-10 text-xs font-black text-right" placeholder={refundMethodCurrency(p.metodo) === 'BS' ? 'BS' : 'USD'} />
+                    <button type="button" onClick={()=>setRefundPayments(refundPayments.filter((_,i)=>i!==idx))} disabled={refundPayments.length===1} className="h-9 text-ink/30 hover:text-status-danger disabled:opacity-20"><Trash2 className="w-4 h-4" /></button>
+                  </div>
+                ))}
+              </div>
+              <button type="button" onClick={()=>setRefundPayments([...refundPayments,{metodo:'efectivo_usd',montoUSD:0,montoBS:0}])} className="text-[9px] font-black uppercase text-status-info">+ Agregar otro método</button>
+              <div className="flex justify-between text-[9px] font-black uppercase border-t border-line pt-3"><span>Distribuido: {Utils.fmtUSD(refundPayments.reduce((s,p)=>s+(refundMethodCurrency(p.metodo)==='BS'?Number(p.montoBS)/(Number(state.tasa)||1):Number(p.montoUSD)||0),0))}</span><span className={Math.abs(refundPayments.reduce((s,p)=>s+(refundMethodCurrency(p.metodo)==='BS'?Number(p.montoBS)/(Number(state.tasa)||1):Number(p.montoUSD)||0),0)-(Number(selectedSale.totalUSD)||0))<0.005 ? 'text-status-ok' : 'text-status-danger'}>Falta: {Utils.fmtUSD(Math.max(0,(Number(selectedSale.totalUSD)||0)-refundPayments.reduce((s,p)=>s+(refundMethodCurrency(p.metodo)==='BS'?Number(p.montoBS)/(Number(state.tasa)||1):Number(p.montoUSD)||0),0)))}</span></div>
+              <div className="flex gap-2 justify-end">
+                <button type="button" onClick={()=>{setShowCancellationRefund(false);setPendingCancellation(false)}} className="btn btn-secondary h-10 px-5 font-black uppercase text-[10px]">Cancelar</button>
+                <button type="button" disabled={isProcessing || Math.abs(refundPayments.reduce((s,p)=>s+(refundMethodCurrency(p.metodo)==='BS'?Number(p.montoBS)/(Number(state.tasa)||1):Number(p.montoUSD)||0),0)-(Number(selectedSale.totalUSD)||0))>0.005} onClick={()=>ejecutarAnulacion(refundPayments.map(p=>({...p,montoUSD:Number(p.montoUSD)||0,montoBS:(Number(p.montoUSD)||0)*state.tasa})))} className="btn btn-danger h-10 px-5 font-black uppercase text-[10px] disabled:opacity-30">{isProcessing?'PROCESANDO...':'CONFIRMAR ANULACIÓN Y REINTEGRO'}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

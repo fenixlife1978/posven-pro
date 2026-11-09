@@ -1,6 +1,6 @@
 "use client";
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { AppState } from '@/lib/types';
 import { Utils } from '@/lib/db-store';
 import { 
@@ -31,6 +31,22 @@ import {
 } from 'recharts';
 
 export default function DashboardModule({ state }: { state: AppState }) {
+  const [historicalSalesCount, setHistoricalSalesCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    fetch('/api/turso/store?special=count&table=ventas', { credentials: 'include', cache: 'no-store' })
+      .then(async response => {
+        if (!response.ok) throw new Error('No se pudo consultar el histórico de ventas en Turso.');
+        const body = await response.json();
+        if (!body?.ok) throw new Error(String(body?.error || 'Turso rechazó la consulta.'));
+        return Number(body.total || 0);
+      })
+      .then(total => { if (active) setHistoricalSalesCount(total); })
+      .catch(error => console.error('[Dashboard] histórico de ventas:', error));
+    return () => { active = false; };
+  }, []);
+
   const hoy = Utils.hoy();
   const ventasHoy = state.ventas.filter(v => v.fecha.startsWith(hoy));
   const totalVentasHoyUSD = ventasHoy.reduce((s, v) => s + v.totalUSD, 0);
@@ -179,9 +195,9 @@ export default function DashboardModule({ state }: { state: AppState }) {
           </div>
           <div className="mt-5">
             <div className="text-[0.74rem] font-bold text-ink-subtle uppercase tracking-wider">Total Facturado</div>
-            <div className="font-display text-[1.7rem] font-[800] text-ink mt-0.5">{state.ventas.length}</div>
+            <div className="font-display text-[1.7rem] font-[800] text-ink mt-0.5">{historicalSalesCount ?? state.ventas.length}</div>
           </div>
-          <div className="mt-2.5 pt-3 border-t border-line text-[0.74rem] font-medium text-ink-subtle/80 uppercase">Histórico del Sistema</div>
+          <div className="mt-2.5 pt-3 border-t border-line text-[0.74rem] font-medium text-ink-subtle/80 uppercase">Histórico real de ventas en Turso</div>
         </div>
 
         <div className="bg-white border border-line rounded-[20px] p-6 shadow-sm-card group hover:shadow-card transition-all">

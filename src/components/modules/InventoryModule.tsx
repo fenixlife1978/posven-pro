@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { AppState, Product, Movimiento, KitItem, Supplier, Return } from '@/lib/types';
 import { Utils, Store } from '@/lib/db-store';
 import { 
@@ -26,7 +26,9 @@ import {
   LayoutGrid,
   Monitor,
   Eye,
-  ShieldAlert
+  ShieldAlert,
+  Download,
+  FileSpreadsheet
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -47,7 +49,6 @@ import {
   exportarPDFDevoluciones
 } from '@/lib/pdf-generator';
 import { ProductFormModal } from '@/components/inventory/ProductFormModal';
-import { Pagination } from '@/components/ui/pagination';
 import { DateRangeFilter, DateRange } from '@/components/ui/date-range-filter';
 
 export function InventoryModule({ state, updateState }: { state: AppState, updateState: (s: Partial<AppState>) => void }) {
@@ -59,11 +60,24 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
   const [selectedCPPId, setSelectedCPPId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
 
+  const stockKardexSyncDone = useRef(false);
+
   useEffect(() => {
+    // La reconciliación con Kardex se ejecuta una sola vez al montar el módulo.
+    // Si se ejecutara cada vez que volvemos a Productos/CPP, el updateState
+    // provoca un rerender mientras el usuario abre un <select>, haciendo que
+    // el menú nativo se cierre/intermitente.
+    if (!stockKardexSyncDone.current) {
+      stockKardexSyncDone.current = true;
+      void Store.syncProductsStockFromKardex().catch((error: any) => {
+        console.error('No fue posible sincronizar stock desde Kardex:', error);
+      });
+    }
+
     if (activeTab !== 'productos') {
       void Store.ensureLoaded('movimientos');
     }
-    if (activeTab === 'reporte_ventas' || activeTab === 'reporte_devoluciones') {
+    if (activeTab === 'reporte_ventas' || activeTab === 'reporte_devoluciones' || activeTab === 'reporte_salidas_periodicas') {
       void Store.ensureLoaded('ventas');
     }
   }, [activeTab]);
@@ -74,6 +88,7 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
   
   const [showAjuste, setShowAjuste] = useState<string | null>(null);
   const [showProducto, setShowProducto] = useState<string | null | 'nuevo'>(null);
+  const [showConteoFisico, setShowConteoFisico] = useState(false);
 
   // ✅ CORRECCIÓN: Limpiar departamentos y categorías para evitar duplicados
   const cleanDepartamentos = useMemo(() => {
@@ -172,6 +187,9 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
               <Button variant="secondary" className="flex-1 md:flex-none h-11 font-black uppercase text-[10px]" onClick={() => generarPDFInventarioSimple(prods, state.empresa)}>
                 <FileText className="w-4 h-4" /> PDF Simple
               </Button>
+              <Button variant="secondary" className="flex-1 md:flex-none h-11 font-black uppercase text-[10px]" onClick={() => setShowConteoFisico(true)}>
+                <Boxes className="w-4 h-4" /> Conteo Físico
+              </Button>
               <Button className="flex-1 md:flex-none h-11 bg-brand-gold hover:bg-brand-gold-deep text-ink font-black uppercase text-[10px] shadow-lg" onClick={() => setShowProducto('nuevo')}>
                 <Plus className="w-4 h-4" /> Nuevo Ítem
               </Button>
@@ -232,7 +250,6 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
                 </TableBody>
               </Table>
             </div>
-            <Pagination page={safePage} totalPages={totalPages} total={prods.length} pageSize={pageSize} onPageChange={setPage} />
           </Card>
         </div>
       );
@@ -248,10 +265,11 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
         />
       );
       case 'reporte_ventas': return <ReporteVentas state={state} />;
-      case 'reporte_devoluciones': return <ReporteDevoluciones state={state} />;
+      case 'reporte_devoluciones': return <ReporteDevoluciones state={state} updateState={updateState} />;
       case 'historial_ajustes': return <HistorialAjustes state={state} />;
       case 'kardex': return <ReporteKardex state={state} selectedId={selectedKardexId} onSelect={setSelectedKardexId} />;
       case 'consumo_colab': return <ReporteConsumo state={state} />;
+      case 'reporte_salidas_periodicas': return <ReporteMovimientosSalidaPeriodicos state={state} />;
       default: return null;
     }
   };
@@ -266,6 +284,7 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
         <button onClick={() => setActiveTab('kardex')} className={`tab ${activeTab === 'kardex' ? 'active' : 'text-ink font-black'}`}>Kardex Fiscal</button>
         <button onClick={() => setActiveTab('historial_ajustes')} className={`tab ${activeTab === 'historial_ajustes' ? 'active' : 'text-ink font-black'}`}>Ajustes</button>
         <button onClick={() => setActiveTab('consumo_colab')} className={`tab ${activeTab === 'consumo_colab' ? 'active' : 'text-ink font-black'}`}>Consumo / Colaboraciones</button>
+        <button onClick={() => setActiveTab('reporte_salidas_periodicas')} className={`tab ${activeTab === 'reporte_salidas_periodicas' ? 'active' : 'text-ink font-black'}`}>Salidas periódicas SICOVEN</button>
       </div>
 
       <div className="animate-in fade-in duration-300">
@@ -322,6 +341,48 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
         />
       )}
 
+      {showConteoFisico && (
+        <ModalConteoFisico
+          productos={(state.productos || []).filter(p => p.activo)}
+          departamentos={cleanDepartamentos}
+          departamentoInicial={deptFilter}
+          onClose={() => setShowConteoFisico(false)}
+          onSave={async (ajustes) => {
+            const movimientos = ajustes.map(a => {
+              const producto = state.productos.find(p => p.id === a.productoId);
+              if (!producto) return null;
+              const stockAntes = Number(producto.stock) || 0;
+              const nuevoStock = Math.max(0, Number(a.nuevoStock) || 0);
+              const diferencia = nuevoStock - stockAntes;
+              if (diferencia === 0) return null;
+              return {
+                id: Store.uid(), productoId: a.productoId,
+                tipo: diferencia > 0 ? 'ajuste_entrada' : 'ajuste_salida',
+                cantidad: diferencia, stockAntes, stockDespues: nuevoStock,
+                fecha: Utils.ahora(),
+                referencia: `CONTEO FISICO | ${a.motivo}`,
+                terminalId: 'ADMIN',
+                costoUnitarioUSD: Number(producto.costoUSD) || 0,
+                costoUnitarioBs: (Number(producto.costoUSD) || 0) * Number(state.tasa || 0),
+                tasaBCV: Number(state.tasa) || 0
+              } as Movimiento;
+            }).filter((m): m is Movimiento => Boolean(m));
+            if (!movimientos.length) { setShowConteoFisico(false); return; }
+            try {
+              await Store.applyInventoryMovementsTransaction({
+                operationId: 'CONTEO-' + Store.uid(),
+                operationType: 'AJUSTE_INVENTARIO',
+                movements: movimientos,
+                productPatches: {}
+              });
+              setShowConteoFisico(false);
+            } catch (e: any) {
+              alert(e?.message || 'No fue posible guardar el conteo físico. La operación no fue aplicada.');
+            }
+          }}
+        />
+      )}
+
       {showAjuste && (
         <ModalAjuste 
           producto={state.productos.find(p => p.id === showAjuste)!} 
@@ -347,7 +408,10 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
                   stockDespues: 0,
                   fecha: ahora,
                   referencia: `${mov.tipo.replace('_', ' ').toUpperCase()} KIT: ${productoOriginal.nombre} - REF: ${mov.referencia}`,
-                  terminalId: 'ADMIN'
+                  terminalId: 'ADMIN',
+                  costoUnitarioUSD: Number(state.productos.find(p => p.id === ki.productoId)?.costoUSD) || 0,
+                  costoUnitarioBs: (Number(state.productos.find(p => p.id === ki.productoId)?.costoUSD) || 0) * Number(state.tasa || 0),
+                  tasaBCV: Number(state.tasa) || 0
                 });
               });
             } else {
@@ -362,7 +426,12 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
                   : Number(nuevoCosto);
               }
               productPatches[mov.productoId] = patch;
-              movimientos.push({ ...mov, id: Store.uid(), stockAntes: 0, stockDespues: 0, fecha: ahora });
+              movimientos.push({
+                ...mov, id: Store.uid(), stockAntes: 0, stockDespues: 0, fecha: ahora,
+                costoUnitarioUSD: Number(productoOriginal.costoUSD) || 0,
+                costoUnitarioBs: (Number(productoOriginal.costoUSD) || 0) * Number(state.tasa || 0),
+                tasaBCV: Number(state.tasa) || 0
+              });
             }
 
             try {
@@ -406,8 +475,8 @@ function ReporteGeneral({ state, onAction }: { state: AppState, onAction: (type:
               onChange={e => setDeptFilter(e.target.value)}
             >
               <option value="">TODOS LOS DEPARTAMENTOS</option>
-              {(state.departamentos || []).map(d => (
-                <option key={`dept-report-${d}-${Math.random()}`} value={d}>{d?.toUpperCase()}</option>
+              {Array.from(new Set((state.departamentos || []).map(d => String(d || '').trim()).filter(Boolean))).map(d => (
+                <option key={`dept-report-${d}`} value={d}>{d.toUpperCase()}</option>
               ))}
             </select>
           </div>
@@ -658,14 +727,13 @@ function ReporteVentas({ state }: { state: AppState }) {
   );
 }
 
-function ReporteDevoluciones({ state }: { state: AppState }) {
+function ReporteDevoluciones({ state, updateState }: { state: AppState, updateState: (s: Partial<AppState>) => void }) {
   const [selectedDevolucion, setSelectedDevolucion] = useState<Return | null>(null);
   const [rango, setRango] = useState<DateRange>({ desde: Utils.hoy(), hasta: Utils.hoy() });
   const devoluciones = (state.devoluciones || []).filter(d =>
     d.fecha && d.fecha.slice(0, 10) >= rango.desde && d.fecha.slice(0, 10) <= rango.hasta
   );
   const totalUSD = devoluciones.reduce((acc, d) => acc + d.totalUSD, 0);
-
   return (
     <div className="space-y-4">
       <Card className="p-5 bg-white border-line shadow-sm rounded-xl no-print">
@@ -675,7 +743,9 @@ function ReporteDevoluciones({ state }: { state: AppState }) {
       <Card className="shadow-lg border-line rounded-xl overflow-hidden bg-white">
         <div className="card-head bg-ink border-b border-white/10 px-6 py-4 flex justify-between items-center text-white">
           <h3 className="font-black text-xs uppercase italic tracking-tighter">HISTORIAL DE DEVOLUCIONES</h3>
-          <button className="btn btn-secondary h-8 px-4 font-black text-[9px]" onClick={() => exportarPDFDevoluciones(devoluciones, state.empresa, 'Histórico', { totalUSD })}>PDF</button>
+          <div className="flex items-center gap-2">
+            <button className="btn btn-secondary h-8 px-4 font-black text-[9px]" onClick={() => exportarPDFDevoluciones(devoluciones, state.empresa, 'Histórico', { totalUSD })}>PDF</button>
+          </div>
         </div>
         <div className="table-wrap">
           <Table>
@@ -1034,30 +1104,224 @@ function ReporteKardex({ state, selectedId, onSelect }: { state: AppState, selec
   );
 }
 
+
+function ReporteMovimientosSalidaPeriodicos({ state }: { state: AppState }) {
+  const hoy = Utils.hoy();
+  const [desde, setDesde] = useState(hoy.slice(0, 8) + '01');
+  const [hasta, setHasta] = useState(hoy);
+  const [categoria, setCategoria] = useState('');
+  const [busqueda, setBusqueda] = useState('');
+  const [datos, setDatos] = useState<Record<string, { costo: string; tasa: string }>>({});
+  const filas = useMemo(() => (state.movimientos || [])
+    .filter(m => Number(m.cantidad) < 0 && m.fecha && m.fecha.slice(0,10) >= desde && m.fecha.slice(0,10) <= hasta)
+    .map(m => ({ m, p: (state.productos || []).find(p => p.id === m.productoId) }))
+    .filter((x): x is { m: Movimiento; p: Product } => Boolean(x.p))
+    .filter(x => !categoria || x.p.categoria === categoria)
+    .filter(x => !busqueda || [x.p.codigo, x.p.nombre, x.m.referencia].some(v => String(v || '').toLowerCase().includes(busqueda.toLowerCase())))
+    .sort((a,b) => a.m.fecha.localeCompare(b.m.fecha)), [state.movimientos,state.productos,desde,hasta,categoria,busqueda]);
+  const datosDetectados = useMemo(() => Object.fromEntries(filas.map(({m}) => {
+    // La tasa histórica de una venta está guardada en su factura (campo tasa).
+    // El costo solo se toma de snapshots históricos; nunca del costo actual del catálogo.
+    const referencia = String(m.referencia || '').trim();
+    const sale = m.tipo === 'venta'
+      ? (state.ventas || []).find(v => {
+          const saleId = String(v.id || '').trim();
+          if (!saleId) return false;
+          const prefix = String(v.type || 'VENTA').trim() + ' ' + saleId;
+          return referencia === saleId || referencia === prefix || referencia.startsWith(prefix + ' ');
+        })
+      : undefined;
+    const saleItem = sale?.items?.find(item => String(item.productoId) === String(m.productoId));
+    const tasa = Number(m.tasaBCV || saleItem?.tasaBCV || sale?.tasa) || 0;
+    const costoBsDirecto = Number(m.costoUnitarioBs || saleItem?.costoUnitarioBs) || 0;
+    const costoUSD = Number(m.costoUnitarioUSD || saleItem?.costoUnitarioUSD) || 0;
+    const costo = costoBsDirecto > 0 ? costoBsDirecto : (costoUSD > 0 && tasa > 0 ? costoUSD * tasa : 0);
+    return [m.id, { costo: costo > 0 ? String(costo) : '', tasa: tasa > 0 ? String(tasa) : '' }];
+  })), [filas, state.ventas]);
+  const valorDato = (id: string, campo: 'costo' | 'tasa') => datos[id]?.[campo] ?? datosDetectados[id]?.[campo] ?? '';
+  const pendientes = filas.filter(x => !String(x.p.codigo || '').trim() || !(Number(valorDato(x.m.id,'costo')) > 0) || !(Number(valorDato(x.m.id,'tasa')) > 0)).length;
+  const unidades = filas.reduce((s,x) => s + Math.abs(Number(x.m.cantidad) || 0), 0);
+  const setDato = (id: string, campo: 'costo' | 'tasa', valor: string) => setDatos(prev => ({...prev,[id]:{...(prev[id] || {}),[campo]:valor}}));
+  const registros = () => filas.map(({m,p}) => ({
+    productCode: p.codigo, productName: p.nombre, date: m.fecha.slice(0,10), type: 'SALIDA',
+    concept: m.tipo === 'venta' ? 'VENTA' : (['consumo','colaboracion'].includes(m.tipo) ? 'AUTOCONSUMO' : 'MERMA'),
+    documentRef: m.referencia || m.id, quantity: Math.abs(Number(m.cantidad)),
+    unitCostBs: Number(valorDato(m.id,'costo')), bcvRate: Number(valorDato(m.id,'tasa'))
+  }));
+  const descargar = (tipo: 'json' | 'csv') => {
+    if (!filas.length || pendientes) { alert('No hay registros completos. Revise el código del producto, el costo unitario y la tasa BCV de cada salida.'); return; }
+    const rows = registros();
+    const nombre = 'POSVEN_Salidas_Inventario_' + desde + '_' + hasta;
+    let blob: Blob, ext: string;
+    if (tipo === 'json') {
+      blob = new Blob([JSON.stringify({format:'SICOVEN_INVENTORY_MOVEMENTS',version:1,period:{from:desde,to:hasta},movements:rows},null,2)],{type:'application/json;charset=utf-8'}); ext='json';
+    } else {
+      const cols = ['productCode','productName','date','type','concept','documentRef','quantity','unitCostBs','bcvRate'];
+      const q = (v: unknown) => '"' + String(v ?? '').replace(/"/g,'""') + '"';
+      blob = new Blob(['\uFEFF' + [cols.join(','),...rows.map(r=>cols.map(k=>q((r as any)[k])).join(','))].join('\r\n')],{type:'text/csv;charset=utf-8'}); ext='csv';
+    }
+    const url=URL.createObjectURL(blob), a=document.createElement('a');
+    a.href=url; a.download=nombre+'.'+ext; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  };
+  return <div className="space-y-4">
+    <Card className="p-5 bg-white border-line shadow-sm rounded-xl space-y-4 no-print">
+      <div><h3 className="font-black text-sm uppercase text-ink">Reporte periódico de movimientos de salida</h3><p className="text-xs text-ink/50 mt-1">Consulta de solo lectura del Kardex para preparar importación en SICOVEN.</p></div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="form-group mb-0"><Label className="text-[10px] font-black uppercase">Desde</Label><Input type="date" value={desde} max={hasta} onChange={e=>setDesde(e.target.value)} className="h-10 bg-white"/></div>
+        <div className="form-group mb-0"><Label className="text-[10px] font-black uppercase">Hasta</Label><Input type="date" value={hasta} min={desde} onChange={e=>setHasta(e.target.value)} className="h-10 bg-white"/></div>
+        <div className="form-group mb-0"><Label className="text-[10px] font-black uppercase">Categoría</Label><select className="form-select h-10 w-full" value={categoria} onChange={e=>setCategoria(e.target.value)}><option value="">Todas</option>{Array.from(new Set((state.productos||[]).map(p=>p.categoria).filter(Boolean))).sort().map(x=><option key={x} value={x}>{x}</option>)}</select></div>
+        <div className="form-group mb-0"><Label className="text-[10px] font-black uppercase">Buscar</Label><Input value={busqueda} onChange={e=>setBusqueda(e.target.value)} placeholder="Código, producto o referencia" className="h-10 bg-white"/></div>
+      </div>
+    </Card>
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <Card className="p-4 bg-white border-line"><p className="text-[10px] uppercase font-black text-ink/40">Movimientos de salida</p><p className="text-2xl font-black text-ink">{filas.length}</p></Card>
+      <Card className="p-4 bg-white border-line"><p className="text-[10px] uppercase font-black text-ink/40">Unidades de salida</p><p className="text-2xl font-black text-ink">{unidades.toLocaleString('es-VE')}</p></Card>
+      <Card className="p-4 border border-amber-200 bg-amber-50"><p className="text-[10px] uppercase font-black text-ink/50">Datos históricos pendientes</p><p className="text-2xl font-black text-amber-700">{pendientes}</p><p className="text-[10px] text-ink/50">Código, costo unitario y/o tasa BCV</p></Card>
+    </div>
+    <Card className="overflow-hidden bg-white border-line shadow-sm rounded-xl">
+      <div className="p-4 bg-ink text-white flex flex-wrap justify-between gap-2 items-center"><div><h4 className="font-black text-xs uppercase">Revisión previa de movimientos</h4><p className="text-[10px] text-white/60">Se recuperan snapshots de compra/venta y tasas guardadas en la factura; lo no documentado queda para revisión manual.</p></div><div className="flex gap-2"><Button variant="secondary" onClick={()=>descargar('csv')} disabled={!filas.length || pendientes>0} className="font-black uppercase text-[10px]"><Download className="w-4 h-4"/> CSV</Button><Button onClick={()=>descargar('json')} disabled={!filas.length || pendientes>0} className="bg-brand-gold text-ink hover:bg-brand-gold-deep font-black uppercase text-[10px]"><FileSpreadsheet className="w-4 h-4"/> JSON</Button></div></div>
+      <div className="table-wrap"><Table><TableHeader><TableRow className="bg-surface-soft">
+        <TableHead className="text-[10px] font-black uppercase">Fecha</TableHead><TableHead className="text-[10px] font-black uppercase">Código / Producto</TableHead><TableHead className="text-[10px] font-black uppercase">Concepto</TableHead><TableHead className="text-[10px] font-black uppercase text-right">Cantidad</TableHead><TableHead className="text-[10px] font-black uppercase">Referencia</TableHead><TableHead className="text-[10px] font-black uppercase">Costo unit. Bs.</TableHead><TableHead className="text-[10px] font-black uppercase">Tasa BCV</TableHead>
+      </TableRow></TableHeader><TableBody>
+        {filas.map(({m,p})=><TableRow key={m.id} className="border-b border-line/30">
+          <TableCell className="text-xs font-bold whitespace-nowrap">{m.fecha.slice(0,10)}</TableCell><TableCell className="min-w-48"><p className="text-xs font-black">{p.codigo}</p><p className="text-[10px] text-ink/50">{p.nombre}</p></TableCell><TableCell><p className="text-[10px] font-black uppercase">SALIDA</p><p className="text-[10px] text-ink/50">{m.tipo==='venta'?'VENTA':(['consumo','colaboracion'].includes(m.tipo)?'AUTOCONSUMO':'MERMA')}</p></TableCell><TableCell className="text-right font-black text-status-danger">{Math.abs(m.cantidad)}</TableCell><TableCell className="text-[10px] min-w-36">{m.referencia || m.id}</TableCell>
+          <TableCell className="min-w-36"><Input type="number" min="0" step="0.0001" value={valorDato(m.id,'costo')} onChange={e=>setDato(m.id,'costo',e.target.value)} placeholder="Requerido" className="h-9 min-w-28 bg-white text-right"/></TableCell><TableCell className="min-w-32"><Input type="number" min="0" step="0.0001" value={valorDato(m.id,'tasa')} onChange={e=>setDato(m.id,'tasa',e.target.value)} placeholder="Requerida" className="h-9 min-w-24 bg-white text-right"/></TableCell>
+        </TableRow>)}
+        {!filas.length && <TableRow><TableCell colSpan={7} className="py-16 text-center text-ink/30 font-black uppercase">No hay salidas para los filtros seleccionados</TableCell></TableRow>}
+      </TableBody></Table></div>
+      <div className="p-4 border-t border-line text-xs"><span className="text-ink/50">Total costo revisado: <b className="text-ink">{filas.reduce((s,x)=>s+Math.abs(x.m.cantidad)*(Number(valorDato(x.m.id,'costo'))||0),0).toLocaleString('es-VE',{minimumFractionDigits:2,maximumFractionDigits:2})} Bs.</b></span><p className={pendientes?'text-amber-700 font-bold':'text-status-success font-bold'}>{pendientes?'Complete los códigos y datos históricos pendientes para exportar.':'Revisión completa: exportación habilitada.'}</p></div>
+    </Card>
+    <p className="text-[10px] text-ink/40">Se exportan código y descripción del producto, no su ID interno de POSVEN-PRO, porque SICOVEN mantiene identificadores propios.</p>
+  </div>;
+}
+
+
+type ConteoFisicoAjuste = { productoId: string; nuevoStock: number; motivo: string };
+
+function ModalConteoFisico({ productos, departamentos, departamentoInicial, onClose, onSave }: {
+  productos: Product[]; departamentos: string[]; departamentoInicial: string;
+  onClose: () => void; onSave: (ajustes: ConteoFisicoAjuste[]) => Promise<void>;
+}) {
+  const [departamento, setDepartamento] = useState(departamentoInicial);
+  const [drafts, setDrafts] = useState<Record<string, { nuevoStock: string; motivo: string }>>({});
+  const disponibles = useMemo(() => (productos || [])
+    .filter(p => p.activo && (departamento ? p.departamento === departamento : true))
+    .sort((a, b) => (a.nombre || '').localeCompare(b.nombre || '')), [productos, departamento]);
+  const updateDraft = (id: string, field: 'nuevoStock' | 'motivo', value: string) => setDrafts(prev => ({
+    ...prev, [id]: { ...(prev[id] || { nuevoStock: '', motivo: 'Ajuste por Conteo / Inventario Físico' }), [field]: value }
+  }));
+  const pendientes = disponibles.map(p => ({ p, d: drafts[p.id] }))
+    .filter(({ p, d }) => d && d.nuevoStock !== '' && Number(d.nuevoStock) !== (Number(p.stock) || 0));
+  const guardar = async () => {
+    const ajustes = pendientes.map(({ p, d }) => ({
+      productoId: p.id, nuevoStock: Math.max(0, Number(d!.nuevoStock)),
+      motivo: d!.motivo || 'Ajuste por Conteo / Inventario Físico'
+    }));
+    if (ajustes.some(a => !Number.isFinite(a.nuevoStock))) { alert('Revise los valores de Nuevo Stock.'); return; }
+    await onSave(ajustes);
+  };
+  return (
+    <div className="modal show">
+      <div className="modal-bg" onClick={onClose}></div>
+      <div className="modal-box bg-white max-w-6xl w-[96vw] border-2 border-line rounded-xl overflow-hidden shadow-2xl">
+        <div className="modal-head px-5 py-4 border-b border-line bg-ink text-white flex items-center justify-between">
+          <div><h3 className="font-black uppercase text-sm">Inventario físico por departamento</h3>
+          <p className="text-[10px] text-white/60 font-bold uppercase mt-1">Ingrese el Nuevo Stock contado físicamente. La diferencia se calcula automáticamente.</p></div>
+          <button onClick={onClose}><X className="w-5 h-5" /></button>
+        </div>
+        <div className="p-5 space-y-4 bg-white">
+          <div className="flex flex-col md:flex-row gap-3 items-end">
+            <div className="form-group mb-0 w-full md:w-80">
+              <Label className="text-[10px] font-black uppercase text-ink/60 mb-1 block">Departamento</Label>
+              <select className="form-select h-10 text-xs font-black uppercase w-full" value={departamento} onChange={e => setDepartamento(e.target.value)}>
+                <option value="">TODOS LOS DEPARTAMENTOS</option>
+                {departamentos.map(d => <option key={d} value={d}>{d}</option>)}
+              </select>
+            </div>
+            <div className="text-[10px] font-black uppercase text-ink/40">{disponibles.length} productos · {pendientes.length} ajustes pendientes</div>
+          </div>
+          <div className="max-h-[55vh] overflow-auto border border-line rounded-lg">
+            <Table><TableHeader><TableRow className="bg-surface-soft sticky top-0 z-10">
+              <TableHead className="font-black text-ink uppercase text-[10px]">Código</TableHead>
+              <TableHead className="font-black text-ink uppercase text-[10px]">Producto</TableHead>
+              <TableHead className="font-black text-ink uppercase text-[10px] text-center">Stock Actual</TableHead>
+              <TableHead className="font-black text-ink uppercase text-[10px] text-center">Nuevo Stock</TableHead>
+              <TableHead className="font-black text-ink uppercase text-[10px] text-center">Variación</TableHead>
+              <TableHead className="font-black text-ink uppercase text-[10px]">Motivo</TableHead>
+            </TableRow></TableHeader><TableBody>
+              {disponibles.map(p => {
+                const d = drafts[p.id], actual = Number(p.stock) || 0;
+                const nuevo = d?.nuevoStock === '' || d?.nuevoStock == null ? actual : Number(d.nuevoStock);
+                const diferencia = Number.isFinite(nuevo) ? nuevo - actual : 0;
+                return <TableRow key={p.id} className="border-b border-line/30">
+                  <TableCell className="mono text-xs font-black">{p.codigo}</TableCell>
+                  <TableCell className="font-bold uppercase text-xs">{p.nombre}</TableCell>
+                  <TableCell className="text-center font-black">{actual}</TableCell>
+                  <TableCell className="w-36"><Input type="number" min="0" step="1" className="h-9 text-center font-black bg-white" placeholder={String(actual)} value={d?.nuevoStock ?? ''} onChange={e => updateDraft(p.id, 'nuevoStock', e.target.value)} /></TableCell>
+                  <TableCell className={`text-center font-black ${diferencia > 0 ? 'text-status-success' : diferencia < 0 ? 'text-status-danger' : 'text-ink/30'}`}>{diferencia === 0 ? 'Sin cambio' : `${diferencia > 0 ? '+' : ''}${diferencia} unid.`}</TableCell>
+                  <TableCell className="min-w-64"><select className="form-select h-9 text-[10px] font-bold uppercase w-full" value={d?.motivo || 'Ajuste por Conteo / Inventario Físico'} onChange={e => updateDraft(p.id, 'motivo', e.target.value)}>
+                    <option>Ajuste por Conteo / Inventario Físico</option><option>Merma / Pérdida</option><option>Faltante / Robo</option><option>Sobrante</option><option>Consumo Interno / Uso Operativo</option><option>Entrada de Proveedor / Devolución</option>
+                  </select></TableCell>
+                </TableRow>;
+              })}
+              {disponibles.length === 0 && <TableRow><TableCell colSpan={6} className="py-16 text-center text-ink/30 font-black uppercase">No hay productos en este departamento</TableCell></TableRow>}
+            </TableBody></Table>
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="secondary" onClick={onClose} className="font-black uppercase text-[10px]">Cancelar</Button>
+            <Button onClick={guardar} disabled={pendientes.length === 0} className="font-black uppercase text-[10px] bg-brand-gold hover:bg-brand-gold-deep text-ink"><Check className="w-4 h-4" /> Guardar Ajustes de Conteo</Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ModalAjuste({ producto, onClose, onSave }: { producto: Product, onClose: () => void, onSave: (m: Movimiento, nuevoCosto?: number) => void }) {
-  const [tipo, setTipo] = useState<'ajuste_entrada' | 'ajuste_salida' | 'consumo' | 'colaboracion'>('ajuste_entrada');
+  const [tipo, setTipo] = useState<'ajuste_entrada' | 'ajuste_salida'>('ajuste_entrada');
   const [cantidad, setCantidad] = useState<string>('1');
   const [nuevoCosto, setNuevoCosto] = useState<string>(String(producto.costoUSD));
+  const [motivoTipo, setMotivoTipo] = useState<'consumo' | 'colaboracion' | 'libre'>('libre');
   const [motivo, setMotivo] = useState('');
+
+  const esSalidaEspecial = motivoTipo === 'consumo' || motivoTipo === 'colaboracion';
 
   const handleSave = () => {
     const pCant = parseFloat(cantidad) || 0;
     const pCosto = parseFloat(nuevoCosto) || 0;
     if (pCant <= 0) return alert('Cantidad invalida');
-    if (!motivo.trim()) return alert('Por favor indique el motivo del ajuste');
+
+    if (motivoTipo === 'libre' && !motivo.trim()) {
+      return alert('Por favor indique el motivo del ajuste');
+    }
+
+    const movimientoTipo: Movimiento['tipo'] = motivoTipo === 'consumo'
+      ? 'consumo'
+      : motivoTipo === 'colaboracion'
+        ? 'colaboracion'
+        : tipo;
+
+    const cantidadMovimiento = esSalidaEspecial || tipo === 'ajuste_salida'
+      ? -Math.abs(pCant)
+      : pCant;
 
     const mov: Movimiento = {
       id: Store.uid(),
       productoId: producto.id,
-      tipo,
-      cantidad: (tipo === 'ajuste_entrada') ? pCant : -Math.abs(pCant),
+      tipo: movimientoTipo,
+      cantidad: cantidadMovimiento,
       stockAntes: producto.stock,
-      stockDespues: (tipo === 'ajuste_entrada') ? producto.stock + pCant : producto.stock - Math.abs(pCant),
+      stockDespues: producto.stock + cantidadMovimiento,
       fecha: Utils.ahora(),
-      referencia: motivo.toUpperCase(),
+      referencia: (motivoTipo === 'consumo'
+        ? 'CONSUMO PROPIO'
+        : motivoTipo === 'colaboracion'
+          ? 'COLABORACIÓN'
+          : motivo).toUpperCase(),
       terminalId: 'ADMIN'
     };
-    onSave(mov, tipo === 'ajuste_entrada' ? pCosto : undefined);
+
+    onSave(mov, movimientoTipo === 'ajuste_entrada' ? pCosto : undefined);
   };
 
   return (
@@ -1069,27 +1333,53 @@ function ModalAjuste({ producto, onClose, onSave }: { producto: Product, onClose
         </div>
         <div className="modal-body p-6 space-y-4 bg-white">
           <div className="grid grid-cols-2 gap-4">
-             <div className="form-group"><Label className="text-[10px] font-black uppercase text-ink/60 mb-1 block">Tipo</Label>
-               <select className="form-select h-10 text-xs font-bold" value={tipo} onChange={e => setTipo(e.target.value as any)}>
+             <div className="form-group">
+               <Label className="text-[10px] font-black uppercase text-ink/60 mb-1 block">Tipo</Label>
+               <select
+                 className="form-select h-10 text-xs font-bold"
+                 value={esSalidaEspecial ? 'ajuste_salida' : tipo}
+                 disabled={esSalidaEspecial}
+                 onChange={e => setTipo(e.target.value as 'ajuste_entrada' | 'ajuste_salida')}
+               >
                  <option value="ajuste_entrada">Entrada (+)</option>
                  <option value="ajuste_salida">Salida (-)</option>
-                 <option value="consumo">Consumo Propio</option>
-                 <option value="colaboracion">Colaboración</option>
                </select>
              </div>
-             <div className="form-group"><Label className="text-[10px] font-black uppercase text-ink/60 mb-1 block">Cantidad</Label>
+             <div className="form-group">
+               <Label className="text-[10px] font-black uppercase text-ink/60 mb-1 block">Cantidad</Label>
                <Input className="h-10 text-center font-black bg-white" type="text" value={cantidad} onChange={e => setCantidad(e.target.value)} />
              </div>
           </div>
           <div className="form-group">
             <Label className="text-[10px] font-black uppercase text-ink/60 mb-1 block">Motivo del Ajuste</Label>
-            <Input 
-              className="h-10 text-xs font-black uppercase bg-white" 
-              placeholder="Ej: ERROR DE CONTEO, DAÑO, ETC..." 
-              value={motivo} 
-              onChange={e => setMotivo(e.target.value)} 
-            />
+            <select
+              className="form-select h-10 text-xs font-black uppercase bg-white"
+              value={motivoTipo}
+              onChange={e => {
+                const next = e.target.value as 'consumo' | 'colaboracion' | 'libre';
+                setMotivoTipo(next);
+                if (next !== 'libre') setTipo('ajuste_salida');
+                if (next !== 'libre') setMotivo('');
+              }}
+            >
+              <option value="libre">Texto libre / Motivo personalizado</option>
+              <option value="consumo">Consumo propio</option>
+              <option value="colaboracion">Colaboración</option>
+            </select>
           </div>
+
+          {motivoTipo === 'libre' && (
+            <div className="form-group">
+              <Label className="text-[10px] font-black uppercase text-ink/60 mb-1 block">Detalle del motivo</Label>
+              <Input
+                className="h-10 text-xs font-black uppercase bg-white"
+                placeholder="Ej: ERROR DE CONTEO, DAÑO, ETC..."
+                value={motivo}
+                onChange={e => setMotivo(e.target.value)}
+              />
+            </div>
+          )}
+
           <Button className="w-full h-12 font-black uppercase text-xs shadow-md mt-2" onClick={handleSave}>Procesar Ajuste</Button>
         </div>
       </div>
