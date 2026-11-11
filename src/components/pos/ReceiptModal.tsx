@@ -258,7 +258,17 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
             th { background: #111; color: #fff; }
             .text-center { text-align: center; }
             .text-right { text-align: right; }
-            .bold, .font-bold, .font-black { font-weight: 700; }
+            .font-bold, .font-black { font-weight: 700; }
+            .text-\\[18px\\] { font-size: 18px; }
+            .text-\\[16px\\] { font-size: 16px; }
+            .text-\\[15px\\] { font-size: 15px; }
+            .text-\\[14px\\] { font-size: 14px; }
+            .text-\\[12px\\] { font-size: 12px; }
+            .text-\\[11px\\] { font-size: 11px; }
+            .text-\\[10px\\] { font-size: 10px; }
+            .text-\\[9px\\] { font-size: 9px; }
+            .text-\\[8px\\] { font-size: 8px; }
+            .text-\\[7px\\] { font-size: 7px; }
             .uppercase { text-transform: uppercase; }
             .font-mono { font-family: monospace; }
             .leading-tight { line-height: 1.1; }
@@ -403,7 +413,17 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
               td { vertical-align: top; padding: 1px 0; }
               .text-center { text-align: center; }
               .text-right { text-align: right; }
-              .bold, .font-bold, .font-black { font-weight: 700; }
+              .font-bold, .font-black { font-weight: 700; }
+              .text-\\[18px\\] { font-size: 18px; }
+              .text-\\[16px\\] { font-size: 16px; }
+              .text-\\[15px\\] { font-size: 15px; }
+              .text-\\[14px\\] { font-size: 14px; }
+              .text-\\[12px\\] { font-size: 12px; }
+              .text-\\[11px\\] { font-size: 11px; }
+              .text-\\[10px\\] { font-size: 10px; }
+              .text-\\[9px\\] { font-size: 9px; }
+              .text-\\[8px\\] { font-size: 8px; }
+              .text-\\[7px\\] { font-size: 7px; }
               .uppercase { text-transform: uppercase; }
               .font-mono { font-family: monospace; }
               .leading-tight { line-height: 1.1; }
@@ -440,7 +460,7 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
         <div className="bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col border border-gray-200 h-[96vh] max-h-[96vh] w-full">
           <div className="bg-black p-4 flex justify-between items-center shrink-0">
             <h3 className="text-white font-black text-xs flex items-center gap-2 tracking-widest uppercase">
-              <Printer size={16} className="text-brand-gold" /> {type === 'REPORT_X' ? 'VISTA PREVIA · ARQUEO DE CAJA' : 'VISTA PREVIA (42C)'}
+              <Printer size={16} className="text-brand-gold" /> {type === 'REPORT_X' ? 'VISTA PREVIA · ARQUEO DE CAJA' : 'VISTA PREVIA (80 MM)'}
             </h3>
             <button onClick={onClose} className="text-white/40 hover:text-white transition-colors"><X size={20} /></button>
           </div>
