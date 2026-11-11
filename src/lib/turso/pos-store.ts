@@ -867,7 +867,7 @@ export async function createZClosureTransaction(params: {
       ...current,
       ...clean(params.terminalPatch),
       id: params.terminalId,
-      ultimoZ: Math.max(Number(current.ultimoZ || 0), Number(report.numeroZ || expectedNumber)),
+      ultimoZ: Math.max(Number(current.ultimoZ || 0), Number(report.numeroZ) || 0),
       fechaUltimoZ: closedAt,
       isCashOpen: false,
       cashData: null,
