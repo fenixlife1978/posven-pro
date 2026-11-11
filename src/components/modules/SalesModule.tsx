@@ -155,6 +155,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   const [cliente, setCliente] = useState('Consumidor final');
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const closingZRef = useRef(false);
   
   const [pagos, setPagos] = useState<PagoRealizado[]>([]);
   const [showMultiModal, setShowMultiModal] = useState(false);
@@ -542,110 +543,130 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     }
   };
 
-  const ejecutarCierreZ = (real: Record<string, string> = {}, diffOverride?: { bs: number; usd: number }) => {
+  const ejecutarCierreZ = async (real: Record<string, string> = {}, diffOverride?: { bs: number; usd: number }) => {
+    if (closingZRef.current) return;
     const data = reportSnapshot;
     if (!data) return;
-    const ahora = Utils.ahora();
-    const tc = Utils.getTerminalCash(currentTerminal);
-    const numeroZ = tc.ultimoZ + 1;
-    const termId = currentTerminal?.id || 'GLOBAL';
-    const diff = diffOverride || { bs: 0, usd: 0 };
+    closingZRef.current = true;
 
-    // El arqueo previo sigue la misma regla de tienda-pos: cada medio de pago
-    // se concilia en su moneda original y el cierre físico usa efectivo Bs/USD.
-    const realBs = Number(String(real.efectivo_bs || '').replace(',', '.')) || 0;
-    const realUSD = Number(String(real.efectivo_usd || '').replace(',', '.')) || 0;
+    try {
+      const ahora = Utils.ahora();
+      const freshState = Store.get();
+      const termId = String(currentTerminal?.id || (state as any).user?.terminalId || data.terminalId || '');
+      const terminal = (freshState.terminales || []).find((t: any) => String(t.id) === termId)
+        || (state.terminales || []).find((t: any) => String(t.id) === termId)
+        || currentTerminal;
+      if (!termId || !terminal) {
+        throw new Error('No se pudo identificar la terminal de esta caja. No se ejecutó el cierre Z.');
+      }
 
-    const nuevoZ: ReportZ = {
-      id: 'Z-' + String(numeroZ).padStart(6, '0'),
-      fecha: ahora,
-      numeroZ,
-      terminalId: termId,
-      terminalName: data.terminalName,
-      desdeFactura: data.desdeFactura,
-      hastaFactura: data.hastaFactura,
-      desdeNotaCredito: data.desdeNC,
-      hastaNotaCredito: data.hastaNC,
-      cantidadAnuladas: data.stats.anulaciones,
-      ventaBrutaUSD: data.brUSD,
-      descuentoUSD: data.descUSD,
-      devolucionesUSD: data.devUSD,
-      ventaNetaUSD: data.netUSD,
-      baseImponibleUSD: data.baseImponibleUSD,
-      ivaUSD: data.ivaUSD,
-      exentoUSD: data.exentoUSD,
-      igtfUSD: data.igtfUSD,
-      metodosPago: { ...data.paymentMethods },
-      metodosArqueo: Array.isArray(data.metodosArqueo) ? data.metodosArqueo.map((m:any) => ({ ...m })) : [],
-      cobrosDeudaUSD: Number(data.cobrosDeudaUSD) || 0,
-      cobrosDeudaBS: Number(data.cobrosDeudaBS) || 0,
-      cobrosDeudaPorMetodo: Array.isArray(data.cobrosDeudaPorMetodo) ? data.cobrosDeudaPorMetodo.map((m:any) => ({ ...m })) : [],
-      manualSalidasBS: Number(data.manualSalidasBS) || 0,
-      manualSalidasUSD: Number(data.manualSalidasUSD) || 0,
-      manualEntradasBS: Number(data.manualEntradasBS) || 0,
-      manualEntradasUSD: Number(data.manualEntradasUSD) || 0,
-      devEfectivoBS: Number(data.devEfectivoBS) || 0,
-      devEfectivoUSD: Number(data.devEfectivoUSD) || 0,
-      totalNetoEfectivoBS: realBs,
-      totalNetoEfectivoUSD: realUSD,
-      salidasCajaUSD: data.manualSalidas,
-      entradasCajaUSD: data.manualEntradas,
-      fondoAperturaUSD: data.fondoAperturaUSD,
-      fondoAperturaBS: data.fondoAperturaBS,
-      acumuladoHistoricoUSD: data.acumuladoHistoricoUSD,
-      stats: { ...data.stats }
-    };
+      // Turso asigna el correlativo definitivo dentro de la transacción.
+      const tc = Utils.getTerminalCash(terminal);
+      const numeroZ = tc.ultimoZ + 1;
+      const diff = diffOverride || { bs: 0, usd: 0 };
+      const realBs = Number(String(real.efectivo_bs || '').replace(',', '.')) || 0;
+      const realUSD = Number(String(real.efectivo_usd || '').replace(',', '.')) || 0;
 
-    if (typeof localStorage !== 'undefined') localStorage.removeItem('posven_apertura_done');
+      const nuevoZ: ReportZ = {
+        id: 'Z-' + String(numeroZ).padStart(6, '0'),
+        fecha: ahora,
+        numeroZ,
+        terminalId: termId,
+        terminalName: data.terminalName,
+        desdeFactura: data.desdeFactura,
+        hastaFactura: data.hastaFactura,
+        desdeNotaCredito: data.desdeNC,
+        hastaNotaCredito: data.hastaNC,
+        cantidadAnuladas: data.stats.anulaciones,
+        ventaBrutaUSD: data.brUSD,
+        descuentoUSD: data.descUSD,
+        devolucionesUSD: data.devUSD,
+        ventaNetaUSD: data.netUSD,
+        baseImponibleUSD: data.baseImponibleUSD,
+        ivaUSD: data.ivaUSD,
+        exentoUSD: data.exentoUSD,
+        igtfUSD: data.igtfUSD,
+        metodosPago: { ...data.paymentMethods },
+        metodosArqueo: Array.isArray(data.metodosArqueo) ? data.metodosArqueo.map((m: any) => ({ ...m })) : [],
+        cobrosDeudaUSD: Number(data.cobrosDeudaUSD) || 0,
+        cobrosDeudaBS: Number(data.cobrosDeudaBS) || 0,
+        cobrosDeudaPorMetodo: Array.isArray(data.cobrosDeudaPorMetodo) ? data.cobrosDeudaPorMetodo.map((m: any) => ({ ...m })) : [],
+        manualSalidasBS: Number(data.manualSalidasBS) || 0,
+        manualSalidasUSD: Number(data.manualSalidasUSD) || 0,
+        manualEntradasBS: Number(data.manualEntradasBS) || 0,
+        manualEntradasUSD: Number(data.manualEntradasUSD) || 0,
+        devEfectivoBS: Number(data.devEfectivoBS) || 0,
+        devEfectivoUSD: Number(data.devEfectivoUSD) || 0,
+        totalNetoEfectivoBS: realBs,
+        totalNetoEfectivoUSD: realUSD,
+        salidasCajaUSD: data.manualSalidas,
+        entradasCajaUSD: data.manualEntradas,
+        fondoAperturaUSD: data.fondoAperturaUSD,
+        fondoAperturaBS: data.fondoAperturaBS,
+        acumuladoHistoricoUSD: data.acumuladoHistoricoUSD,
+        stats: { ...data.stats },
+      };
 
-    updateState({
-      reportesZ: [...(state.reportesZ || []), nuevoZ],
-      terminales: Utils.patchTerminal(state.terminales, termId, (() => {
-        const terminal = state.terminales.find(t => t.id === termId);
-        const sesion = terminal?.cashData;
-        const historial = Array.isArray(terminal?.cashHistory) ? terminal.cashHistory : [];
-        const cierreSesion = sesion
-          ? { ...sesion, closeDate: ahora, closeNotes: 'Cierre por Corte Z ' + nuevoZ.id }
-          : null;
-        return {
-          ultimoZ: numeroZ,
-          fechaUltimoZ: ahora,
-          acumuladoHistorico: data.acumuladoHistoricoUSD,
-          fondoCajaHoyBS: 0,
-          fondoCajaHoyUSD: 0,
-          isCashOpen: false,
-          cashData: null,
-          cashHistory: cierreSesion ? [cierreSesion, ...historial] : historial,
-        };
-      })())
-    });
+      const session = terminal.cashData;
+      const history = Array.isArray(terminal.cashHistory) ? terminal.cashHistory : [];
+      const closedSession = session
+        ? { ...session, closeDate: ahora, closeNotes: 'Cierre por Corte Z ' + nuevoZ.id }
+        : null;
+      const terminalPatch = {
+        ultimoZ: numeroZ,
+        fechaUltimoZ: ahora,
+        acumuladoHistorico: data.acumuladoHistoricoUSD,
+        fondoCajaHoyBS: 0,
+        fondoCajaHoyUSD: 0,
+        isCashOpen: false,
+        cashData: null,
+        cashHistory: closedSession ? [closedSession, ...history] : history,
+      };
 
-    toast({ title: `Corte Z ${nuevoZ.id} ejecutado`, description: `Diferencia Bs. ${Utils.fmtBS(diff.bs)} · USD ${Utils.fmtUSD(diff.usd)}` });
+      // No se muestra el comprobante ni se anuncia éxito hasta que Turso
+      // confirme atómicamente el reporte y el cierre de esta terminal.
+      const result = await Store.createZClosure({
+        terminalId: termId,
+        report: nuevoZ,
+        terminalPatch,
+      });
+      if (!result?.report || !result?.terminal || result.terminal.isCashOpen !== false) {
+        throw new Error('Turso no confirmó que la jornada quedó cerrada. No se imprimirá un Z como definitivo.');
+      }
 
-    // Después de confirmar el arqueo, el Z NO desaparece sin comprobante:
-    // se muestra inmediatamente la vista previa térmica 80mm del Reporte Z,
-    // usando el mismo ReceiptModal que maneja la impresión térmica del POS.
-    // Conservamos el snapshot previo para que el reporte tenga todos los
-    // detalles calculados del período, y añadimos los datos definitivos del Z.
-    setShowZArqueo(false);
-    // Conservamos los datos de la sesión recién cerrada para la vista/impresión
-    // térmica 80 mm del Z. La caja ya queda cerrada; esto es solo el comprobante
-    // visual del cierre que acaba de ejecutarse.
-    const session = tc.cashData;
-    setReportSnapshot({
-      ...data,
-      ...nuevoZ,
-      numeroZ: nuevoZ.numeroZ,
-      empresa: state.empresa,
-      generatedAt: ahora,
-      closedAt: ahora,
-      closedBy: data.cajeroNombre,
-      openedAt: session?.openDate || session?.openedAt || session?.fechaApertura || data.openedAt,
-      openedBy: session?.openedBy || session?.usuarioApertura || data.cajeroNombre,
-      differenceBs: Number(diff.bs) || 0,
-      differenceUSD: Number(diff.usd) || 0,
-    });
-    setShowReportType('REPORT_Z');
+      if (typeof localStorage !== 'undefined') localStorage.removeItem('posven_apertura_done');
+      const reportConfirmado = result.report;
+      toast({
+        title: 'Corte Z ' + reportConfirmado.id + ' confirmado',
+        description: 'Turso guardó el reporte y cerró la jornada de esta terminal.',
+      });
+
+      setShowZArqueo(false);
+      setReportSnapshot({
+        ...data,
+        ...reportConfirmado,
+        id: reportConfirmado.id,
+        numeroZ: reportConfirmado.numeroZ,
+        empresa: state.empresa,
+        generatedAt: ahora,
+        closedAt: reportConfirmado.closedAt || reportConfirmado.fecha || ahora,
+        closedBy: data.cajeroNombre,
+        openedAt: session?.openDate || session?.openedAt || session?.fechaApertura || data.openedAt,
+        openedBy: session?.openedBy || session?.usuarioApertura || data.cajeroNombre,
+        differenceBs: Number(diff.bs) || 0,
+        differenceUSD: Number(diff.usd) || 0,
+      });
+      setShowReportType('REPORT_Z');
+    } catch (error: any) {
+      console.error('[POS Ventas] No se pudo confirmar el cierre Z en Turso:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Corte Z no confirmado',
+        description: error?.message || 'Turso no confirmó el cierre. La jornada permanece abierta.',
+      });
+    } finally {
+      closingZRef.current = false;
+    }
   };
 
   const handleOpenGlobalCreditPayment = (clientName: string, debts: Debt[]) => {
