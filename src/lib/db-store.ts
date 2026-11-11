@@ -2220,6 +2220,32 @@ export const Store = {
     return result;
   },
 
+  /**
+   * Confirma el Corte Z directamente con la transacción atómica de Turso.
+   * No depende de que Store.set detecte cambios entre dos snapshots locales.
+   */
+  async createZClosure(params: { terminalId: string; report: any; terminalPatch: Record<string, any> }): Promise<any> {
+    if (typeof window === 'undefined') throw new Error('El cierre Z debe ejecutarse desde el POS.');
+    const result = await tryTursoOperation('zClosure', params);
+    if (!result?.report || !result?.terminal) {
+      throw new Error('Turso no confirmó el cierre Z. La caja permanece sin cambios.');
+    }
+
+    applyPatch({
+      reportesZ: mergeById((cache.reportesZ || []) as any[], [result.report]),
+      terminales: mergeById((cache.terminales || []) as any[], [result.terminal]),
+      ultimoZ: Number(result.report.numeroZ) || 0,
+      fechaUltimoZ: String(result.report.closedAt || result.report.fecha || ''),
+      acumuladoHistorico: Number(result.report.acumuladoHistoricoUSD ?? cache.acumuladoHistorico) || 0,
+      fondoCajaHoyBS: Number(result.terminal.fondoCajaHoyBS) || 0,
+      fondoCajaHoyUSD: Number(result.terminal.fondoCajaHoyUSD) || 0,
+      isCashOpen: !!result.terminal.isCashOpen,
+      cashData: result.terminal.cashData || null,
+      cashHistory: result.terminal.cashHistory || [],
+    });
+    return result;
+  },
+
   async set(patch: Partial<AppState>) {
     if (typeof window === 'undefined') return;
     const prev = Store.get();
