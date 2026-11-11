@@ -1701,8 +1701,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
               <button disabled={savingAdjustment || !adjustmentProductId || !(Number(String(adjustmentQty).replace(',','.')) > 0) || !adjustmentDetail.trim()} onClick={async () => {
                 const product = (state.productos || []).find(p => p.id === adjustmentProductId);
                 const qty = Number(String(adjustmentQty).replace(',','.'));
-                if (!product || !currentTerminal?.id || !Number.isFinite(qty) || qty <= 0) {
-                  toast({ variant: 'destructive', title: 'Datos incompletos', description: 'Seleccione un producto, una cantidad válida y una caja activa.' });
+                if (!product || !currentTerminal?.id || !Utils.getTerminalCash(currentTerminal).isCashOpen || !Number.isFinite(qty) || qty <= 0) {
+                  toast({ variant: 'destructive', title: 'Caja no disponible', description: 'Debe existir una caja identificada y abierta para registrar el ajuste.' });
                   return;
                 }
                 const signedQty = adjustmentType === 'ajuste_entrada' ? qty : -qty;
