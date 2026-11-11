@@ -22,7 +22,8 @@ type Props = {
   open: boolean;
   report: any;
   onCancel: () => void;
-  onConfirm: (real: Record<string, string>, diff: { bs: number; usd: number }) => void;
+  onConfirm: (real: Record<string, string>, diff: { bs: number; usd: number }) => void | Promise<void>;
+  submitting?: boolean;
 };
 
 const money = (value: number, currency: "BS" | "USD") =>
@@ -47,7 +48,7 @@ const label = (method: string) => {
   return map[method] || method;
 };
 
-export default function CashZArqueoModal({ open, report, onCancel, onConfirm }: Props) {
+export default function CashZArqueoModal({ open, report, onCancel, onConfirm, submitting = false }: Props) {
   const [real, setReal] = useState<Record<string, string>>({});
 
   const rows = useMemo(() => {
@@ -127,7 +128,7 @@ export default function CashZArqueoModal({ open, report, onCancel, onConfirm }: 
               {report.terminalName || "Caja"} · Z-{String(report.numeroZ || 0).padStart(6, "0")}
             </p>
           </div>
-          <button onClick={onCancel} className="p-2 text-white/60 hover:text-white"><X className="w-5 h-5" /></button>
+          <button onClick={onCancel} disabled={submitting} className="p-2 text-white/60 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"><X className="w-5 h-5" /></button>
         </div>
 
         <div className="p-4 overflow-auto">
@@ -199,12 +200,13 @@ export default function CashZArqueoModal({ open, report, onCancel, onConfirm }: 
         </div>
 
         <div className="p-4 bg-surface-soft border-t border-line flex justify-end gap-2">
-          <button onClick={onCancel} className="px-5 h-10 rounded-xl border border-line text-ink font-black uppercase text-[10px]">Cancelar</button>
+          <button onClick={onCancel} disabled={submitting} className="px-5 h-10 rounded-xl border border-line text-ink font-black uppercase text-[10px] disabled:opacity-40 disabled:cursor-not-allowed">Cancelar</button>
           <button
-            onClick={() => onConfirm(real, diff)}
-            className="px-5 h-10 rounded-xl bg-status-danger text-white font-black uppercase text-[10px] shadow-md"
+            onClick={() => { void onConfirm(real, diff); }}
+            disabled={submitting}
+            className="px-5 h-10 rounded-xl bg-status-danger text-white font-black uppercase text-[10px] shadow-md disabled:opacity-60 disabled:cursor-wait"
           >
-            Guardar y ejecutar Z
+            {submitting ? 'Confirmando cierre en Turso…' : 'Guardar y ejecutar Z'}
           </button>
         </div>
       </div>

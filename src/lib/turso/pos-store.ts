@@ -785,28 +785,101 @@ export async function createZClosureTransaction(params: {
     const current = rowFromDb((await tx.execute(txSelect('terminales', params.terminalId))).rows[0]);
     if (!current) throw new Error('La terminal ya no existe en Turso.');
     assertTerminalAccess(params.user, current);
-
-    const expectedNumber = Number(current.ultimoZ || 0) + 1;
-    const requestedNumber = Number(params.report?.numeroZ || expectedNumber);
-    if (requestedNumber !== expectedNumber) {
-      throw new Error('El número Z cambió en otra caja. Actualice y vuelva a generar el corte.');
+    if (current.isCashOpen !== true) {
+      throw new Error('La caja ya está cerrada o no tiene una jornada abierta. Debe realizar una nueva apertura antes de emitir otro Z.');
     }
 
+    // Turso calcula el correlativo real dentro de la transacción.
+    // Nunca se confía en el número provisional del navegador, que puede
+    // estar desactualizado por caché o por otra sesión de la misma caja.
+    let nextNumber = Math.max(0, Number(current.ultimoZ) || 0) + 1;
     const prefix = await terminalUniquePrefix(tx, current, params.terminalId);
-    // El servidor es la autoridad final del correlativo Z. Ignoramos cualquier
-    // ID provisional enviado por el navegador y construimos uno exclusivo de
-    // esta terminal para evitar que dos cajas puedan sobrescribirse.
-    let report = { ...clean(params.report), id: terminalSeries(prefix, 'Z', expectedNumber, 6), terminalId: params.terminalId, numeroZ: expectedNumber };
-    const canonical = await tx.execute(txSelect('reportesZ', report.id));
-    if (canonical.rows.length) throw new Error('El corte Z de esta terminal ya fue registrado.');
+    const rawTerminalId = String(params.terminalId);
+    const exactSuffix = Array.from({ length: rawTerminalId.length }, (_, i) =>
+      rawTerminalId.charCodeAt(i).toString(16).padStart(4, '0')
+    ).join('').toUpperCase();
 
-    const updatedTerminal = { ...current, ...clean(params.terminalPatch), ultimoZ: expectedNumber, id: params.terminalId };
+    let report: any = null;
+    let resolved = false;
+
+    // Si un cierre antiguo dejó un reporte guardado pero no avanzó el
+    // correlativo de la terminal, jamás reutilizamos ese comprobante.
+    // Reservamos el siguiente número libre y conservamos intacto el anterior.
+    for (let numberAttempt = 0; numberAttempt < 1000 && !resolved; numberAttempt++) {
+      const canonicalId = terminalSeries(prefix, 'Z', nextNumber, 6);
+      const canonical = rowFromDb((await tx.execute(txSelect('reportesZ', canonicalId))).rows[0]);
+
+      if (!canonical) {
+        report = {
+          ...clean(params.report),
+          id: canonicalId,
+          terminalId: params.terminalId,
+          numeroZ: nextNumber,
+        };
+        resolved = true;
+        break;
+      }
+
+      if (String(canonical.terminalId || '') === rawTerminalId) {
+        // ID ya utilizado por esta misma terminal: saltar al siguiente Z.
+        nextNumber = Math.max(nextNumber + 1, (Number(canonical.numeroZ) || 0) + 1);
+        continue;
+      }
+
+      // Colisión heredada con otra caja: usar un prefijo exclusivo para esta
+      // terminal, sin sobrescribir ni reutilizar el reporte ajeno.
+      let sameTerminalCollision = false;
+      for (let suffixAttempt = 0; suffixAttempt < 1000; suffixAttempt++) {
+        const uniquePrefix = prefix + '-T' + exactSuffix + (suffixAttempt ? '-R' + suffixAttempt : '');
+        const candidateId = terminalSeries(uniquePrefix, 'Z', nextNumber, 6);
+        const candidate = rowFromDb((await tx.execute(txSelect('reportesZ', candidateId))).rows[0]);
+
+        if (!candidate) {
+          report = {
+            ...clean(params.report),
+            id: candidateId,
+            terminalId: params.terminalId,
+            numeroZ: nextNumber,
+          };
+          resolved = true;
+          break;
+        }
+
+        if (String(candidate.terminalId || '') === rawTerminalId) {
+          nextNumber = Math.max(nextNumber + 1, (Number(candidate.numeroZ) || 0) + 1);
+          sameTerminalCollision = true;
+          break;
+        }
+      }
+
+      if (!resolved && !sameTerminalCollision) {
+        throw new Error('No se pudo reservar un identificador Z exclusivo para esta caja. No se modificó ninguna caja.');
+      }
+    }
+
+    if (!resolved || !report) {
+      throw new Error('No se pudo reservar el siguiente número Z. No se modificó ninguna caja.');
+    }
+
+    // Reporte, correlativo, fondos y cierre de sesión se confirman atómicamente.
+    const closedAt = String(report.closedAt || report.fecha || report.generatedAt || new Date().toISOString());
+    const updatedTerminal = {
+      ...current,
+      ...clean(params.terminalPatch),
+      id: params.terminalId,
+      ultimoZ: Math.max(Number(current.ultimoZ || 0), Number(report.numeroZ) || 0),
+      fechaUltimoZ: closedAt,
+      isCashOpen: false,
+      cashData: null,
+      fondoCajaHoyBS: 0,
+      fondoCajaHoyUSD: 0,
+    };
+
     await tx.execute(rowStatement('reportesZ', report));
     await tx.execute(rowStatement('terminales', updatedTerminal));
     return { report, terminal: updatedTerminal };
   });
 }
-
 
 export async function applyDebtPaymentTransaction(params: {
   operationId?: string; collection: 'cxc' | 'cxp'; debtId: string; amountUSD: number;
