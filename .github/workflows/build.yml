@@ -59,12 +59,12 @@ jobs:
       - name: Build Next.js
         run: npm run build
         env:
-          TURSO_MIGRATION_BUILD: ${{ (github.ref == 'refs/heads/turso-migration' || github.ref == 'refs/heads/optimización-turso') && '1' || '0' }}
+          TURSO_MIGRATION_BUILD: ${{ (github.ref == 'refs/heads/turso-migration' || github.ref == 'refs/heads/optimización-turso' || github.ref == 'refs/heads/fix/corte-z-cierre-jornada') && '1' || '0' }}
 
       # La salida estática solo aplica a ramas que compilan con export.
       # Las ramas Turso usan el runtime de servidor y no deben exigir out/index.html.
       - name: Verify static Next.js output
-        if: github.ref != 'refs/heads/turso-migration' && github.ref != 'refs/heads/optimización-turso'
+        if: github.ref != 'refs/heads/turso-migration' && github.ref != 'refs/heads/optimización-turso' && github.ref != 'refs/heads/fix/corte-z-cierre-jornada'
         shell: pwsh
         run: |
           echo "=== Verificando bundle Next.js estático ==="
@@ -83,7 +83,7 @@ jobs:
           }
 
       - name: Verify Turso server build output
-        if: github.ref == 'refs/heads/turso-migration' || github.ref == 'refs/heads/optimización-turso'
+        if: github.ref == 'refs/heads/turso-migration' || github.ref == 'refs/heads/optimización-turso' || github.ref == 'refs/heads/fix/corte-z-cierre-jornada'
         shell: pwsh
         run: |
           echo "=== Verificando salida Next.js para runtime de servidor ==="
@@ -99,7 +99,7 @@ jobs:
       # un instalador que puede abrir en blanco o no ejecutar las API. Se reactivará
       # cuando el runtime de escritorio + SQLite/outbox esté integrado y probado.
       - name: Build Electron installer
-        if: github.ref != 'refs/heads/turso-migration' && github.ref != 'refs/heads/optimización-turso'
+        if: github.ref != 'refs/heads/turso-migration' && github.ref != 'refs/heads/optimización-turso' && github.ref != 'refs/heads/fix/corte-z-cierre-jornada'
         shell: pwsh
         run: |
           # En ramas de trabajo solo se sube el .exe como artefacto; no se publica release.
@@ -131,7 +131,7 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
       - name: Verify installer exists
-        if: github.ref != 'refs/heads/turso-migration' && github.ref != 'refs/heads/optimización-turso'
+        if: github.ref != 'refs/heads/turso-migration' && github.ref != 'refs/heads/optimización-turso' && github.ref != 'refs/heads/fix/corte-z-cierre-jornada'
         shell: pwsh
         run: |
           echo "=== Verificando instalador generado ==="
@@ -145,7 +145,7 @@ jobs:
           }
 
       - name: Upload installer artifact
-        if: github.ref != 'refs/heads/turso-migration' && github.ref != 'refs/heads/optimización-turso'
+        if: github.ref != 'refs/heads/turso-migration' && github.ref != 'refs/heads/optimización-turso' && github.ref != 'refs/heads/fix/corte-z-cierre-jornada'
         uses: actions/upload-artifact@v4
         continue-on-error: true
         with:
