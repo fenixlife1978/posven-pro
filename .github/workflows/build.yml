@@ -46,6 +46,9 @@ jobs:
           # electron-builder gestionará los binarios al empaquetar.
           ELECTRON_SKIP_BINARY_DOWNLOAD: 1
 
+      - name: TypeScript typecheck
+        run: npx tsc --noEmit
+
       - name: Cache Electron binaries
         uses: actions/cache@v4
         with:
