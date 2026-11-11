@@ -247,7 +247,7 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
               max-width: ${isArqueo ? '100%' : '80mm'};
               box-sizing: border-box;
               margin: 0 auto;
-              padding: 0;
+              padding: ${isArqueo ? '0' : '4mm'};
               font-size: ${isArqueo ? '9px' : '12px'};
               color: #000;
               background: #fff;
@@ -258,7 +258,7 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
             th { background: #111; color: #fff; }
             .text-center { text-align: center; }
             .text-right { text-align: right; }
-            .font-bold, .font-black { font-weight: 700; }
+            .bold, .font-bold, .font-black { font-weight: 700; }
             .text-\\[18px\\] { font-size: 18px; }
             .text-\\[16px\\] { font-size: 16px; }
             .text-\\[15px\\] { font-size: 15px; }
@@ -402,7 +402,7 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
                 max-width: 80mm;
                 box-sizing: border-box;
                 margin: 0 auto;
-                padding: 0;
+                padding: 4mm;
                 font-size: 12px;
                 color: #000;
                 background: #fff;
