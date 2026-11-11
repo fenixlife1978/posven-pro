@@ -242,21 +242,31 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
           <style>
             @page { size: ${isArqueo ? 'A4 landscape' : '80mm auto'}; margin: ${isArqueo ? '10mm' : '0'}; }
             body {
-              font-family: Arial, Helvetica, sans-serif;
-              width: ${isArqueo ? '100%' : '72mm'};
+              font-family: ${isArqueo ? 'Arial, Helvetica, sans-serif' : 'monospace'};
+              width: ${isArqueo ? '100%' : '80mm'};
+              max-width: ${isArqueo ? '100%' : '80mm'};
+              box-sizing: border-box;
               margin: 0 auto;
-              padding: ${isArqueo ? '0' : '4mm'};
+              padding: 0;
               font-size: ${isArqueo ? '9px' : '12px'};
               color: #000;
               background: #fff;
-              line-height: 1.2;
+              line-height: 1.25;
             }
-            table { width: 100%; border-collapse: collapse; margin-bottom: 4px; }
+            table { width: 100%; border-collapse: collapse; margin-bottom: 4px; table-layout: auto; }
             th, td { vertical-align: middle; padding: ${isArqueo ? '4px 5px' : '1px 0'}; }
             th { background: #111; color: #fff; }
             .text-center { text-align: center; }
             .text-right { text-align: right; }
-            .bold { font-weight: bold; }
+            .bold, .font-bold, .font-black { font-weight: 700; }
+            .uppercase { text-transform: uppercase; }
+            .font-mono { font-family: monospace; }
+            .leading-tight { line-height: 1.1; }
+            .space-y-1 > * + * { margin-top: 4px; }
+            .space-y-3 > * + * { margin-top: 10px; }
+            .mt-2 { margin-top: 8px; }
+            .mt-4 { margin-top: 16px; }
+            .pb-1 { padding-bottom: 4px; }
             .separator-dashed { border-top: 1px dashed #000; margin: 4px 0; }
             .separator-solid { border-top: 1px solid #000; margin: 4px 0; }
             .spacer { height: 6px; }
@@ -378,23 +388,34 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
               @page { size: 80mm auto; margin: 0; }
               body {
                 font-family: monospace;
-                width: 72mm;
+                width: 80mm;
+                max-width: 80mm;
+                box-sizing: border-box;
                 margin: 0 auto;
-                padding: 4mm;
+                padding: 0;
                 font-size: 12px;
                 color: #000;
                 background: #fff;
-                line-height: 1.2;
+                line-height: 1.25;
                 letter-spacing: normal;
               }
-              table { width: 100%; border-collapse: collapse; margin-bottom: 2px; }
+              table { width: 100%; border-collapse: collapse; margin-bottom: 2px; table-layout: auto; }
               td { vertical-align: top; padding: 1px 0; }
               .text-center { text-align: center; }
               .text-right { text-align: right; }
-              .bold { font-weight: bold; }
+              .bold, .font-bold, .font-black { font-weight: 700; }
+              .uppercase { text-transform: uppercase; }
+              .font-mono { font-family: monospace; }
+              .leading-tight { line-height: 1.1; }
+              .space-y-1 > * + * { margin-top: 4px; }
+              .space-y-3 > * + * { margin-top: 10px; }
+              .mt-2 { margin-top: 8px; }
+              .mt-4 { margin-top: 16px; }
+              .pb-1 { padding-bottom: 4px; }
               .separator-dashed { border-top: 1px dashed #000; margin: 4px 0; }
               .separator-solid { border-top: 1px solid #000; margin: 4px 0; }
               .spacer { height: 6px; }
+              .overflow-x-auto { overflow: visible !important; }
             </style>
           </head>
           <body>
@@ -429,10 +450,10 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
               ref={printRef}
               className={type === 'REPORT_X'
                 ? "bg-white w-full max-w-none p-4 sm:p-6 shadow-sm text-black select-none"
-                : "bg-white p-6 shadow-sm text-black font-mono select-none"}
+                : "bg-white shadow-sm text-black font-mono select-none"}
               style={type === 'REPORT_X'
                 ? { width: '100%', boxSizing: 'border-box', color: '#000', fontSize: '12px', lineHeight: '1.2' }
-                : { width: '72mm', boxSizing: 'border-box', color: '#000', fontSize: '12px', lineHeight: '1.2' }}
+                : { width: '80mm', boxSizing: 'border-box', padding: '4mm', color: '#000', fontSize: '12px', lineHeight: '1.25' }}
             >
               {/* ENCABEZADO */}
               <div className="text-center pb-1">
