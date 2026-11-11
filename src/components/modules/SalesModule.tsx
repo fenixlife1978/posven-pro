@@ -155,6 +155,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   const [cliente, setCliente] = useState('Consumidor final');
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isClosingZ, setIsClosingZ] = useState(false);
   const closingZRef = useRef(false);
   
   const [pagos, setPagos] = useState<PagoRealizado[]>([]);
@@ -548,6 +549,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     const data = reportSnapshot;
     if (!data) return;
     closingZRef.current = true;
+    setIsClosingZ(true);
 
     try {
       const ahora = Utils.ahora();
@@ -666,6 +668,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       });
     } finally {
       closingZRef.current = false;
+      setIsClosingZ(false);
     }
   };
 
@@ -1591,6 +1594,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         <CashZArqueoModal
           open={showZArqueo}
           report={reportSnapshot}
+          submitting={isClosingZ}
           onCancel={() => {
             setShowZArqueo(false);
             setShowReportType(null);
