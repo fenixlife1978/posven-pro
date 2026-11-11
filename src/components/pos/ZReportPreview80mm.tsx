@@ -156,7 +156,6 @@ export default function ZReportPreview80mm({ data, onClose }: Props) {
       }
     `;
     const fullHtml = '<!doctype html><html><head><meta charset="UTF-8"><title>Reporte Z</title><style>' + css + '</style></head><body>' + html + '</body></html>';
-    const fullHtml = '<!doctype html><html><head><meta charset="UTF-8"><title>Reporte Z</title><style>' + appStyles + '\\n' + css + '</style></head><body>' + html + '</body></html>';
 
     if (window.electronAPI?.printTicket) {
       try {
