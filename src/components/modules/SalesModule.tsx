@@ -653,8 +653,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         generatedAt: ahora,
         closedAt: reportConfirmado.closedAt || reportConfirmado.fecha || ahora,
         closedBy: data.cajeroNombre,
-        openedAt: session?.openDate || session?.openedAt || session?.fechaApertura || data.openedAt,
-        openedBy: session?.openedBy || session?.usuarioApertura || data.cajeroNombre,
+        openedAt: session?.openDate || data.openedAt,
+        openedBy: data.cajeroNombre,
         differenceBs: Number(diff.bs) || 0,
         differenceUSD: Number(diff.usd) || 0,
       });
