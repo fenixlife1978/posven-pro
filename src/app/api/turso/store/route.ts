@@ -75,6 +75,7 @@ export async function GET(request: Request) {
       terminalId: url.searchParams.get('terminalId') || undefined,
       estado: url.searchParams.get('estado') || undefined,
       since: url.searchParams.get('since') || undefined,
+      until: url.searchParams.get('until') || undefined,
     });
     return NextResponse.json({ ok: true, records });
   } catch (error: any) {
