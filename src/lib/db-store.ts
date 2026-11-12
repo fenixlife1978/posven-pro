@@ -88,7 +88,7 @@ async function tryTursoOperation(operation: string, payload: any): Promise<any |
   return body;
 }
 
-async function tryTursoSpecialRead(kind: 'config' | 'catalog', name = ''): Promise<any | null> {
+async function tryTursoSpecialRead(kind: 'config' | 'catalog' | 'catalogs', name = ''): Promise<any | null> {
   if (typeof window === 'undefined') return null;
   const params = new URLSearchParams({ special: kind });
   if (kind === 'catalog') params.set('name', name);
@@ -98,7 +98,9 @@ async function tryTursoSpecialRead(kind: 'config' | 'catalog', name = ''): Promi
   if (response.status === 503) throw new Error('Turso no está configurado o no está disponible. servidor Turso no se utilizará como respaldo.');
   let body: any = null; try { body = await response.json(); } catch {}
   if (!response.ok || body?.ok === false) throw new Error(String(body?.error || 'Turso rechazó la lectura.'));
-  return kind === 'config' ? (body.config || {}) : (Array.isArray(body.lista) ? body.lista : []);
+  if (kind === 'config') return body.config || {};
+  if (kind === 'catalogs') return body.catalogs && typeof body.catalogs === 'object' ? body.catalogs : {};
+  return Array.isArray(body.lista) ? body.lista : [];
 }
 async function tryTursoRead(table: string, options: { limit?: number; terminalId?: string; estado?: string } = {}): Promise<any[] | null> {
   if (typeof window === 'undefined') return null;
@@ -797,13 +799,12 @@ async function loadCatalogs(force = false, version = ''): Promise<void> {
   if (!force && meta.ready && (!version || meta.version === version)) return;
   const entries = Object.entries(CATALOG_FIELDS);
   const patch: any = {};
-  let tursoActive = false;
-  for (const [field, catName] of entries) {
-    const list = await tryTursoSpecialRead('catalog', catName);
-    if (list === null) break;
-    tursoActive = true; patch[field] = list;
-  }
-  if (!tursoActive) {
+  const tursoCatalogs = await tryTursoSpecialRead('catalogs');
+  if (tursoCatalogs !== null) {
+    for (const [field, catName] of entries) {
+      patch[field] = Array.isArray(tursoCatalogs[catName]) ? tursoCatalogs[catName] : [];
+    }
+  } else {
     const results = await Promise.all(entries.map(async ([field, catName]) => {
       try { const snap = await getDoc(doc(db, CATALOGOS_COLLECTION, catName)); return [field, snap.exists() ? (snap.data().lista || []) : []] as const; }
       catch (e) { console.warn('Catálogo ' + catName + ':', e); return null; }
