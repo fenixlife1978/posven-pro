@@ -74,6 +74,7 @@ export async function GET(request: Request) {
       offset: Number(url.searchParams.get('offset') || 0),
       terminalId: url.searchParams.get('terminalId') || undefined,
       estado: url.searchParams.get('estado') || undefined,
+      since: url.searchParams.get('since') || undefined,
     });
     return NextResponse.json({ ok: true, records });
   } catch (error: any) {
