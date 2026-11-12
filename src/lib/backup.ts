@@ -240,3 +240,63 @@ export async function cargarRespaldoDesdeArchivo(
   if (!backup) return;
   await restaurarBackupTurso(backup, onProgress);
 }
+
+
+export interface CatalogsOnlyImportResult {
+  ok: true;
+  action: 'preview' | 'import';
+  plan: Record<'departamentos' | 'categorias', {
+    before: number;
+    imported: number;
+    added: number;
+    duplicates: number;
+    after: number;
+    values: string[];
+  }>;
+  catalogs: { departamentos: string[]; categorias: string[] };
+}
+
+async function postCatalogsOnlyImport(file: File, action: 'preview' | 'import'): Promise<CatalogsOnlyImportResult> {
+  if (!file || file.size > 65536) throw new Error('Seleccione un JSON de catálogos de máximo 64 KB.');
+  const parsed = JSON.parse(await file.text());
+  if (!parsed || parsed.app !== 'posven-pro' || parsed.type !== 'catalogs-only' ||
+      !parsed.data || typeof parsed.data !== 'object' || Array.isArray(parsed.data)) {
+    throw new Error('El archivo no es el JSON exclusivo de catálogos POSVEN.');
+  }
+  const keys = Object.keys(parsed.data).sort();
+  if (keys.length !== 2 || keys[0] !== 'categorias' || keys[1] !== 'departamentos') {
+    throw new Error('El archivo debe contener únicamente departamentos y categorías.');
+  }
+  for (const name of ['departamentos', 'categorias'] as const) {
+    const values = parsed.data[name];
+    if (!Array.isArray(values) || values.length > 100 ||
+        values.some((value: unknown) => typeof value !== 'string' || !value.trim() || value.length > 120)) {
+      throw new Error('El catálogo ' + name + ' contiene datos inválidos.');
+    }
+  }
+
+  const response = await fetch('/api/turso/catalogs-import', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    cache: 'no-store',
+    body: JSON.stringify({
+      action,
+      backup: parsed,
+      ...(action === 'import' ? { confirmation: 'IMPORTAR_SOLO_CATALOGOS' } : {}),
+    }),
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok || body?.ok !== true) {
+    throw new Error(body?.error || 'No se pudo procesar el archivo de catálogos.');
+  }
+  return body as CatalogsOnlyImportResult;
+}
+
+export function previsualizarCatalogosDesdeArchivo(file: File): Promise<CatalogsOnlyImportResult> {
+  return postCatalogsOnlyImport(file, 'preview');
+}
+
+export function importarCatalogosDesdeArchivo(file: File): Promise<CatalogsOnlyImportResult> {
+  return postCatalogsOnlyImport(file, 'import');
+}
