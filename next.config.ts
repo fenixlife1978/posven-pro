@@ -1,10 +1,11 @@
 import type { NextConfig } from 'next';
 
-const isVercel = process.env.VERCEL === '1';
+const isTursoServerBuild = process.env.VERCEL === '1' || process.env.TURSO_MIGRATION_BUILD === '1';
 
 const nextConfig: NextConfig = {
   // Vercel needs a server build for API routes (Turso auth/session). Keep static export for Electron builds.
-  ...(!isVercel ? { output: 'export' as const, distDir: 'out' } : {}),
+  output: isTursoServerBuild ? undefined : 'export',
+  distDir: isTursoServerBuild ? '.next' : 'out',
   trailingSlash: true, // Crucial para que Electron resuelva las rutas de archivos correctamente
   typescript: {
     ignoreBuildErrors: true,
