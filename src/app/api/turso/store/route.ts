@@ -75,7 +75,7 @@ export async function GET(request: Request) {
         departamento: url.searchParams.get('departamento') || '',
         categoria: url.searchParams.get('categoria') || '',
       });
-      return NextResponse.json({ ok: true, ...result });
+      return NextResponse.json({ ...result, ok: true });
     }
     const t = table(url.searchParams.get('table'));
     const cashier = user.rol !== 'administrador';
