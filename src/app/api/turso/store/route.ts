@@ -109,6 +109,7 @@ export async function GET(request: Request) {
       limit: Number(url.searchParams.get('limit') || 500),
       offset: Number(url.searchParams.get('offset') || 0),
       terminalId: cashier && terminalScopedTables.has(t) ? String(assignedTerminal?.id || '') : (url.searchParams.get('terminalId') || undefined),
+      productId: url.searchParams.get('productId') || undefined,
       estado: url.searchParams.get('estado') || undefined,
       since: url.searchParams.get('since') || undefined,
       until: url.searchParams.get('until') || undefined,

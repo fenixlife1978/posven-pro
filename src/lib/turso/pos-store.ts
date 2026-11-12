@@ -148,7 +148,7 @@ export async function getAssignedTerminal(user: { id: string; firebaseUid?: stri
 
 export async function listRecords(
   table: TursoStoreTable,
-  options: { limit?: number; offset?: number; terminalId?: string; estado?: string; since?: string; until?: string } = {},
+  options: { limit?: number; offset?: number; terminalId?: string; estado?: string; since?: string; until?: string; productId?: string } = {},
 ): Promise<any[]> {
   assertTursoReady();
   const limit = Math.min(Math.max(Number(options.limit) || 500, 1), 10000);
@@ -158,6 +158,10 @@ export async function listRecords(
   if (options.terminalId) {
     filters.push("json_extract(data_json,'$.terminalId')=?");
     args.push(String(options.terminalId));
+  }
+  if (options.productId) {
+    filters.push("json_extract(data_json,'$.productoId')=?");
+    args.push(String(options.productId));
   }
   if (options.estado) {
     filters.push("json_extract(data_json,'$.estado')=?");
@@ -174,7 +178,7 @@ export async function listRecords(
   const where = filters.length ? ' WHERE ' + filters.join(' AND ') : '';
   // productos no tiene columna fecha; se ordena por updated_at. Las demás
   // tablas operativas sí conservan fecha para ordenar cronológicamente.
-  const orderBy = table === 'productos' ? 'updated_at DESC' : "COALESCE(fecha,'') DESC";
+  const orderBy = table === 'productos' ? 'updated_at DESC, id ASC' : "COALESCE(fecha,'') DESC, id ASC";
   const result = await tursoExecute({
     sql: `SELECT id,data_json FROM ${tableName(table)}${where} ORDER BY ${orderBy} LIMIT ${limit} OFFSET ${offset}`,
     args,
