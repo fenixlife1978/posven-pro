@@ -117,7 +117,7 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
   const [serverProducts, setServerProducts] = useState<Product[]>([]);
   const [serverTotal, setServerTotal] = useState(0);
   const [serverLowStock, setServerLowStock] = useState(0);
-  const [productsLoading, setProductsLoading] = useState(false);
+  const [productsLoading, setProductsLoading] = useState(true);
   const [productsError, setProductsError] = useState('');
   const productRequestId = useRef(0);
 
@@ -319,9 +319,9 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
                 </TableHeader>
                 <TableBody className="bg-white">
                   {productsLoading ? (
-                    <TableRow><TableCell colSpan={6} className="text-center py-12 text-ink/40 font-black uppercase text-xs">Consultando productos en Turso...</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={7} className="text-center py-12 text-ink/40 font-black uppercase text-xs">Consultando productos en Turso...</TableCell></TableRow>
                   ) : productsError ? (
-                    <TableRow><TableCell colSpan={6} className="text-center py-12 text-status-danger font-black text-xs">{productsError}</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={7} className="text-center py-12 text-status-danger font-black text-xs">{productsError}</TableCell></TableRow>
                   ) : serverTotal === 0 ? (
                     <TableRow><TableCell colSpan={7} className="text-center py-20 text-ink/20 font-black italic uppercase">No se encontraron productos coincidentes</TableCell></TableRow>
                   ) : (
