@@ -951,12 +951,10 @@ function startMasterSync(name: string): () => void {
   // servidor Turso se conserva únicamente como fallback cuando Turso no está configurado.
   void (async () => {
     try {
-      const tursoItems = await tryTursoRead(name, { limit: 2000 });
-      if (tursoItems !== null) {
-        applyPatch({ [name]: tursoItems });
-        loadedAll[name] = true;
-        return;
-      }
+      const tursoItems = await loadCollection(name);
+      applyPatch({ [name]: tursoItems });
+      loadedAll[name] = true;
+      return;
     } catch (e) {
       console.error('[db-store] Error cargando ' + name + ' desde Turso:', e);
       return;
