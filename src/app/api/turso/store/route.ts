@@ -151,7 +151,7 @@ export async function POST(request: Request) {
       }
       case 'factoryReset': {
         const result = await factoryResetTransaction({ user });
-        return NextResponse.json({ ok: true, ...result });
+        return NextResponse.json({ ...result, ok: true });
       }
       case 'productSync': {
         if (user.rol !== 'administrador') throw new Error('Se requiere administrador.');
