@@ -624,7 +624,7 @@ async function loadReportWindow(name: string, terminalId: string, cutoff: string
           : query(collection(db, COLLECTIONS[name]), ...fallbackFilters, orderBy('fecha', 'asc'), limit(1000));
         snap = await getDocs(fallbackQuery);
       }
-      const items = snap.docs.map(d => sanitizeForFirestore(d.data())).filter(Boolean)
+      const items = snap.docs.map((d: any) => sanitizeForFirestore(d.data())).filter(Boolean)
         .filter((item: any) => name !== 'ventas' && name !== 'libroDiario' || String(item.terminalId || '') === terminalId);
       if (items.length) applyPatch({ [name]: mergeById((cache as any)[name], items) });
       if (snap.docs.length < 1000) break;
