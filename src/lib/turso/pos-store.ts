@@ -193,6 +193,26 @@ export async function listRecords(
 }
 
 
+function normalizedProductTextSql(jsonPath: 'departamento' | 'categoria'): string {
+  let expression = `COALESCE(json_extract(data_json,'$.${jsonPath}'),'')`;
+  for (const [from, to] of [
+    ['Á', 'A'], ['É', 'E'], ['Í', 'I'], ['Ó', 'O'], ['Ú', 'U'], ['Ü', 'U'], ['Ñ', 'N'],
+    ['á', 'a'], ['é', 'e'], ['í', 'i'], ['ó', 'o'], ['ú', 'u'], ['ü', 'u'], ['ñ', 'n'],
+  ]) expression = `replace(${expression},'${from}','${to}')`;
+  expression = `replace(replace(replace(${expression},'  ',' '),'  ',' '),'  ',' ')`;
+  return `lower(trim(${expression}))`;
+}
+
+function normalizeProductFilter(value: unknown): string {
+  return String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\\u0300-\\u036f]/g, '')
+    .replace(/[\\u200B-\\u200D\\uFEFF]/g, '')
+    .replace(/\\s+/g, ' ')
+    .trim()
+    .toLocaleLowerCase('es');
+}
+
 /**
  * Consulta paginada para la vista administrativa de PRODUCTOS.
  * Los filtros y el límite se aplican en Turso; no hidrata el catálogo operativo
@@ -216,14 +236,14 @@ export async function listProductsPage(options: {
     filters.push("(instr(lower(COALESCE(json_extract(data_json,'$.nombre'),'')),?)>0 OR instr(lower(COALESCE(json_extract(data_json,'$.codigo'),'')),?)>0)");
     args.push(search, search);
   }
-  const departamento = String(options.departamento || '').trim().toLocaleLowerCase('es');
+  const departamento = normalizeProductFilter(options.departamento);
   if (departamento) {
-    filters.push("lower(trim(COALESCE(json_extract(data_json,'$.departamento'),'')))=lower(trim(?))");
+    filters.push(normalizedProductTextSql('departamento') + '=?');
     args.push(departamento);
   }
-  const categoria = String(options.categoria || '').trim().toLocaleLowerCase('es');
+  const categoria = normalizeProductFilter(options.categoria);
   if (categoria) {
-    filters.push("lower(trim(COALESCE(json_extract(data_json,'$.categoria'),'')))=lower(trim(?))");
+    filters.push(normalizedProductTextSql('categoria') + '=?');
     args.push(categoria);
   }
   const where = filters.join(' AND ');
