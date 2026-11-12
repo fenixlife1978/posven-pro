@@ -61,6 +61,23 @@ import { ProductFormModal } from '@/components/inventory/ProductFormModal';
 import { Pagination } from '@/components/ui/pagination';
 import { DateRangeFilter, DateRange } from '@/components/ui/date-range-filter';
 
+
+// Catálogo predeterminado solicitado para POSVEN: 10 departamentos y 41
+// categorías (la lista original se describió como 37, pero sus grupos suman 41).
+const DEFAULT_DEPARTMENT_CATEGORIES: Record<string, string[]> = {
+  'Frutas y Verduras': ['Verduras y Hortalizas', 'Frutas Frescas', 'Hierbas y Aromáticas', 'Tubérculos y Raíces'],
+  'Carnicería y Charcutería': ['Carne de Res', 'Aves', 'Cerdo', 'Embutidos y Charcutería', 'Pescados y Mariscos'],
+  'Lácteos y Refrigerados': ['Leche Líquida y Derivados', 'Quesos', 'Yogures y Postres', 'Mantequillas y Margarinas', 'Huevos'],
+  'Víveres y Abarrotes': ['Granos y Legumbres', 'Arroz y Cereales', 'Pastas', 'Harinas y Mezclas', 'Aceites y Grasas', 'Salsas y Envasados'],
+  'Condimentos y Especias': ['Condimentos Secos', 'Caldos y Sazonadores', 'Azúcar y Endulzantes', 'Repostería y Hornear'],
+  'Panadería y Galletas': ['Pan Fresco y Empacado', 'Galletas Saladas', 'Galletas Dulces y Ponqués'],
+  'Bebidas': ['Bebidas No Alcohólicas', 'Café y Té', 'Cervezas y Maltas', 'Licores y Vinos'],
+  'Snacks y Golosinas': ['Snacks Salados', 'Chocolates y Confitería'],
+  'Cuidado del Hogar y Limpieza': ['Detergentes y Lavado', 'Limpieza de Superficies', 'Lavaplatos y Cocina', 'Utensilios y Desechables'],
+  'Cuidado Personal e Higiene': ['Higiene Corporal', 'Higiene Oral', 'Papel e Higiene Femenina', 'Cuidado del Bebé'],
+};
+const DEFAULT_DEPARTMENTS = Object.keys(DEFAULT_DEPARTMENT_CATEGORIES);
+
 export function InventoryModule({ state, updateState }: { state: AppState, updateState: (s: Partial<AppState>) => void }) {
   const [activeTab, setActiveTab] = useState('productos');
   const [search, setSearch] = useState('');
@@ -90,7 +107,7 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
   const cleanDepartamentos = useMemo(() => {
     const unique = new Map<string, string>();
     const productDepartments = (state.productos || []).map(product => product.departamento);
-    [...(state.departamentos || []), ...productDepartments].forEach(value => {
+    [...DEFAULT_DEPARTMENTS, ...(state.departamentos || []), ...productDepartments].forEach(value => {
       const label = String(value ?? '').trim();
       const key = normalizeCatalogFilter(label);
       if (key && !unique.has(key)) unique.set(key, label);
@@ -100,13 +117,20 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
 
   const cleanCategorias = useMemo(() => {
     const unique = new Map<string, string>();
-    (state.categorias || []).forEach(value => {
+    const selectedDepartment = normalizeCatalogFilter(deptFilter);
+    const defaultEntries = Object.entries(DEFAULT_DEPARTMENT_CATEGORIES)
+      .filter(([department]) => !selectedDepartment || normalizeCatalogFilter(department) === selectedDepartment)
+      .flatMap(([, categories]) => categories);
+    const productCategories = (state.productos || [])
+      .filter(product => !selectedDepartment || normalizeCatalogFilter(product.departamento) === selectedDepartment)
+      .map(product => product.categoria);
+    [...defaultEntries, ...(state.categorias || []), ...productCategories].forEach(value => {
       const label = String(value ?? '').trim();
       const key = normalizeCatalogFilter(label);
       if (key && !unique.has(key)) unique.set(key, label);
     });
     return Array.from(unique.values());
-  }, [state.categorias]);
+  }, [state.categorias, state.productos, deptFilter]);
 
   const prods = (state.productos || []).filter(p => 
     p.activo && 
@@ -167,7 +191,7 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
                 <select 
                   className="form-select h-11 bg-white border-line text-xs font-black uppercase"
                   value={deptFilter} 
-                  onChange={e => setDeptFilter(e.target.value)}
+                  onChange={e => { setDeptFilter(e.target.value); setCatFilter(''); }}
                 >
                   <option value="">DEPARTAMENTO</option>
                   {cleanDepartamentos.map((d, index) => (
@@ -409,7 +433,7 @@ function ReporteGeneral({ state, onAction }: { state: AppState, onAction: (type:
   const cleanDepartamentos = useMemo(() => {
     const unique = new Map<string, string>();
     const productDepartments = (state.productos || []).map(product => product.departamento);
-    [...(state.departamentos || []), ...productDepartments].forEach(value => {
+    [...DEFAULT_DEPARTMENTS, ...(state.departamentos || []), ...productDepartments].forEach(value => {
       const label = String(value ?? '').trim();
       const key = normalizeCatalogFilter(label);
       if (key && !unique.has(key)) unique.set(key, label);
