@@ -49,6 +49,18 @@ import {
 import { ProductFormModal } from '@/components/inventory/ProductFormModal';
 import { DateRangeFilter, DateRange } from '@/components/ui/date-range-filter';
 
+// Comparación tolerante para los filtros del inventario.
+// No modifica ni reescribe los datos persistidos en Turso.
+const normalizeCatalogFilter = (value: unknown): string =>
+  String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\\u0300-\\u036f]/g, '')
+    .replace(/[\\u200B-\\u200D\\uFEFF]/g, '')
+    .replace(/\\s+/g, ' ')
+    .trim()
+    .toLocaleUpperCase('es');
+
+
 export function InventoryModule({ state, updateState }: { state: AppState, updateState: (s: Partial<AppState>) => void }) {
   const [activeTab, setActiveTab] = useState('productos');
   const [search, setSearch] = useState('');
@@ -80,24 +92,30 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
 
   // ✅ CORRECCIÓN: Limpiar departamentos y categorías para evitar duplicados
   const cleanDepartamentos = useMemo(() => {
-    const depts = (state.departamentos || [])
-      .map(d => d?.trim())
-      .filter(d => d && d.length > 0);
-    return Array.from(new Set(depts));
+    const unique = new Map<string, string>();
+    (state.departamentos || []).forEach(value => {
+      const label = String(value ?? '').trim();
+      const key = normalizeCatalogFilter(label);
+      if (key && !unique.has(key)) unique.set(key, label);
+    });
+    return Array.from(unique.values());
   }, [state.departamentos]);
 
   const cleanCategorias = useMemo(() => {
-    const cats = (state.categorias || [])
-      .map(c => c?.trim())
-      .filter(c => c && c.length > 0);
-    return Array.from(new Set(cats));
+    const unique = new Map<string, string>();
+    (state.categorias || []).forEach(value => {
+      const label = String(value ?? '').trim();
+      const key = normalizeCatalogFilter(label);
+      if (key && !unique.has(key)) unique.set(key, label);
+    });
+    return Array.from(unique.values());
   }, [state.categorias]);
 
   const prods = (state.productos || []).filter(p => 
     p.activo && 
     ((p.nombre || '').toLowerCase().includes(search.toLowerCase()) || (p.codigo || '').toLowerCase().includes(search.toLowerCase())) &&
-    (catFilter ? p.categoria === catFilter : true) &&
-    (deptFilter ? p.departamento === deptFilter : true)
+    (catFilter ? normalizeCatalogFilter(p.categoria) === normalizeCatalogFilter(catFilter) : true) &&
+    (deptFilter ? normalizeCatalogFilter(p.departamento) === normalizeCatalogFilter(deptFilter) : true)
   );
 
   const lowStockCount = prods.filter(p => p.stock <= (p.stockMinimo || 0)).length;
@@ -430,8 +448,9 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
 function ReporteGeneral({ state, onAction }: { state: AppState, onAction: (type: string, id: string) => void }) {
   const [deptFilter, setDeptFilter] = useState('');
 
-  const filteredProducts = (state.productos || []).filter(p => 
-    p.activo && (deptFilter ? p.departamento === deptFilter : true)
+  const filteredProducts = (state.productos || []).filter(p =>
+    p.activo &&
+    (deptFilter ? normalizeCatalogFilter(p.departamento) === normalizeCatalogFilter(deptFilter) : true)
   );
 
   const totalCosto = Utils.round(filteredProducts.reduce((acc, p) => acc + (p.costoUSD * p.stock), 0));
@@ -450,8 +469,11 @@ function ReporteGeneral({ state, onAction }: { state: AppState, onAction: (type:
               onChange={e => setDeptFilter(e.target.value)}
             >
               <option value="">TODOS LOS DEPARTAMENTOS</option>
-              {Array.from(new Set((state.departamentos || []).map(d => String(d || '').trim()).filter(Boolean))).map(d => (
-                <option key={`dept-report-${d}`} value={d}>{d.toUpperCase()}</option>
+              {Array.from(new Map((state.departamentos || [])
+                .map(d => String(d ?? '').trim())
+                .filter(Boolean)
+                .map(d => [normalizeCatalogFilter(d), d] as const)).values()).map(d => (
+                <option key={`dept-report-${normalizeCatalogFilter(d)}`} value={d}>{d.toUpperCase()}</option>
               ))}
             </select>
           </div>
