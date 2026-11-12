@@ -7,27 +7,41 @@ import { enqueueOfflineOperation, registerOfflineProcessor } from './offline-que
 // Cualquier intento de alcanzar esos caminos falla explícitamente.
 type DocumentData = any;
 type QueryDocumentSnapshot<T = any> = any;
+type SnapshotLike = {
+  exists: () => boolean;
+  data: () => any;
+  val: () => any;
+  docs: any[];
+  empty: boolean;
+  docChanges: () => any[];
+};
+type TransactionLike = {
+  get: (reference: any) => Promise<SnapshotLike>;
+  set: (reference: any, data: any, options?: any) => void;
+  update: (reference: any, data: any) => void;
+  delete: (reference: any) => void;
+};
 const db: any = null;
 const rtdb: any = null;
 const servidorTursoRetirado = (..._args: any[]): never => {
   throw new Error('servidor Turso fue retirado del flujo operativo. Turso es la única fuente de datos.');
 };
-const collection: any = servidorTursoRetirado;
-const doc: any = servidorTursoRetirado;
-const getDoc: any = servidorTursoRetirado;
-const getDocs: any = servidorTursoRetirado;
-const onSnapshot: any = servidorTursoRetirado;
-const orderBy: any = servidorTursoRetirado;
-const limit: any = servidorTursoRetirado;
-const query: any = servidorTursoRetirado;
-const setDoc: any = servidorTursoRetirado;
-const where: any = servidorTursoRetirado;
-const runTransaction: any = servidorTursoRetirado;
-const startAfter: any = servidorTursoRetirado;
-const onValue: any = servidorTursoRetirado;
-const ref: any = servidorTursoRetirado;
-const update: any = servidorTursoRetirado;
-const rtdbGet: any = servidorTursoRetirado;
+function collection(..._args: any[]): any { return servidorTursoRetirado(); }
+function doc(..._args: any[]): any { return servidorTursoRetirado(); }
+async function getDoc(..._args: any[]): Promise<SnapshotLike> { return servidorTursoRetirado(); }
+async function getDocs(..._args: any[]): Promise<SnapshotLike> { return servidorTursoRetirado(); }
+function onSnapshot(_target: any, _next: (snapshot: SnapshotLike) => void, _error?: (error: any) => void): () => void { return servidorTursoRetirado(); }
+function orderBy(..._args: any[]): any { return servidorTursoRetirado(); }
+function limit(..._args: any[]): any { return servidorTursoRetirado(); }
+function query(..._args: any[]): any { return servidorTursoRetirado(); }
+async function setDoc(..._args: any[]): Promise<void> { return servidorTursoRetirado(); }
+function where(..._args: any[]): any { return servidorTursoRetirado(); }
+async function runTransaction<T>(_database: any, callback: (transaction: TransactionLike) => Promise<T>): Promise<T> { return servidorTursoRetirado(); }
+function startAfter(..._args: any[]): any { return servidorTursoRetirado(); }
+function onValue(_reference: any, _next: (snapshot: SnapshotLike) => void, _error?: (error: any) => void): () => void { return servidorTursoRetirado(); }
+function ref(..._args: any[]): any { return servidorTursoRetirado(); }
+async function update(..._args: any[]): Promise<void> { return servidorTursoRetirado(); }
+async function rtdbGet(..._args: any[]): Promise<SnapshotLike> { return servidorTursoRetirado(); }
 
 const STORAGE_KEY = 'posven_pro_session_data_cache';
 const PAGE_SIZE = 50;
@@ -546,7 +560,7 @@ async function loadAll(name: string): Promise<void> {
 // compartan la misma carga (evita que la segunda retorne "ya cargado"
 // cuando en realidad la primera aún no terminó — race condition que
 // causaba Reportes X/Z en $0 tras reinicio).
-const loadingPromises: Record<string, Promise<void>> = {};
+const loadingPromises: Record<string, Promise<void> | undefined> = {};
 async function ensureLoaded(name: string): Promise<void> {
   if (loadedAll[name]) return;
   if (loadingPromises[name]) return loadingPromises[name];
@@ -1022,7 +1036,7 @@ function init() {
     if (usingTurso || !rtdb) return;
     teardownFns.push(onValue(ref(rtdb, RTDB_PRODUCTS_PATH), (snap) => {
       const val = snap.val() || {};
-      const items = Object.values(val).filter(Boolean);
+      const items: any[] = Object.values(val as Record<string, any>).filter(Boolean);
       applyPatch({ productos: items });
     }, (err) => { if (err?.code !== 'permission-denied') console.warn("RTDB productos:", err); }));
   })();
@@ -1284,7 +1298,7 @@ export const Store = {
     payment: any;
     journal?: any;
     terminalId?: string;
-  }): Promise<{ appliedUSD: number; debts: any[]; receiptId?: string }> {
+  }): Promise<{ appliedUSD: number; debts: any[]; receiptId?: string; queuedOffline?: boolean }> {
     if (typeof window === 'undefined') return { appliedUSD: 0, debts: [] };
     const { operationId, provider, amountUSD, payment, journal, terminalId } = params;
     if (!(amountUSD > 0)) return { appliedUSD: 0, debts: [] };
@@ -1300,7 +1314,7 @@ export const Store = {
 
     const effectiveTerminalId = String(terminalId || '').trim();
     const q = query(collection(db, 'cxp'), where('proveedor', '==', provider));
-    let result = { appliedUSD: 0, debts: [] as any[] };
+    let result = { appliedUSD: 0, debts: [] as any[], receiptId: '' as string };
     const opId = String(operationId || payment?.id || (provider + '|' + amountUSD + '|' + payment?.fecha + '|' + payment?.metodo));
     await runTransaction(db, async tx => {
       const operationRef = await claimOperation(tx, 'PAGO-CXP-GLOBAL', opId);
@@ -1399,6 +1413,7 @@ export const Store = {
   }): Promise<{ appliedUSD: number; appliedBS: number; debts: any[]; receiptId?: string }> {
     if (typeof window === 'undefined') return { appliedUSD: 0, appliedBS: 0, debts: [] };
     const { operationId, customerName, customerCedula, amountUSD, amountBS, payment, journal, terminalId } = params;
+    const effectiveTerminalId = String(terminalId || '').trim();
     if (!(amountUSD > 0)) return { appliedUSD: 0, appliedBS: 0, debts: [] };
     const tursoResult = await tryTursoOperation('globalCustomerPayment', params);
     if (tursoResult) {
