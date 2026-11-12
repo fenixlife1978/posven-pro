@@ -11,6 +11,7 @@ import {
   getAppConfig,
   patchAppConfig,
   getCatalog,
+  getAllCatalogs,
   patchCatalog,
   factoryResetTransaction,
   createSaleTransaction,
@@ -63,6 +64,7 @@ export async function GET(request: Request) {
     const special = url.searchParams.get('special');
     if (special === 'config') return NextResponse.json({ ok: true, config: await getAppConfig() });
     if (special === 'catalog') return NextResponse.json({ ok: true, lista: await getCatalog(String(url.searchParams.get('name') || '')) });
+    if (special === 'catalogs') return NextResponse.json({ ok: true, catalogs: await getAllCatalogs() });
     const t = table(url.searchParams.get('table'));
     if (special === 'count') return NextResponse.json({ ok: true, total: await countRecords(t) });
     const id = url.searchParams.get('id');
