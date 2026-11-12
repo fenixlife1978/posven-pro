@@ -61,6 +61,51 @@ import { ProductFormModal } from '@/components/inventory/ProductFormModal';
 import { Pagination } from '@/components/ui/pagination';
 import { DateRangeFilter, DateRange } from '@/components/ui/date-range-filter';
 
+
+// Catálogos originales recuperados del respaldo POSVEN del 12-11-2026.
+const DEFAULT_DEPARTMENTS = [
+  'REFRESCO',
+  'RON',
+  'VODKA',
+  'BASE DE WHISKY',
+  'WHISKY ESCOSES',
+  'CIGARRO',
+  'BRANDY',
+  'BASE DE BRANDY',
+  'WHISKY NACIONAL',
+  'COCUY',
+  'ANIS',
+  'VINO',
+  'AGUARDIENTE DE CAÑA',
+  'TEQUILA',
+  'BASE DE RON',
+  'CHUCHERIA',
+  'GINEBRA',
+  'WHISKY IRLANDES',
+  'SANGRIA',
+  'POLAR',
+  'LICOR DULCE',
+  'invergon ',
+];
+const DEFAULT_CATEGORIES = [
+  'Otros',
+  'MUNCHY ',
+  'LICOR SECO ',
+  'LICOR DULCE',
+  'NACIONAL ',
+  'IMPORTADO',
+  'ESPAÑOL',
+  'PORTUGUES',
+  'CHILENO ',
+  'ARGENTINO ',
+  'LICOR DE COCO ',
+  'CERVEZA',
+  'REFRESCO',
+  'SANGRIA',
+  'CHUCHERIA ',
+  'NACIONAL',
+];
+
 export function InventoryModule({ state, updateState }: { state: AppState, updateState: (s: Partial<AppState>) => void }) {
   const [activeTab, setActiveTab] = useState('productos');
   const [search, setSearch] = useState('');
@@ -90,7 +135,7 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
   const cleanDepartamentos = useMemo(() => {
     const unique = new Map<string, string>();
     const productDepartments = (state.productos || []).map(product => product.departamento);
-    [...(state.departamentos || []), ...productDepartments].forEach(value => {
+    [...DEFAULT_DEPARTMENTS, ...(state.departamentos || []), ...productDepartments].forEach(value => {
       const label = String(value ?? '').trim();
       const key = normalizeCatalogFilter(label);
       if (key && !unique.has(key)) unique.set(key, label);
@@ -100,13 +145,14 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
 
   const cleanCategorias = useMemo(() => {
     const unique = new Map<string, string>();
-    (state.categorias || []).forEach(value => {
+    const productCategories = (state.productos || []).map(product => product.categoria);
+    [...DEFAULT_CATEGORIES, ...(state.categorias || []), ...productCategories].forEach(value => {
       const label = String(value ?? '').trim();
       const key = normalizeCatalogFilter(label);
       if (key && !unique.has(key)) unique.set(key, label);
     });
     return Array.from(unique.values());
-  }, [state.categorias]);
+  }, [state.categorias, state.productos]);
 
   const prods = (state.productos || []).filter(p => 
     p.activo && 
@@ -167,7 +213,7 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
                 <select 
                   className="form-select h-11 bg-white border-line text-xs font-black uppercase"
                   value={deptFilter} 
-                  onChange={e => setDeptFilter(e.target.value)}
+                  onChange={e => { setDeptFilter(e.target.value); setCatFilter(''); }}
                 >
                   <option value="">DEPARTAMENTO</option>
                   {cleanDepartamentos.map((d, index) => (
@@ -409,7 +455,7 @@ function ReporteGeneral({ state, onAction }: { state: AppState, onAction: (type:
   const cleanDepartamentos = useMemo(() => {
     const unique = new Map<string, string>();
     const productDepartments = (state.productos || []).map(product => product.departamento);
-    [...(state.departamentos || []), ...productDepartments].forEach(value => {
+    [...DEFAULT_DEPARTMENTS, ...(state.departamentos || []), ...productDepartments].forEach(value => {
       const label = String(value ?? '').trim();
       const key = normalizeCatalogFilter(label);
       if (key && !unique.has(key)) unique.set(key, label);
