@@ -105,9 +105,15 @@ export default function LicoreriaPOS() {
     setMounted(true);
     installPosvenTabSessionFetch();
 
-    const captureError = (e: ErrorEvent) => {
+    const captureError = (e: Event) => {
+      const detail = e as ErrorEvent & PromiseRejectionEvent;
+      const reason: any = detail.error || detail.reason;
       try {
-        localStorage.setItem('posven_last_error', JSON.stringify({ message: e?.message || 'error', stack: e?.error?.stack || '', time: new Date().toISOString() }));
+        localStorage.setItem('posven_last_error', JSON.stringify({
+          message: detail.message || reason?.message || String(reason || 'error'),
+          stack: reason?.stack || '',
+          time: new Date().toISOString()
+        }));
       } catch {}
     };
     const preventCriticalDoubleClick = (event: MouseEvent) => {
