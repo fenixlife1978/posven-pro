@@ -135,7 +135,7 @@ export async function getRecord(table: TursoStoreTable, id: string): Promise<any
 
 export async function listRecords(
   table: TursoStoreTable,
-  options: { limit?: number; offset?: number; terminalId?: string; estado?: string; since?: string } = {},
+  options: { limit?: number; offset?: number; terminalId?: string; estado?: string; since?: string; until?: string } = {},
 ): Promise<any[]> {
   assertTursoReady();
   const limit = Math.min(Math.max(Number(options.limit) || 500, 1), 10000);
@@ -153,6 +153,10 @@ export async function listRecords(
   if (options.since && table !== 'productos') {
     filters.push("fecha>?");
     args.push(String(options.since));
+  }
+  if (options.until && table !== 'productos') {
+    filters.push("fecha<?");
+    args.push(String(options.until));
   }
   const where = filters.length ? ' WHERE ' + filters.join(' AND ') : '';
   // productos no tiene columna fecha; se ordena por updated_at. Las demás
