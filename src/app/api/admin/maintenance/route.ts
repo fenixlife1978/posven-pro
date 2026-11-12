@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
 import { getRequestSessionId, getSessionUser } from '@/lib/auth/turso-auth';
-import { isTursoConfigured, tursoInteractiveTransaction } from '@/lib/turso/client';
+import { isTursoConfigured, tursoExecute, tursoInteractiveTransaction } from '@/lib/turso/client';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -60,11 +60,11 @@ export async function GET(request: Request) {
     const action = url.searchParams.get('action') || 'inventory-summary';
 
     if (action === 'inventory-summary') {
-      const result = await tursoInteractiveTransaction(async tx => {
-        const products = await tx.execute({
-          sql: 'SELECT id,data_json,updated_at FROM productos ORDER BY id',
-          args: [],
-        });
+      const products = await tursoExecute({
+        sql: 'SELECT id,data_json,updated_at FROM productos ORDER BY id',
+        args: [],
+      });
+      const result = (() => {
         const rows = products.rows.map((row: any) => {
           let data: any = {};
           try { data = JSON.parse(String(row.data_json || '{}')); } catch {}
@@ -90,7 +90,7 @@ export async function GET(request: Request) {
             activo: p.activo ?? null, stock: p.stock ?? null, costoUSD: p.costoUSD ?? null,
           })),
         };
-      });
+      })();
       return NextResponse.json({ ok: true, action, ...result }, { headers: { 'Cache-Control': 'no-store' } });
     }
 
@@ -99,16 +99,13 @@ export async function GET(request: Request) {
     if (!table) throw new Error('Tabla no autorizada para lectura.');
     const limit = Math.min(500, Math.max(1, Number(url.searchParams.get('limit') || 100)));
     const offset = Math.max(0, Number(url.searchParams.get('offset') || 0));
-    const result = await tursoInteractiveTransaction(async tx => {
-      const rows = await tx.execute({
-        sql: `SELECT id,data_json,fecha,updated_at FROM ${table} ORDER BY COALESCE(fecha,updated_at,'') DESC,id DESC LIMIT ? OFFSET ?`,
+    const orderBy = tableKey === 'productos' ? 'updated_at DESC,id DESC' : "COALESCE(fecha,updated_at,'') DESC,id DESC";
+    const rows = await tursoExecute({
+        sql: `SELECT id,data_json${tableKey === 'productos' ? '' : ',fecha'},updated_at FROM ${table} ORDER BY ${orderBy} LIMIT ? OFFSET ?`,
         args: [limit, offset],
       });
-      return rows.rows.map((row: any) => {
-        let data: any = {};
-        try { data = JSON.parse(String(row.data_json || '{}')); } catch {}
-        return { ...data, id: String(row.id), ...(row.fecha ? { _fecha: row.fecha } : {}), ...(row.updated_at ? { _updatedAt: row.updated_at } : {}) };
-      });
+    const result = rows.rows.map((row: any) => {
+      return { ...data, id: String(row.id), ...(row.fecha ? { _fecha: row.fecha } : {}), ...(row.updated_at ? { _updatedAt: row.updated_at } : {}) };
     });
     return NextResponse.json({ ok: true, table: tableKey, limit, offset, count: result.length, records: result }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
