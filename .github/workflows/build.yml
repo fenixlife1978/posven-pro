@@ -23,6 +23,8 @@ concurrency:
 
 jobs:
   build:
+    # La rama de integración usa Integration validation; no debe publicar instaladores ni releases.
+    if: ${{ !startsWith(github.ref, 'refs/heads/integration/') }}
     name: Build Windows EXE
     runs-on: windows-latest
 
@@ -91,11 +93,11 @@ jobs:
           # Solo publica en GitHub Releases cuando es push a main/master o tag.
           # Para PRs y feature branches, solo sube el .exe como artefacto.
           $publish = "never"
-          if ("${{ github.event_name }}" -ne "pull_request" -and "${{ github.ref }}" -notlike "refs/heads/fix/*" -and "${{ github.ref }}" -notlike "refs/heads/feature/*") {
+          if ("${{ github.event_name }}" -ne "pull_request" -and ("${{ github.ref }}" -eq "refs/heads/main" -or "${{ github.ref }}" -eq "refs/heads/master" -or "${{ github.ref }}" -like "refs/tags/v*")) {
             $publish = "always"
             Write-Host "ℹ️  main/master/tag: publicación completa con release"
           } else {
-            Write-Host "ℹ️  PR/feature branch: solo artefacto, no release"
+            Write-Host "ℹ️  Rama de trabajo/PR: solo artefacto, no release"
           }
 
           # GitHub/Electron puede responder HTTP 5xx temporalmente al descargar
