@@ -31,9 +31,6 @@ import {
 } from 'lucide-react';
 import { Store, initialState, Utils } from '@/lib/db-store';
 import { AppState, Terminal, Debt } from '@/lib/types';
-import { auth, db } from '@/lib/firebase';
-import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { doc, onSnapshot, getDoc, collection, query, getDocs, where, setDoc } from 'firebase/firestore';
 import DashboardModule from '@/components/modules/DashboardModule';
 import { InventoryModule } from '@/components/modules/InventoryModule';
 import SalesModule from '@/components/modules/SalesModule';
@@ -46,6 +43,41 @@ import UsersModule from '@/components/modules/UsersModule';
 import GlobalControlModule from '@/components/modules/GlobalControlModule';
 import SuppliersModule from '@/components/modules/SuppliersModule';
 import AccountingModule from '@/components/modules/AccountingModule';
+
+const POSVEN_TAB_SESSION_KEY = 'posven_session_id';
+
+function installPosvenTabSessionFetch() {
+  if (typeof window === 'undefined' || (window as any).__posvenTabFetchInstalled) return;
+  (window as any).__posvenTabFetchInstalled = true;
+  const nativeFetch = window.fetch.bind(window);
+  window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+    // Solo intervenimos en llamadas a la API de PosVEN. El wrapper de sesión
+    // no debe alterar otros fetch del navegador ni asumir que el primer
+    // argumento es un Request con headers disponibles.
+    const rawUrl =
+      typeof input === 'string'
+        ? input
+        : input instanceof URL
+          ? input.toString()
+          : (input && typeof input === 'object' && 'url' in input ? String((input as Request).url) : '');
+    let sameOrigin = false;
+    try {
+      sameOrigin = rawUrl.startsWith('/') || new URL(rawUrl, window.location.href).origin === window.location.origin;
+    } catch {}
+    if (!sameOrigin || !rawUrl.startsWith('/api/')) return nativeFetch(input, init);
+
+    const sourceHeaders =
+      init?.headers ??
+      (input && typeof input === 'object' && 'headers' in input ? (input as Request).headers : undefined);
+    const headers = new Headers(sourceHeaders);
+    headers.set('x-posven-session-mode', 'tab');
+    const sessionId = sessionStorage.getItem(POSVEN_TAB_SESSION_KEY);
+    if (sessionId) headers.set('x-posven-session', sessionId);
+    else headers.delete('x-posven-session');
+
+    return nativeFetch(input, { ...init, headers });
+  };
+}
 
 export default function LicoreriaPOS() {
   const router = useRouter();
@@ -67,20 +99,17 @@ export default function LicoreriaPOS() {
   const [showCxPAlert, setShowCxPAlert] = useState(false);
   
   const moduleInitialized = useRef(false);
-  const profileUnsubRef = useRef<(() => void) | null>(null);
   const criticalClickRef = useRef<{ target: Element | null; time: number }>({ target: null, time: 0 });
 
   useEffect(() => {
     setMounted(true);
+    installPosvenTabSessionFetch();
 
     const captureError = (e: ErrorEvent) => {
       try {
         localStorage.setItem('posven_last_error', JSON.stringify({ message: e?.message || 'error', stack: e?.error?.stack || '', time: new Date().toISOString() }));
-      } catch (err) {}
+      } catch {}
     };
-    // Barrera global contra doble click en acciones que confirman cambios.
-    // Se ejecuta en captura, antes de los handlers React, para cubrir todos los módulos
-    // incluso cuando el segundo click ocurre antes del siguiente render.
     const preventCriticalDoubleClick = (event: MouseEvent) => {
       const target = event.target as HTMLElement | null;
       const button = target?.closest('button');
@@ -97,68 +126,108 @@ export default function LicoreriaPOS() {
       criticalClickRef.current = { target: button, time: now };
     };
     document.addEventListener('click', preventCriticalDoubleClick, true);
-
     window.addEventListener('error', captureError);
-    window.addEventListener('unhandledrejection', (e) => {
-      try {
-        localStorage.setItem('posven_last_error', JSON.stringify({ message: 'Promise: ' + (e?.reason?.message || e?.reason || ''), stack: e?.reason?.stack || '', time: new Date().toISOString() }));
-      } catch (err) {}
-    });
 
-    const timerSafety = setTimeout(() => {
-      if (loading) {
-        console.warn("Safety trigger: Acceso forzado tras tiempo de espera.");
-        setLoading(false);
-      }
-    }, 8000);
+    const timerSafety = setTimeout(() => setLoading(false), 8000);
 
-    let sessionCancelled = false;
-    const unsubscribeAuth = () => { sessionCancelled = true; };
-    const loadTursoSession = async () => {
+    const initializeFromTurso = async () => {
       try {
-        const response = await fetch('/api/auth/session', {
-          cache: 'no-store',
-          credentials: 'same-origin',
-          signal: AbortSignal.timeout(12000),
-        });
-        if (sessionCancelled) return;
-        if (!response.ok) {
-          router.replace('/login');
+        const response = await fetch('/api/auth/session', { cache: 'no-store', signal: AbortSignal.timeout(12000) });
+        if (response.ok) {
+          const data = await response.json();
+          const currentUser = data.user;
+          const legacyUid = currentUser?.id;
+          const profile = {
+            ...currentUser,
+            uid: legacyUid,
+            accesoBloqueado: false,
+          };
+          setUserRole(currentUser.rol);
+          setUserProfile(profile);
+          setUser({ uid: legacyUid, email: currentUser.email, ...currentUser });
+          setState(prev => ({ ...prev, user: profile, isAuthenticated: true } as AppState));
+
+          if (currentUser.rol === 'cajero') {
+            // Turso es la única fuente de verdad de autenticación, usuarios y terminales.
+            const terminalsResponse = await fetch('/api/turso/store?table=terminales&limit=500', {
+              credentials: 'include',
+              cache: 'no-store',
+              signal: AbortSignal.timeout(12000),
+            });
+            if (!terminalsResponse.ok) {
+              throw new Error('No se pudieron consultar los terminales en Turso.');
+            }
+            const terminalsBody = await terminalsResponse.json();
+            const terminals = Array.isArray(terminalsBody?.records) ? terminalsBody.records as Terminal[] : [];
+            const myTerm = terminals.find((t: Terminal) =>
+              String(t?.usuarioId || '') === String(currentUser.id)
+            );
+            if (!myTerm) {
+              await fetch('/api/auth/logout', { method: 'POST', signal: AbortSignal.timeout(12000) });
+              alert("ACCESO RESTRINGIDO: Su usuario no tiene un terminal asignado.");
+              router.push('/login');
+              return;
+            }
+
+            // La identidad operativa de un cajero queda fijada al terminal
+            // resuelto en Turso. No dependemos de un uid heredado/Firebase
+            // para volver a encontrar la caja después de un Z y una nueva
+            // apertura.
+            const profileWithTerminal = { ...profile, terminalId: String(myTerm.id) };
+            setUserProfile(profileWithTerminal);
+            setUser({ uid: legacyUid, email: currentUser.email, ...currentUser, terminalId: String(myTerm.id) });
+            setState(prev => ({ ...prev, user: profileWithTerminal, isAuthenticated: true } as AppState));
+
+            if (myTerm.id) Store.startTerminalSync(myTerm.id, false, [myTerm]);
+
+            // Regla de continuidad de caja:
+            // - Sin corte Z => isCashOpen=true: NO se crea una nueva apertura.
+            //   Se recupera la jornada existente y se conservan sus ventas,
+            //   movimientos y demás registros persistidos en Turso.
+            // - Con corte Z / caja cerrada => isCashOpen=false: se exige una
+            //   nueva apertura antes de entrar al POS.
+            //
+            // El estado de caja vive en el documento de la terminal, no en
+            // sessionStorage/localStorage; por eso un reinicio/corte de luz
+            // no debe convertir una jornada abierta en una jornada nueva.
+            const jornadaAbierta = myTerm.isCashOpen === true;
+            setShowApertura(!jornadaAbierta);
+            setActiveTab('ventas');
+          } else {
+            Store.startTerminalSync(undefined, true);
+            setShowApertura(false);
+
+            // Un administrador nunca entra al POS/caja, aunque esta pestaña
+            // conserve de una sesión anterior el módulo "ventas".
+            // La caja es exclusiva del rol cajero.
+            const savedModule = sessionStorage.getItem('posven_active_module') || 'dashboard';
+            const safeModule = savedModule === 'ventas' ? 'dashboard' : savedModule;
+            if (safeModule !== savedModule) {
+              sessionStorage.setItem('posven_active_module', safeModule);
+            }
+            setActiveTab(safeModule);
+          }
           setLoading(false);
           return;
         }
-        const payload = await response.json();
-        if (!payload?.authenticated || !payload?.user) {
-          router.replace('/login');
-          setLoading(false);
+        if (response.status !== 503) {
+          router.push('/login');
           return;
         }
-        const data = payload.user;
-        setUser({ uid: data.id || data.userId || data.username });
-        setUserRole(data.rol || null);
-        setUserProfile(data);
-        const savedModule = sessionStorage.getItem('posven_active_module');
-        const target = data.rol === 'cajero' ? 'ventas' : (savedModule || 'dashboard');
-        setActiveTab(target);
-        setShowApertura(false);
-        moduleInitialized.current = true;
-        setLoading(false);
-        // Turso session is authoritative for access. Store data migration is separate;
-        // do not let Firebase Auth redirect a valid Turso session back to login.
-      } catch (error) {
-        if (!sessionCancelled) {
-          console.error('[POSVEN] No se pudo recuperar la sesión Turso:', error);
-          setLoading(false);
-          router.replace('/login');
-        }
-      }
+      } catch {}
+
+
     };
-    void loadTursoSession();
+
+    initializeFromTurso();
 
     const unsubscribeStore = Store.subscribe((dbUpdate: Partial<AppState>) => {
-      setState(prev => ({ ...prev, ...dbUpdate }) as AppState);
+      // La sesión autenticada por Turso es la autoridad para usuario/terminal.
+      // El cache local del Store puede contener un usuario histórico y no debe
+      // reemplazar el terminalId resuelto al iniciar sesión.
+      const { user: _cachedUser, isAuthenticated: _cachedAuth, ...dbPatch } = dbUpdate as any;
+      setState(prev => ({ ...prev, ...dbPatch }) as AppState);
     });
-
     const timerClock = setInterval(() => setCurrentTime(new Date()), 1000);
     const runtimeHeartbeat = setInterval(() => {
       try {
@@ -178,33 +247,25 @@ export default function LicoreriaPOS() {
       window.addEventListener('online', hOnline);
       window.addEventListener('offline', hOffline);
       return () => {
-        unsubscribeAuth();
-        if (profileUnsubRef.current) profileUnsubRef.current();
-        profileUnsubRef.current = null;
         unsubscribeStore();
         clearInterval(timerClock);
         clearInterval(runtimeHeartbeat);
         window.removeEventListener('beforeunload', clearRuntimeMarker);
         clearTimeout(timerSafety);
         document.removeEventListener('click', preventCriticalDoubleClick, true);
-    window.removeEventListener('error', captureError);
-        window.removeEventListener('unhandledrejection', captureError);
+        window.removeEventListener('error', captureError);
         window.removeEventListener('online', hOnline);
         window.removeEventListener('offline', hOffline);
       };
     }
-    
+
     return () => {
-      unsubscribeAuth();
-      if (profileUnsubRef.current) profileUnsubRef.current();
-      profileUnsubRef.current = null;
       unsubscribeStore();
       clearInterval(timerClock);
       clearInterval(runtimeHeartbeat);
       window.removeEventListener('beforeunload', clearRuntimeMarker);
       clearTimeout(timerSafety);
       window.removeEventListener('error', captureError);
-      window.removeEventListener('unhandledrejection', captureError);
     };
   }, [router]);
 
@@ -213,7 +274,7 @@ export default function LicoreriaPOS() {
   // evitando repetir el snapshot completo de clientes/proveedores al navegar.
   useEffect(() => {
     const clientesModules = new Set(['dashboard', 'ventas', 'cxc']);
-    const proveedoresModules = new Set(['compras', 'proveedores', 'cxp']);
+    const proveedoresModules = new Set(['dashboard', 'compras', 'proveedores', 'cxp']);
     const wanted: string[] = [];
     if (clientesModules.has(activeModule)) wanted.push('clientes');
     if (proveedoresModules.has(activeModule)) wanted.push('proveedores');
@@ -269,11 +330,10 @@ export default function LicoreriaPOS() {
     if (confirm('¿Cerrar sesión del sistema?')) {
       setLoading(true);
       try {
-        if (typeof sessionStorage !== 'undefined') sessionStorage.clear();
-        if (auth) await signOut(auth);
+        if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem(POSVEN_TAB_SESSION_KEY);
+        await fetch('/api/auth/logout', { method: 'POST', signal: AbortSignal.timeout(12000) }).catch(() => {});
         router.push('/login');
       } catch (e) {
-        if (auth) await signOut(auth);
         router.push('/login');
       }
     }
@@ -288,7 +348,11 @@ export default function LicoreriaPOS() {
   };
 
   const handleModuleChange = (moduleId: string) => {
+    // Regla estricta: el POS/caja solo existe para el rol cajero.
+    // Un administrador no puede llegar a "ventas" ni siquiera por navegación
+    // residual de sessionStorage o una invocación accidental del handler.
     if (userRole === 'cajero' && moduleId !== 'ventas') return;
+    if (userRole === 'administrador' && moduleId === 'ventas') return;
     setActiveTab(moduleId);
     setIsSidebarOpen(false);
   };
@@ -335,11 +399,20 @@ export default function LicoreriaPOS() {
     switch (activeModule) {
       case 'dashboard': return <DashboardModule state={state} />;
       case 'inventario': return <InventoryModule state={state} updateState={updateState} />;
-      case 'ventas': return <SalesModule state={state} updateState={updateState} />;
+      case 'ventas':
+        // Defensa final de UI: aunque el estado de navegación quedara
+        // contaminado por una sesión previa, un administrador jamás renderiza
+        // el módulo POS/caja.
+        if (userRole !== 'cajero') return <DashboardModule state={state} />;
+        return <SalesModule state={state} updateState={updateState} />;
       case 'compras': return <PurchaseModule state={state} updateState={updateState} />;
       case 'proveedores': return <SuppliersModule state={state} updateState={updateState} />;
-      case 'contabilidad': return <AccountingModule state={state} updateState={updateState} />;
-      case 'cxc': return <CxCModule state={state} updateState={updateState} terminalId={state.terminales.find(t => t.usuarioId === user?.uid)?.id} />;
+      case 'contabilidad': {
+        const ids = [user?.id, user?.uid, user?.firebaseUid].filter(Boolean).map(String);
+        const terminal = state.terminales.find(t => ids.includes(String(t.usuarioId || '')));
+        return <AccountingModule state={state} updateState={updateState} terminalId={terminal?.id} terminalName={terminal?.nombre} />;
+      }
+      case 'cxc': return <CxCModule state={state} updateState={updateState} />;
       case 'cxp': return <CxPModule state={state} updateState={updateState} terminalId={state.terminales.find(t => t.usuarioId === user?.uid)?.id} />;
       case 'reportes': return <ReportsModule state={state} />;
       case 'config': return <ConfigModule state={state} updateState={updateState} />;
@@ -370,7 +443,14 @@ export default function LicoreriaPOS() {
       weekday: 'short', day: '2-digit', month: 'short', year: 'numeric', timeZone: 'America/Caracas'
     }) : '...';
 
-    const terminalActual = state.terminales.find(t => t.usuarioId === user?.uid);
+    const appUser: any = (state as any).user || user || null;
+    const userIds = [
+      appUser?.id,
+      appUser?.uid,
+    ].filter(Boolean).map(String);
+    const terminalActual = appUser?.terminalId
+      ? state.terminales.find(t => String(t.id) === String(appUser.terminalId))
+      : state.terminales.find(t => userIds.includes(String(t.usuarioId || '')));
     const nextRecibo = terminalActual?.proximoRecibo || state.proximoRecibo;
     const prefijoRecibo = Utils.prefijoCaja(terminalActual, state.terminales);
 
@@ -433,8 +513,27 @@ export default function LicoreriaPOS() {
                   // ✅ GUARDAR LA APERTURA EN EL TERMINAL (caja) DE ESTE OPERADOR,
                   // no en un estado global. Cada caja abre/cierra su propia jornada.
                   const currentState = Store.get();
-                  const termId = (currentState.terminales || []).find(t => t.usuarioId === user?.uid)?.id;
-                  const terminalActual = (currentState.terminales || []).find(t => t.id === termId);
+                  // La identidad de caja viene de la sesión Turso resuelta al iniciar
+                  // sesión. Store puede conservar un usuario cacheado antiguo, por lo
+                  // que nunca debemos usarlo por encima de la identidad React actual.
+                  const currentUser: any = user || (state as any).user || (currentState as any).user || null;
+                  const sessionTerminalId = String(
+                    currentUser?.terminalId ||
+                    (state as any).user?.terminalId ||
+                    (currentState as any).user?.terminalId ||
+                    ''
+                  ).trim();
+                  const currentIds = [currentUser?.id, currentUser?.uid]
+                    .filter(Boolean).map(String);
+                  const termId = sessionTerminalId || (
+                    (currentState.terminales || [])
+                      .find(t => currentIds.includes(String(t.usuarioId || '')))?.id || ''
+                  );
+                  if (!termId) {
+                    alert('No se pudo identificar la caja asignada en Turso. No se puede abrir una caja global.');
+                    return;
+                  }
+                  const terminalActual = (currentState.terminales || []).find(t => String(t.id) === String(termId));
                   const session: any = {
                     terminalId: termId,
                     terminalName: terminalActual?.nombre || 'S/T',
@@ -457,11 +556,25 @@ export default function LicoreriaPOS() {
                   const updatedTerminals = (currentState.terminales || []).map(t =>
                     t.id === termId ? { ...t, fondoCajaHoyBS: bsValue, fondoCajaHoyUSD: usdValue, isCashOpen: true, cashData: session } : t
                   );
+                  // Mantener la identidad operativa de Turso al salir de la apertura.
+                  // currentState puede contener un usuario cacheado antiguo sin terminalId;
+                  // si lo copiamos completo a React, el POS pierde la caja inmediatamente
+                  // después de confirmar la apertura y vuelve a mostrar "caja no disponible".
+                  const authoritativeUser = {
+                    ...(currentUser || {}),
+                    terminalId: termId
+                  };
                   const newState: AppState = {
                     ...currentState,
+                    user: authoritativeUser,
                     terminales: updatedTerminals
                   };
-                  Store.set({ terminales: updatedTerminals });
+                  Store.set({
+                    user: authoritativeUser,
+                    terminales: updatedTerminals
+                  });
+                  setUser(authoritativeUser);
+                  setUserProfile(authoritativeUser);
                   setState(newState);
                   
                   localStorage.removeItem('posven_apertura_done');
