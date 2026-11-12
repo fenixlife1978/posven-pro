@@ -18,14 +18,51 @@ interface ProductFormModalProps {
   onUpdateLists: (l: any) => void;
 }
 
+const DEFAULT_PRODUCT_DEPARTMENTS = [
+  'REFRESCO', 'RON', 'VODKA', 'BASE DE WHISKY', 'WHISKY ESCOSES', 'CIGARRO',
+  'BRANDY', 'BASE DE BRANDY', 'WHISKY NACIONAL', 'COCUY', 'ANIS', 'VINO',
+  'AGUARDIENTE DE CAÑA', 'TEQUILA', 'BASE DE RON', 'CHUCHERIA', 'GINEBRA',
+  'WHISKY IRLANDES', 'SANGRIA', 'POLAR', 'LICOR DULCE', 'invergon '
+];
+const DEFAULT_PRODUCT_CATEGORIES = [
+  'Otros', 'MUNCHY ', 'LICOR SECO ', 'LICOR DULCE', 'NACIONAL ', 'IMPORTADO',
+  'ESPAÑOL', 'PORTUGUES', 'CHILENO ', 'ARGENTINO ', 'LICOR DE COCO ',
+  'CERVEZA', 'REFRESCO', 'SANGRIA', 'CHUCHERIA ', 'NACIONAL'
+];
+const uniqueCatalogOptions = (values: unknown[]) => {
+  const seen = new Set<string>();
+  return values.map(value => String(value ?? '').trim()).filter(value => {
+    const key = value.normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').replace(/[\\u200B-\\u200D\\uFEFF]/g, '').replace(/\\s+/g, ' ').trim().toLocaleUpperCase('es');
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+};
+
 export function ProductFormModal({ isOpen = true, producto, state, onClose, onSave, onUpdateLists }: ProductFormModalProps) {
   const [activeTab, setActiveTab] = useState<'general' | 'precios' | 'kit'>('general');
+  // El formulario conserva las listas persistidas en Turso y agrega opciones
+  // históricas del respaldo + valores usados por productos ya registrados.
+  const departmentOptions = useMemo(() => uniqueCatalogOptions([
+    ...DEFAULT_PRODUCT_DEPARTMENTS,
+    ...(state.departamentos || []),
+    ...(state.productos || []).map(p => p.departamento),
+  ]), [state.departamentos, state.productos]);
+  const categoryOptions = useMemo(() => uniqueCatalogOptions([
+    ...DEFAULT_PRODUCT_CATEGORIES,
+    ...(state.categorias || []),
+    ...(state.productos || []).map(p => p.categoria),
+  ]), [state.categorias, state.productos]);
+  const brandOptions = useMemo(() => uniqueCatalogOptions([
+    ...(state.marcas || []),
+    ...(state.productos || []).map(p => p.marca),
+  ]), [state.marcas, state.productos]);
   const [datos, setDatos] = useState<any>({
     codigo: producto?.codigo || '',
     nombre: producto?.nombre || '',
-    categoria: producto?.categoria || state.categorias[0] || '',
-    departamento: producto?.departamento || state.departamentos[0] || '',
-    marca: producto?.marca || state.marcas[0] || '',
+    categoria: producto?.categoria || categoryOptions[0] || '',
+    departamento: producto?.departamento || departmentOptions[0] || '',
+    marca: producto?.marca || brandOptions[0] || '',
     costoUSD: producto?.costoUSD?.toString() ?? '0',
     margen: producto?.margen?.toString() ?? '0',
     precioUSD: producto?.precioUSD?.toString() ?? '0',
@@ -169,7 +206,7 @@ export function ProductFormModal({ isOpen = true, producto, state, onClose, onSa
                        </div>
                      </div>
                      <select className="form-select h-10 text-xs font-bold bg-white" value={datos.departamento} onChange={e => setDatos({...datos, departamento: e.target.value})}>
-                       {(state.departamentos || []).map((d: string) => <option key={d} value={d}>{d}</option>)}
+                       {departmentOptions.map((d: string) => <option key={d} value={d}>{d}</option>)}
                      </select>
                    </div>
 
@@ -182,7 +219,7 @@ export function ProductFormModal({ isOpen = true, producto, state, onClose, onSa
                        </div>
                      </div>
                      <select className="form-select h-10 text-xs font-bold bg-white" value={datos.categoria} onChange={e => setDatos({...datos, categoria: e.target.value})}>
-                       {(state.categorias || []).map((cat: string) => <option key={cat} value={cat}>{cat}</option>)}
+                       {categoryOptions.map((cat: string) => <option key={cat} value={cat}>{cat}</option>)}
                      </select>
                    </div>
 
