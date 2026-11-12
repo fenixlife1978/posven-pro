@@ -151,7 +151,7 @@ export async function listRecords(
     args.push(String(options.estado));
   }
   if (options.since && table !== 'productos') {
-    filters.push("COALESCE(fecha,'')>?");
+    filters.push("fecha>?");
     args.push(String(options.since));
   }
   const where = filters.length ? ' WHERE ' + filters.join(' AND ') : '';
