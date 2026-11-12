@@ -803,7 +803,8 @@ export async function applyInventoryMovementsTransaction(params: {
       cashierTerminal = rowFromDb((await tx.execute(txSelect('terminales', terminalId))).rows[0]);
       if (!cashierTerminal) throw new Error('La caja/terminal asignada ya no existe.');
       assertTerminalAccess(params.user, cashierTerminal);
-      if (cashierTerminal.isCashOpen !== true) throw new Error('Debe tener la caja abierta para registrar ajustes.');
+      const cashIsOpen = cashierTerminal.isCashOpen === true || cashierTerminal.isCashOpen === 1 || String(cashierTerminal.isCashOpen).toLowerCase() === 'true';
+      if (!cashIsOpen) throw new Error('Debe tener la caja abierta para registrar ajustes.');
       const allowedTypes = new Set(['consumo', 'colaboracion', 'ajuste_entrada', 'ajuste_salida']);
       for (const movement of params.movements) {
         const movementTerminalId = String(movement?.terminalId || '');
