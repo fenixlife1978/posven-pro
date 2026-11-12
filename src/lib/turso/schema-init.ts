@@ -32,6 +32,10 @@ const SCHEMA_STATEMENTS = [
   `CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id)`,
   `CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at)`,
   `CREATE TABLE IF NOT EXISTS migration_runs (id TEXT PRIMARY KEY, source TEXT NOT NULL, backup_version INTEGER, started_at TEXT NOT NULL, finished_at TEXT, status TEXT NOT NULL, counts_json TEXT NOT NULL DEFAULT '{}', notes TEXT)`,
+  `CREATE INDEX IF NOT EXISTS idx_productos_updated_at ON productos(updated_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_ventas_fecha ON ventas(fecha)`,
+  `CREATE INDEX IF NOT EXISTS idx_devoluciones_fecha ON devoluciones(fecha)`,
+  `CREATE INDEX IF NOT EXISTS idx_libro_diario_fecha ON libro_diario(fecha)`,
 ];
 
 let initialized = false;
