@@ -169,6 +169,56 @@ export async function listRecords(
   return result.rows.map(rowFromDb).filter(Boolean);
 }
 
+
+/**
+ * Consulta paginada para la vista administrativa de PRODUCTOS.
+ * Los filtros y el límite se aplican en Turso; no hidrata el catálogo operativo
+ * que utiliza el POS para validar ventas y existencias.
+ */
+export async function listProductsPage(options: {
+  page?: number;
+  pageSize?: number;
+  search?: string;
+  departamento?: string;
+  categoria?: string;
+} = {}): Promise<{ records: any[]; total: number; page: number; pageSize: number }> {
+  assertTursoReady();
+  const pageSize = Math.min(100, Math.max(1, Math.floor(Number(options.pageSize) || 10)));
+  const page = Math.max(1, Math.floor(Number(options.page) || 1));
+  const offset = (page - 1) * pageSize;
+  const filters = ["COALESCE(json_extract(data_json,'$.activo'),1)=1"];
+  const args: any[] = [];
+  const search = String(options.search || '').trim().toLocaleLowerCase('es');
+  if (search) {
+    filters.push("(instr(lower(COALESCE(json_extract(data_json,'$.nombre'),'')),?)>0 OR instr(lower(COALESCE(json_extract(data_json,'$.codigo'),'')),?)>0)");
+    args.push(search, search);
+  }
+  const departamento = String(options.departamento || '').trim().toLocaleLowerCase('es');
+  if (departamento) {
+    filters.push("lower(trim(COALESCE(json_extract(data_json,'$.departamento'),'')))=lower(trim(?))");
+    args.push(departamento);
+  }
+  const categoria = String(options.categoria || '').trim().toLocaleLowerCase('es');
+  if (categoria) {
+    filters.push("lower(trim(COALESCE(json_extract(data_json,'$.categoria'),'')))=lower(trim(?))");
+    args.push(categoria);
+  }
+  const where = filters.join(' AND ');
+  const result = await tursoExecute({
+    sql: `SELECT id,data_json,COUNT(*) OVER() AS total
+      FROM productos WHERE ${where}
+      ORDER BY updated_at DESC,id ASC LIMIT ${pageSize} OFFSET ${offset}`,
+    args,
+  });
+  const total = Number(result.rows[0]?.total ?? 0);
+  return {
+    records: result.rows.map(rowFromDb).filter(Boolean),
+    total,
+    page,
+    pageSize,
+  };
+}
+
 export async function countRecords(table: TursoStoreTable): Promise<number> {
   assertTursoReady();
   const result = await tursoExecute({

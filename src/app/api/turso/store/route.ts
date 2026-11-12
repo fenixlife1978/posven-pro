@@ -4,6 +4,7 @@ import {
   assertTursoReady,
   getRecord,
   listRecords,
+  listProductsPage,
   countRecords,
   upsertRecords,
   syncProductChanges,
@@ -65,6 +66,16 @@ export async function GET(request: Request) {
     if (special === 'config') return NextResponse.json({ ok: true, config: await getAppConfig() });
     if (special === 'catalog') return NextResponse.json({ ok: true, lista: await getCatalog(String(url.searchParams.get('name') || '')) });
     if (special === 'catalogs') return NextResponse.json({ ok: true, catalogs: await getAllCatalogs() });
+    if (special === 'products-page') {
+      const result = await listProductsPage({
+        page: Number(url.searchParams.get('page') || 1),
+        pageSize: Number(url.searchParams.get('pageSize') || 10),
+        search: url.searchParams.get('search') || '',
+        departamento: url.searchParams.get('departamento') || '',
+        categoria: url.searchParams.get('categoria') || '',
+      });
+      return NextResponse.json({ ok: true, ...result });
+    }
     const t = table(url.searchParams.get('table'));
     if (special === 'count') return NextResponse.json({ ok: true, total: await countRecords(t) });
     const id = url.searchParams.get('id');
