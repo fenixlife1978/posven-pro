@@ -23,8 +23,13 @@ export function getRequestSessionId(request: Request) {
   if (mode === 'tab') return tabSessionId || null;
 
   const cookieHeader = request.headers.get('cookie') || '';
-  const match = cookieHeader.match(/(?:^|;\\s*)posven_session=([^;]+)/);
-  return match ? decodeURIComponent(match[1]) : null;
+  const sessionCookie = cookieHeader
+    .split(';')
+    .map(part => part.trim())
+    .find(part => part.startsWith('posven_session='));
+  if (!sessionCookie) return null;
+  const value = sessionCookie.slice('posven_session='.length);
+  try { return decodeURIComponent(value); } catch { return value; }
 }
 
 function nowIso() {
