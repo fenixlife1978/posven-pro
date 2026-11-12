@@ -127,15 +127,11 @@ export async function POST(request: Request) {
     if (body?.operation !== 'reclassify-products') {
       throw new Error('Operación de mantenimiento no autorizada.');
     }
-    const fromDepartment = String(body.fromDepartment ?? '').trim();
     const toDepartment = String(body.toDepartment ?? '').trim();
     const category = String(body.category ?? '').trim();
     const dryRun = body.dryRun !== false;
-    if (!fromDepartment || !toDepartment || !category) {
-      throw new Error('Departamento de origen, destino y categoría son obligatorios.');
-    }
-    if (normalize(fromDepartment) === normalize(toDepartment)) {
-      throw new Error('El departamento de origen y destino son iguales.');
+    if (normalize(toDepartment) !== 'INVERGON' || normalize(category) !== 'MUNCHY') {
+      throw new Error('Esta operación solo permite asignar INVERGON a la categoría MUNCHY.');
     }
     if (!dryRun && body.confirm !== 'CONFIRMAR_RECLASIFICACION_POSVEN') {
       throw new Error('Falta confirmación explícita CONFIRMAR_RECLASIFICACION_POSVEN.');
@@ -147,15 +143,20 @@ export async function POST(request: Request) {
       for (const row of selected.rows) {
         let data: any = {};
         try { data = JSON.parse(String(row.data_json || '{}')); } catch {}
-        if (normalize(data.departamento) === normalize(fromDepartment) &&
-            normalize(data.categoria) === normalize(category)) {
+        if (normalize(data.categoria) === 'MUNCHY' &&
+            normalize(data.departamento) !== normalize(toDepartment)) {
           matches.push({ id: String(row.id), data });
         }
       }
 
+      // El snapshot validado por el usuario identificó exactamente 11 registros.
+      // Se vuelve a validar dentro de la transacción para evitar escrituras sobre datos cambiados.
+      if (matches.length !== 11) {
+        throw new Error(`Conflicto: se esperaban 11 productos MUNCHY fuera de INVERGON y ahora se encontraron ${matches.length}. No se modificó ningún registro.`);
+      }
+
       if (!dryRun) {
         for (const match of matches) {
-          // Conserva intacto el JSON original salvo el departamento solicitado.
           const updated = { ...match.data, departamento: toDepartment };
           await tx.execute({
             sql: 'UPDATE productos SET data_json=?,updated_at=CURRENT_TIMESTAMP WHERE id=?',
@@ -168,16 +169,15 @@ export async function POST(request: Request) {
           sql: 'INSERT INTO auditoria_sistema(id,tipo,terminal_id,usuario_id,fecha,data_json,created_at) VALUES(?,?,?,?,?,?,CURRENT_TIMESTAMP)',
           args: [auditId, 'RECLASIFICACION_DEPARTAMENTO', null, user.id, new Date().toISOString(), JSON.stringify({
             operacion: 'reclassify-products',
-            fromDepartment, toDepartment, category,
+            toDepartment, category,
             affectedCount: matches.length,
-            affectedProducts: matches.map(p => ({ id: p.id, codigo: p.data.codigo ?? null, nombre: p.data.nombre ?? null })),
+            affectedProducts: matches.map(p => ({ id: p.id, codigo: p.data.codigo ?? null, nombre: p.data.nombre ?? null, departamentoAnterior: p.data.departamento ?? null })),
           })],
           wantRows: false,
         });
       }
       return {
         dryRun,
-        fromDepartment,
         toDepartment,
         category,
         affectedCount: matches.length,
