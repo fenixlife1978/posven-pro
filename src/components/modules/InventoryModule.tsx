@@ -1,6 +1,17 @@
 'use client';
 
 import React, { useState, useMemo, useEffect } from 'react';
+
+// Normaliza etiquetas de catálogo para comparar sin diferencias de acentos,
+// mayúsculas, espacios duplicados o caracteres invisibles.
+const normalizeCatalogFilter = (value: unknown): string =>
+  String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\\u0300-\\u036f]/g, '')
+    .replace(/[\\u200B-\\u200D\\uFEFF]/g, '')
+    .replace(/\\s+/g, ' ')
+    .trim()
+    .toLocaleUpperCase('es');
 import { AppState, Product, Movimiento, KitItem, Supplier, Return } from '@/lib/types';
 import { Utils, Store } from '@/lib/db-store';
 import { 
@@ -77,24 +88,30 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
 
   // ✅ CORRECCIÓN: Limpiar departamentos y categorías para evitar duplicados
   const cleanDepartamentos = useMemo(() => {
-    const depts = (state.departamentos || [])
-      .map(d => d?.trim())
-      .filter(d => d && d.length > 0);
-    return Array.from(new Set(depts));
+    const unique = new Map<string, string>();
+    (state.departamentos || []).forEach(value => {
+      const label = String(value ?? '').trim();
+      const key = normalizeCatalogFilter(label);
+      if (key && !unique.has(key)) unique.set(key, label);
+    });
+    return Array.from(unique.values());
   }, [state.departamentos]);
 
   const cleanCategorias = useMemo(() => {
-    const cats = (state.categorias || [])
-      .map(c => c?.trim())
-      .filter(c => c && c.length > 0);
-    return Array.from(new Set(cats));
+    const unique = new Map<string, string>();
+    (state.categorias || []).forEach(value => {
+      const label = String(value ?? '').trim();
+      const key = normalizeCatalogFilter(label);
+      if (key && !unique.has(key)) unique.set(key, label);
+    });
+    return Array.from(unique.values());
   }, [state.categorias]);
 
   const prods = (state.productos || []).filter(p => 
     p.activo && 
     ((p.nombre || '').toLowerCase().includes(search.toLowerCase()) || (p.codigo || '').toLowerCase().includes(search.toLowerCase())) &&
-    (catFilter ? p.categoria === catFilter : true) &&
-    (deptFilter ? p.departamento === deptFilter : true)
+    (catFilter ? normalizeCatalogFilter(p.categoria) === normalizeCatalogFilter(catFilter) : true) &&
+    (deptFilter ? normalizeCatalogFilter(p.departamento) === normalizeCatalogFilter(deptFilter) : true)
   );
 
   const lowStockCount = prods.filter(p => p.stock <= (p.stockMinimo || 0)).length;
@@ -387,7 +404,7 @@ function ReporteGeneral({ state, onAction }: { state: AppState, onAction: (type:
   const [deptFilter, setDeptFilter] = useState('');
 
   const filteredProducts = (state.productos || []).filter(p => 
-    p.activo && (deptFilter ? p.departamento === deptFilter : true)
+    p.activo && (deptFilter ? normalizeCatalogFilter(p.departamento) === normalizeCatalogFilter(deptFilter) : true)
   );
 
   const totalCosto = Utils.round(filteredProducts.reduce((acc, p) => acc + (p.costoUSD * p.stock), 0));
@@ -406,7 +423,7 @@ function ReporteGeneral({ state, onAction }: { state: AppState, onAction: (type:
               onChange={e => setDeptFilter(e.target.value)}
             >
               <option value="">TODOS LOS DEPARTAMENTOS</option>
-              {(state.departamentos || []).map(d => (
+              {cleanDepartamentos.map(d => (
                 <option key={`dept-report-${d}-${Math.random()}`} value={d}>{d?.toUpperCase()}</option>
               ))}
             </select>
