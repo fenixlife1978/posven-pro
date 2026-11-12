@@ -383,22 +383,47 @@ async function applyInventoryMovementsTransaction(params: {
   productPatches?: Record<string, any>;
   fromOfflineQueue?: boolean;
 }): Promise<any> {
-  const tursoResult = await tryTursoOperation('inventory', params);
-  if (tursoResult) {
-    if (Array.isArray(tursoResult.products) && tursoResult.products.length) applyPatch({ productos: mergeById(cache.productos, tursoResult.products) });
-    if (Array.isArray(tursoResult.movements) && tursoResult.movements.length) applyPatch({ movimientos: mergeById(cache.movimientos, tursoResult.movements) });
-    return tursoResult;
-  }
-
   const { operationId, operationType, movements, productPatches = {}, fromOfflineQueue } = params;
   if (!movements?.length) throw new Error('No hay movimientos de inventario para registrar.');
 
-  if (!fromOfflineQueue && typeof window !== 'undefined' && navigator.onLine === false) {
-    if (!['AJUSTE-INVENTARIO', 'AJUSTE-INVENTARIO-POS'].includes(operationType)) {
+  const canQueueOffline = ['AJUSTE-INVENTARIO', 'AJUSTE-INVENTARIO-POS'].includes(operationType);
+  const queueForLater = async () => {
+    if (!canQueueOffline) {
       throw new Error('Esta operación requiere conexión para proteger la consistencia de ventas/devoluciones.');
     }
-    enqueueOfflineOperation('INVENTARIO', { operationId, operationType, movements, productPatches, fromOfflineQueue: true }, operationId);
+    await enqueueOfflineOperation(
+      'INVENTARIO',
+      { operationId, operationType, movements, productPatches, fromOfflineQueue: true },
+      operationId
+    );
     return { queuedOffline: true, operationId, movements, products: [] };
+  };
+
+  // Guardar primero en IndexedDB si ya no hay conexión. La operación no se
+  // confirma en la interfaz hasta que IndexedDB haya completado su transacción.
+  if (!fromOfflineQueue && typeof window !== 'undefined' && navigator.onLine === false) {
+    return queueForLater();
+  }
+
+  try {
+    const tursoResult = await tryTursoOperation('inventory', params);
+    if (tursoResult) {
+      if (Array.isArray(tursoResult.products) && tursoResult.products.length) applyPatch({ productos: mergeById(cache.productos, tursoResult.products) });
+      if (Array.isArray(tursoResult.movements) && tursoResult.movements.length) applyPatch({ movimientos: mergeById(cache.movimientos, tursoResult.movements) });
+      return tursoResult;
+    }
+  } catch (error: any) {
+    const message = String(error?.message || error || '');
+    const networkFailure = typeof navigator !== 'undefined' && !navigator.onLine
+      || /no se pudo contactar con turso|sin conexión|network|fetch failed|timeout/i.test(message);
+    if (!fromOfflineQueue && networkFailure) return queueForLater();
+    throw error;
+  }
+
+  // La cola solo se usa para movimientos de ajuste autorizados. No se cae a
+  // una base legacy ni se inventa stock final cuando Turso no confirma.
+  if (typeof window !== 'undefined') {
+    throw new Error('Turso no confirmó el movimiento de inventario.');
   }
 
   const productIds = [...new Set(movements.map(m => String(m.productoId || '')).filter(Boolean))];
