@@ -56,6 +56,7 @@ CREATE TABLE IF NOT EXISTS productos (
   data_json TEXT NOT NULL DEFAULT '{}',
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+CREATE INDEX IF NOT EXISTS idx_productos_updated_at ON productos(updated_at DESC);
 
 CREATE TABLE IF NOT EXISTS movimientos (
   id TEXT PRIMARY KEY,
@@ -105,6 +106,9 @@ CREATE TABLE IF NOT EXISTS devoluciones (
   fecha TEXT,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+CREATE INDEX IF NOT EXISTS idx_ventas_fecha ON ventas(fecha);
+CREATE INDEX IF NOT EXISTS idx_devoluciones_fecha ON devoluciones(fecha);
+CREATE INDEX IF NOT EXISTS idx_libro_diario_fecha ON libro_diario(fecha);
 
 CREATE TABLE IF NOT EXISTS anulaciones (
   id TEXT PRIMARY KEY,
