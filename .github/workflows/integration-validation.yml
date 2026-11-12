@@ -27,6 +27,7 @@ jobs:
       - name: TypeScript check
         run: npx tsc --noEmit --pretty false
       - name: Next.js server build
+        if: always()
         run: npm run build
         env:
           TURSO_MIGRATION_BUILD: '1'
