@@ -18,7 +18,6 @@ type Result = {
 
 const payload = {
   operation: "reclassify-products",
-  fromDepartment: "CHUCHERIA",
   toDepartment: "INVERGON",
   category: "MUNCHY",
 };
@@ -36,7 +35,7 @@ export default function InventoryMaintenancePage() {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...payload, dryRun }),
+        body: JSON.stringify({ ...payload, dryRun, ...(!dryRun ? { confirm: "CONFIRMAR_RECLASIFICACION_POSVEN" } : {}) }),
         cache: "no-store",
       });
       const data = await response.json();
@@ -59,11 +58,10 @@ export default function InventoryMaintenancePage() {
   return (
     <main style={{ maxWidth: 760, margin: "24px auto", padding: 20, fontFamily: "Arial, sans-serif", color: "#172033" }}>
       <h1 style={{ fontSize: 24, marginBottom: 8 }}>Mantenimiento de inventario</h1>
-      <p style={{ lineHeight: 1.5 }}>Corrección controlada: todos los productos de categoría MUNCHY deben pertenecer al departamento INVERGON. Esta herramienta requiere una sesión de administrador y solo modifica el campo departamento.</p>
+      <p style={{ lineHeight: 1.5 }}>Corrección controlada: todos los productos de categoría MUNCHY que todavía no estén en INVERGON serán reclasificados. Esta herramienta requiere una sesión de administrador y solo modifica el campo departamento.</p>
       <div style={{ padding: 14, background: "#f1f5f9", borderRadius: 10, margin: "18px 0" }}>
-        <strong>Regla:</strong> CHUCHERIA + MUNCHY → INVERGON + MUNCHY
-        <br />
-        <strong>Regla adicional:</strong> MUNCHY + MUNCHY → INVERGON + MUNCHY
+        <strong>Regla:</strong> cualquier departamento distinto de INVERGON + MUNCHY → INVERGON + MUNCHY
+        
       </div>
       <button disabled={loading} onClick={() => run(true)} style={{ padding: "12px 18px", border: 0, borderRadius: 8, background: "#1d4ed8", color: "white", fontWeight: 700, opacity: loading ? 0.6 : 1 }}>
         {loading ? "Procesando…" : "1. Revisar cambios (sin modificar)"}
