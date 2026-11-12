@@ -249,6 +249,24 @@ export async function getCatalog(name: string): Promise<any[]> {
   try { const value = JSON.parse(String(result.rows[0].lista_json || '[]')); return Array.isArray(value) ? value : []; } catch { return []; }
 }
 
+// Una sola lectura SQL para hidratar todos los catálogos de la aplicación.
+export async function getAllCatalogs(): Promise<Record<string, any[]>> {
+  assertTursoReady();
+  const result = await tursoExecute({ sql: 'SELECT nombre, lista_json FROM catalogos', args: [] });
+  const catalogs: Record<string, any[]> = {};
+  for (const row of result.rows) {
+    const name = String(row.nombre || '');
+    if (!name) continue;
+    try {
+      const value = JSON.parse(String(row.lista_json || '[]'));
+      catalogs[name] = Array.isArray(value) ? value : [];
+    } catch {
+      catalogs[name] = [];
+    }
+  }
+  return catalogs;
+}
+
 export async function patchCatalog(name: string, lista: any[]): Promise<any[]> {
   assertTursoReady();
   const cleanList = clean(lista);
