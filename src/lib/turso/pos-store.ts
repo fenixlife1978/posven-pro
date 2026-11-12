@@ -181,7 +181,7 @@ export async function listProductsPage(options: {
   search?: string;
   departamento?: string;
   categoria?: string;
-} = {}): Promise<{ records: any[]; total: number; page: number; pageSize: number }> {
+} = {}): Promise<{ records: any[]; total: number; lowStockTotal: number; page: number; pageSize: number }> {
   assertTursoReady();
   const pageSize = Math.min(100, Math.max(1, Math.floor(Number(options.pageSize) || 10)));
   const page = Math.max(1, Math.floor(Number(options.page) || 1));
@@ -205,18 +205,21 @@ export async function listProductsPage(options: {
   }
   const where = filters.join(' AND ');
   const result = await tursoExecute({
-    sql: `SELECT id,data_json,COUNT(*) OVER() AS total
-      FROM productos WHERE ${where}
-      ORDER BY updated_at DESC,id ASC LIMIT ${pageSize} OFFSET ${offset}`,
+    sql: `WITH filtered AS (SELECT id,data_json,updated_at FROM productos WHERE ${where})
+      SELECT filtered.id,filtered.data_json,
+        (SELECT COUNT(*) FROM filtered) AS total,
+        (SELECT COUNT(*) FROM filtered f WHERE
+          COALESCE(CAST(json_extract(f.data_json,'$.stock') AS REAL),0)
+          <= COALESCE(CAST(json_extract(f.data_json,'$.stockMinimo') AS REAL),0)
+        ) AS low_stock_total
+      FROM filtered
+      ORDER BY filtered.updated_at DESC,filtered.id ASC
+      LIMIT ${pageSize} OFFSET ${offset}`,
     args,
   });
   const total = Number(result.rows[0]?.total ?? 0);
-  return {
-    records: result.rows.map(rowFromDb).filter(Boolean),
-    total,
-    page,
-    pageSize,
-  };
+  const lowStockTotal = Number(result.rows[0]?.low_stock_total ?? 0);
+  return { records: result.rows.map(rowFromDb).filter(Boolean), total, lowStockTotal, page, pageSize };
 }
 
 export async function countRecords(table: TursoStoreTable): Promise<number> {
