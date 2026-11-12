@@ -780,11 +780,46 @@ export async function applyInventoryMovementsTransaction(params: {
   operationType: string;
   movements: any[];
   productPatches?: Record<string, any>;
+  user: { rol: string; id: string; firebaseUid?: string | null };
+  terminalId?: string;
 }) {
   assertTursoReady();
   if (!params.movements?.length) throw new Error('No hay movimientos de inventario para registrar.');
 
   return tursoInteractiveTransaction(async tx => {
+    // Los cajeros solo pueden ejecutar ajustes originados en el POS y sobre
+    // su propia terminal. La autorización y el estado de caja se verifican
+    // dentro de la misma transacción que actualiza el kardex.
+    const cashier = params.user.rol !== 'administrador';
+    let cashierTerminal: any = null;
+    if (cashier) {
+      const terminalId = String(params.terminalId || '');
+      if (params.operationType !== 'AJUSTE-INVENTARIO-POS' || !terminalId) {
+        throw new Error('El cajero solo puede registrar ajustes desde su caja asignada.');
+      }
+      if (Object.keys(params.productPatches || {}).length) {
+        throw new Error('El cajero no puede modificar datos del producto desde un ajuste POS.');
+      }
+      cashierTerminal = rowFromDb((await tx.execute(txSelect('terminales', terminalId))).rows[0]);
+      if (!cashierTerminal) throw new Error('La caja/terminal asignada ya no existe.');
+      assertTerminalAccess(params.user, cashierTerminal);
+      const cashIsOpen = cashierTerminal.isCashOpen === true || cashierTerminal.isCashOpen === 1 || String(cashierTerminal.isCashOpen).toLowerCase() === 'true';
+      if (!cashIsOpen) throw new Error('Debe tener la caja abierta para registrar ajustes.');
+      const allowedTypes = new Set(['consumo', 'colaboracion', 'ajuste_entrada', 'ajuste_salida']);
+      for (const movement of params.movements) {
+        const movementTerminalId = String(movement?.terminalId || '');
+        const type = String(movement?.tipo || '');
+        const quantity = Number(movement?.cantidad);
+        if (movementTerminalId !== terminalId) throw new Error('El ajuste no pertenece a la terminal asignada al cajero.');
+        if (!allowedTypes.has(type) || !Number.isFinite(quantity) || quantity === 0) {
+          throw new Error('El tipo o la cantidad del ajuste no son válidos.');
+        }
+        if (type === 'ajuste_entrada' ? quantity <= 0 : quantity >= 0) {
+          throw new Error('El signo de la cantidad no corresponde al tipo de ajuste.');
+        }
+      }
+    }
+
     const check = await tx.execute({
       sql: 'SELECT id FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',
       args: ['INVENTARIO', params.operationId],
@@ -819,6 +854,7 @@ export async function applyInventoryMovementsTransaction(params: {
       for (const movement of params.movements.filter(m => String(m.productoId) === pid)) {
         const before = running;
         running += Number(movement.cantidad) || 0;
+        if (cashier && running < 0) throw new Error('La salida supera la existencia disponible del producto.');
         const persisted = {
           ...movement,
           id: String(movement.id || ('MOV-' + crypto.randomUUID())),
