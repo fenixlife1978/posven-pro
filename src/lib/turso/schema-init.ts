@@ -48,6 +48,33 @@ async function initialize() {
   // CREATE TABLE/INDEX IF NOT EXISTS repara esas instalaciones sin borrar datos.
   await tursoBatch(SCHEMA_STATEMENTS.map(sql => ({ sql, wantRows: false })));
 
+  // Reconcile databases where the manual schema.sql created the older
+  // provider/provider_user_id shape. CREATE TABLE IF NOT EXISTS cannot alter
+  // that table, so migrate its rows into the runtime's canonical shape.
+  const identityInfo = await tursoExecute({ sql: 'PRAGMA table_info(user_identity_map)' });
+  const identityColumns = new Set(identityInfo.rows.map((row: any) => String(row.name)));
+  if (!identityColumns.has('source') || !identityColumns.has('legacy_user_id')) {
+    if (!identityColumns.has('user_id')) {
+      throw new Error('user_identity_map tiene un esquema desconocido; se detiene la inicialización para proteger sus datos.');
+    }
+    const sourceExpr = identityColumns.has('provider')
+      ? "COALESCE(NULLIF(provider,''),'legacy')"
+      : "'legacy'";
+    const legacyIdExpr = identityColumns.has('provider_user_id')
+      ? "COALESCE(NULLIF(provider_user_id,''),id)"
+      : (identityColumns.has('id') ? "id" : "CAST(user_id AS TEXT)");
+    const firebaseExpr = identityColumns.has('provider') && identityColumns.has('provider_user_id')
+      ? "CASE WHEN lower(provider)='firebase' THEN provider_user_id ELSE NULL END"
+      : 'NULL';
+    await tursoBatch([
+      { sql: 'ALTER TABLE user_identity_map RENAME TO user_identity_map_legacy_v1', wantRows: false },
+      { sql: `CREATE TABLE user_identity_map (source TEXT NOT NULL, legacy_user_id TEXT NOT NULL, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, firebase_uid TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (source, legacy_user_id))`, wantRows: false },
+      { sql: `INSERT OR IGNORE INTO user_identity_map(source,legacy_user_id,user_id,firebase_uid) SELECT ${sourceExpr},${legacyIdExpr},user_id,${firebaseExpr} FROM user_identity_map_legacy_v1`, wantRows: false },
+      { sql: 'DROP TABLE user_identity_map_legacy_v1', wantRows: false },
+      { sql: 'CREATE INDEX IF NOT EXISTS idx_user_identity_map_user ON user_identity_map(user_id)', wantRows: false },
+    ]);
+  }
+
   const requiredTables = [
     'users', 'sessions', 'terminales', 'ventas', 'caja',
     'user_identity_map', 'app_config', 'catalogos', 'productos',

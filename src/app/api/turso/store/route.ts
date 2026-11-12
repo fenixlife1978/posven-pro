@@ -116,8 +116,10 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: true, records });
   } catch (error: any) {
     const message = String(error?.message || error);
+    const forbidden = ['Se requiere administrador', 'No tiene acceso', 'El cajero debe', 'Un cajero no puede', 'no tiene una terminal asignada'];
     const status = message.includes('no está configurado') ? 503
-      : message.includes('No autenticado') ? 401 : 400;
+      : message.includes('No autenticado') ? 401
+      : forbidden.some((fragment) => message.includes(fragment)) ? 403 : 400;
     return NextResponse.json({ ok: false, error: message }, { status });
   }
 }
@@ -288,9 +290,10 @@ export async function POST(request: Request) {
     }
   } catch (error: any) {
     const message = String(error?.message || error);
+    const forbidden = ['Se requiere administrador', 'No tiene acceso', 'El cajero debe', 'Un cajero no puede', 'no tiene una terminal asignada'];
     const status = message.includes('no está configurado') ? 503
       : message.includes('No autenticado') ? 401
-      : message.includes('Se requiere administrador') ? 403 : 400;
+      : forbidden.some((fragment) => message.includes(fragment)) ? 403 : 400;
     return NextResponse.json({ ok: false, error: message }, { status });
   }
 }
