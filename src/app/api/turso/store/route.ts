@@ -68,6 +68,7 @@ export async function GET(request: Request) {
     if (special === 'catalog') return NextResponse.json({ ok: true, lista: await getCatalog(String(url.searchParams.get('name') || '')) });
     if (special === 'catalogs') return NextResponse.json({ ok: true, catalogs: await getAllCatalogs() });
     if (special === 'products-page') {
+      if (user.rol !== 'administrador') throw new Error('Se requiere administrador.');
       const result = await listProductsPage({
         page: Number(url.searchParams.get('page') || 1),
         pageSize: Number(url.searchParams.get('pageSize') || 10),
@@ -87,7 +88,8 @@ export async function GET(request: Request) {
       throw new Error('El usuario no tiene una terminal asignada.');
     }
     if (special === 'count') {
-      return NextResponse.json({ ok: true, total: await countRecords(t) });
+      const terminalId = cashier && terminalScopedTables.has(t) ? String(assignedTerminal?.id || '') : undefined;
+      return NextResponse.json({ ok: true, total: await countRecords(t, terminalId) });
     }
     const id = url.searchParams.get('id');
     if (id) {

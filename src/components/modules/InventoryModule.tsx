@@ -179,7 +179,7 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
       }
     }, search.trim() ? 300 : 0);
     return () => window.clearTimeout(timer);
-  }, [activeTab, page, search, catFilter, deptFilter]);
+  }, [activeTab, page, search, catFilter, deptFilter, state.productos]);
   
   const [showAjuste, setShowAjuste] = useState<string | null>(null);
   const [showProducto, setShowProducto] = useState<string | null | 'nuevo'>(null);

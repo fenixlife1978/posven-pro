@@ -250,11 +250,12 @@ export async function listProductsPage(options: {
   return { records, total, lowStockTotal, page, pageSize };
 }
 
-export async function countRecords(table: TursoStoreTable): Promise<number> {
+export async function countRecords(table: TursoStoreTable, terminalId?: string): Promise<number> {
   assertTursoReady();
+  const scoped = Boolean(terminalId);
   const result = await tursoExecute({
-    sql: `SELECT COUNT(*) AS total FROM ${tableName(table)}`,
-    args: [],
+    sql: `SELECT COUNT(*) AS total FROM ${tableName(table)}${scoped ? " WHERE json_extract(data_json,'$.terminalId')=?" : ''}`,
+    args: scoped ? [String(terminalId)] : [],
   });
   return Number(result.rows[0]?.total ?? 0);
 }
