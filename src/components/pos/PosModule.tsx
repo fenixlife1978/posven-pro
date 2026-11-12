@@ -39,7 +39,8 @@ import {
   Minimize2,
   Tag,
   Loader2,
-  Hash
+  Hash,
+  Settings2
 } from 'lucide-react';
 import { ReceiptModal } from '@/components/pos/ReceiptModal';
 import FloatingPaymentModal from '@/components/pos/FloatingPaymentModal';
@@ -73,6 +74,15 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   const [selectedProductDisplay, setSelectedProductDisplay] = useState<Product | null>(null);
   
   const [priceSelectorItem, setPriceSelectorItem] = useState<{ index: number, product: Product } | null>(null);
+  const [showPosAdjustment, setShowPosAdjustment] = useState(false);
+  const [adjustmentSearch, setAdjustmentSearch] = useState('');
+  const [adjustmentProduct, setAdjustmentProduct] = useState<Product | null>(null);
+  const [adjustmentType, setAdjustmentType] = useState<'ajuste_entrada' | 'ajuste_salida' | 'consumo' | 'colaboracion'>('ajuste_entrada');
+  const [adjustmentQuantity, setAdjustmentQuantity] = useState('1');
+  const [adjustmentReason, setAdjustmentReason] = useState('TEXTO LIBRE / MOTIVO PERSONALIZADO');
+  const [adjustmentDetail, setAdjustmentDetail] = useState('');
+  const [adjustmentProcessing, setAdjustmentProcessing] = useState(false);
+  const [adjustmentError, setAdjustmentError] = useState('');
 
   const [isCreditView, setIsCreditView] = useState(false);
   const [clientSearch, setClientSearch] = useState('');
@@ -549,6 +559,48 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     ? state.productos.filter(p => p.activo && (p.nombre.toLowerCase().includes(search.toLowerCase()) || p.codigo.toLowerCase().includes(search.toLowerCase()))).slice(0, 8)
     : [];
 
+  const adjustmentMatches = useMemo(() => {
+    const query = adjustmentSearch.trim().toLocaleLowerCase('es');
+    if (!query) return [];
+    return (state.productos || []).filter(p => p.activo && [p.nombre, p.codigo, p.barcode, p.internalCode, p.alternateCode]
+      .some(value => String(value || '').toLocaleLowerCase('es').includes(query))).slice(0, 8);
+  }, [adjustmentSearch, state.productos]);
+
+  const processPosAdjustment = async () => {
+    if (!adjustmentProduct || adjustmentProcessing) return;
+    const quantity = Number(adjustmentQuantity);
+    if (!Number.isFinite(quantity) || quantity <= 0) { setAdjustmentError('Indique una cantidad mayor que cero.'); return; }
+    if (!adjustmentDetail.trim()) { setAdjustmentError('Indique el detalle del motivo.'); return; }
+    const isEntry = adjustmentType === 'ajuste_entrada';
+    if (!isEntry && quantity > Number(adjustmentProduct.stock || 0)) { setAdjustmentError('La cantidad supera la existencia disponible.'); return; }
+    setAdjustmentProcessing(true);
+    setAdjustmentError('');
+    try {
+      const now = Utils.ahora();
+      const terminal = getCurrentTerminal();
+      const movement: Movimiento = {
+        id: Store.uid(), productoId: adjustmentProduct.id, tipo: adjustmentType,
+        cantidad: isEntry ? quantity : -Math.abs(quantity),
+        stockAntes: Number(adjustmentProduct.stock) || 0,
+        stockDespues: (Number(adjustmentProduct.stock) || 0) + (isEntry ? quantity : -Math.abs(quantity)),
+        fecha: now,
+        referencia: [adjustmentReason, adjustmentDetail.trim()].filter(Boolean).join(' — ').toUpperCase(),
+        terminalId: terminal?.id || 'GLOBAL'
+      };
+      const result = await Store.applyInventoryMovementsTransaction({
+        operationId: 'AJUSTE-POS-' + Store.uid(),
+        operationType: 'AJUSTE-INVENTARIO-POS',
+        movements: [movement]
+      });
+      toast({ title: result?.queuedOffline ? 'Ajuste pendiente de sincronización' : 'Ajuste procesado',
+        description: result?.queuedOffline ? 'Se procesará cuando vuelva la conexión.' : adjustmentProduct.nombre + ' · ' + (isEntry ? '+' : '−') + quantity + ' unidades.' });
+      setShowPosAdjustment(false); setAdjustmentSearch(''); setAdjustmentProduct(null);
+      setAdjustmentQuantity('1'); setAdjustmentReason('TEXTO LIBRE / MOTIVO PERSONALIZADO'); setAdjustmentDetail('');
+    } catch (error: any) {
+      setAdjustmentError(error?.message || 'No fue posible procesar el ajuste.');
+    } finally { setAdjustmentProcessing(false); }
+  };
+
   const filteredClients = useMemo(() => {
     if (clientSearch.trim().length === 0) return [];
     const searchLower = clientSearch.toLowerCase();
@@ -863,6 +915,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         <button onClick={() => setView('credits')} className={`btn btn-sm ${view === 'credits' ? 'btn-primary shadow-md' : 'bg-white text-ink font-bold border-line border'}`}><ClipboardList className="w-3.5 h-3.5"/> Consultar Créditos</button>
         <button onClick={() => handleOpenReport('REPORT_X')} disabled={reportLoading} className="btn btn-sm bg-white text-ink font-bold border-line border disabled:opacity-50"><FileText className="w-3.5 h-3.5"/> {reportLoadingType === 'REPORT_X' ? 'Cargando…' : 'Reporte X'}</button>
         <button onClick={() => handleOpenReport('REPORT_Z')} disabled={reportLoading} className="btn btn-sm bg-white text-ink font-bold border-line border disabled:opacity-50"><Receipt className="w-3.5 h-3.5"/> {reportLoadingType === 'REPORT_Z' ? 'Cargando…' : 'Reporte Z'}</button>
+        {view === 'pos' && <button onClick={() => { setShowPosAdjustment(true); setAdjustmentError(''); }} className="btn btn-sm bg-white text-ink font-bold border-line border hover:bg-brand-gold-soft"><Settings2 className="w-3.5 h-3.5"/> Ajustes</button>}
         <button onClick={() => setView('returns')} className={`btn btn-sm ${view === 'returns' ? 'btn-primary shadow-md' : 'bg-white text-ink font-bold border-line border'}`}><RotateCcw className="w-3.5 h-3.5"/> Devoluciones y Anulaciones</button>
         
         {view === 'pos' && (
@@ -1109,6 +1162,65 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                     </button>
                   )}
                </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showPosAdjustment && (
+        <div className="modal show" style={{ zIndex: 130 }}>
+          <div className="modal-bg" onClick={() => { if (!adjustmentProcessing) setShowPosAdjustment(false); }} />
+          <div className="modal-box max-w-[680px] bg-[#faf8f2] border border-line rounded-[28px] overflow-hidden shadow-2xl">
+            <div className="modal-head px-6 py-5 border-b border-line bg-[#faf8f2] flex justify-between items-center">
+              <h3 className="text-ink font-black text-lg uppercase">AJUSTAR: {adjustmentProduct ? adjustmentProduct.nombre : 'SELECCIONAR PRODUCTO'}</h3>
+              <button onClick={() => setShowPosAdjustment(false)} disabled={adjustmentProcessing}><X className="w-6 h-6 text-ink"/></button>
+            </div>
+            <div className="modal-body p-6 space-y-5 bg-white max-h-[78vh] overflow-y-auto">
+              <div className="form-group">
+                <label className="text-xs font-black uppercase text-ink/60 block mb-2">Buscar producto</label>
+                <div className="relative">
+                  <Search className="absolute left-3 top-3 w-4 h-4 text-ink/40"/>
+                  <input autoFocus className="form-input pl-10 h-12 w-full bg-white" placeholder="Nombre, código o código de barras..." value={adjustmentSearch}
+                    onChange={e => { setAdjustmentSearch(e.target.value); setAdjustmentProduct(null); setAdjustmentError(''); }}/>
+                  {adjustmentMatches.length > 0 && !adjustmentProduct && (
+                    <div className="absolute z-[140] top-full left-0 right-0 mt-1 bg-white border border-line rounded-xl shadow-2xl max-h-56 overflow-y-auto">
+                      {adjustmentMatches.map(product => <button key={product.id} type="button" onClick={() => { setAdjustmentProduct(product); setAdjustmentSearch(product.nombre); setAdjustmentError(''); }} className="w-full text-left p-3 border-b border-line hover:bg-brand-gold-soft flex justify-between items-center gap-3">
+                        <span className="min-w-0"><span className="block font-black text-sm uppercase truncate">{product.nombre}</span><span className="block text-xs text-ink/50">{product.codigo || product.barcode || 'Sin código'}</span></span>
+                        <span className="shrink-0 text-xs font-black">Stock: {product.stock}</span>
+                      </button>)}
+                    </div>
+                  )}
+                </div>
+                {adjustmentSearch.trim() && !adjustmentProduct && adjustmentMatches.length === 0 && <p className="text-xs text-status-danger mt-2">No se encontraron productos activos.</p>}
+              </div>
+              {adjustmentProduct && <div className="p-3 rounded-xl bg-brand-gold-soft/50 border border-brand-gold/30 flex justify-between items-center gap-3">
+                <div className="min-w-0"><p className="font-black uppercase text-sm truncate">{adjustmentProduct.nombre}</p><p className="text-xs text-ink/60">Código: {adjustmentProduct.codigo || adjustmentProduct.barcode || '—'}</p></div>
+                <div className="text-right shrink-0"><p className="text-[10px] font-black uppercase text-ink/50">Existencia actual</p><p className="text-xl font-black">{adjustmentProduct.stock}</p></div>
+              </div>}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="form-group"><label className="text-xs font-black uppercase text-ink/60 block mb-2">Tipo</label>
+                  <select className="form-select h-12 w-full" value={adjustmentType} onChange={e => setAdjustmentType(e.target.value as any)}>
+                    <option value="ajuste_entrada">Entrada (+)</option><option value="ajuste_salida">Salida (−)</option>
+                    <option value="consumo">Consumo propio</option><option value="colaboracion">Colaboraciones</option>
+                  </select>
+                </div>
+                <div className="form-group"><label className="text-xs font-black uppercase text-ink/60 block mb-2">Cantidad</label>
+                  <input className="form-input h-12 w-full text-center font-black" type="number" min="0.001" step="any" value={adjustmentQuantity} onChange={e => setAdjustmentQuantity(e.target.value)}/>
+                </div>
+              </div>
+              <div className="form-group"><label className="text-xs font-black uppercase text-ink/60 block mb-2">Motivo del ajuste</label>
+                <select className="form-select h-12 w-full" value={adjustmentReason} onChange={e => setAdjustmentReason(e.target.value)}>
+                  <option>TEXTO LIBRE / MOTIVO PERSONALIZADO</option><option>CONSUMO PROPIO</option><option>COLABORACIÓN</option>
+                  <option>ERROR DE CONTEO</option><option>PRODUCTO DAÑADO</option><option>MERMA</option><option>DEVOLUCIÓN A PROVEEDOR</option><option>OTRO</option>
+                </select>
+              </div>
+              <div className="form-group"><label className="text-xs font-black uppercase text-ink/60 block mb-2">Detalle del motivo</label>
+                <input className="form-input h-12 w-full" placeholder="Ej: error de conteo, daño, persona beneficiada..." value={adjustmentDetail} onChange={e => setAdjustmentDetail(e.target.value)}/>
+              </div>
+              {adjustmentError && <p className="text-sm font-bold text-status-danger">{adjustmentError}</p>}
+              <button type="button" disabled={!adjustmentProduct || adjustmentProcessing} onClick={() => void processPosAdjustment()} className="btn btn-primary w-full h-14 text-base font-black uppercase disabled:opacity-50">
+                {adjustmentProcessing ? 'Procesando…' : 'Procesar ajuste'}
+              </button>
             </div>
           </div>
         </div>
