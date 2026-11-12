@@ -164,8 +164,14 @@ export async function listRecords(
     args.push(String(options.productId));
   }
   if (options.estado) {
-    filters.push("json_extract(data_json,'$.estado')=?");
-    args.push(String(options.estado));
+    const estados = String(options.estado).split(',').map(value => value.trim()).filter(Boolean);
+    if (estados.length === 1) {
+      filters.push("json_extract(data_json,'$.estado')=?");
+      args.push(estados[0]);
+    } else if (estados.length > 1) {
+      filters.push("json_extract(data_json,'$.estado') IN (" + estados.map(() => '?').join(',') + ")");
+      args.push(...estados);
+    }
   }
   if (options.since && table !== 'productos') {
     filters.push("fecha>?");

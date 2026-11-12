@@ -37,6 +37,8 @@ const SCHEMA_STATEMENTS = [
   `CREATE INDEX IF NOT EXISTS idx_devoluciones_fecha ON devoluciones(fecha)`,
   `CREATE INDEX IF NOT EXISTS idx_libro_diario_fecha ON libro_diario(fecha)`,
   `CREATE INDEX IF NOT EXISTS idx_movimientos_producto_fecha ON movimientos(json_extract(data_json,'$.productoId'), fecha DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_cxc_estado_fecha ON cxc(json_extract(data_json,'$.estado'), fecha DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_cxp_estado_fecha ON cxp(json_extract(data_json,'$.estado'), fecha DESC)`,
 ];
 
 let initialized = false;

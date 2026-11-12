@@ -506,14 +506,15 @@ async function bootstrapProductos(): Promise<boolean> {
 const loadedAll: Record<string, boolean> = {};
 const cursors: Record<string, QueryDocumentSnapshot<DocumentData> | null> = {};
 
-async function loadCollection(name: string): Promise<any[]> {
+async function loadCollection(name: string, options: { estado?: string; terminalId?: string; productId?: string } = {}): Promise<any[]> {
   const pageSize = 2000;
-  let page = await tryTursoRead(name, { limit: pageSize, offset: 0 });
+  const apiTable = name === 'cashHistory' ? 'caja' : name;
+  let page = await tryTursoRead(apiTable, { ...options, limit: pageSize, offset: 0 });
   if (page !== null) {
     const all = [...page];
     let offset = page.length;
     while (page.length === pageSize) {
-      page = await tryTursoRead(name, { limit: pageSize, offset });
+      page = await tryTursoRead(apiTable, { ...options, limit: pageSize, offset });
       if (page === null) throw new Error('La paginación de Turso se interrumpió durante la carga de ' + name + '.');
       if (!page.length) break;
       all.push(...page);
@@ -1036,11 +1037,9 @@ function init() {
   void (async () => {
     for (const name of ['cxc', 'cxp']) {
       try {
-        const tursoItems = await tryTursoRead(name, { limit: 2000 });
-        if (tursoItems !== null) {
-          applyPatch({ [name]: tursoItems.filter((x: any) => ['pendiente', 'parcial'].includes(String(x?.estado || ''))) });
-          continue;
-        }
+        const tursoItems = await loadCollection(name, { estado: 'pendiente,parcial' });
+        applyPatch({ [name]: tursoItems });
+        continue;
         const col = COLLECTIONS[name];
         teardownFns.push(onSnapshot(
           query(collection(db, col), where('estado', 'in', ['pendiente', 'parcial'])),
