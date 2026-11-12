@@ -1296,8 +1296,10 @@ export const Store = {
     if (!(amountUSD > 0)) return { appliedUSD: 0, debts: [] };
     const tursoResult = await tryTursoOperation('globalProviderPayment', params);
     if (tursoResult) {
-      const refreshedCxp = await tryTursoRead('cxp', { limit: 2000 });
-      if (refreshedCxp !== null) applyPatch({ cxp: refreshedCxp });
+      // La transacción devuelve las deudas modificadas: no releer 2.000 CxP.
+      if (Array.isArray(tursoResult.debts) && tursoResult.debts.length) {
+        applyPatch({ cxp: mergeById(cache.cxp || [], tursoResult.debts) });
+      }
       if (Array.isArray(tursoResult.journal)) applyPatch({ libroDiario: mergeById(cache.libroDiario, tursoResult.journal) });
       return tursoResult;
     }
@@ -1407,11 +1409,11 @@ export const Store = {
     const tursoResult = await tryTursoOperation('globalCustomerPayment', params);
     if (tursoResult) {
       if (Array.isArray(tursoResult.debts)) applyPatch({ cxc: mergeById(cache.cxc, tursoResult.debts) });
-      // Un pago global puede liquidar varias facturas. Volver a leer CxC desde
-      // Turso garantiza que todas las facturas afectadas y sus historiales
-      // queden visibles inmediatamente en la interfaz.
-      const refreshedCxc = await tryTursoRead('cxc', { limit: 2000 });
-      if (refreshedCxc !== null) applyPatch({ cxc: refreshedCxc });
+      // La respuesta transaccional contiene las deudas afectadas y sus historiales.
+      // Evitamos descargar otra vez hasta 2.000 registros de CxC.
+      if (Array.isArray(tursoResult.debts) && tursoResult.debts.length) {
+        applyPatch({ cxc: mergeById(cache.cxc || [], tursoResult.debts) });
+      }
       if (tursoResult.sale?.id) applyPatch({ ventas: mergeById(cache.ventas, [tursoResult.sale]) });
       if (journal?.id) applyPatch({ libroDiario: mergeById(cache.libroDiario, [{ ...journal, montoUSD: tursoResult.appliedUSD, montoBS: tursoResult.appliedBS, referencia: tursoResult.receiptId, terminalId: terminalId || journal.terminalId }]) });
       if (tursoResult.terminal?.id) applyPatch({ terminales: mergeById(cache.terminales || [], [tursoResult.terminal]) });
@@ -1570,12 +1572,10 @@ export const Store = {
         applyPatch({ cxp: mergeById(cache.cxp || [], [tursoResult]) });
       }
 
-      // Tras un cobro CxC, hidratar CxC completa desde Turso para que el
-      // historial de cada pago/abono aparezca inmediatamente, incluso cuando
-      // la deuda pasó de activa a pagada y dejó de pertenecer al listado activo.
-      if (collectionName === 'cxc') {
-        const refreshedCxc = await tryTursoRead('cxc', { limit: 2000 });
-        if (refreshedCxc !== null) applyPatch({ cxc: refreshedCxc });
+      // La transacción devuelve la deuda actualizada con su historial de pagos.
+      // No hace falta descargar nuevamente toda la colección CxC.
+      if (collectionName === 'cxc' && tursoResult.id) {
+        applyPatch({ cxc: mergeById(cache.cxc || [], [tursoResult]) });
       }
 
       if (tursoResult.sale?.id) {
