@@ -102,7 +102,7 @@ async function tryTursoSpecialRead(kind: 'config' | 'catalog' | 'catalogs', name
   if (kind === 'catalogs') return body.catalogs && typeof body.catalogs === 'object' ? body.catalogs : {};
   return Array.isArray(body.lista) ? body.lista : [];
 }
-async function tryTursoRead(table: string, options: { limit?: number; terminalId?: string; estado?: string } = {}): Promise<any[] | null> {
+async function tryTursoRead(table: string, options: { limit?: number; terminalId?: string; estado?: string; since?: string } = {}): Promise<any[] | null> {
   if (typeof window === 'undefined') return null;
   let response: Response;
   try {
@@ -111,6 +111,7 @@ async function tryTursoRead(table: string, options: { limit?: number; terminalId
     if (options.limit) params.set('limit', String(options.limit));
     if (options.terminalId) params.set('terminalId', String(options.terminalId));
     if (options.estado) params.set('estado', String(options.estado));
+    if (options.since) params.set('since', String(options.since));
     response = await fetch('/api/turso/store?' + params.toString(), {
       method: 'GET',
       credentials: 'include',
@@ -583,7 +584,7 @@ async function loadReportWindow(name: string, terminalId: string, cutoff: string
     // Turso es la fuente operativa durante la migración. No debemos volver a
     // consultar servidor Turso para X/Z porque eso agrega latencia y puede devolver
     // un estado histórico distinto al de la caja actual.
-    const tursoItems = await tryTursoRead(name, { limit: 2000, terminalId });
+    const tursoItems = await tryTursoRead(name, { limit: 2000, terminalId, since: cutoff });
     if (tursoItems !== null) {
       const items = tursoItems
         .filter((item: any) => String(item?.fecha || '') > cutoff)
