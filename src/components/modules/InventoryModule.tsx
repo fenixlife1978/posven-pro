@@ -69,6 +69,12 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
   const [selectedKardexId, setSelectedKardexId] = useState<string | null>(null);
   const [selectedCPPId, setSelectedCPPId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
+  const [serverProducts, setServerProducts] = useState<Product[]>([]);
+  const [serverTotal, setServerTotal] = useState(0);
+  const [serverLowStock, setServerLowStock] = useState(0);
+  const [productsLoading, setProductsLoading] = useState(false);
+  const [productsError, setProductsError] = useState('');
+  const productRequestId = useRef(0);
 
   const stockKardexSyncDone = useRef(false);
 
@@ -95,6 +101,36 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
   useEffect(() => {
     setPage(1);
   }, [search, catFilter, deptFilter]);
+
+  // Consulta independiente para la tabla: nunca reemplaza el catálogo operativo del POS.
+  useEffect(() => {
+    if (activeTab !== 'productos') return;
+    const requestId = ++productRequestId.current;
+    const timer = window.setTimeout(async () => {
+      setProductsLoading(true);
+      setProductsError('');
+      try {
+        const params = new URLSearchParams({ special: 'products-page', page: String(page), pageSize: '10', search: search.trim(), departamento: deptFilter, categoria: catFilter });
+        const response = await fetch('/api/turso/store?' + params.toString(), { credentials: 'include', cache: 'no-store' });
+        const body = await response.json().catch(() => null);
+        if (!response.ok || body?.ok !== true) throw new Error(String(body?.error || 'No se pudo consultar el catálogo en Turso.'));
+        if (requestId !== productRequestId.current) return;
+        setServerProducts(Array.isArray(body.records) ? body.records : []);
+        setServerTotal(Number(body.total) || 0);
+        setServerLowStock(Number(body.lowStockTotal) || 0);
+        const pages = Math.max(1, Math.ceil((Number(body.total) || 0) / 10));
+        if (page > pages) setPage(pages);
+      } catch (error: any) {
+        if (requestId === productRequestId.current) {
+          setProductsError(String(error?.message || error));
+          setServerProducts([]); setServerTotal(0); setServerLowStock(0);
+        }
+      } finally {
+        if (requestId === productRequestId.current) setProductsLoading(false);
+      }
+    }, search.trim() ? 300 : 0);
+    return () => window.clearTimeout(timer);
+  }, [activeTab, page, search, catFilter, deptFilter, state.productos]);
   
   const [showAjuste, setShowAjuste] = useState<string | null>(null);
   const [showProducto, setShowProducto] = useState<string | null | 'nuevo'>(null);
@@ -128,12 +164,11 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
     (deptFilter ? normalizeCatalogFilter(p.departamento) === normalizeCatalogFilter(deptFilter) : true)
   );
 
-  const lowStockCount = prods.filter(p => p.stock <= (p.stockMinimo || 0)).length;
-
   const pageSize = 10;
-  const totalPages = Math.max(1, Math.ceil(prods.length / pageSize));
+  const totalPages = Math.max(1, Math.ceil(serverTotal / pageSize));
   const safePage = Math.min(page, totalPages);
-  const pageProds = prods.slice((safePage - 1) * pageSize, safePage * pageSize);
+  const pageProds = serverProducts;
+  const lowStockCount = serverLowStock;
 
   const eliminar = (id: string) => {
     if (!confirm('¿Seguro que desea eliminar este producto?')) return;
@@ -150,7 +185,7 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
               <div className="p-3 bg-brand-gold-soft rounded-xl"><PackageCheck className="w-6 h-6 text-brand-gold-deep" /></div>
               <div>
                 <p className="text-[10px] font-black uppercase text-ink/40">Total Productos</p>
-                <p className="text-2xl font-black text-ink">{prods.length}</p>
+                <p className="text-2xl font-black text-ink">{serverTotal}</p>
               </div>
             </div>
             <div className={`kpi p-6 rounded-2xl shadow-sm border-l-[6px] flex items-center gap-4 ${lowStockCount > 0 ? 'bg-status-danger-soft border-l-status-danger' : 'bg-white border-line'}`}>
@@ -232,7 +267,11 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
                   </TableRow>
                 </TableHeader>
                 <TableBody className="bg-white">
-                  {prods.length === 0 ? (
+                  {productsLoading && serverProducts.length === 0 ? (
+                    <TableRow><TableCell colSpan={7} className="text-center py-12 text-ink/50 font-bold">Consultando Turso…</TableCell></TableRow>
+                  ) : productsError ? (
+                    <TableRow><TableCell colSpan={7} className="text-center py-12 text-status-danger font-bold">{productsError}</TableCell></TableRow>
+                  ) : serverTotal === 0 ? (
                     <TableRow><TableCell colSpan={7} className="text-center py-20 text-ink/20 font-black italic uppercase">No se encontraron productos coincidentes</TableCell></TableRow>
                   ) : (
                     pageProds.map(p => (
@@ -266,10 +305,10 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
                 </TableBody>
               </Table>
             </div>
-            {prods.length > 0 && (
+            {serverTotal > 0 && (
               <div className="flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-line/60 bg-surface-soft/40 px-4 py-3 no-print">
                 <p className="text-xs font-bold text-ink/60 text-center sm:text-left">
-                  Mostrando <span className="text-ink">{(safePage - 1) * pageSize + 1}-{Math.min(safePage * pageSize, prods.length)}</span> de <span className="text-ink">{prods.length}</span> productos
+                  Mostrando <span className="text-ink">{(safePage - 1) * pageSize + 1}-{Math.min(safePage * pageSize, serverTotal)}</span> de <span className="text-ink">{serverTotal}</span> productos
                 </p>
                 <div className="flex items-center gap-2">
                   <Button
@@ -351,11 +390,12 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
       {showProducto && (
         <ProductFormModal 
           state={state}
-          producto={showProducto === 'nuevo' ? undefined : state.productos.find(p => p.id === showProducto)}
+          producto={showProducto === 'nuevo' ? undefined : (state.productos.find(p => p.id === showProducto) || serverProducts.find(p => p.id === showProducto))}
           onClose={() => setShowProducto(null)}
           onUpdateLists={(lists) => updateState(lists)}
           onSave={(datos) => {
             let nuevosProds;
+            const productosConocidos = [...(state.productos || []), ...serverProducts.filter(p => !(state.productos || []).some(existing => existing.id === p.id))];
             if (showProducto === 'nuevo') {
               const nuevo: Product = {
                 ...datos,
@@ -363,7 +403,7 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
                 fechaCreacion: Utils.hoy(),
                 activo: true
               };
-              nuevosProds = [...state.productos, nuevo];
+              nuevosProds = [...productosConocidos, nuevo];
               if (nuevo.stock > 0) {
                 const mov: Movimiento = {
                   id: Store.uid(),
@@ -381,7 +421,7 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
                 updateState({ productos: nuevosProds });
               }
             } else {
-              nuevosProds = state.productos.map(p => p.id === showProducto ? { ...p, ...datos } : p);
+              nuevosProds = productosConocidos.map(p => p.id === showProducto ? { ...p, ...datos } : p);
               updateState({ productos: nuevosProds });
             }
             setShowProducto(null);
