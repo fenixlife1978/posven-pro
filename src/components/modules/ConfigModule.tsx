@@ -5,7 +5,7 @@ import { AppState } from '@/lib/types';
 import { Store } from '@/lib/db-store';
 import { Save, AlertTriangle, RefreshCw, Database, Activity, BookOpen, PenLine, Trash2 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
-import { crearRespaldo, descargarRespaldo, cargarRespaldoDesdeArchivo } from '@/lib/backup';
+import { crearRespaldo, descargarRespaldo, cargarRespaldoDesdeArchivo, previsualizarCatalogosDesdeArchivo, importarCatalogosDesdeArchivo } from '@/lib/backup';
 
 export default function ConfigModule({ state, updateState }: { state: AppState, updateState: (s: Partial<AppState>) => void }) {
   const [tasa, setTasa] = useState<string | number>(state.tasa);
@@ -22,6 +22,8 @@ export default function ConfigModule({ state, updateState }: { state: AppState, 
   const [backupProgress, setBackupProgress] = useState<{ percent: number; stage: string; detail: string } | null>(null);
   const [isRestoringBackup, setIsRestoringBackup] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const catalogFileInputRef = useRef<HTMLInputElement>(null);
+  const [isImportingCatalogs, setIsImportingCatalogs] = useState(false);
 
   useEffect(() => {
     setTasa(state.tasa);
@@ -73,6 +75,16 @@ export default function ConfigModule({ state, updateState }: { state: AppState, 
     if (!file) return;
     setBackupError(null);
     setBackupProgress(null);
+    try {
+      const parsed = JSON.parse(await file.text());
+      if (parsed?.type === 'catalogs-only') {
+        setBackupError('Este archivo es exclusivo de catálogos. Use «Importar solo catálogos» y no la restauración completa.');
+        return;
+      }
+    } catch (error: any) {
+      setBackupError(error?.message || 'El archivo JSON no es válido.');
+      return;
+    }
 
     const confirmar = window.confirm('Se restaurará el sistema completo desde este respaldo. Los datos actuales serán reemplazados. ¿Desea continuar?');
     if (!confirmar) return;
@@ -89,6 +101,33 @@ export default function ConfigModule({ state, updateState }: { state: AppState, 
       setBackupProgress(null);
     } finally {
       setIsRestoringBackup(false);
+    }
+  };
+
+  const handleImportarSoloCatalogos = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setIsImportingCatalogs(true);
+    setBackupError(null);
+    try {
+      const preview = await previsualizarCatalogosDesdeArchivo(file);
+      const d = preview.plan.departamentos;
+      const c = preview.plan.categorias;
+      const summary =
+        'VISTA PREVIA DE IMPORTACIÓN SEGURA\n\n' +
+        'DEPARTAMENTOS: ' + d.imported + ' en archivo; ' + d.before + ' actuales; ' + d.added + ' nuevos; total final ' + d.after + '.\n' +
+        'CATEGORÍAS: ' + c.imported + ' en archivo; ' + c.before + ' actuales; ' + c.added + ' nuevas; total final ' + c.after + '.\n\n' +
+        'Solo se fusionarán departamentos y categorías. Productos, existencias, movimientos, ventas, compras y caja no serán modificados.\n\n' +
+        '¿Confirmas la importación?';
+      if (!window.confirm(summary)) return;
+      const result = await importarCatalogosDesdeArchivo(file);
+      updateState({ departamentos: result.catalogs.departamentos, categorias: result.catalogs.categorias });
+      toast({ title: 'Catálogos recuperados', description: 'Solo se fusionaron departamentos y categorías en Turso. Los productos y movimientos permanecen intactos.' });
+    } catch (error: any) {
+      setBackupError(error?.message || 'No se pudo importar el JSON de catálogos.');
+    } finally {
+      setIsImportingCatalogs(false);
     }
   };
 
@@ -315,6 +354,15 @@ export default function ConfigModule({ state, updateState }: { state: AppState, 
               {isRestoringBackup ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Database className="w-4 h-4" />}
               {isRestoringBackup ? 'RESTAURANDO...' : 'Cargar Respaldo'}
             </button>
+
+            <button
+              className="btn h-12 px-5 font-black uppercase text-xs shadow-md flex items-center gap-2 border border-brand-gold/40 bg-brand-gold-soft"
+              onClick={() => catalogFileInputRef.current?.click()}
+              disabled={isImportingCatalogs}
+            >
+              {isImportingCatalogs ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Database className="w-4 h-4" />}
+              {isImportingCatalogs ? 'ANALIZANDO...' : 'Importar solo catálogos'}
+            </button>
           </div>
 
           <input
@@ -324,6 +372,17 @@ export default function ConfigModule({ state, updateState }: { state: AppState, 
             className="hidden"
             onChange={handleArchivoRespaldo}
           />
+
+          <input
+            ref={catalogFileInputRef}
+            type="file"
+            accept=".json,application/json"
+            className="hidden"
+            onChange={handleImportarSoloCatalogos}
+          />
+          <p className="text-[11px] text-ink/60 font-semibold">
+            Importación selectiva: combina únicamente departamentos y categorías, sin reemplazar datos operativos.
+          </p>
 
           {backupProgress && (
             <div className="p-4 rounded-lg border border-blue-500 bg-blue-50">
