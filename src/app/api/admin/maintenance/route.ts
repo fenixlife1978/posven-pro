@@ -117,6 +117,10 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const origin = request.headers.get('origin');
+    if (origin && origin !== new URL(request.url).origin) {
+      return NextResponse.json({ ok: false, error: 'Origen de solicitud no autorizado.' }, { status: 403 });
+    }
     if (!isTursoConfigured()) throw new Error('Turso no está configurado.');
     const user = await requireAdmin(request);
     const body = await request.json();
