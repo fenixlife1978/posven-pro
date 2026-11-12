@@ -2,13 +2,46 @@
 
 import { AppState, Terminal, Movimiento } from './types';
 import { enqueueOfflineOperation, registerOfflineProcessor } from './offline-queue';
-import { db, rtdb } from './firebase';
-import {
-  collection, doc, getDoc, getDocs, onSnapshot, orderBy, limit, query, setDoc, where,
-  writeBatch, runTransaction, startAfter
-} from "firebase/firestore";
-import type { DocumentData, QueryDocumentSnapshot } from "firebase/firestore";
-import { onValue, ref, update, get as rtdbGet } from "firebase/database";
+// Turso es la única base de datos operativa. Estos nombres se conservan únicamente
+// para que los caminos legacy de sincronización no vuelvan a escribir en servidor Turso.
+// Cualquier intento de alcanzar esos caminos falla explícitamente.
+type DocumentData = any;
+type QueryDocumentSnapshot<T = any> = any;
+type SnapshotLike = {
+  exists: () => boolean;
+  data: () => any;
+  val: () => any;
+  docs: any[];
+  empty: boolean;
+  docChanges: () => any[];
+};
+type TransactionLike = {
+  get: (reference: any) => Promise<SnapshotLike>;
+  set: (reference: any, data: any, options?: any) => void;
+  update: (reference: any, data: any) => void;
+  delete: (reference: any) => void;
+};
+const db: any = null;
+const rtdb: any = null;
+const servidorTursoRetirado = (..._args: any[]): never => {
+  throw new Error('servidor Turso fue retirado del flujo operativo. Turso es la única fuente de datos.');
+};
+function collection(..._args: any[]): any { return servidorTursoRetirado(); }
+function doc(..._args: any[]): any { return servidorTursoRetirado(); }
+async function getDoc(..._args: any[]): Promise<SnapshotLike> { return servidorTursoRetirado(); }
+async function getDocs(..._args: any[]): Promise<SnapshotLike> { return servidorTursoRetirado(); }
+function onSnapshot(_target: any, _next: (snapshot: SnapshotLike) => void, _error?: (error: any) => void): () => void { return servidorTursoRetirado(); }
+function orderBy(..._args: any[]): any { return servidorTursoRetirado(); }
+function limit(..._args: any[]): any { return servidorTursoRetirado(); }
+function query(..._args: any[]): any { return servidorTursoRetirado(); }
+async function setDoc(..._args: any[]): Promise<void> { return servidorTursoRetirado(); }
+function where(..._args: any[]): any { return servidorTursoRetirado(); }
+async function runTransaction<T>(_database: any, callback: (transaction: TransactionLike) => Promise<T>): Promise<T> { return servidorTursoRetirado(); }
+function startAfter(..._args: any[]): any { return servidorTursoRetirado(); }
+function onValue(_reference: any, _next: (snapshot: SnapshotLike) => void, _error?: (error: any) => void): () => void { return servidorTursoRetirado(); }
+function ref(..._args: any[]): any { return servidorTursoRetirado(); }
+async function update(..._args: any[]): Promise<void> { return servidorTursoRetirado(); }
+async function rtdbGet(..._args: any[]): Promise<SnapshotLike> { return servidorTursoRetirado(); }
 
 const STORAGE_KEY = 'posven_pro_session_data_cache';
 const PAGE_SIZE = 50;
@@ -41,6 +74,78 @@ const COLLECTIONS: Record<string, string> = {
 
 // Catálogos: viven como docs catalogos/{nombre} con { lista: [...] }
 const OPERATIONS_COLLECTION = 'operaciones';
+
+// ============================================================
+// PUENTE DE OPERACIONES CRÍTICAS A TURSO
+// ------------------------------------------------------------
+// Turso solo toma el control cuando sus credenciales existen en el servidor.
+// Si no está configurado (HTTP 503), el flujo existente de servidor Turso continúa.
+// Si Turso sí está configurado pero falla por otra causa, NO hacemos fallback
+// a servidor Turso: evitar dos fuentes de verdad es obligatorio durante la migración.
+// ============================================================
+async function tryTursoOperation(operation: string, payload: any): Promise<any | null> {
+  if (typeof window === 'undefined') return null;
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) throw new Error('El dispositivo está sin conexión. La operación no se enviará a servidor Turso para evitar duplicados.');
+  let response: Response;
+  try {
+    response = await fetch('/api/turso/store', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify({ operation, ...payload }),
+    });
+  } catch {
+    throw new Error('No se pudo contactar con Turso. La operación no fue enviada a servidor Turso para evitar duplicados.');
+  }
+  if (response.status === 503) throw new Error('Turso no está configurado o no está disponible. servidor Turso no se utilizará como respaldo.');
+  let body: any = null;
+  try { body = await response.json(); } catch {}
+  if (!response.ok || body?.ok === false) throw new Error(String(body?.error || ('Turso rechazó la operación (' + response.status + ').')));
+  return body;
+}
+
+async function tryTursoSpecialRead(kind: 'config' | 'catalog' | 'catalogs', name = ''): Promise<any | null> {
+  if (typeof window === 'undefined') return null;
+  const params = new URLSearchParams({ special: kind });
+  if (kind === 'catalog') params.set('name', name);
+  let response: Response;
+  try { response = await fetch('/api/turso/store?' + params.toString(), { credentials: 'include', cache: 'no-store' }); }
+  catch { throw new Error('No se pudo consultar Turso.'); }
+  if (response.status === 503) throw new Error('Turso no está configurado o no está disponible. servidor Turso no se utilizará como respaldo.');
+  let body: any = null; try { body = await response.json(); } catch {}
+  if (!response.ok || body?.ok === false) throw new Error(String(body?.error || 'Turso rechazó la lectura.'));
+  if (kind === 'config') return body.config || {};
+  if (kind === 'catalogs') return body.catalogs && typeof body.catalogs === 'object' ? body.catalogs : {};
+  return Array.isArray(body.lista) ? body.lista : [];
+}
+async function tryTursoRead(table: string, options: { limit?: number; offset?: number; terminalId?: string; estado?: string; since?: string; until?: string; productId?: string } = {}): Promise<any[] | null> {
+  if (typeof window === 'undefined') return null;
+  let response: Response;
+  try {
+    const params = new URLSearchParams();
+    params.set('table', table);
+    if (options.limit) params.set('limit', String(options.limit));
+    if (options.offset) params.set('offset', String(options.offset));
+    if (options.terminalId) params.set('terminalId', String(options.terminalId));
+    if (options.productId) params.set('productId', String(options.productId));
+    if (options.estado) params.set('estado', String(options.estado));
+    if (options.since) params.set('since', String(options.since));
+    if (options.until) params.set('until', String(options.until));
+    response = await fetch('/api/turso/store?' + params.toString(), {
+      method: 'GET',
+      credentials: 'include',
+      cache: 'no-store',
+    });
+  } catch {
+    throw new Error('No se pudo consultar Turso. No se usará servidor Turso como respaldo porque Turso está activo.');
+  }
+  if (response.status === 503) throw new Error('Turso no está configurado o no está disponible. servidor Turso no se utilizará como respaldo.');
+  let body: any = null;
+  try { body = await response.json(); } catch {}
+  if (!response.ok || body?.ok === false) {
+    throw new Error(String(body?.error || ('Turso rechazó la lectura (' + response.status + ').')));
+  }
+  return Array.isArray(body?.records) ? body.records : [];
+}
+
 
 function operationDocId(prefix: string, operationId: string): string {
   const input = prefix + '|' + operationId;
@@ -255,115 +360,18 @@ function mergeById<T extends { id?: any }>(existing: T[] | undefined, incoming: 
 // caja leyó. Si otra caja lo cambió entretanto, abortamos en lugar de
 // pisar silenciosamente su modificación con un array local antiguo.
 async function syncArrayToCollection(name: string, prevArr: any[] | undefined, newArr: any[] | undefined): Promise<void> {
-  if (!db) return;
-  const prevList = prevArr || [];
-  const newList = newArr || [];
-  const prevById = new Map(prevList.filter(x => x && x.id).map(x => [String(x.id), x]));
-  const newById = new Map(newList.filter(x => x && x.id).map(x => [String(x.id), x]));
-  const changed: Array<{id:string; before:any; after:any|null}> = [];
-
-  newById.forEach((after, id) => {
-    const before = prevById.get(id);
-    if (!before || JSON.stringify(sanitizeForFirestore(before)) !== JSON.stringify(sanitizeForFirestore(after))) {
-      changed.push({ id, before: before ?? null, after });
-    }
-  });
-  prevById.forEach((before, id) => {
-    if (!newById.has(id)) changed.push({ id, before, after: null });
-  });
-
-  // Agrupamos cambios en transacciones para reducir round-trips. Cada lote
-  // mantiene la validación optimista: primero lee todas las versiones remotas
-  // y solo después escribe, sin sobrepasar el límite de la transacción.
-  const CHUNK_SIZE = 450;
-  for (let offset = 0; offset < changed.length; offset += CHUNK_SIZE) {
-    const chunk = changed.slice(offset, offset + CHUNK_SIZE);
-    await runTransaction(db, async tx => {
-      const snapshots = new Map<string, any>();
-      for (const item of chunk) {
-        const ref = doc(db, name, item.id);
-        const snap = await tx.get(ref);
-        snapshots.set(item.id, snap);
-      }
-
-      for (const item of chunk) {
-        const ref = doc(db, name, item.id);
-        const snap = snapshots.get(item.id);
-        const remote = snap.exists() ? sanitizeForFirestore(snap.data()) : null;
-        const expected = item.before ? sanitizeForFirestore(item.before) : null;
-
-        if (!item.before) {
-          if (snap.exists()) {
-            throw new Error('Conflicto de sincronización: el registro ' + item.id + ' ya existe en Firestore.');
-          }
-          tx.set(ref, sanitizeForFirestore(item.after), { merge: true });
-          continue;
-        }
-
-        if (!snap.exists() || JSON.stringify(remote) !== JSON.stringify(expected)) {
-          throw new Error('Conflicto de sincronización en ' + name + '/' + item.id + '. Otro terminal modificó el registro. Se conserva la versión remota.');
-        }
-
-        if (item.after === null) {
-          tx.delete(ref);
-        } else {
-          tx.set(ref, sanitizeForFirestore(item.after), { merge: true });
-        }
-      }
-    });
-  }
+  const previousIds = new Set((prevArr || []).filter(x => x && x.id).map(x => String(x.id)));
+  const records = (newArr || []).filter(x => x && x.id).map(sanitizeForFirestore);
+  const currentIds = new Set(records.map((x: any) => String(x.id)));
+  const deletedIds = [...previousIds].filter(id => !currentIds.has(id));
+  if (records.length === 0 && deletedIds.length === 0) return;
+  const result = await tryTursoOperation('recordsSync', { table: name, records, deletedIds });
+  if (result && Array.isArray(result.records)) applyPatch({ [name]: result.records });
 }
 
-// Stock atómico entre cajas (transacciones): calcula deltas por producto y los aplica contra el
-// stock REAL de Firestore para que dos cajas no se pisen el inventario.
-function syncProductosTransactional(prevArr: any[] | undefined, newArr: any[] | undefined): Promise<Map<string, number> | undefined> {
-  if (!db) return Promise.resolve(undefined);
-  const prevList = prevArr || [];
-  const newList = newArr || [];
-  const prevById = new Map(prevList.filter(x => x && x.id).map(x => [String(x.id), x]));
-  const newById = new Map(newList.filter(x => x && x.id).map(x => [String(x.id), x]));
-
-  const createdIds = [...newById.keys()].filter(id => !prevById.has(id));
-  const changedIds = [...newById.keys()].filter(id =>
-    prevById.has(id) &&
-    JSON.stringify(sanitizeForFirestore(prevById.get(id))) !== JSON.stringify(sanitizeForFirestore(newById.get(id)))
-  );
-  const removedIds = [...prevById.keys()].filter(id => !newById.has(id));
-
-  if (createdIds.length === 0 && changedIds.length === 0 && removedIds.length === 0) return Promise.resolve(new Map());
-
-  return runTransaction(db, async (tx) => {
-    const finalStocks = new Map<string, number>();
-    for (const id of createdIds) {
-      const prod = newById.get(id) || {};
-      tx.set(doc(db, 'productos', id), sanitizeForFirestore(prod), { merge: true });
-      finalStocks.set(id, typeof prod.stock === 'number' ? prod.stock : 0);
-    }
-    for (const id of changedIds) {
-      const prevP = prevById.get(id) || {};
-      const newP = newById.get(id) || {};
-      const prevStock = typeof prevP.stock === 'number' ? prevP.stock : 0;
-      const newStock = typeof newP.stock === 'number' ? newP.stock : 0;
-      const delta = newStock - prevStock;
-      const ref = doc(db, 'productos', id);
-      const snap = await tx.get(ref);
-      const remote = snap.exists() ? snap.data() : null;
-      const baseStock = remote && typeof remote.stock === 'number' ? remote.stock : (delta === 0 ? newStock : 0);
-      const finalStock = baseStock + delta;
-      tx.set(ref, sanitizeForFirestore({ ...newP, stock: finalStock }), { merge: true });
-      finalStocks.set(id, finalStock);
-    }
-    for (const id of removedIds) {
-      tx.delete(doc(db, 'productos', id));
-    }
-    return finalStocks;
-  }).catch((e) => {
-    // No hacemos fallback a escrituras por fuera de la transacción:
-    // si la transacción falla por concurrencia, repetir la escritura con el
-    // array local podría pisar cambios hechos por otra caja.
-    console.error("Error transaccional productos:", e);
-    throw e;
-  });
+// Stock y movimientos se gestionan exclusivamente mediante operaciones transaccionales de Turso.
+function syncProductosTransactional(_prevArr: any[] | undefined, _newArr: any[] | undefined): Promise<Map<string, number> | undefined> {
+  throw new Error('La persistencia de productos está gestionada exclusivamente por Turso.');
 }
 
 // Movimiento de inventario atómico: toma el stock REAL de Firestore y registra
@@ -375,7 +383,13 @@ async function applyInventoryMovementsTransaction(params: {
   productPatches?: Record<string, any>;
   fromOfflineQueue?: boolean;
 }): Promise<any> {
-  if (!db) return null;
+  const tursoResult = await tryTursoOperation('inventory', params);
+  if (tursoResult) {
+    if (Array.isArray(tursoResult.products) && tursoResult.products.length) applyPatch({ productos: mergeById(cache.productos, tursoResult.products) });
+    if (Array.isArray(tursoResult.movements) && tursoResult.movements.length) applyPatch({ movimientos: mergeById(cache.movimientos, tursoResult.movements) });
+    return tursoResult;
+  }
+
   const { operationId, operationType, movements, productPatches = {}, fromOfflineQueue } = params;
   if (!movements?.length) throw new Error('No hay movimientos de inventario para registrar.');
 
@@ -488,67 +502,53 @@ function syncProductosRTDB(prevArr: any[] | undefined, newArr: any[] | undefined
 //  - Si el espejo está vacío → lo siembra COMPLETO desde Firestore.
 //  - Si está incompleto (menos productos que Firestore) → lo repuebla completo.
 // Firestore sigue siendo la fuente de verdad; RTDB es el espejo barato de tiempo real.
-async function bootstrapProductos(): Promise<void> {
-  if (!rtdb || !db) return;
+async function bootstrapProductos(): Promise<boolean> {
   try {
-    const snap = await rtdbGet(ref(rtdb, RTDB_PRODUCTS_PATH));
-    const val = snap.val();
-    const mirrorItems: any[] = val ? Object.values(val).filter(Boolean) : [];
-
-    if (mirrorItems.length === 0) {
-      const items = await loadCollection('productos');
-      if (items.length > 0) {
-        applyPatch({ productos: mergeById((cache as any).productos, items) });
-        const updates: Record<string, any> = {};
-        items.forEach(p => { updates[String(p.id)] = sanitizeForFirestore(p); });
-        await update(ref(rtdb, RTDB_PRODUCTS_PATH), updates);
-      }
-      return;
-    }
-
-    applyPatch({ productos: mergeById((cache as any).productos, mirrorItems) });
-    // Si el espejo ya existe, RTDB es el canal realtime de productos.
-    // No hacemos un count() de Firestore en cada arranque: es una lectura
-    // adicional innecesaria. El saneado completo se ejecuta solo cuando
-    // el espejo está vacío; las escrituras normales mantienen ambos lados.
-
+    // La primera hidratación operativa debe traer el catálogo completo de Turso;
+    // 5.000 era un techo silencioso que podía dejar productos fuera del POS.
+    const tursoItems = await loadCollection('productos');
+    applyPatch({ productos: tursoItems });
+    return true;
   } catch (e) {
     console.error('bootstrapProductos:', e);
+    return false;
   }
 }
-
 // ============================================================
 // LECTURAS
 // ============================================================
 const loadedAll: Record<string, boolean> = {};
 const cursors: Record<string, QueryDocumentSnapshot<DocumentData> | null> = {};
 
-async function loadCollection(name: string): Promise<any[]> {
-  if (!db) return [];
-  const snap = await getDocs(collection(db, name));
-  return snap.docs.map(d => sanitizeForFirestore(d.data())).filter(Boolean);
+async function loadCollection(name: string, options: { estado?: string; terminalId?: string; productId?: string; since?: string; until?: string } = {}): Promise<any[]> {
+  const pageSize = 2000;
+  const apiTable = name === 'cashHistory' ? 'caja' : name;
+  let page = await tryTursoRead(apiTable, { ...options, limit: pageSize, offset: 0 });
+  if (page !== null) {
+    const all = [...page];
+    let offset = page.length;
+    while (page.length === pageSize) {
+      page = await tryTursoRead(apiTable, { ...options, limit: pageSize, offset });
+      if (page === null) throw new Error('La paginación de Turso se interrumpió durante la carga de ' + name + '.');
+      if (!page.length) break;
+      all.push(...page);
+      offset += page.length;
+    }
+    return all.map(sanitizeForFirestore).filter(Boolean);
+  }
+  // Turso es la única fuente de verdad. No convertir una caída de conexión
+  // en una colección vacía ni habilitar una lectura Firebase de respaldo.
+  throw new Error('Turso no está disponible; no se puede hidratar la colección ' + name + '.');
 }
 
 // Carga COMPLETA de una colección paginada de 500 (evita leer doc a doc en loops).
 async function loadAll(name: string): Promise<void> {
-  if (!db || loadedAll[name]) return;
+  if (loadedAll[name]) return;
   loadedAll[name] = true;
-  const col = COLLECTIONS[name];
-  if (!col) return;
+  if (!COLLECTIONS[name]) return;
   try {
-    const all: any[] = [];
-    let lastDoc: any = null;
-    do {
-      const q = lastDoc
-        ? query(collection(db, col), orderBy('fecha', 'desc'), startAfter(lastDoc), limit(500))
-        : query(collection(db, col), orderBy('fecha', 'desc'), limit(500));
-      const snap = await getDocs(q);
-      const items = snap.docs.map(d => sanitizeForFirestore(d.data())).filter(Boolean);
-      all.push(...items);
-      lastDoc = snap.docs.length > 0 ? snap.docs[snap.docs.length - 1] : null;
-      if (snap.docs.length < 500) break;
-    } while (lastDoc);
-    applyPatch({ [name]: mergeById((cache as any)[name], all) });
+    const items = await loadCollection(name);
+    applyPatch({ [name]: items });
   } catch (e) {
     console.error("Error loadAll " + name + ":", e);
     loadedAll[name] = false;
@@ -560,11 +560,11 @@ async function loadAll(name: string): Promise<void> {
 // compartan la misma carga (evita que la segunda retorne "ya cargado"
 // cuando en realidad la primera aún no terminó — race condition que
 // causaba Reportes X/Z en $0 tras reinicio).
-const loadingPromises: Record<string, Promise<void>> = {};
+const loadingPromises: Record<string, Promise<void> | undefined> = {};
 async function ensureLoaded(name: string): Promise<void> {
   if (loadedAll[name]) return;
-  if (!db) return;
   if (loadingPromises[name]) return loadingPromises[name];
+  if (typeof window === 'undefined') return;
   const p = (async () => {
     loadedAll[name] = true;
     try {
@@ -573,6 +573,7 @@ async function ensureLoaded(name: string): Promise<void> {
     } catch (e) {
       console.error("Error cargando " + name + ":", e);
       loadedAll[name] = false;
+      throw e;
     } finally {
       delete loadingPromises[name];
     }
@@ -589,45 +590,33 @@ async function ensureLoaded(name: string): Promise<void> {
 // libroDiario se cargan COMPLETOS: una caja nunca debe perder datos porque
 // otra hizo su corte Z.
 async function loadReportWindow(name: string, terminalId: string, cutoff: string): Promise<void> {
-  if (!db || !COLLECTIONS[name]) return;
   const key = `report:${name}:${terminalId}:${cutoff}`;
-  if (SINCE_STAMP[key] === 'done') return;
 
   try {
+    // Carga completa del período y de la terminal desde Turso; nunca se marca
+    // como listo un X/Z si la respuesta se truncó por un límite fijo.
+    const tursoItems = await loadCollection(name, { terminalId, since: cutoff });
+    const items = tursoItems.filter((item: any) => String(item?.fecha || '') > cutoff);
+    if (items.length) applyPatch({ [name]: mergeById((cache as any)[name], items) });
+    SINCE_STAMP[key] = 'done';
+    console.info("[db-store] Ventana Turso de reporte cargada:", name, items.length, "registros");
+    return;
+
+    // Código de compatibilidad legado inalcanzable: Turso es la fuente única.
     const filters: any[] = [where('fecha', '>', cutoff)];
     if (name === 'ventas' || name === 'libroDiario') {
       filters.push(where('terminalId', '==', terminalId));
     }
 
-    // Carga por páginas para no truncar un reporte si una caja supera 1000
-    // operaciones desde su último Z. Cada página sigue siendo una consulta
-    // acotada al período/terminal; no se descarga el histórico completo.
     let cursor: QueryDocumentSnapshot | null = null;
-    let total = 0;
     while (true) {
       const pageQuery = cursor
-        ? query(
-            collection(db, COLLECTIONS[name]),
-            ...filters,
-            orderBy('fecha', 'asc'),
-            startAfter(cursor),
-            limit(1000)
-          )
-        : query(
-            collection(db, COLLECTIONS[name]),
-            ...filters,
-            orderBy('fecha', 'asc'),
-            limit(1000)
-          );
-
+        ? query(collection(db, COLLECTIONS[name]), ...filters, orderBy('fecha', 'asc'), startAfter(cursor), limit(1000))
+        : query(collection(db, COLLECTIONS[name]), ...filters, orderBy('fecha', 'asc'), limit(1000));
       let snap;
       try {
         snap = await getDocs(pageQuery);
       } catch (e: any) {
-        // Si el índice compuesto aún no fue desplegado en Firebase, no bloqueamos
-        // Reporte X/Z. Reintentamos la misma ventana solo por fecha y filtramos
-        // la terminal en memoria. Este camino es de contingencia; cuando el índice
-        // existe, la consulta optimizada anterior sigue siendo la utilizada.
         if (e?.code !== 'failed-precondition' || name === 'devoluciones') throw e;
         const fallbackFilters: any[] = [where('fecha', '>', cutoff)];
         const fallbackQuery = cursor
@@ -635,21 +624,13 @@ async function loadReportWindow(name: string, terminalId: string, cutoff: string
           : query(collection(db, COLLECTIONS[name]), ...fallbackFilters, orderBy('fecha', 'asc'), limit(1000));
         snap = await getDocs(fallbackQuery);
       }
-      const items = snap.docs
-        .map(d => sanitizeForFirestore(d.data()))
-        .filter(Boolean)
+      const items = snap.docs.map((d: any) => sanitizeForFirestore(d.data())).filter(Boolean)
         .filter((item: any) => name !== 'ventas' && name !== 'libroDiario' || String(item.terminalId || '') === terminalId);
-      if (items.length) {
-        applyPatch({ [name]: mergeById((cache as any)[name], items) });
-        total += items.length;
-      }
-
+      if (items.length) applyPatch({ [name]: mergeById((cache as any)[name], items) });
       if (snap.docs.length < 1000) break;
       cursor = snap.docs[snap.docs.length - 1];
     }
-
     SINCE_STAMP[key] = 'done';
-    console.info("[db-store] Ventana de reporte cargada:", name, total, "registros");
   } catch (e) {
     console.error("Error cargando ventana de reporte " + name + ":", e);
     throw e;
@@ -659,9 +640,8 @@ async function loadReportWindow(name: string, terminalId: string, cutoff: string
 // Reportes X/Z solo necesitan el período posterior al último Z de ESTA caja.
 // No tiene sentido descargar ventas/libroDiario históricos de todas las cajas.
 async function ensureReportData(terminalId?: string, cutoff?: string): Promise<void> {
-  if (!db) return;
 
-  const termId = String(terminalId || 'GLOBAL');
+  const termId = String(terminalId || '').trim();
   const desde = String(cutoff || '');
 
   // Si no tenemos terminal/corte (casos administrativos), conservamos el
@@ -683,23 +663,31 @@ async function ensureReportData(terminalId?: string, cutoff?: string): Promise<v
 }
 
 async function ensureReportRange(name: string, desde: string, hasta: string, terminalId = 'all'): Promise<void> {
-  if (!db || !COLLECTIONS[name] || !desde || !hasta) return;
-
-  const start = String(desde) + 'T00:00:00.000';
-  const endDate = new Date(String(hasta) + 'T00:00:00.000');
-  endDate.setDate(endDate.getDate() + 1);
-  const end = endDate.toISOString().slice(0, 23);
+  if (!desde || !hasta) return;
   const key = `report-range:${name}:${terminalId}:${desde}:${hasta}`;
   if (SINCE_STAMP[key] === 'done') return;
 
   try {
-    const filters: any[] = [
-      where('fecha', '>=', start),
-      where('fecha', '<', end),
-    ];
-    if (terminalId !== 'all') {
-      filters.push(where('terminalId', '==', terminalId));
-    }
+    const tursoStart = String(desde) + 'T00:00:00';
+    const tursoEndDate = new Date(String(hasta) + 'T00:00:00');
+    tursoEndDate.setDate(tursoEndDate.getDate() + 1);
+    const tursoEnd = tursoEndDate.toISOString().slice(0, 19);
+    const tursoItems = await loadCollection(name, {
+      since: tursoStart,
+      until: tursoEnd,
+      ...(terminalId !== 'all' ? { terminalId } : {}),
+    });
+    if (tursoItems.length) applyPatch({ [name]: mergeById((cache as any)[name], tursoItems) });
+    SINCE_STAMP[key] = 'done';
+    return;
+
+    // Código de compatibilidad legado inalcanzable: Turso es la fuente única.
+    const start = String(desde) + 'T00:00:00.000';
+    const endDate = new Date(String(hasta) + 'T00:00:00.000');
+    endDate.setDate(endDate.getDate() + 1);
+    const end = endDate.toISOString().slice(0, 23);
+    const filters: any[] = [where('fecha', '>=', start), where('fecha', '<', end)];
+    if (terminalId !== 'all') filters.push(where('terminalId', '==', terminalId));
 
     let cursor: QueryDocumentSnapshot | null = null;
     while (true) {
@@ -712,10 +700,9 @@ async function ensureReportRange(name: string, desde: string, hasta: string, ter
       if (snap.docs.length < 1000) break;
       cursor = snap.docs[snap.docs.length - 1];
     }
-
     SINCE_STAMP[key] = 'done';
   } catch (e) {
-    console.error("Error cargando rango de reporte " + name + ":", e);
+    console.error("Error cargando rango de reportes " + name + ":", e);
     throw e;
   }
 }
@@ -723,8 +710,14 @@ async function ensureReportRange(name: string, desde: string, hasta: string, ter
 // Siguiente página (10) de una colección ordenada por fecha desc (listas históricas).
 async function loadMore(name: string, pageSize: number = PAGE_SIZE): Promise<number> {
   const col = COLLECTIONS[name];
-  if (!col || !db) return 0;
+  if (!col) return 0;
   try {
+    const tursoItems = await tryTursoRead(name, { limit: pageSize });
+    if (tursoItems !== null) {
+      applyPatch({ [name]: mergeById((cache as any)[name], tursoItems) });
+      return tursoItems.length;
+    }
+    if (!db) return 0;
     const last = cursors[name] || null;
     const q = last
       ? query(collection(db, col), orderBy('fecha', 'desc'), startAfter(last), limit(pageSize))
@@ -741,30 +734,38 @@ async function loadMore(name: string, pageSize: number = PAGE_SIZE): Promise<num
 }
 
 const SINCE_STAMP: Record<string, string> = {};
+let stockKardexSyncPromise: Promise<any> | null = null;
+let stockKardexSyncCompleted = false;
 
 // Kardex de un producto (where + orden). Si falta el índice compuesto, carga y filtra en memoria.
 async function kardex(productoId: string, max = 100): Promise<any[]> {
-  if (!db) return [];
   try {
-    const snap = await getDocs(query(
-      collection(db, 'movimientos'),
-      where('productoId', '==', productoId),
-      orderBy('fecha', 'desc'),
-      limit(max)
-    ));
-    return snap.docs.map(d => sanitizeForFirestore(d.data())).filter(Boolean);
-  } catch (e: any) {
-    if (e?.code === 'failed-precondition' || /index/i.test(String(e?.message || ''))) {
-      await ensureLoaded('movimientos');
-      return (cache.movimientos || [])
-        .filter(m => m.productoId === productoId)
-        .sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)))
-        .slice(0, max);
+    const tursoItems = await tryTursoRead('movimientos', { limit: max, productId: String(productoId) });
+    if (tursoItems !== null) return tursoItems.slice(0, max);
+    if (!db) return [];
+    try {
+      const snap = await getDocs(query(
+        collection(db, 'movimientos'),
+        where('productoId', '==', productoId),
+        orderBy('fecha', 'desc'),
+        limit(max)
+      ));
+      return snap.docs.map(d => sanitizeForFirestore(d.data())).filter(Boolean);
+    } catch (e: any) {
+      if (e?.code === 'failed-precondition' || /index/i.test(String(e?.message || ''))) {
+        await ensureLoaded('movimientos');
+        return (cache.movimientos || [])
+          .filter(m => m.productoId === productoId)
+          .sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)))
+          .slice(0, max);
+      }
+      throw e;
     }
-    throw e;
+  } catch (e) {
+    console.error("kardex " + productoId + ":", e);
+    return [];
   }
 }
-
 function readCatalogCacheMeta(): { ready: boolean; version: string } {
   if (typeof window === 'undefined') return { ready: false, version: '' };
   try {
@@ -794,31 +795,25 @@ function writeCatalogCacheMeta(version: string): void {
 }
 
 async function loadCatalogs(force = false, version = ''): Promise<void> {
-  if (!db) return;
-
   const meta = readCatalogCacheMeta();
   if (!force && meta.ready && (!version || meta.version === version)) return;
-
   const entries = Object.entries(CATALOG_FIELDS);
-  const results = await Promise.all(entries.map(async ([field, catName]) => {
-    try {
-      const snap = await getDoc(doc(db, CATALOGOS_COLLECTION, catName));
-      return [field, snap.exists() ? (snap.data().lista || []) : []] as const;
-    } catch (e) {
-      console.warn("Catálogo " + catName + ":", e);
-      return null;
-    }
-  }));
-
   const patch: any = {};
-  results.forEach(result => {
-    if (result) patch[result[0]] = result[1];
-  });
-
+  const tursoCatalogs = await tryTursoSpecialRead('catalogs');
+  if (tursoCatalogs !== null) {
+    for (const [field, catName] of entries) {
+      patch[field] = Array.isArray(tursoCatalogs[catName]) ? tursoCatalogs[catName] : [];
+    }
+  } else {
+    const results = await Promise.all(entries.map(async ([field, catName]) => {
+      try { const snap = await getDoc(doc(db, CATALOGOS_COLLECTION, catName)); return [field, snap.exists() ? (snap.data().lista || []) : []] as const; }
+      catch (e) { console.warn('Catálogo ' + catName + ':', e); return null; }
+    }));
+    results.forEach(result => { if (result) patch[result[0]] = result[1]; });
+  }
   if (Object.keys(patch).length > 0) applyPatch(patch);
   writeCatalogCacheMeta(version || meta.version);
 }
-
 // ============================================================
 // INICIALIZACIÓN DE LISTENERS
 // ============================================================
@@ -838,12 +833,27 @@ function stopTerminalSync(): void {
 }
 
 function startTerminalSync(terminalId?: string, all = false, initialItems: Terminal[] = []): () => void {
-  if (!db || typeof window === 'undefined') return () => {};
+  if (typeof window === 'undefined') return () => {};
   stopTerminalSync();
 
   if (initialItems.length > 0) {
     applyPatch({ terminales: mergeById((cache as any).terminales, initialItems) });
   }
+
+  // Cuando Turso está activo, la hidratación inicial sale de Turso y servidor Turso
+  // deja de ser fuente de lectura para terminales/ventas durante la migración.
+  // El cache local conserva la última vista mientras llega la respuesta.
+  void (async () => {
+    try {
+      const terminals = await tryTursoRead('terminales', all ? {} : { limit: 1, terminalId });
+      if (terminals !== null) {
+        applyPatch({ terminales: all ? terminals : mergeById((cache as any).terminales, terminals) });
+        const sales = await tryTursoRead('ventas', all ? { limit: 500 } : { limit: 500, terminalId });
+        if (sales !== null) applyPatch({ ventas: sales });
+        return;
+      }
+
+      if (!db) return;
 
   const target = all
     ? collection(db, COLLECTIONS.terminales)
@@ -898,6 +908,12 @@ function startTerminalSync(terminalId?: string, all = false, initialItems: Termi
   }
 
   return stopTerminalSync;
+    } catch (e) {
+      console.error('[db-store] Error hidratando terminal/ventas desde Turso:', e);
+    }
+  })();
+
+  return stopTerminalSync;
 }
 
 
@@ -917,31 +933,41 @@ function stopMasterSync(name: string): void {
 }
 
 function startMasterSync(name: string): () => void {
-  if (!db || typeof window === 'undefined') return () => {};
+  if (typeof window === 'undefined') return () => {};
   if (!COLLECTIONS[name]) return () => {};
   if (masterSyncFns[name]) return () => stopMasterSync(name);
 
-  const col = COLLECTIONS[name];
-  const unsub = onSnapshot(
-    collection(db, col),
-    (snap) => {
-      const items = snap.docs
-        .map(d => sanitizeForFirestore(d.data()))
-        .filter(Boolean);
-      applyPatch({ [name]: items });
-
-      // Este snapshot ya contiene la colección completa. Marcarla como
-      // hidratada evita que ensureReportData()/ensureLoaded() dispare una
-      // segunda lectura completa mientras el listener está activo.
-      if (name === 'clientes' || name === 'proveedores') {
-        loadedAll[name] = true;
-      }
-    },
-    (err) => {
-      if (err.code !== 'permission-denied') console.warn("Sync maestro " + name + ":", err);
+  // Con Turso activo, clientes/proveedores deben salir de Turso. El listener
+  // servidor Turso se conserva únicamente como fallback cuando Turso no está configurado.
+  void (async () => {
+    try {
+      const tursoItems = await loadCollection(name);
+      applyPatch({ [name]: tursoItems });
+      loadedAll[name] = true;
+      return;
+    } catch (e) {
+      console.error('[db-store] Error cargando ' + name + ' desde Turso:', e);
+      return;
     }
-  );
-  masterSyncFns[name] = unsub;
+
+    if (!db) return;
+    const col = COLLECTIONS[name];
+    const unsub = onSnapshot(
+      collection(db, col),
+      (snap) => {
+        const items = snap.docs
+          .map(d => sanitizeForFirestore(d.data()))
+          .filter(Boolean);
+        applyPatch({ [name]: items });
+        if (name === 'clientes' || name === 'proveedores') loadedAll[name] = true;
+      },
+      (err) => {
+        if (err.code !== 'permission-denied') console.warn("Sync maestro " + name + ":", err);
+      }
+    );
+    masterSyncFns[name] = unsub;
+  })();
+
   return () => stopMasterSync(name);
 }
 
@@ -972,67 +998,72 @@ function cleanup() {
 function init() {
   if (started) return;
   started = true;
-  if (!db || typeof window === 'undefined') return;
+  if (typeof window === 'undefined') return;
 
-  // 1) CONFIG (doc pequeño, en vivo)
-  teardownFns.push(onSnapshot(doc(db, CONFIG_COLLECTION, CONFIG_DOC_ID), (snap) => {
-    if (!snap.exists()) return;
-    const val = snap.data();
-    const patch: any = {};
-    for (const f of CONFIG_FIELDS) {
-      if (val[f] !== undefined) patch[f] = sanitizeForFirestore(val[f]);
+  // 1) CONFIG: Turso es la única fuente de verdad operacional.
+  // No condicionamos esta carga a servidor Turso: la tasa BCV y el resto de la
+  // configuración deben hidratarse directamente desde app_config/general
+  // aunque el cliente servidor Turso no exista o no esté inicializado.
+  void (async () => {
+    try {
+      const tursoConfig = await tryTursoSpecialRead('config');
+      const patch: any = {};
+      for (const f of CONFIG_FIELDS) if (tursoConfig?.[f] !== undefined) {
+        patch[f] = sanitizeForFirestore(tursoConfig[f]);
+      }
+      if (Object.keys(patch).length) applyPatch(patch);
+      await loadCatalogs(true, String(tursoConfig?.catalogosVersion || ''));
+    } catch (error) {
+      console.error('[db-store] Error cargando configuración desde Turso:', error);
     }
-    if (Object.keys(patch).length > 0) applyPatch(patch);
+  })();
 
-    // Los catálogos son relativamente estáticos. Solo se vuelven a leer cuando
-    // su versión cambió en config/general, o cuando esta caja aún no tiene caché.
-    const remoteCatalogVersion = String(val.catalogosVersion || '');
-    const catalogMeta = readCatalogCacheMeta();
-    if (!catalogMeta.ready || (remoteCatalogVersion && catalogMeta.version !== remoteCatalogVersion)) {
-      void loadCatalogs(true, remoteCatalogVersion);
-    }
-  }, (err) => { if (err.code !== 'permission-denied') console.warn("Sync config:", err); }));
-
-  // 2) PRODUCTOS (tiempo real vía RTDB: el espejo evita re-leer la colección en cada venta).
-  bootstrapProductos();
-  if (rtdb) {
+  // 2) PRODUCTOS: Turso es la fuente cuando está activo. RTDB solo se usa como fallback.
+  void (async () => {
+    const usingTurso = await bootstrapProductos();
+    if (usingTurso || !rtdb) return;
     teardownFns.push(onValue(ref(rtdb, RTDB_PRODUCTS_PATH), (snap) => {
       const val = snap.val() || {};
-      const items = Object.values(val).filter(Boolean);
-      // El espejo RTDB representa el estado completo de productos.
-      // Reemplazamos el cache, no hacemos merge, para que una eliminación
-      // remota tampoco pueda dejar un producto fantasma en esta caja.
+      const items: any[] = Object.values(val as Record<string, any>).filter(Boolean);
       applyPatch({ productos: items });
     }, (err) => { if (err?.code !== 'permission-denied') console.warn("RTDB productos:", err); }));
-  }
+  })();
 
   // 3) LISTAS VIVAS ENTRE CAJAS.
   // CxC/CxP: el POS solo necesita deuda ACTIVA en tiempo real. Mantener
   // miles de deudas ya pagadas conectadas en cada terminal genera lecturas
   // iniciales innecesarias. El histórico completo se hidrata únicamente
   // cuando se entra al módulo que lo necesita.
-  for (const name of ['cxc', 'cxp']) {
-    const col = COLLECTIONS[name];
-    teardownFns.push(onSnapshot(
-      query(collection(db, col), where('estado', 'in', ['pendiente', 'parcial'])),
-      (snap) => {
-        const currentArr = [...((cache as any)[name] || [])];
-        const map = new Map<string, any>(currentArr.map(x => [String(x.id), x]));
-        snap.docChanges().forEach(change => {
-          const item = sanitizeForFirestore(change.doc.data());
-          const id = String(item?.id || change.doc.id);
-          if (change.type === 'removed') {
-            // Si dejó de pertenecer al conjunto activo porque pasó a pagada,
-            // conservamos el histórico ya hidratado. Si realmente fue
-            // eliminado y seguía activa, sí retiramos el documento.
-            if (item && String(item.estado || '') !== 'pagada') map.delete(id);
-          } else if (item) map.set(id, item);
-        });
-        applyPatch({ [name]: [...map.values()] });
-      },
-      (err) => { if (err.code !== 'permission-denied') console.warn("Sync " + name + ":", err); }
-    ));
-  }
+  // CxC/CxP: Turso es la fuente de lectura cuando está activo. servidor Turso
+  // conserva el listener únicamente como fallback mientras Turso no esté configurado.
+  void (async () => {
+    for (const name of ['cxc', 'cxp']) {
+      try {
+        const tursoItems = await loadCollection(name, { estado: 'pendiente,parcial' });
+        applyPatch({ [name]: tursoItems });
+        continue;
+        const col = COLLECTIONS[name];
+        teardownFns.push(onSnapshot(
+          query(collection(db, col), where('estado', 'in', ['pendiente', 'parcial'])),
+          (snap) => {
+            const currentArr = [...((cache as any)[name] || [])];
+            const map = new Map<string, any>(currentArr.map(x => [String(x.id), x]));
+            snap.docChanges().forEach(change => {
+              const item = sanitizeForFirestore(change.doc.data());
+              const id = String(item?.id || change.doc.id);
+              if (change.type === 'removed') {
+                if (item && String(item.estado || '') !== 'pagada') map.delete(id);
+              } else if (item) map.set(id, item);
+            });
+            applyPatch({ [name]: [...map.values()] });
+          },
+          (err) => { if (err.code !== 'permission-denied') console.warn("Sync " + name + ":", err); }
+        ));
+      } catch (e) {
+        console.error("[db-store] Error leyendo " + name + " desde Turso:", e);
+      }
+    }
+  })();
 
   // Clientes/proveedores se sincronizan solo mientras el módulo que los necesita está abierto.
   // Así evitamos descargar y mantener dos colecciones maestras completas en cada caja
@@ -1043,45 +1074,46 @@ function init() {
   // listado completo cuando necesitan gestionar las cajas.
   // Históricos de auditoría: solo mantenemos una ventana reciente en realtime.
   // El histórico completo se carga bajo demanda al abrir el módulo correspondiente.
-  for (const name of ['devoluciones', 'anulaciones', 'reportesZ']) {
-    const col = COLLECTIONS[name];
-    teardownFns.push(onSnapshot(
-      query(collection(db, col), orderBy('fecha', 'desc'), limit(100)),
-      (snap) => {
-        const currentArr = [...((cache as any)[name] || [])];
-        const map = new Map<string, any>(currentArr.map(x => [String(x.id), x]));
-        snap.docChanges().forEach(change => {
-          const item = sanitizeForFirestore(change.doc.data());
-          if (!item || !item.id) return;
-          if (change.type === 'removed') map.delete(String(item.id));
-          else map.set(String(item.id), item);
-        });
-        applyPatch({ [name]: [...map.values()] });
-      },
-      (err) => { if (err.code !== 'permission-denied') console.warn("Sync " + name + ":", err); }
-    ));
-  }
+  void (async () => {
+    for (const name of ['devoluciones', 'anulaciones', 'reportesZ']) {
+      try {
+        const tursoItems = await tryTursoRead(name, { limit: 100 });
+        if (tursoItems !== null) {
+          applyPatch({ [name]: tursoItems });
+          continue;
+        }
+        const col = COLLECTIONS[name];
+        teardownFns.push(onSnapshot(
+          query(collection(db, col), orderBy('fecha', 'desc'), limit(100)),
+          (snap) => {
+            const currentArr = [...((cache as any)[name] || [])];
+            const map = new Map<string, any>(currentArr.map(x => [String(x.id), x]));
+            snap.docChanges().forEach(change => {
+              const item = sanitizeForFirestore(change.doc.data());
+              if (!item || !item.id) return;
+              if (change.type === 'removed') map.delete(String(item.id));
+              else map.set(String(item.id), item);
+            });
+            applyPatch({ [name]: [...map.values()] });
+          },
+          (err) => { if (err.code !== 'permission-denied') console.warn("Sync " + name + ":", err); }
+        ));
+      } catch (e) {
+        console.error("[db-store] Error leyendo " + name + " desde Turso:", e);
+      }
+    }
+  })();
 
-  // Históricos operativos: mantenemos la ventana de últimas 50 para no
-  // convertir cada movimiento de una caja en una lectura completa.
-  for (const name of ['movimientos']) {
-    const col = COLLECTIONS[name];
-    teardownFns.push(onSnapshot(
-      query(collection(db, col), orderBy('fecha', 'desc'), limit(50)),
-      (snap) => {
-        const currentArr = [...((cache as any)[name] || [])];
-        const map = new Map<string, any>(currentArr.map(x => [String(x.id), x]));
-        snap.docChanges().forEach(change => {
-          const item = sanitizeForFirestore(change.doc.data());
-          if (!item || !item.id) return;
-          if (change.type === 'removed') map.delete(String(item.id));
-          else map.set(String(item.id), item);
-        });
-        applyPatch({ [name]: [...map.values()] });
-      },
-      (err) => { if (err.code !== 'permission-denied') console.warn("Sync " + name + ":", err); }
-    ));
-  }
+  // Históricos operativos: Turso es la única fuente de movimientos.
+  // No se instala ningún listener servidor Turso/Firestore porque servidor Turso fue retirado.
+  void (async () => {
+    try {
+      const tursoItems = await tryTursoRead('movimientos', { limit: 50 });
+      if (tursoItems !== null) applyPatch({ movimientos: tursoItems });
+    } catch (e) {
+      console.error('[db-store] Error leyendo movimientos desde Turso:', e);
+    }
+  })();
 
   // 4) CARGA INICIAL: listas pequeñas completas + ventas/libroDiario COMPLETOS
   //    (cada caja filtra por su propio corte Z, así que ninguna puede perder datos
@@ -1093,9 +1125,39 @@ function init() {
   // cuando el módulo correspondiente los necesita.
 
 
+  // 4.5) LIBRO DIARIO: movimientos de caja y asientos deben hidratarse desde Turso
+  void (async () => {
+    try {
+      const tursoItems = await tryTursoRead('libroDiario', { limit: 2000 });
+      if (tursoItems !== null) applyPatch({ libroDiario: tursoItems });
+    } catch (e) {
+      console.error('[db-store] Error cargando libro diario desde Turso:', e);
+    }
+  })();
+
   // 5) CATÁLOGOS
   // Se hidratan desde la caché local. Si config/general detecta una versión
   // nueva, el listener anterior ejecuta loadCatalogs() de forma controlada.
+}
+
+async function ensurePurchaseHistory(): Promise<void> {
+  if (typeof window === 'undefined') return;
+  try {
+    // Historial de compras: cargar directamente desde Turso un bloque amplio.
+    // Las compras migradas pueden ser anteriores a las primeras 500 operaciones
+    // del cache inicial y no deben desaparecer del módulo por ese límite.
+    const [compras, movimientos, cxp] = await Promise.all([
+      loadCollection('compras'),
+      loadCollection('movimientos'),
+      loadCollection('cxp'),
+    ]);
+    if (compras !== null) applyPatch({ compras: mergeById((cache as any).compras, compras) });
+    if (movimientos !== null) applyPatch({ movimientos: mergeById((cache as any).movimientos, movimientos) });
+    if (cxp !== null) applyPatch({ cxp: mergeById((cache as any).cxp, cxp) });
+  } catch (e) {
+    console.error('[db-store] Error cargando historial de compras desde Turso:', e);
+    throw e;
+  }
 }
 
 // ============================================================
@@ -1104,12 +1166,24 @@ function init() {
 async function getSaleById(saleId: string): Promise<any | null> {
   if (!saleId) return null;
   const id = String(saleId);
-  const cached = (cache.ventas || []).find((v: any) => String(v?.id || '') === id);
-  if (cached) return sanitizeForFirestore(cached);
-  if (!db) return null;
   try {
-    const snap = await getDoc(doc(db, 'ventas', id));
-    return snap.exists() ? sanitizeForFirestore({ ...snap.data(), id }) : null;
+    // Para consultas históricas, la venta debe salir de Turso directamente.
+    // El cache local puede contener una versión antigua de la venta migrada
+    // sin items y no debe ocultar el payload completo persistido.
+    if (typeof window !== 'undefined') {
+      const response = await fetch('/api/turso/store?table=ventas&id=' + encodeURIComponent(id), {
+        credentials: 'include',
+        cache: 'no-store',
+      });
+      if (response.status === 503) throw new Error('Turso no está configurado o no está disponible.');
+      const body: any = await response.json();
+      if (!response.ok || body?.ok === false) throw new Error(String(body?.error || 'Turso rechazó la lectura.'));
+      if (body?.record) return sanitizeForFirestore(body.record);
+      return null;
+    }
+    const cached = (cache.ventas || []).find((v: any) => String(v?.id || '') === id);
+    if (cached) return sanitizeForFirestore(cached);
+    return null;
   } catch (e) {
     console.error('Error leyendo venta puntual:', e);
     throw e;
@@ -1117,7 +1191,18 @@ async function getSaleById(saleId: string): Promise<any | null> {
 }
 
 export const Store = {
+  ensurePurchaseHistory,
   applyInventoryMovementsTransaction,
+  async createCashMovementTransaction(params: {
+    operationId: string;
+    movement: any;
+    terminalId?: string;
+  }): Promise<any> {
+    if (typeof window === 'undefined') throw new Error('La operación de caja debe ejecutarse desde el POS.');
+    const result = await tryTursoOperation('cashMovement', params);
+    if (!result?.movement) throw new Error('Turso no confirmó el movimiento de caja.');
+    return result;
+  },
   subscribe(callback: (state: Partial<AppState>) => void): () => void {
     listeners.add(callback);
     init();
@@ -1139,12 +1224,14 @@ export const Store = {
    * evitando que dos cajas trabajen sobre el mismo saldo antiguo.
    */
   async processReturnOrCancellationTransaction(params: { operationId: string; operationType: 'DEVOLUCION' | 'ANULACION'; saleId: string; operationDoc: any; movements: any[]; journal?: any; refundItems?: any[]; fullCancellation?: boolean; fromOfflineQueue?: boolean; }): Promise<any> {
-    if (!db) return null;
     const { operationId, operationType, saleId, operationDoc, movements, journal, refundItems = [], fullCancellation = false } = params;
     if (!params.fromOfflineQueue && typeof window !== 'undefined' && navigator.onLine === false) {
       enqueueOfflineOperation(operationType, { ...params }, operationId);
       return { queuedOffline: true, operationId };
     }
+    const tursoResult = await tryTursoOperation('returnOrCancellation', params);
+    if (tursoResult) return tursoResult;
+
     let result: any = null;
     await runTransaction(db, async tx => {
       const operationRef = await claimOperation(tx, operationType, operationId);
@@ -1199,17 +1286,27 @@ export const Store = {
     payment: any;
     journal?: any;
     terminalId?: string;
-  }): Promise<{ appliedUSD: number; debts: any[]; receiptId?: string }> {
-    if (typeof window === 'undefined' || !db) return { appliedUSD: 0, debts: [] };
+  }): Promise<{ appliedUSD: number; debts: any[]; receiptId?: string; queuedOffline?: boolean }> {
+    if (typeof window === 'undefined') return { appliedUSD: 0, debts: [] };
     const { operationId, provider, amountUSD, payment, journal, terminalId } = params;
     if (!(amountUSD > 0)) return { appliedUSD: 0, debts: [] };
+    const tursoResult = await tryTursoOperation('globalProviderPayment', params);
+    if (tursoResult) {
+      // La transacción devuelve las deudas modificadas: no releer 2.000 CxP.
+      if (Array.isArray(tursoResult.debts) && tursoResult.debts.length) {
+        applyPatch({ cxp: mergeById(cache.cxp || [], tursoResult.debts) });
+      }
+      if (Array.isArray(tursoResult.journal)) applyPatch({ libroDiario: mergeById(cache.libroDiario, tursoResult.journal) });
+      return tursoResult;
+    }
 
+    const effectiveTerminalId = String(terminalId || '').trim();
     const q = query(collection(db, 'cxp'), where('proveedor', '==', provider));
-    let result = { appliedUSD: 0, debts: [] as any[] };
+    let result = { appliedUSD: 0, debts: [] as any[], receiptId: '' as string };
     const opId = String(operationId || payment?.id || (provider + '|' + amountUSD + '|' + payment?.fecha + '|' + payment?.metodo));
     await runTransaction(db, async tx => {
       const operationRef = await claimOperation(tx, 'PAGO-CXP-GLOBAL', opId);
-      const terminalRef = terminalId ? doc(db, 'terminales', terminalId) : null;
+      const terminalRef = effectiveTerminalId ? doc(db, 'terminales', effectiveTerminalId) : null;
       const terminalSnap = terminalRef ? await tx.get(terminalRef) : null;
       const terminalRemote = terminalSnap?.exists() ? sanitizeForFirestore(terminalSnap.data()) as any : null;
       if (terminalId && !terminalRemote) throw new Error('La caja/terminal ya no existe en Firestore.');
@@ -1282,7 +1379,7 @@ export const Store = {
       }
       if (terminalRef && terminalRemote) tx.set(terminalRef, { proximoPagoProveedor: nextCounter + 1 }, { merge: true });
 
-      tx.set(operationRef, { tipo: 'PAGO-CXP-GLOBAL', operationId: opId, fecha: payment?.fecha || new Date().toISOString(), referencia: nextResult.receiptId, terminalId: terminalId || 'GLOBAL' }, { merge: false });
+      tx.set(operationRef, { tipo: 'PAGO-CXP-GLOBAL', operationId: opId, fecha: payment?.fecha || new Date().toISOString(), referencia: nextResult.receiptId, terminalId: effectiveTerminalId }, { merge: false });
       result = nextResult;
     });
 
@@ -1302,9 +1399,23 @@ export const Store = {
     journal?: any;
     terminalId?: string;
   }): Promise<{ appliedUSD: number; appliedBS: number; debts: any[]; receiptId?: string }> {
-    if (typeof window === 'undefined' || !db) return { appliedUSD: 0, appliedBS: 0, debts: [] };
+    if (typeof window === 'undefined') return { appliedUSD: 0, appliedBS: 0, debts: [] };
     const { operationId, customerName, customerCedula, amountUSD, amountBS, payment, journal, terminalId } = params;
+    const effectiveTerminalId = String(terminalId || '').trim();
     if (!(amountUSD > 0)) return { appliedUSD: 0, appliedBS: 0, debts: [] };
+    const tursoResult = await tryTursoOperation('globalCustomerPayment', params);
+    if (tursoResult) {
+      if (Array.isArray(tursoResult.debts)) applyPatch({ cxc: mergeById(cache.cxc, tursoResult.debts) });
+      // La respuesta transaccional contiene las deudas afectadas y sus historiales.
+      // Evitamos descargar otra vez hasta 2.000 registros de CxC.
+      if (Array.isArray(tursoResult.debts) && tursoResult.debts.length) {
+        applyPatch({ cxc: mergeById(cache.cxc || [], tursoResult.debts) });
+      }
+      if (tursoResult.sale?.id) applyPatch({ ventas: mergeById(cache.ventas, [tursoResult.sale]) });
+      if (journal?.id) applyPatch({ libroDiario: mergeById(cache.libroDiario, [{ ...journal, montoUSD: tursoResult.appliedUSD, montoBS: tursoResult.appliedBS, referencia: tursoResult.receiptId, terminalId: terminalId || journal.terminalId }]) });
+      if (tursoResult.terminal?.id) applyPatch({ terminales: mergeById(cache.terminales || [], [tursoResult.terminal]) });
+      return tursoResult;
+    }
 
     const customerLabel = customerCedula ? `${customerName} [${customerCedula}]` : customerName;
     const q = query(collection(db, 'cxc'), where('cliente', '==', customerLabel));
@@ -1408,7 +1519,7 @@ export const Store = {
         operationId: opId,
         fecha: payment?.fecha || new Date().toISOString(),
         referencia: nextResult.receiptId,
-        terminalId: terminalId || 'GLOBAL'
+        terminalId: effectiveTerminalId
       }, { merge: false });
 
       nextResult.debts = nextResult.debts.map((d: any) => d);
@@ -1442,9 +1553,42 @@ export const Store = {
     customerCedula?: string;
     terminalId?: string;
   }): Promise<any | null> {
-    if (typeof window === 'undefined' || !db) return null;
+    if (typeof window === 'undefined') return null;
     const { operationId, collection: collectionName, debtId, amountUSD, amountBS, payment, journal, sale, customerCedula, terminalId } = params;
     if (!(amountUSD > 0)) return null;
+    const tursoResult = await tryTursoOperation('debtPayment', params);
+    if (tursoResult) {
+      if (tursoResult.id) {
+        applyPatch({ [collectionName]: mergeById((cache as any)[collectionName] || [], [tursoResult]) });
+      }
+
+      // El pago individual CxP es una operación administrativa y su asiento
+      // debe aparecer inmediatamente en Contabilidad, sin depender de una
+      // recarga ni de que el listado de CxP haya sido hidratado nuevamente.
+      if (collectionName === 'cxp' && tursoResult.id) {
+        applyPatch({ cxp: mergeById(cache.cxp || [], [tursoResult]) });
+      }
+
+      // La transacción devuelve la deuda actualizada con su historial de pagos.
+      // No hace falta descargar nuevamente toda la colección CxC.
+      if (collectionName === 'cxc' && tursoResult.id) {
+        applyPatch({ cxc: mergeById(cache.cxc || [], [tursoResult]) });
+      }
+
+      if (tursoResult.sale?.id) {
+        applyPatch({ ventas: mergeById(cache.ventas, [tursoResult.sale]) });
+      }
+
+      if (Array.isArray(tursoResult.journal) && tursoResult.journal.length) {
+        applyPatch({ libroDiario: mergeById(cache.libroDiario || [], tursoResult.journal) });
+      }
+
+      if (tursoResult.terminal) {
+        applyPatch({ terminales: mergeById(cache.terminales, [tursoResult.terminal]) });
+      }
+
+      return tursoResult;
+    }
     const debtRef = doc(db, collectionName, debtId);
     let result: any = null;
     const opId = String(operationId || payment?.id || (collectionName + '|' + debtId + '|' + amountUSD + '|' + payment?.metodo + '|' + payment?.fecha));
@@ -1519,7 +1663,25 @@ export const Store = {
     debt: any;
     journal?: any;
   }): Promise<any> {
-    if (typeof window === 'undefined' || !db) return null;
+    // En modo Turso no existe `db` local: Turso es la única fuente operativa.
+    // No debemos bloquear esta ruta antes de llamar al endpoint /api/turso/store.
+    if (typeof window === 'undefined') return null;
+    const tursoResult = await tryTursoOperation('supplierDebt', params);
+    if (tursoResult) {
+      // Turso confirma la deuda, pero la UI administrativa necesita reflejar
+      // inmediatamente ese mismo registro en memoria para que CxP y
+      // "Total a Pagar" se actualicen sin recargar la página.
+      const debtFromTurso = tursoResult.debt || params.debt;
+      const patch: Partial<AppState> = {};
+      if (debtFromTurso?.id) {
+        patch.cxp = mergeById(cache.cxp || [], [debtFromTurso]);
+      }
+      if (params.journal?.id) {
+        patch.libroDiario = mergeById(cache.libroDiario || [], [params.journal]);
+      }
+      if (Object.keys(patch).length) applyPatch(patch);
+      return debtFromTurso;
+    }
     const { operationId, debt, journal } = params;
     const debtRef = doc(db, 'cxp', debt.id);
     let result: any = null;
@@ -1538,6 +1700,76 @@ export const Store = {
     return result;
   },
 
+  async syncProductsStockFromKardex(): Promise<any> {
+    if (typeof window === 'undefined') {
+      throw new Error('La sincronización de inventario solo puede ejecutarse desde el cliente mediante Turso.');
+    }
+    // El módulo de inventario puede desmontarse y montarse al navegar.
+    // Compartimos la reconciliación por sesión de página para no repetir
+    // una transacción/lectura de Kardex en cada entrada al módulo.
+    if (stockKardexSyncCompleted) return { ok: true, skipped: true, reason: 'already-reconciled-this-session' };
+    if (stockKardexSyncPromise) return stockKardexSyncPromise;
+    stockKardexSyncPromise = (async () => {
+      const result = await tryTursoOperation('inventoryStockSync', {});
+      if (!result) throw new Error('Turso no confirmó la sincronización del stock con Kardex.');
+      const patch: Partial<AppState> = {};
+      if (Array.isArray(result.products) && result.products.length) {
+        patch.productos = mergeById(cache.productos, result.products);
+      }
+      if (result.purchase) patch.compras = mergeById(cache.compras, [result.purchase]);
+      if (result.debt) patch.cxp = mergeById(cache.cxp, [result.debt]);
+      if (result.journal) patch.libroDiario = mergeById(cache.libroDiario, [result.journal]);
+      if (Array.isArray(result.movements) && result.movements.length) {
+        patch.movimientos = mergeById(cache.movimientos, result.movements);
+      }
+      if (Object.keys(patch).length) applyPatch(patch);
+      stockKardexSyncCompleted = true;
+      return result;
+    })();
+    try {
+      return await stockKardexSyncPromise;
+    } finally {
+      if (!stockKardexSyncCompleted) stockKardexSyncPromise = null;
+    }
+  },
+
+  async createSaleTransaction(params: any): Promise<any> {
+    // El POS opera exclusivamente contra Turso. Este puente faltaba en el
+    // Store aunque la transacción y el endpoint de Turso sí existen.
+    if (typeof window === 'undefined') {
+      throw new Error('Las ventas solo pueden registrarse desde el cliente mediante Turso.');
+    }
+
+    const result = await tryTursoOperation('sale', params);
+    if (!result?.sale) {
+      throw new Error('Turso no confirmó el registro de la venta.');
+    }
+
+    // Reflejar inmediatamente la misma transacción confirmada por Turso.
+    // Esto mantiene POS, Kardex, CxC, Contabilidad y Caja sincronizados sin
+    // tocar los módulos administrativos ni introducir otra fuente de datos.
+    const patch: Partial<AppState> = {};
+    patch.ventas = mergeById(cache.ventas || [], [result.sale]);
+    if (result.debt) {
+      patch.cxc = mergeById(cache.cxc || [], [result.debt]);
+    }
+    if (Array.isArray(result.movements) && result.movements.length) {
+      patch.movimientos = mergeById(cache.movimientos || [], result.movements);
+    }
+    if (Array.isArray(result.journal) && result.journal.length) {
+      patch.libroDiario = mergeById(cache.libroDiario || [], result.journal);
+    }
+    if (result.terminal) {
+      patch.terminales = mergeById(cache.terminales || [], [result.terminal]);
+    }
+    if (Array.isArray(result.products) && result.products.length) {
+      patch.productos = mergeById(cache.productos || [], result.products);
+    }
+    applyPatch(patch);
+
+    return result;
+  },
+
   async createPurchaseTransaction(params: {
     operationId?: string;
     purchase: any;
@@ -1553,520 +1785,43 @@ export const Store = {
     journal?: any;
     debt?: any;
   }): Promise<any> {
-    if (typeof window === 'undefined' || !db) return null;
+    // ÚNICA FUENTE DE VERDAD: Turso.
+    // Esta operación ya no tiene ningún camino alternativo de persistencia.
+    if (typeof window === 'undefined') {
+      throw new Error('Las compras solo pueden registrarse desde el cliente mediante Turso.');
+    }
 
-    const {
-      operationId, purchase, items, purchaseDate, purchaseDateTime, supplier, invoiceNumber,
-      condition, exchangeRate, paidUSD, dueDate, journal, debt
-    } = params;
-
+    const { items, invoiceNumber, supplier, exchangeRate } = params;
     if (!items?.length) throw new Error('La compra no contiene productos.');
     if (!invoiceNumber || !supplier) throw new Error('La compra no tiene factura/proveedor.');
     if (!(Number(exchangeRate) > 0)) throw new Error('La tasa de la compra no es válida.');
 
-    const purchaseRef = doc(db, 'compras', purchase.id);
-    const opId = String(operationId || purchase.id || (invoiceNumber + '|' + supplier + '|' + purchaseDate));
-    if (typeof window !== 'undefined' && navigator.onLine === false) {
-      enqueueOfflineOperation('COMPRA', { ...params, operationId: opId }, opId);
-      return { queuedOffline: true, operationId: opId, purchase };
-    }
-    const productIds = [...new Set(items.map((i: any) => String(i.productoId || '')).filter(Boolean))];
-
-    let result: any = null;
-    let journalResult: any = null;
-    await runTransaction(db, async tx => {
-      const operationRef = await claimOperation(tx, 'COMPRA', opId);
-      // TODAS las lecturas van antes de cualquier escritura.
-      const purchaseSnap = await tx.get(purchaseRef);
-      if (purchaseSnap.exists()) {
-        throw new Error('Esta compra ya fue registrada en Firestore. Evite duplicarla.');
-      }
-
-      const existingPurchasesSnap = await tx.get(
-        query(collection(db, 'compras'), where('numeroFactura', '==', invoiceNumber))
-      );
-      const duplicatePurchase = existingPurchasesSnap.docs.find(d => {
-        const x = d.data() as any;
-        return String(x.proveedor || '').trim() === supplier &&
-          (!purchaseDate || String(x.fecha || '').slice(0, 10) === String(purchaseDate).slice(0, 10));
-      });
-      if (duplicatePurchase) {
-        throw new Error('Ya existe una compra con la misma factura, proveedor y fecha en otra caja.');
-      }
-
-      const existingDebtsSnap = await tx.get(
-        query(collection(db, 'cxp'), where('numeroFactura', '==', invoiceNumber))
-      );
-      const duplicateDebt = existingDebtsSnap.docs.find(d => {
-        const x = d.data() as any;
-        return String(x.proveedor || '').trim() === supplier &&
-          (!purchaseDate || String(x.fecha || '').slice(0, 10) === String(purchaseDate).slice(0, 10));
-      });
-      if (duplicateDebt) {
-        throw new Error('Ya existe una cuenta por pagar para esta factura y proveedor.');
-      }
-
-      const remoteProducts = new Map<string, any>();
-      const movementDocsByProduct = new Map<string, any[]>();
-
-      for (const pid of productIds) {
-        const productSnap = await tx.get(doc(db, 'productos', pid));
-        if (!productSnap.exists()) {
-          throw new Error('El producto ' + pid + ' ya no existe en Firestore. Actualice el inventario.');
-        }
-        remoteProducts.set(pid, { ...sanitizeForFirestore(productSnap.data()), id: pid });
-
-        // Optimización: una compra normalmente se agrega al final del kardex.
-        // Primero consultamos solo el último movimiento. Solo si la compra está
-        // fechada antes (o exactamente en la misma marca de tiempo) descargamos
-        // el historial completo para reconstruir stockAntes/stockDespues.
-        const latestSnap = await tx.get(query(
-          collection(db, 'movimientos'),
-          where('productoId', '==', pid),
-          orderBy('fecha', 'desc'),
-          limit(1)
-        ));
-        const latestFecha = latestSnap.empty ? '' : String((latestSnap.docs[0].data() as any).fecha || '');
-        if (!latestFecha || String(purchaseDateTime) > latestFecha) {
-          movementDocsByProduct.set(pid, []);
-        } else {
-          const movementSnap = await tx.get(
-            query(collection(db, 'movimientos'), where('productoId', '==', pid))
-          );
-          movementDocsByProduct.set(pid, movementSnap.docs.map(d => ({
-            id: d.id,
-            ref: d.ref,
-            data: sanitizeForFirestore(d.data()) as any
-          })));
-        }
-      }
-
-      const writesForProducts = productIds.length;
-      const writesForNewMovements = items.length;
-      const writesForHistoricalMovements = [...movementDocsByProduct.values()]
-        .reduce((n, docs) => n + docs.length, 0);
-      const writesForDebt = debt?.id ? 1 : 0;
-      const writesForJournal = journal?.id ? 1 : 0;
-      const writesPlanned = 2 + writesForProducts + writesForNewMovements +
-        writesForHistoricalMovements + writesForDebt + writesForJournal;
-
-      // Dejamos margen respecto al límite duro de 500 escrituras.
-      if (writesPlanned > 450) {
-        throw new Error('La compra tiene demasiados movimientos históricos para registrarla en una sola transacción. Debe procesarse/revisarse antes de continuar.');
-      }
-
-      const itemsByProduct = new Map<string, any>();
-      for (const item of items) {
-        const pid = String(item.productoId);
-        const prev = itemsByProduct.get(pid);
-        itemsByProduct.set(pid, prev ? {
-          ...prev,
-          cantidad: (Number(prev.cantidad) || 0) + (Number(item.cantidad) || 0),
-          subtotalUSD: (Number(prev.subtotalUSD) || 0) + (Number(item.subtotalUSD) || 0)
-        } : { ...item });
-      }
-
-      // Calculamos el kardex completo de cada producto con el estado REMOTO.
-      // Así una compra registrada desde otra caja no parte del stock viejo de esta terminal.
-      const finalMovementsByProduct = new Map<string, any[]>();
-      const finalProducts = new Map<string, any>();
-
-      for (const pid of productIds) {
-        const product = remoteProducts.get(pid);
-        const incoming = itemsByProduct.get(pid);
-        const existing = [...(movementDocsByProduct.get(pid) || [])]
-          .sort((a, b) => String(a.data.fecha || '').localeCompare(String(b.data.fecha || '')));
-
-        const baseExisting = existing.find(m => String(m.data.tipo || '') !== 'compra' || true);
-        let balance = baseExisting ? Number(baseExisting.data.stockAntes) || 0 : 0;
-
-        const newMovement = {
-          id: String(items.find((i: any) => String(i.productoId) === pid)?.movementId || ('MOV-' + Store.uid())),
-          productoId: pid,
-          tipo: 'compra',
-          cantidad: Number(incoming.cantidad) || 0,
-          stockAntes: 0,
-          stockDespues: 0,
-          fecha: purchaseDateTime,
-          referencia: `COMPRA FACT: ${invoiceNumber} - PROV: ${supplier}`,
-          terminalId: String(purchase.terminalId || 'ADMIN')
-        };
-
-        const combined = [
-          ...existing.map(m => ({ id: m.id, ref: m.ref, data: m.data })),
-          { id: newMovement.id, ref: doc(db, 'movimientos', newMovement.id), data: newMovement }
-        ].sort((a, b) => String(a.data.fecha || '').localeCompare(String(b.data.fecha || '')));
-
-        let running = balance;
-        const recalculated = combined.map(entry => {
-          const before = running;
-          const after = before + (Number(entry.data.cantidad) || 0);
-          running = after;
-          return {
-            ...entry,
-            data: { ...entry.data, stockAntes: before, stockDespues: after }
-          };
-        });
-
-        finalMovementsByProduct.set(pid, recalculated);
-
-        const currentStock = Number(product.stock) || 0;
-        const incomingQty = Number(incoming.cantidad) || 0;
-        const newStock = currentStock + incomingQty;
-        const currentCost = Number(product.costoUSD) || 0;
-        const incomingCost = Number(incoming.costoUnitarioUSD) || 0;
-        const newCost = newStock > 0
-          ? Math.round((((currentStock * currentCost) + (incomingQty * incomingCost)) / newStock + Number.EPSILON) * 10000) / 10000
-          : incomingCost;
-
-        finalProducts.set(pid, { ...product, stock: newStock, costoUSD: newCost });
-      }
-
-      // Escrituras: compra + productos + kardex + CxP + asiento.
-      tx.set(purchaseRef, sanitizeForFirestore(purchase), { merge: false });
-
-      for (const [pid, product] of finalProducts) {
-        tx.set(doc(db, 'productos', pid), sanitizeForFirestore(product), { merge: true });
-      }
-
-      for (const [pid, entries] of finalMovementsByProduct) {
-        const existingIds = new Set((movementDocsByProduct.get(pid) || []).map(m => m.id));
-        for (const entry of entries) {
-          if (existingIds.has(entry.id)) {
-            tx.set(entry.ref, sanitizeForFirestore(entry.data), { merge: true });
-          } else {
-            tx.set(entry.ref, sanitizeForFirestore(entry.data), { merge: false });
-          }
-        }
-      }
-
-      if (debt?.id) {
-        tx.set(doc(db, 'cxp', debt.id), sanitizeForFirestore(debt), { merge: false });
-      }
-      if (journal?.id) {
-        tx.set(doc(db, 'libroDiario', journal.id), sanitizeForFirestore(journal), { merge: false });
-        journalResult = journal;
-      }
-      tx.set(operationRef, { tipo: 'COMPRA', operationId: opId, fecha: purchaseDateTime, referencia: invoiceNumber }, { merge: false });
-
-      result = {
-        purchase,
-        debt: debt || null,
-        journal: journal || null,
-        productIds,
-        movementCount: items.length
-      };
-    });
-
-    // CxP y productos/movimientos/compras se mantienen por snapshots autoritativos.
-    if (journalResult?.id) {
-      applyPatch({ libroDiario: mergeById(cache.libroDiario, [journalResult]) });
-    }
-    return result;
-  },
-
-  async createSaleTransaction(params: {
-    operationId?: string;
-    cart: any[];
-    payments: any[];
-    clientName: string;
-    terminalId?: string;
-    fallbackReceiptNumber?: number;
-    now: string;
-    tasa: number;
-    saleType?: string;
-    credit?: { customer: any; debtId: string };
-    cajeroId?: string;
-    fromOfflineQueue?: boolean;
-  }): Promise<any> {
-    if (typeof window === 'undefined' || !db) return null;
-    const { operationId, cart, payments, clientName, terminalId, fallbackReceiptNumber, now, tasa, saleType = 'VENTA', credit, cajeroId, fromOfflineQueue } = params;
-    if (!cart?.length) throw new Error('La venta no contiene productos.');
-    if (!(Number(tasa) > 0)) throw new Error('La tasa de la venta no es válida.');
-
-    const opId = String(operationId || (terminalId || 'GLOBAL') + '|' + saleType + '|' + JSON.stringify({ cart, payments, client: clientName, credit: credit ? { customerId: credit.customer?.id, cedula: credit.customer?.cedula } : null }));
-
-    // Las transacciones Firestore no funcionan completamente offline. En ese caso
-    // persistimos la INTENCIÓN de venta en una cola local que sobrevive al reinicio.
-    // Al volver la conexión, el procesador la ejecuta contra el Firestore real.
-    if (!fromOfflineQueue && typeof window !== 'undefined' && navigator.onLine === false) {
-      const queued = enqueueOfflineOperation('VENTA', { ...params, operationId: opId, fromOfflineQueue: true }, opId);
-      const total = cart.reduce((s: number, i: any) => s + (Number(i.subtotalUSD) || 0), 0);
-      const paid = (payments || []).reduce((s: number, p: any) => s + (Number(p.montoUSD) || 0), 0);
-      const provisionalId = 'PEND-' + opId.replace(/[^a-zA-Z0-9]/g, '').slice(-18);
-      const provisionalSale: any = {
-        id: provisionalId, fecha: now, cliente: clientName, items: cart.map((x: any) => ({ ...x })),
-        subtotalUSD: total, descuentoUSD: 0, totalUSD: total, totalBS: total * tasa,
-        metodoPago: credit ? 'credito' : ((payments || []).length > 1 ? 'mixto' : ((payments || [])[0]?.metodo || 'efectivo_usd')),
-        estado: 'pendiente', type: saleType, received: paid, change: Math.max(0, paid - total),
-        payments: (payments || []).map((x: any) => ({ ...x })), terminalId, terminalName: 'PENDIENTE OFFLINE', cajeroId, tasa,
-        offlinePending: true, operationId: opId
-      };
-      let provisionalDebt: any = null;
-      if (credit?.customer) {
-        provisionalDebt = {
-          id: credit.debtId || ('PEND-CRD-' + provisionalId), fecha: now.slice(0,10), fechaVencimiento: '2099-12-31',
-          cliente: credit.customer.name + ' [' + credit.customer.cedula + ']', montoUSD: total, abonadoUSD: 0, saldoUSD: total,
-          estado: 'pendiente', historialPagos: [], ventaId: provisionalId, offlinePending: true, operationId: opId
-        };
-      }
-      return { queuedOffline: true, operationId: opId, sale: provisionalSale, debt: provisionalDebt, nextNumber: fallbackReceiptNumber };
+    const result = await tryTursoOperation('createPurchase', params);
+    if (!result) {
+      throw new Error('Turso no confirmó el registro de la compra.');
     }
 
-    let result: any = null;
-    await runTransaction(db, async tx => {
-      const operationRef = await claimOperation(tx, 'VENTA', opId);
-      // Lecturas completas antes de cualquier escritura.
-      const terminalRef = terminalId ? doc(db, 'terminales', terminalId) : null;
-      const terminalSnap = terminalRef ? await tx.get(terminalRef) : null;
-      const terminalRemote = terminalSnap?.exists() ? sanitizeForFirestore(terminalSnap.data()) as any : null;
-
-      if (terminalId && !terminalRemote) {
-        throw new Error('La caja/terminal ya no existe en Firestore. Actualice la sesión.');
-      }
-
-      const nextNumber = Number(
-        terminalRemote?.proximoRecibo ??
-        fallbackReceiptNumber ??
-        1
-      );
-      const prefijo = terminalPrefix(terminalRemote, terminalId);
-      const reciboId = terminalSeries(prefijo, 'V', nextNumber, 9);
-      const saleRef = doc(db, 'ventas', reciboId);
-      const existingSale = await tx.get(saleRef);
-      if (existingSale.exists()) {
-        throw new Error('El correlativo de esta venta ya fue utilizado por otra operación. Actualice la caja.');
-      }
-
-      const remoteProducts = new Map<string, any>();
-      const productIds = [...new Set(cart.map((i: any) => String(i.productoId || '')).filter(Boolean))];
-
-      for (const pid of productIds) {
-        const snap = await tx.get(doc(db, 'productos', pid));
-        if (!snap.exists()) throw new Error('Un producto de la venta ya no existe en Firestore.');
-        remoteProducts.set(pid, { ...sanitizeForFirestore(snap.data()), id: pid });
-      }
-
-      // Resolver componentes de kits desde Firestore, nunca desde el estado viejo de la caja.
-      const componentIds = new Set<string>();
-      for (const item of cart) {
-        const p = remoteProducts.get(String(item.productoId));
-        if (p?.isKit && p.kitType === 'stock_componentes' && Array.isArray(p.kitItems)) {
-          p.kitItems.forEach((ki: any) => componentIds.add(String(ki.productoId)));
-        }
-      }
-      for (const pid of componentIds) {
-        if (!remoteProducts.has(pid)) {
-          const snap = await tx.get(doc(db, 'productos', pid));
-          if (!snap.exists()) throw new Error('Un componente del kit ya no existe en Firestore.');
-          remoteProducts.set(pid, { ...sanitizeForFirestore(snap.data()), id: pid });
-        }
-      }
-
-      // CxC: resolver cliente remoto dentro de la misma transacción.
-      let customerRef: any = null;
-      let remoteCustomer: any = null;
-      if (credit) {
-        if (credit.customer?.id) {
-          customerRef = doc(db, 'clientes', credit.customer.id);
-          const snap = await tx.get(customerRef);
-          if (snap.exists()) remoteCustomer = sanitizeForFirestore(snap.data()) as any;
-        }
-        if (!remoteCustomer && credit.customer?.cedula) {
-          const snaps = await tx.get(query(
-            collection(db, 'clientes'),
-            where('cedula', '==', credit.customer.cedula),
-            limit(1)
-          ));
-          if (!snaps.empty) {
-            customerRef = snaps.docs[0].ref;
-            remoteCustomer = sanitizeForFirestore(snaps.docs[0].data()) as any;
-          }
-        }
-      }
-
-      const totals = cart.reduce((acc: any, item: any) => {
-        const p = remoteProducts.get(String(item.productoId));
-        const sub = Number(item.subtotalUSD) || 0;
-        if (p?.aplicaIVA) {
-          const base = sub / 1.16;
-          acc.base += base;
-          acc.iva += sub - base;
-        } else {
-          acc.exento += sub;
-        }
-        acc.total += sub;
-        return acc;
-      }, { total: 0, base: 0, iva: 0, exento: 0 });
-
-      const totalPaid = payments.reduce((s: number, p: any) => s + (Number(p.montoUSD) || 0), 0);
-      if (!credit && totalPaid + 0.001 < totals.total) {
-        throw new Error('El pago recibido es menor al total de la venta.');
-      }
-
-      const movements: any[] = [];
-      const productUpdates = new Map<string, any>();
-      const deductions = new Map<string, { qty: number; references: string[] }>();
-
-      // Agregamos primero todas las salidas por producto. Así dos kits que
-      // comparten un componente descuentan una sola vez sobre el stock remoto.
-      for (const item of cart) {
-        const p = remoteProducts.get(String(item.productoId));
-        if (!p) throw new Error('Producto no encontrado.');
-        const qty = Number(item.cantidad) || 0;
-        if (qty <= 0) throw new Error('La venta contiene una cantidad inválida.');
-        if (p.isKit && p.kitType === 'stock_componentes' && Array.isArray(p.kitItems)) {
-          for (const ki of p.kitItems) {
-            const componentId = String(ki.productoId);
-            const required = qty * (Number(ki.cantidad) || 0);
-            const d = deductions.get(componentId) || { qty: 0, references: [] };
-            d.qty += required;
-            d.references.push(String(p.nombre || item.nombre || item.productoId));
-            deductions.set(componentId, d);
-          }
-        } else {
-          const productId = String(p.id);
-          const d = deductions.get(productId) || { qty: 0, references: [] };
-          d.qty += qty;
-          d.references.push(String(p.nombre || item.nombre || item.productoId));
-          deductions.set(productId, d);
-        }
-      }
-
-      for (const [pid, deduction] of deductions) {
-        const p = remoteProducts.get(pid);
-        const stock = Number(p?.stock) || 0;
-        if (!p || stock < deduction.qty) throw new Error('Stock insuficiente para: ' + (p?.nombre || pid));
-        const updated = { ...p, stock: stock - deduction.qty };
-        productUpdates.set(pid, updated);
-        movements.push({
-          id: Store.uid(),
-          productoId: pid,
-          tipo: 'venta',
-          cantidad: -deduction.qty,
-          stockAntes: stock,
-          stockDespues: updated.stock,
-          fecha: now,
-          referencia: saleType + ' ' + reciboId + (deduction.references.length > 1 ? ' - SALIDA AGRUPADA' : ''),
-          terminalId: terminalId || 'GLOBAL'
-        });
-      }
-
-      // Validación final de cantidades; las deducciones reales ya fueron agregadas arriba.
-      for (const item of cart) {
-        if ((Number(item.cantidad) || 0) <= 0) throw new Error('La venta contiene una cantidad inválida.');
-      }
-
-      const vIgtf = payments
-        .filter((p: any) => p.metodo === 'efectivo_usd' || p.metodo === 'zelle')
-        .reduce((s: number, p: any) => s + (Number(p.montoUSD) || 0) * 0.03, 0);
-
-      const sale: any = {
-        id: reciboId,
-        fecha: now,
-        cliente: clientName,
-        items: cart.map((x: any) => ({ ...x })),
-        subtotalUSD: totals.total,
-        descuentoUSD: 0,
-        totalUSD: totals.total,
-        totalBS: totals.total * tasa,
-        metodoPago: credit ? 'credito' : (payments.length > 1 ? 'mixto' : (payments[0]?.metodo || 'efectivo_usd')),
-        estado: 'completada',
-        type: saleType,
-        received: totalPaid,
-        change: Math.max(0, totalPaid - totals.total),
-        payments: payments.map((x: any) => ({ ...x })),
-        terminalId: terminalId,
-        terminalName: terminalRemote?.nombre || 'SISTEMA GLOBAL',
-        cajeroId,
-        baseImponibleUSD: Utils.round(totals.base),
-        ivaUSD: Utils.round(totals.iva),
-        exentoUSD: Utils.round(totals.exento),
-        igtfUSD: Utils.round(vIgtf),
-        tasa
-      };
-
-      const journals = credit ? [] : payments.map((p: any) => ({
-        id: 'ACC-' + Store.uid().toUpperCase().slice(0, 10),
-        fecha: now,
-        tipo: 'ingreso',
-        categoria: 'VENTA',
-        concepto: `VENTA #${reciboId} - CLIENTE: ${String(clientName).toUpperCase()}`,
-        montoUSD: Number(p.montoUSD) || 0,
-        montoBS: Number(p.montoBS) || (Number(p.montoUSD) || 0) * tasa,
-        metodo: p.metodo,
-        referencia: reciboId + '-' + (terminalId || 'GLOBAL'),
-        terminalId: terminalId || 'GLOBAL'
-      }));
-
-      let debt: any = null;
-      if (credit) {
-        if (!remoteCustomer && credit.customer) {
-          customerRef = doc(db, 'clientes', credit.customer.id);
-          remoteCustomer = { ...credit.customer, debt: 0 };
-        }
-        if (!customerRef || !remoteCustomer) throw new Error('No se pudo resolver el cliente para la venta a crédito.');
-        debt = {
-          id: 'CRD-' + reciboId,
-          fecha: now.slice(0, 10),
-          fechaVencimiento: '2099-12-31',
-          cliente: `${remoteCustomer.name} [${remoteCustomer.cedula}]`,
-          montoUSD: totals.total,
-          abonadoUSD: 0,
-          saldoUSD: totals.total,
-          estado: 'pendiente',
-          historialPagos: [],
-          ventaId: reciboId
-        };
-      }
-
-      const writesPlanned = 2 + productUpdates.size + movements.length + journals.length +
-        (terminalRef ? 1 : 0) + (debt ? 1 : 0) + (customerRef ? 1 : 0);
-      if (writesPlanned > 450) {
-        throw new Error('La venta tiene demasiados movimientos para procesarse en una sola transacción.');
-      }
-
-      tx.set(saleRef, sanitizeForFirestore(sale), { merge: false });
-      for (const [pid, product] of productUpdates) {
-        tx.set(doc(db, 'productos', pid), sanitizeForFirestore(product), { merge: true });
-      }
-      for (const movement of movements) {
-        tx.set(doc(db, 'movimientos', movement.id), sanitizeForFirestore(movement), { merge: false });
-      }
-      for (const entry of journals) {
-        tx.set(doc(db, 'libroDiario', entry.id), sanitizeForFirestore(entry), { merge: false });
-      }
-      if (debt) tx.set(doc(db, 'cxc', debt.id), sanitizeForFirestore(debt), { merge: false });
-      if (customerRef && remoteCustomer) {
-        tx.set(customerRef, sanitizeForFirestore({
-          ...remoteCustomer,
-          debt: (Number(remoteCustomer.debt) || 0) + totals.total
-        }), { merge: true });
-      }
-      if (terminalRef && terminalRemote) {
-        tx.set(terminalRef, sanitizeForFirestore({
-          ...terminalRemote,
-          proximoRecibo: nextNumber + 1
-        }), { merge: true });
-      }
-
-      tx.set(operationRef, { tipo: 'VENTA', operationId: opId, fecha: now, referencia: reciboId, terminalId: terminalId || 'GLOBAL' }, { merge: false });
-
-      result = { sale, debt, journals, products: [...productUpdates.values()], nextNumber: nextNumber + 1, terminal: { ...(terminalRemote || {}), id: terminalId, proximoRecibo: nextNumber + 1 } };
-    });
-
-    // Las colecciones autoritativas se actualizan por sus snapshots. Solo
-    // parcheamos libroDiario para que el asiento aparezca inmediatamente.
-    if (result?.products?.length) {
-      // Productos: Firestore sigue siendo la fuente de verdad y RTDB es su espejo.
-      await syncProductosRTDB(cache.productos || [], result.products);
-      applyPatch({ productos: mergeById(cache.productos || [], result.products) });
+    // Reflejar inmediatamente en memoria la misma transacción confirmada por Turso.
+    // En una compra mixta existe un pago contado (asiento) y un saldo CxP; ambos
+    // deben aparecer en Contabilidad/CxP sin obligar al usuario a recargar la página.
+    const patch: Partial<AppState> = {};
+    if (result.purchase) {
+      patch.compras = mergeById(cache.compras || [], [result.purchase]);
     }
-    if (result?.journals?.length) {
-      applyPatch({ libroDiario: mergeById(cache.libroDiario, result.journals) });
+    if (result.debt) {
+      patch.cxp = mergeById(cache.cxp || [], [result.debt]);
     }
-    if (result?.terminal?.id) {
-      applyPatch({ terminales: mergeById(cache.terminales || [], [result.terminal]) });
+    if (result.journal) {
+      patch.libroDiario = mergeById(cache.libroDiario || [], [result.journal]);
+    }
+    if (Array.isArray(result.movements) && result.movements.length) {
+      patch.movimientos = mergeById(cache.movimientos || [], result.movements);
+    }
+    if (Array.isArray(result.products) && result.products.length) {
+      patch.productos = mergeById(cache.productos || [], result.products);
+    }
+    if (Object.keys(patch).length) {
+      applyPatch(patch);
     }
     return result;
   },
@@ -2078,225 +1833,66 @@ export const Store = {
     supplier: string;
     purchaseDate?: string;
   }): Promise<any> {
-    if (typeof window === 'undefined' || !db) return null;
+    // Eliminación de compras: Turso es la única fuente de verdad.
+    // No se consulta ni se utiliza ningún camino legacy.
+    if (typeof window === 'undefined') {
+      throw new Error('La eliminación de compras solo puede ejecutarse desde el cliente mediante Turso.');
+    }
 
-    const operationId = String(params.operationId || '');
     const invoiceNumber = String(params.invoiceNumber || '').trim();
     const supplier = String(params.supplier || '').trim();
+    if (!invoiceNumber || !supplier) {
+      throw new Error('La compra no tiene factura/proveedor identificables.');
+    }
+
+    const result = await tryTursoOperation('deletePurchase', params);
+    if (!result) throw new Error('Turso no confirmó la eliminación de la compra.');
+
+    // Reflejar inmediatamente en la UI exactamente lo que confirmó Turso.
+    const deletedPurchaseIds = new Set((result.deletedPurchaseIds || []).map((id: any) => String(id)));
+    const deletedDebtIds = new Set((result.deletedDebtIds || []).map((id: any) => String(id)));
+    const deletedJournalIds = new Set((result.deletedJournalIds || []).map((id: any) => String(id)));
+    const deletedMovementIds = new Set((result.deletedMovementIds || []).map((id: any) => String(id)));
+
+    const purchaseReference = `COMPRA FACT: ${invoiceNumber} - PROV: ${supplier}`;
     const purchaseDate = String(params.purchaseDate || '').slice(0, 10);
-    if (!invoiceNumber || !supplier) throw new Error('La compra no tiene factura/proveedor identificables.');
 
-    let result: any = null;
-    let journalPatch: LibroDiarioEntry[] = [];
-    const opId = operationId || (invoiceNumber + '|' + supplier + '|' + purchaseDate + '|DELETE');
-    await runTransaction(db, async tx => {
-      const operationRef = await claimOperation(tx, 'ELIMINAR-COMPRA', opId);
-      const purchaseRef = params.purchaseId ? doc(db, 'compras', params.purchaseId) : null;
-      const purchaseSnap = purchaseRef ? await tx.get(purchaseRef) : null;
-
-      const cxpSnap = await tx.get(
-        query(collection(db, 'cxp'), where('numeroFactura', '==', invoiceNumber))
-      );
-      const linkedDebts = cxpSnap.docs.filter(d => {
-        const debt = d.data() as any;
-        return String(debt.proveedor || '') === supplier &&
-          (!purchaseDate || String(debt.fecha || '').slice(0, 10) === purchaseDate);
-      });
-
-      const journalSnap = await tx.get(
-        query(collection(db, 'libroDiario'), where('referencia', '==', invoiceNumber))
-      );
-      const purchaseJournal = journalSnap.docs.filter(d => String((d.data() as any).categoria || '') === 'COMPRA');
-
-      // Los movimientos de una compra se identifican por su referencia exacta.
-      // Esto permite encontrar compras de contado aunque no exista CxP.
-      const purchaseReference = `COMPRA FACT: ${invoiceNumber} - PROV: ${supplier}`;
-      const movementSnap = await tx.get(
-        query(collection(db, 'movimientos'), where('referencia', '==', purchaseReference))
-      );
-      const movementMatches = movementSnap.docs.filter(d => String((d.data() as any).tipo || '') === 'compra');
-
-      const affectedIds = new Set(movementMatches.map(d => String((d.data() as any).productoId || '')).filter(Boolean));
-      const productSnaps = [];
-      const movementDocsByProduct = new Map<string, any[]>();
-
-      for (const pid of affectedIds) {
-        const deletedForProduct = movementMatches
-          .filter(d => String((d.data() as any).productoId || '') === pid)
-          .sort((a, b) => String((a.data() as any).fecha || '').localeCompare(String((b.data() as any).fecha || '')));
-        const firstDeletedFecha = deletedForProduct.length
-          ? String((deletedForProduct[0].data() as any).fecha || '')
-          : '';
-
-        // Solo necesitamos la cola del kardex desde la compra eliminada hacia
-        // adelante. Evitamos descargar el historial anterior del producto.
-        let tailSnap;
-        if (firstDeletedFecha) {
-          tailSnap = await tx.get(query(
-            collection(db, 'movimientos'),
-            where('productoId', '==', pid),
-            where('fecha', '>=', firstDeletedFecha)
-          ));
-        } else {
-          tailSnap = await tx.get(query(
-            collection(db, 'movimientos'),
-            where('productoId', '==', pid)
-          ));
-        }
-        movementDocsByProduct.set(pid, tailSnap.docs.map(d => ({
-          id: d.id,
-          ref: d.ref,
-          data: sanitizeForFirestore(d.data()) as any
-        })));
-
-        const snap = await tx.get(doc(db, 'productos', pid));
-        if (snap.exists()) productSnaps.push({ pid, snap });
-      }
-
-      const movementDocs: any[] = [...movementDocsByProduct.values()].flat();
-
-      const paymentJournalIds = new Set<string>();
-      linkedDebts.forEach(d => {
-        const history = Array.isArray((d.data() as any).historialPagos) ? (d.data() as any).historialPagos : [];
-        history.forEach((p: any) => {
-          if (p?.asientoId) paymentJournalIds.add(String(p.asientoId));
-        });
-      });
-
-      const paymentJournalSnaps = [];
-      for (const id of paymentJournalIds) {
-        const snap = await tx.get(doc(db, 'libroDiario', id));
-        paymentJournalSnaps.push({ id, snap });
-      }
-
-      // Todas las lecturas terminan antes de cualquier escritura para que Firestore
-      // pueda reintentar de forma segura si otra caja cambia alguno de estos documentos.
-      const remainingMovementUpdates = movementDocs.filter(d =>
-        !movementMatches.some(m => m.id === d.id) &&
-        affectedIds.has(String((d.data() as any).productoId || ''))
-      ).length;
-      const writesPlanned =
-        movementMatches.length +
-        remainingMovementUpdates +
-        linkedDebts.length +
-        purchaseJournal.length +
-        paymentJournalSnaps.filter(x => x.snap.exists()).length +
-        (purchaseRef && purchaseSnap?.exists() ? 1 : 0) +
-        productSnaps.length;
-
-      if (writesPlanned > 450) {
-        throw new Error('La compra tiene demasiados movimientos históricos para revertirla en una sola transacción. Debe revisarse antes de eliminarla.');
-      }
-
-      // Si otra caja registró una compra equivalente antes de esta transacción,
-      // no borramos a ciegas. La coincidencia se basa en factura + proveedor + fecha.
-      const alreadyLinked = linkedDebts.length > 0 || purchaseSnap?.exists() || movementMatches.length > 0;
-      if (!alreadyLinked) throw new Error('La compra ya no existe en Firestore o fue modificada en otra caja. Actualice el historial.');
-
-      const newMovementsByProduct = new Map<string, any[]>();
-
-      for (const pid of affectedIds) {
-        const ms = (movementDocsByProduct.get(pid) || [])
-          .map(d => ({ ref: d.ref, data: d.data as any }))
-          .sort((a, b) => {
-            const af = String(a.data.fecha || '');
-            const bf = String(b.data.fecha || '');
-            return af === bf ? 0 : af < bf ? -1 : 1;
-          });
-
-        const deletedIds = new Set(movementMatches
-          .filter(d => String((d.data() as any).productoId || '') === pid)
-          .map(d => d.id));
-
-        const deletedQty = movementMatches
-          .filter(d => String((d.data() as any).productoId || '') === pid)
-          .reduce((sum, d) => sum + Math.abs(Number((d.data() as any).cantidad) || 0), 0);
-
-        // Como solo cargamos el tramo desde la compra eliminada, los valores
-        // históricos del primer movimiento restante ya contienen la compra.
-        // Se corrigen restando exactamente la cantidad eliminada.
-        const remaining = ms
-          .filter(x => !deletedIds.has(x.ref.id))
-          .map(x => ({
-            ...x,
-            data: {
-              ...x.data,
-              stockAntes: (Number(x.data.stockAntes) || 0) - deletedQty,
-              stockDespues: (Number(x.data.stockDespues) || 0) - deletedQty
-            }
-          }));
-
-        newMovementsByProduct.set(pid, remaining);
-      }
-
-      const productUpdates: any[] = [];
-      for (const { pid, snap } of productSnaps) {
-        const remoteProduct = snap.data() as any;
-        const remaining = newMovementsByProduct.get(pid) || [];
-        const deletedQty = movementMatches
-          .filter(d => String((d.data() as any).productoId || '') === pid)
-          .reduce((sum, d) => sum + Math.abs(Number((d.data() as any).cantidad) || 0), 0);
-        const finalStock = Math.max(
-          0,
-          (Number(remoteProduct.stock) || 0) - deletedQty
-        );
-
-        let finalCost = Number(remoteProduct.costoUSD) || 0;
-        const deleted = movementMatches
-          .filter(d => String((d.data() as any).productoId || '') === pid)
-          .sort((a, b) => String((a.data() as any).fecha || '').localeCompare(String((b.data() as any).fecha || '')));
-        const delMov = deleted[0];
-        const item = linkedDebts
-          .flatMap(d => Array.isArray((d.data() as any).items) ? (d.data() as any).items : [])
-          .find((i: any) => String(i.productoId || '') === pid);
-        const q = Math.abs(Number(delMov ? (delMov.data() as any).cantidad : item?.cantidad) || 0);
-        const cq = Number(item?.costoUnitarioUSD) || 0;
-        const delFecha = delMov ? String((delMov.data() as any).fecha || '') : '';
-
-        const laterPurchaseLike = remaining.some(x =>
-          ['compra', 'ajuste_entrada', 'inicial'].includes(String(x.data.tipo || '')) &&
-          delFecha !== '' && String(x.data.fecha || '') > delFecha
-        );
-
-        const stockTrasCompra = delMov ? Number((delMov.data() as any).stockDespues) || 0 : (finalStock + q);
-        if (!laterPurchaseLike && q > 0 && (stockTrasCompra - q) > 0 && cq > 0) {
-          const den = stockTrasCompra - q;
-          finalCost = Math.max(0, Math.round((((stockTrasCompra * finalCost) - (q * cq)) / den + Number.EPSILON) * 10000) / 10000);
-        }
-
-        productUpdates.push({ ref: snap.ref, data: { ...remoteProduct, stock: finalStock, costoUSD: finalCost } });
-      }
-
-      movementMatches.forEach(d => tx.delete(d.ref));
-      newMovementsByProduct.forEach(items => {
-        items.forEach(x => tx.set(x.ref, sanitizeForFirestore(x.data), { merge: false }));
-      });
-      productUpdates.forEach(x => tx.set(x.ref, sanitizeForFirestore(x.data), { merge: false }));
-      linkedDebts.forEach(d => tx.delete(d.ref));
-      purchaseJournal.forEach(d => tx.delete(d.ref));
-      paymentJournalSnaps.forEach(x => {
-        if (x.snap.exists()) tx.delete(x.snap.ref);
-      });
-      if (purchaseRef?.exists()) tx.delete(purchaseRef);
-
-      journalPatch = purchaseJournal.map(d => d.data() as LibroDiarioEntry)
-        .filter(Boolean)
-        .concat(paymentJournalSnaps.filter(x => x.snap.exists()).map(x => x.snap.data() as LibroDiarioEntry));
-
-      tx.set(operationRef, { tipo: 'ELIMINAR-COMPRA', operationId: opId, fecha: new Date().toISOString(), referencia: invoiceNumber }, { merge: false });
-      result = {
-        deletedMovements: movementMatches.length,
-        deletedDebts: linkedDebts.length,
-        deletedJournals: purchaseJournal.length + paymentJournalSnaps.filter(x => x.snap.exists()).length,
-        deletedPurchase: !!purchaseRef?.exists(),
-        affectedProducts: productUpdates.length
-      };
+    const comprasRestantes = (cache.compras || []).filter((p: any) => {
+      const sameId = deletedPurchaseIds.has(String(p?.id || ''));
+      const samePurchase = String(p?.numeroFactura || '').trim() === invoiceNumber
+        && String(p?.proveedor || '').trim() === supplier
+        && (!purchaseDate || String(p?.fecha || '').slice(0, 10) === purchaseDate);
+      return !sameId && !samePurchase;
     });
 
-    if (journalPatch.length) {
-      const deletedIds = new Set(journalPatch.map((e: any) => e.id));
-      applyPatch({ libroDiario: (cache.libroDiario || []).filter((e: any) => !deletedIds.has(e.id)) });
-    }
+    const cxpRestante = (cache.cxp || []).filter((d: any) => {
+      const sameId = deletedDebtIds.has(String(d?.id || ''));
+      const sameDebt = String(d?.numeroFactura || '').trim() === invoiceNumber
+        && String(d?.proveedor || '').trim() === supplier
+        && (!purchaseDate || String(d?.fecha || '').slice(0, 10) === purchaseDate);
+      return !sameId && !sameDebt;
+    });
+
+    const movimientosRestantes = (cache.movimientos || [])
+      .filter((m: any) => !deletedMovementIds.has(String(m?.id || ''))
+        && String(m?.referencia || '') !== purchaseReference)
+      .map((m: any) => m);
+
+    const libroRestante = (cache.libroDiario || [])
+      .filter((j: any) => !deletedJournalIds.has(String(j?.id || ''))
+        && !(String(j?.referencia || '') === invoiceNumber && String(j?.categoria || '') === 'COMPRA'));
+
+    applyPatch({
+      compras: comprasRestantes,
+      cxp: cxpRestante,
+      movimientos: mergeById(movimientosRestantes, Array.isArray(result.movements) ? result.movements : []),
+      productos: mergeById(
+        cache.productos,
+        Array.isArray(result.products) ? result.products : []
+      ),
+      libroDiario: libroRestante
+    });
+
     return result;
   },
 
@@ -2307,6 +1903,8 @@ export const Store = {
     customerCedula?: string;
   }): Promise<any> {
     if (typeof window === 'undefined' || !db) return null;
+    const tursoResult = await tryTursoOperation('deleteCustomerAndDebts', params);
+    if (tursoResult) return tursoResult;
     const { operationId, customerId, customerName, customerCedula } = params;
     const customerRef = doc(db, 'clientes', customerId);
     let result: any = null;
@@ -2368,6 +1966,8 @@ export const Store = {
     customerId?: string;
   }): Promise<any> {
     if (typeof window === 'undefined' || !db) return null;
+    const tursoResult = await tryTursoOperation('deleteCustomerDebt', params);
+    if (tursoResult) return tursoResult;
     const { operationId, debtId, customerCedula, customerId } = params;
     const debtRef = doc(db, 'cxc', debtId);
     let result: any = null;
@@ -2410,7 +2010,23 @@ export const Store = {
     customerCedula?: string;
     journal?: any;
   }): Promise<any> {
-    if (typeof window === 'undefined' || !db) return null;
+    if (typeof window === 'undefined') return null;
+    // Turso es la fuente operativa; db es un marcador legacy retirado.
+    // No debemos salir aquí antes de ejecutar la operación contra Turso.
+    const tursoResult = await tryTursoOperation('customerDebt', params);
+    if (tursoResult) {
+      // La operación en Turso ya es autoritativa, pero la UI mantiene un
+      // cache reactivo local. Aplicamos inmediatamente el registro canónico
+      // devuelto por Turso para que Dashboard, CxC y POS vean al nuevo cliente
+      // y su deuda sin tener que salir y volver a entrar al módulo.
+      if (tursoResult.debt) {
+        applyPatch({ cxc: mergeById(cache.cxc, [tursoResult.debt]) });
+      }
+      if (tursoResult.customer) {
+        applyPatch({ clientes: mergeById(cache.clientes, [tursoResult.customer]) });
+      }
+      return tursoResult;
+    }
     const { operationId, debt, customer, customerId, customerCedula, journal } = params;
     const debtRef = doc(db, 'cxc', debt.id);
     let result: any = null;
@@ -2465,6 +2081,8 @@ export const Store = {
     journalId?: string;
   }): Promise<any | null> {
     if (typeof window === 'undefined' || !db) return null;
+    const tursoResult = await tryTursoOperation('reverseDebtPayment', params);
+    if (tursoResult) return tursoResult;
     const { operationId, collection: collectionName, debtId, paymentId, journalId } = params;
     const debtRef = doc(db, collectionName, debtId);
     let result: any = null;
@@ -2550,12 +2168,81 @@ export const Store = {
   },
 
   async set(patch: Partial<AppState>) {
-    if (typeof window === 'undefined' || !db) return;
+    if (typeof window === 'undefined') return;
     const prev = Store.get();
     const full = { ...initialState, ...prev, ...patch } as AppState;
 
     // Echo local inmediato (la UI ya muestra el cambio al instante)
     applyPatch(patch);
+
+    // Cuando Turso está activo, las operaciones críticas de terminal/caja no
+    // deben pasar por servidor Turso. La comparación se hace contra el cache anterior
+    // y solo se envían los campos que realmente cambiaron.
+    if (patch.terminales !== undefined) {
+      const prevTerminals = (prev.terminales || []) as any[];
+      const nextTerminals = (patch.terminales || []) as any[];
+
+      // Corte Z: reporte + terminal/correlativo se confirman juntos.
+      if (patch.reportesZ !== undefined) {
+        const reportes = (patch.reportesZ || []) as any[];
+        const previousReports = (prev.reportesZ || []) as any[];
+        const newestReport = reportes.length ? reportes[reportes.length - 1] : null;
+        const terminalId = String(newestReport?.terminalId || '');
+        const terminal = nextTerminals.find((t: any) => String(t?.id || '') === terminalId);
+        const previousTerminal = prevTerminals.find((t: any) => String(t?.id || '') === terminalId);
+        if (newestReport && terminal && previousTerminal) {
+          const terminalPatch: Record<string, any> = {};
+          Object.keys(terminal).forEach(key => {
+            if (key === 'id') return;
+            if (JSON.stringify(terminal[key]) !== JSON.stringify(previousTerminal[key])) terminalPatch[key] = terminal[key];
+          });
+          const zResult = await tryTursoOperation('zClosure', {
+            terminalId,
+            report: newestReport,
+            terminalPatch,
+          });
+          if (zResult) {
+            const canonicalReport = zResult.report;
+            applyPatch({
+              reportesZ: [...previousReports, canonicalReport],
+              terminales: mergeById(prevTerminals, [zResult.terminal]),
+              ultimoZ: canonicalReport.numeroZ,
+              fechaUltimoZ: canonicalReport.fecha,
+              acumuladoHistorico: canonicalReport.acumuladoHistoricoUSD ?? cache.acumuladoHistorico,
+              fondoCajaHoyBS: zResult.terminal.fondoCajaHoyBS ?? 0,
+              fondoCajaHoyUSD: zResult.terminal.fondoCajaHoyUSD ?? 0,
+              isCashOpen: !!zResult.terminal.isCashOpen,
+            });
+            return;
+          }
+        }
+      }
+
+      // Apertura/cierre de caja y demás cambios de una terminal.
+      // Se procesa solo si existe una terminal previa; las altas/bajas de
+      // terminales se mantienen en el flujo administrativo hasta activar
+      // explícitamente la migración de gestión de terminales.
+      for (const terminal of nextTerminals) {
+        if (!terminal?.id) continue;
+        const previous = prevTerminals.find((t: any) => String(t?.id || '') === String(terminal.id));
+        if (!previous) continue;
+        const terminalPatch: Record<string, any> = {};
+        Object.keys(terminal).forEach(key => {
+          if (key === 'id') return;
+          if (JSON.stringify(terminal[key]) !== JSON.stringify(previous[key])) terminalPatch[key] = terminal[key];
+        });
+        if (Object.keys(terminalPatch).length === 0) continue;
+        const result = await tryTursoOperation('terminalPatch', {
+          terminalId: String(terminal.id),
+          patch: terminalPatch,
+        });
+        if (result) {
+          applyPatch({ terminales: mergeById(prevTerminals, [result.terminal]) });
+          return;
+        }
+        break;
+      }
+    }
 
     // 1) COLEECCIONES: escritura por documento (nunca el array completo en un doc)
     const jobs: Promise<unknown>[] = [];
@@ -2565,30 +2252,73 @@ export const Store = {
       const prevArr = ((prev as any)[k] || []) as any[];
       const newArr = ((patch as any)[k] || []) as any[];
       if (k === 'productos') {
-        jobs.push(syncProductosTransactional(prevArr, newArr)
-          .then((stocks) => {
-            let toSync = newArr;
-            if (stocks && stocks.size > 0) {
-              const corrected = newArr.map((p: any) => {
-                const s = stocks.get(String(p.id));
-                return s !== undefined ? { ...p, stock: s } : p;
-              });
-              applyPatch({ productos: corrected });
-              toSync = corrected;
-            }
-            return syncProductosRTDB(prevArr, toSync);
-          })
-          .catch(e => console.error("Error persistiendo productos:", e)));
+        const prevById = new Map(prevArr.filter(x => x?.id).map(x => [String(x.id), x]));
+        const newById = new Map(newArr.filter(x => x?.id).map(x => [String(x.id), x]));
+        const changes: Array<{ before?: any | null; after?: any | null }> = [];
+        const deletedIds: string[] = [];
+        newById.forEach((after, id) => {
+          const before = prevById.get(id);
+          if (!before || JSON.stringify(sanitizeForFirestore(before)) !== JSON.stringify(sanitizeForFirestore(after))) {
+            changes.push({ before: before || null, after });
+          }
+        });
+        prevById.forEach((_before, id) => { if (!newById.has(id)) deletedIds.push(id); });
+
+        jobs.push((async () => {
+          const result = await tryTursoOperation('productSync', { changes, deletedIds });
+          if (result) {
+            const canonical = Array.isArray(result.products) ? result.products : [];
+            const next = mergeById(newArr, canonical).filter(p => !deletedIds.includes(String(p.id)));
+            applyPatch({ productos: next });
+            return;
+          }
+
+          // Turso no configurado: conserva el comportamiento servidor Turso existente.
+          const stocks = await syncProductosTransactional(prevArr, newArr);
+          let toSync = newArr;
+          if (stocks && stocks.size > 0) {
+            const corrected = newArr.map((p: any) => {
+              const s = stocks.get(String(p.id));
+              return s !== undefined ? { ...p, stock: s } : p;
+            });
+            applyPatch({ productos: corrected });
+            toSync = corrected;
+          }
+          await syncProductosRTDB(prevArr, toSync);
+        })().catch(e => console.error("Error persistiendo productos:", e)));
+      } else if (k === 'terminales') {
+        // Las terminales se escriben exclusivamente mediante terminalPatch/Upsert/Delete.
+        // Si Turso está activo, no existe una vía genérica que pueda terminar en servidor Turso.
+        if (navigator.onLine === false) {
+          throw new Error('Sin conexión: no se modificará la terminal para evitar divergencia.');
+        }
+      } else if (['clientes', 'proveedores', 'movimientos', 'libroDiario'].includes(String(k))) {
+        const prevById = new Map(prevArr.filter(x => x?.id).map(x => [String(x.id), x]));
+        const newById = new Map(newArr.filter(x => x?.id).map(x => [String(x.id), x]));
+        const records = [...newById.values()].filter((after: any) => {
+          const before = prevById.get(String(after.id));
+          return !before || JSON.stringify(sanitizeForFirestore(before)) !== JSON.stringify(sanitizeForFirestore(after));
+        });
+        const deletedIds = [...prevById.keys()].filter(id => !newById.has(id));
+
+        jobs.push((async () => {
+          const result = await tryTursoOperation('recordsSync', {
+            table: String(k),
+            records: sanitizeForFirestore(records),
+            deletedIds,
+          });
+          if (result) {
+            applyPatch({ [k]: mergeById(newArr, Array.isArray(result.records) ? result.records : []) });
+            return;
+          }
+          await syncArrayToCollection(COLLECTIONS[k], prevArr, newArr);
+        })().catch(e => console.error("Error persistiendo " + k + ":", e)));
       } else {
         jobs.push(syncArrayToCollection(COLLECTIONS[k], prevArr, newArr).catch(e => console.error("Error persistiendo " + k + ":", e)));
       }
     }
 
-    // 2) CATÁLOGOS
-    // Los documentos del catálogo y su versión se publican en secuencia:
-    // primero deben persistir los cambios y solo después se actualiza la
-    // versión local/remota. Así una caja no puede marcar una versión como
-    // vigente si el catálogo remoto falló.
+    // 2) CATÁLOGOS: Turso primero; servidor Turso solo mientras Turso no esté configurado.
     const catalogJobs: Promise<unknown>[] = [];
     let catalogosChanged = false;
     for (const [field, catName] of Object.entries(CATALOG_FIELDS)) {
@@ -2597,43 +2327,51 @@ export const Store = {
       const prevList = (prev as any)[field] || [];
       if (JSON.stringify(prevList) !== JSON.stringify(newList)) {
         catalogosChanged = true;
-        catalogJobs.push(
-          setDoc(doc(db, CATALOGOS_COLLECTION, catName), { lista: sanitizeForFirestore(newList) })
-        );
+        catalogJobs.push((async () => {
+          const result = await tryTursoOperation('catalogPatch', { name: catName, lista: sanitizeForFirestore(newList) });
+          if (!result) await setDoc(doc(db, CATALOGOS_COLLECTION, catName), { lista: sanitizeForFirestore(newList) });
+        })());
       }
     }
-
     if (catalogosChanged) {
       const catalogVersion = new Date().toISOString();
-      jobs.push(
-        Promise.all(catalogJobs)
-          .then(() => setDoc(
-            doc(db, CONFIG_COLLECTION, CONFIG_DOC_ID),
-            { catalogosVersion: catalogVersion },
-            { merge: true }
-          ))
-          .then(() => writeCatalogCacheMeta(catalogVersion))
-          .catch(e => console.error("Error persistiendo catálogo/version:", e))
-      );
+      jobs.push(Promise.all(catalogJobs).then(async () => {
+        const result = await tryTursoOperation('configPatch', { patch: { catalogosVersion: catalogVersion } });
+        if (!result) await setDoc(doc(db, CONFIG_COLLECTION, CONFIG_DOC_ID), { catalogosVersion: catalogVersion }, { merge: true });
+      }).then(() => writeCatalogCacheMeta(catalogVersion)).catch(e => console.error('Error persistiendo catálogo/version:', e)));
     }
 
-    // 3) CONFIG (config/general) — solo campos que cambiaron
+    // 3) CONFIG: Turso es la única fuente de verdad. No se replica ni cae en servidor Turso.
     const toWrite: Record<string, any> = {};
     for (const f of CONFIG_FIELDS) {
       const key = f as keyof AppState;
       if ((patch as any)[f] === undefined) continue;
       const clean = sanitizeForFirestore((patch as any)[f]);
       if (clean === undefined) continue;
-      if (JSON.stringify(prev[key]) !== JSON.stringify((patch as any)[f])) {
-        toWrite[f] = clean;
-      }
+      if (JSON.stringify(prev[key]) !== JSON.stringify((patch as any)[f])) toWrite[f] = clean;
     }
     if (Object.keys(toWrite).length > 0) {
-      jobs.push(setDoc(doc(db, CONFIG_COLLECTION, CONFIG_DOC_ID), toWrite, { merge: true })
-        .catch(e => console.error("Error persistiendo config:", e)));
+      jobs.push((async () => {
+        const result = await tryTursoOperation('configPatch', { patch: toWrite });
+        if (!result) throw new Error('Turso no confirmó la actualización de configuración.');
+      })().catch(e => console.error('Error persistiendo config:', e)));
     }
-
     await Promise.all(jobs);
+  },
+
+  async patchConfig(patch: Partial<AppState>): Promise<AppState> {
+    if (typeof window === 'undefined') return Store.get();
+    const cleanPatch: Record<string, any> = {};
+    for (const key of CONFIG_FIELDS) {
+      if ((patch as any)[key] !== undefined) cleanPatch[key] = sanitizeForFirestore((patch as any)[key]);
+    }
+    if (Object.keys(cleanPatch).length === 0) return Store.get();
+    const result = await tryTursoOperation('configPatch', { patch: cleanPatch });
+    if (!result?.config) throw new Error('Turso no confirmó la actualización de configuración.');
+    const applied: any = {};
+    for (const key of CONFIG_FIELDS) if (result.config[key] !== undefined) applied[key] = sanitizeForFirestore(result.config[key]);
+    applyPatch(applied);
+    return Store.get();
   },
 
   loadMore,

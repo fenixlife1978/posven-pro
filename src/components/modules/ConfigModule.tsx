@@ -2,13 +2,10 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { AppState } from '@/lib/types';
+import { Store } from '@/lib/db-store';
 import { Save, AlertTriangle, RefreshCw, Database, Activity, BookOpen, PenLine, Trash2 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
-import { db, auth } from '@/lib/firebase';
-import { collection, getDocs, deleteDoc, doc, setDoc, writeBatch, query, limit } from 'firebase/firestore';
-import { signOut } from 'firebase/auth';
-import { migrarEstructura } from '@/lib/migracion-firestore';
-import { crearRespaldo, descargarRespaldo, cargarRespaldoDesdeArchivo } from '@/lib/backup';
+import { crearRespaldo, descargarRespaldo, cargarRespaldoDesdeArchivo, previsualizarCatalogosDesdeArchivo, importarCatalogosDesdeArchivo } from '@/lib/backup';
 
 export default function ConfigModule({ state, updateState }: { state: AppState, updateState: (s: Partial<AppState>) => void }) {
   const [tasa, setTasa] = useState<string | number>(state.tasa);
@@ -16,11 +13,17 @@ export default function ConfigModule({ state, updateState }: { state: AppState, 
   const [pinDevolucion, setPinDevolucion] = useState(state.pinDevolucion || '');
   const [isFormatting, setIsFormatting] = useState(false);
   const [isMigrating, setIsMigrating] = useState(false);
+  const [isRepairingCxc, setIsRepairingCxc] = useState(false);
+  const [reparacionCxcResultado, setReparacionCxcResultado] = useState<any>(null);
   const [migracionResultado, setMigracionResultado] = useState<any>(null);
   const [showMigracionResultado, setShowMigracionResultado] = useState(false);
   const [isBackingUp, setIsBackingUp] = useState(false);
   const [backupError, setBackupError] = useState<string | null>(null);
+  const [backupProgress, setBackupProgress] = useState<{ percent: number; stage: string; detail: string } | null>(null);
+  const [isRestoringBackup, setIsRestoringBackup] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const catalogFileInputRef = useRef<HTMLInputElement>(null);
+  const [isImportingCatalogs, setIsImportingCatalogs] = useState(false);
 
   useEffect(() => {
     setTasa(state.tasa);
@@ -28,11 +31,16 @@ export default function ConfigModule({ state, updateState }: { state: AppState, 
     setPinDevolucion(state.pinDevolucion || '000000');
   }, [state.tasa, state.empresa, state.pinDevolucion]);
 
-  const guardarTasa = () => {
+  const guardarTasa = async () => {
     const n = parseFloat(tasa.toString());
-    if (isNaN(n)) return alert('Tasa inválida');
-    updateState({ tasa: n });
-    toast({ title: "Sincronizado", description: "Tasa de cambio actualizada en todos los terminales." });
+    if (isNaN(n) || n <= 0) return alert('Tasa inválida');
+    try {
+      await Store.patchConfig({ tasa: n });
+      toast({ title: "Sincronizado", description: "Tasa de cambio guardada en Turso y disponible después de recargar." });
+    } catch (error: any) {
+      console.error('Error guardando tasa en Turso:', error);
+      toast({ variant: 'destructive', title: 'No se guardó la tasa', description: error?.message || 'Turso no confirmó el cambio.' });
+    }
   };
 
   const guardarEmpresa = () => {
@@ -66,188 +74,123 @@ export default function ConfigModule({ state, updateState }: { state: AppState, 
     e.target.value = '';
     if (!file) return;
     setBackupError(null);
-    const confirmar = window.confirm('Se restaurará el sistema completo desde este respaldo. Los datos actuales serán reemplazados. ¿Desea continuar?');
-    if (!confirmar) return;
+    setBackupProgress(null);
     try {
-      await cargarRespaldoDesdeArchivo(file);
-      toast({ title: "Respaldo Restaurado", description: "El sistema fue restaurado correctamente. Se recomienda recargar la aplicación." });
-    } catch (err: any) {
-      console.error(err);
-      setBackupError(err?.message || 'No se pudo cargar el respaldo seleccionado.');
-    }
-  };
-
-  // ============================================================
-  // FUNCIÓN PARA ELIMINAR UNA COLECCIÓN COMPLETA CON BATCH
-  // ============================================================
-  const deleteCollection = async (collectionPath: string, batchSize = 100) => {
-    try {
-      const colRef = collection(db, collectionPath);
-      const snapshot = await getDocs(query(colRef, limit(batchSize)));
-
-      if (snapshot.empty) {
-        console.log(`✅ Colección "${collectionPath}" vacía o no existe.`);
+      const parsed = JSON.parse(await file.text());
+      if (parsed?.type === 'catalogs-only') {
+        setBackupError('Este archivo es exclusivo de catálogos. Use «Importar solo catálogos» y no la restauración completa.');
         return;
       }
-
-      const batch = writeBatch(db);
-      snapshot.docs.forEach((docSnap) => {
-        batch.delete(docSnap.ref);
-      });
-      await batch.commit();
-
-      // Recursivamente eliminar el resto (si hay más de batchSize documentos)
-      await deleteCollection(collectionPath, batchSize);
-    } catch (error) {
-      console.warn(`⚠️ Error al eliminar colección "${collectionPath}":`, error);
-    }
-  };
-
-  const handleMigrar = async () => {
-    if (!confirm('¿Estás seguro de que quieres migrar los datos a la nueva estructura?\n\nEsta acción:\n- Creará colecciones separadas para: config, catalogos, inventario, ventas, movimientos, terminales, proveedores, devoluciones\n- Los datos existentes se mantendrán en la estructura antigua también\n- No se eliminarán datos existentes')) {
+    } catch (error: any) {
+      setBackupError(error?.message || 'El archivo JSON no es válido.');
       return;
     }
 
-    setIsMigrating(true);
-    setShowMigracionResultado(false);
+    const confirmar = window.confirm('Se restaurará el sistema completo desde este respaldo. Los datos actuales serán reemplazados. ¿Desea continuar?');
+    if (!confirmar) return;
+
+    setIsRestoringBackup(true);
+    setBackupProgress({ percent: 0, stage: 'Preparando', detail: 'Leyendo y validando el archivo…' });
+
     try {
-      const result = await migrarEstructura();
-      setMigracionResultado(result);
-      setShowMigracionResultado(true);
-      
-      if (result.success && result.resultados) {
-        toast({ 
-          title: "✅ Migración exitosa", 
-          description: `Se migraron ${result.resultados.inventario} productos, ${result.resultados.ventas} ventas, etc.` 
-        });
-      } else {
-        toast({ 
-          variant: "destructive", 
-          title: "❌ Error en migración", 
-          description: result.error || 'Error desconocido'
-        });
-      }
-    } catch (error: any) {
-      toast({ 
-        variant: "destructive", 
-        title: "❌ Error", 
-        description: String(error) 
-      });
+      await cargarRespaldoDesdeArchivo(file, (progress) => setBackupProgress(progress));
+      toast({ title: "Respaldo Restaurado", description: "La restauración terminó correctamente. Se recomienda recargar la aplicación." });
+    } catch (err: any) {
+      console.error('❌ Error restaurando respaldo:', err);
+      setBackupError(err?.message || 'No se pudo cargar el respaldo seleccionado.');
+      setBackupProgress(null);
     } finally {
-      setIsMigrating(false);
+      setIsRestoringBackup(false);
+    }
+  };
+
+  const handleImportarSoloCatalogos = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setIsImportingCatalogs(true);
+    setBackupError(null);
+    try {
+      const preview = await previsualizarCatalogosDesdeArchivo(file);
+      const d = preview.plan.departamentos;
+      const c = preview.plan.categorias;
+      const summary =
+        'VISTA PREVIA DE IMPORTACIÓN SEGURA\n\n' +
+        'DEPARTAMENTOS: ' + d.imported + ' en archivo; ' + d.before + ' actuales; ' + d.added + ' nuevos; total final ' + d.after + '.\n' +
+        'CATEGORÍAS: ' + c.imported + ' en archivo; ' + c.before + ' actuales; ' + c.added + ' nuevas; total final ' + c.after + '.\n\n' +
+        'Solo se fusionarán departamentos y categorías. Productos, existencias, movimientos, ventas, compras y caja no serán modificados.\n\n' +
+        '¿Confirmas la importación?';
+      if (!window.confirm(summary)) return;
+      const result = await importarCatalogosDesdeArchivo(file);
+      updateState({ departamentos: result.catalogs.departamentos, categorias: result.catalogs.categorias });
+      toast({ title: 'Catálogos recuperados', description: 'Solo se fusionaron departamentos y categorías en Turso. Los productos y movimientos permanecen intactos.' });
+    } catch (error: any) {
+      setBackupError(error?.message || 'No se pudo importar el JSON de catálogos.');
+    } finally {
+      setIsImportingCatalogs(false);
+    }
+  };
+
+  const handleRepararCxcMigrado = async () => {
+    const confirmar = window.confirm(
+      'REPARAR CxC MIGRADO\n\n' +
+      'Se revisarán las cuentas por cobrar existentes en Turso y se sincronizarán con la venta/factura original cuando exista.\n\n' +
+      'La reparación NO modifica pagos, abonos ni saldo pendiente.\n\n' +
+      '¿Desea continuar?'
+    );
+    if (!confirmar) return;
+
+    setIsRepairingCxc(true);
+    setReparacionCxcResultado(null);
+    try {
+      const response = await fetch('/api/turso/repair-cxc', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ action: 'repair-cxc', confirm: 'REPARAR_CXC_MIGRADO' })
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || result?.ok === false) {
+        throw new Error(result?.error || 'No fue posible reparar las cuentas por cobrar migradas.');
+      }
+      setReparacionCxcResultado(result);
+      toast({
+        title: 'CxC migrado revisado',
+        description: 'Revisadas: ' + (result.revisadas || 0) + '. Corregidas: ' + (result.corregidas || 0) + '.'
+      });
+    } catch (error: any) {
+      console.error('Error reparando CxC migrado:', error);
+      setReparacionCxcResultado({ error: error?.message || 'No se pudo ejecutar la reparación.' });
+      toast({ variant: 'destructive', title: 'Error en reparación CxC', description: error?.message || 'No se pudo ejecutar la reparación.' });
+    } finally {
+      setIsRepairingCxc(false);
     }
   };
 
   const formatearSistema = async () => {
-    const confirmMsg = 
-      '⚠️ ¿ESTÁ ABSOLUTAMENTE SEGURO?\n\n' +
-      'ESTA ACCIÓN ELIMINARÁ PERMANENTEMENTE:\n' +
-      '✅ TODOS los productos e inventario.\n' +
-      '✅ TODAS las ventas y créditos.\n' +
-      '✅ TODOS los clientes y proveedores.\n' +
-      '✅ TODOS los movimientos y asientos contables.\n' +
-      '✅ TODOS los usuarios y sus credenciales.\n' +
-      '✅ TODOS los reportes y configuraciones.\n\n' +
-      '⚠️ ESTA ACCIÓN NO SE PUEDE DESHACER.';
-
+    const confirmMsg = '⚠️ Esta acción eliminará los datos operativos almacenados en Turso. El administrador semilla se conservará. ¿Desea continuar?';
     if (!confirm(confirmMsg)) return;
-
     setIsFormatting(true);
     try {
-      // ===== 1. ELIMINAR TODAS LAS COLECCIONES =====
-      const colecciones = [
-        'productos',
-        'ventas',
-        'clientes',
-        'cxc',
-        'cxp',
-        'movimientos',
-        'terminales',
-        'proveedores',
-        'devoluciones',
-        'anulaciones',
-        'libroDiario',
-        'reportesZ',
-        'catalogos',
-        'inventario',
-        'config',
-        'users'
-      ];
-
-      console.log('🗑️ Iniciando eliminación de colecciones...');
-      for (const colName of colecciones) {
-        console.log(`Eliminando colección "${colName}"...`);
-        await deleteCollection(colName);
-      }
-
-      // ===== 2. ELIMINAR DOCUMENTOS DE pos_system_data (excepto 'state') =====
-      try {
-        const mainColRef = collection(db, 'pos_system_data');
-        const mainSnapshot = await getDocs(mainColRef);
-        const batch = writeBatch(db);
-        mainSnapshot.docs.forEach((docSnap) => {
-          if (docSnap.id !== 'state') {
-            batch.delete(docSnap.ref);
-          }
-        });
-        await batch.commit();
-        console.log('✅ Documentos extras en pos_system_data eliminados (excepto state).');
-      } catch (e) {
-        console.warn('⚠️ Error al limpiar pos_system_data:', e);
-      }
-
-      // ===== 3. REINICIAR CONFIGURACIÓN GLOBAL (config/general) =====
-      const configRef = doc(db, 'config', 'general');
-      await setDoc(configRef, {
-        isInitialized: false,
-        ultimoZ: 0,
-        proximoRecibo: 1,
-        proximaDevolucion: 1,
-        proximaAnulacion: 1,
-        acumuladoHistorico: 0,
-        fechaUltimoZ: '',
-        fondoCajaHoyUSD: 0,
-        fondoCajaHoyBS: 0,
-        tasa: state.tasa || 36.50,
-        pinDevolucion: '000000',
-        empresa: {
-          nombre: 'NOMBRE DE SU NEGOCIO',
-          rif: 'J-00000000-0',
-          direccion: 'DIRECCIÓN FISCAL',
-          telefono: '0000-0000000'
-        }
-      }, { merge: true });
-      console.log('✅ Configuración global reiniciada con valores iniciales.');
-
-      // ===== 4. LIMPIAR SESIÓN Y SALIR =====
+      const response = await fetch('/api/turso/store', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ operation: 'factoryReset' })
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data?.ok === false) throw new Error(data?.error || 'Turso no confirmó el formateo.');
       if (typeof sessionStorage !== 'undefined') sessionStorage.clear();
       if (typeof localStorage !== 'undefined') {
         localStorage.removeItem('posven_apertura_done');
         localStorage.removeItem('posven_last_cxp_alert');
       }
-
-      toast({ 
-        title: "Sistema Formateado", 
-        description: "Todos los datos han sido eliminados permanentemente." 
-      });
-
-      // ===== 5. CERRAR SESIÓN =====
-      try {
-        await signOut(auth);
-      } catch (e) {
-        console.warn('⚠️ Error al cerrar sesión:', e);
-      }
-
-      // ===== 6. REDIRIGIR AL LOGIN =====
+      await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
+      toast({ title: 'Sistema Formateado', description: 'Turso fue reiniciado y el administrador semilla fue conservado.' });
       window.location.href = '/login';
-
     } catch (error: any) {
-      console.error("❌ Error en formateo:", error);
-      toast({ 
-        variant: "destructive", 
-        title: "Fallo en Limpieza", 
-        description: error.message 
-      });
+      console.error('Error en formateo Turso:', error);
+      toast({ variant: 'destructive', title: 'Fallo en Limpieza', description: error?.message || 'No se pudo completar el formateo.' });
     } finally {
       setIsFormatting(false);
     }
@@ -341,61 +284,43 @@ export default function ConfigModule({ state, updateState }: { state: AppState, 
         </div>
       </div>
 
-      {/* ===== MIGRACIÓN DE DATOS ===== */}
-      <div className="card shadow-lg border-blue-500/30 bg-blue-50 border-2">
-        <div className="card-head border-b border-blue-500/20 px-5 py-4">
-          <h3 className="text-blue-700 font-black uppercase italic text-xs flex items-center gap-2">
-            <Database className="w-4 h-4" /> Migración de Estructura de Datos
+      {/* ===== MANTENIMIENTO TURSO ===== */}
+      <div className="card shadow-lg border-amber-500/30 bg-amber-50 border-2">
+        <div className="card-head border-b border-amber-500/20 px-5 py-4">
+          <h3 className="text-amber-800 font-black uppercase italic text-xs flex items-center gap-2">
+            <Database className="w-4 h-4" /> Mantenimiento Turso
           </h3>
         </div>
         <div className="card-body p-6 bg-white">
-          <p className="text-xs text-ink font-bold mb-4">
-            Esta acción migrará los datos de la estructura antigua (documento único) a la nueva estructura (colecciones separadas).
+          <p className="text-xs text-ink font-bold mb-3">
+            Revisa las cuentas por cobrar migradas y sincroniza sus ítems, factura y totales con la venta original. No modifica pagos, abonos ni saldo pendiente.
           </p>
-          <div className="flex flex-col gap-3">
-            <button 
-              className="btn bg-blue-600 hover:bg-blue-700 text-white h-12 px-8 font-black uppercase text-xs shadow-xl flex items-center gap-2" 
-              onClick={handleMigrar}
-              disabled={isMigrating}
-            >
-              {isMigrating ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Database className="w-4 h-4" />}
-              {isMigrating ? 'MIGRANDO DATOS...' : 'Migrar Estructura de Datos'}
-            </button>
-
-            {showMigracionResultado && migracionResultado && (
-              <div className={`mt-4 p-4 rounded-lg border ${migracionResultado.success ? 'bg-green-50 border-green-500' : 'bg-red-50 border-red-500'}`}>
-                <h4 className={`font-black uppercase text-xs mb-2 ${migracionResultado.success ? 'text-green-700' : 'text-red-700'}`}>
-                  {migracionResultado.success ? '✅ Migración completada exitosamente' : '❌ Error en migración'}
-                </h4>
-                {migracionResultado.success && resultados ? (
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    <div className="flex justify-between"><span className="font-bold">Config:</span> <span>{resultados.config || 0}</span></div>
-                    <div className="flex justify-between"><span className="font-bold">Catálogos:</span> <span>{resultados.catalogos || 0}</span></div>
-                    <div className="flex justify-between"><span className="font-bold">Inventario:</span> <span>{resultados.inventario || 0}</span></div>
-                    <div className="flex justify-between"><span className="font-bold">Ventas:</span> <span>{resultados.ventas || 0}</span></div>
-                    <div className="flex justify-between"><span className="font-bold">Movimientos:</span> <span>{resultados.movimientos || 0}</span></div>
-                    <div className="flex justify-between"><span className="font-bold">Terminales:</span> <span>{resultados.terminales || 0}</span></div>
-                    <div className="flex justify-between"><span className="font-bold">Proveedores:</span> <span>{resultados.proveedores || 0}</span></div>
-                    <div className="flex justify-between"><span className="font-bold">Devoluciones:</span> <span>{resultados.devoluciones || 0}</span></div>
-                    <div className="flex justify-between"><span className="font-bold">Anulaciones:</span> <span>{resultados.anulaciones || 0}</span></div>
-                    <div className="flex justify-between"><span className="font-bold">CXC:</span> <span>{resultados.cxc || 0}</span></div>
-                    <div className="flex justify-between"><span className="font-bold">CXP:</span> <span>{resultados.cxp || 0}</span></div>
-                    <div className="flex justify-between"><span className="font-bold">Clientes:</span> <span>{resultados.clientes || 0}</span></div>
+          <button
+            className="btn bg-amber-600 hover:bg-amber-700 text-white h-12 px-8 font-black uppercase text-xs shadow-xl flex items-center gap-2"
+            onClick={handleRepararCxcMigrado}
+            disabled={isRepairingCxc}
+          >
+            {isRepairingCxc ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Database className="w-4 h-4" />}
+            {isRepairingCxc ? 'REPARANDO CxC...' : 'REPARAR CxC MIGRADO'}
+          </button>
+          {reparacionCxcResultado && (
+            <div className={reparacionCxcResultado.error ? 'mt-3 p-4 rounded-lg border bg-red-50 border-red-500' : 'mt-3 p-4 rounded-lg border bg-amber-50 border-amber-400'}>
+              {reparacionCxcResultado.error ? (
+                <p className="text-xs text-red-700 font-bold">{reparacionCxcResultado.error}</p>
+              ) : (
+                <>
+                  <h4 className="font-black uppercase text-xs text-amber-800 mb-2">Resultado de reparación CxC</h4>
+                  <div className="grid grid-cols-2 gap-2 text-xs text-ink">
+                    <div className="flex justify-between"><span className="font-bold">Revisadas:</span><span>{reparacionCxcResultado.revisadas || 0}</span></div>
+                    <div className="flex justify-between"><span className="font-bold">Corregidas:</span><span>{reparacionCxcResultado.corregidas || 0}</span></div>
+                    <div className="flex justify-between"><span className="font-bold">Sin venta:</span><span>{reparacionCxcResultado.sinVenta || 0}</span></div>
+                    <div className="flex justify-between"><span className="font-bold">Sin ítems en venta:</span><span>{reparacionCxcResultado.sinItemsVenta || 0}</span></div>
+                    <div className="flex justify-between"><span className="font-bold">Sin cambios:</span><span>{reparacionCxcResultado.sinCambios || 0}</span></div>
                   </div>
-                ) : migracionResultado.success ? (
-                  <p className="text-xs text-yellow-700">No se encontraron resultados para mostrar</p>
-                ) : (
-                  <p className="text-xs text-red-700">{migracionResultado.error || 'Error desconocido'}</p>
-                )}
-                <button 
-                  className="mt-3 text-xs font-black underline hover:no-underline"
-                  onClick={() => setShowMigracionResultado(false)}
-                >
-                  Cerrar
-                </button>
-              </div>
-            )}
-          </div>
+                </>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -424,9 +349,19 @@ export default function ConfigModule({ state, updateState }: { state: AppState, 
             <button
               className="btn h-12 px-8 font-black uppercase text-xs shadow-md flex items-center gap-2 border border-line bg-surface-soft/50 hover:bg-surface-soft"
               onClick={() => fileInputRef.current?.click()}
+              disabled={isRestoringBackup}
             >
-              <Database className="w-4 h-4" />
-              Cargar Respaldo
+              {isRestoringBackup ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Database className="w-4 h-4" />}
+              {isRestoringBackup ? 'RESTAURANDO...' : 'Cargar Respaldo'}
+            </button>
+
+            <button
+              className="btn h-12 px-5 font-black uppercase text-xs shadow-md flex items-center gap-2 border border-brand-gold/40 bg-brand-gold-soft"
+              onClick={() => catalogFileInputRef.current?.click()}
+              disabled={isImportingCatalogs}
+            >
+              {isImportingCatalogs ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Database className="w-4 h-4" />}
+              {isImportingCatalogs ? 'ANALIZANDO...' : 'Importar solo catálogos'}
             </button>
           </div>
 
@@ -437,6 +372,33 @@ export default function ConfigModule({ state, updateState }: { state: AppState, 
             className="hidden"
             onChange={handleArchivoRespaldo}
           />
+
+          <input
+            ref={catalogFileInputRef}
+            type="file"
+            accept=".json,application/json"
+            className="hidden"
+            onChange={handleImportarSoloCatalogos}
+          />
+          <p className="text-[11px] text-ink/60 font-semibold">
+            Importación selectiva: combina únicamente departamentos y categorías, sin reemplazar datos operativos.
+          </p>
+
+          {backupProgress && (
+            <div className="p-4 rounded-lg border border-blue-500 bg-blue-50">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs text-blue-800 font-black uppercase">{backupProgress.stage}</p>
+                <p className="text-sm text-blue-900 font-black">{backupProgress.percent}%</p>
+              </div>
+              <div className="h-3 w-full rounded-full bg-blue-100 overflow-hidden">
+                <div
+                  className="h-full bg-blue-600 transition-all duration-300"
+                  style={{ width: `${backupProgress.percent}%` }}
+                />
+              </div>
+              <p className="text-xs text-blue-700 mt-2 font-bold">{backupProgress.detail}</p>
+            </div>
+          )}
 
           {backupError && (
             <div className="p-4 rounded-lg border bg-red-50 border-red-500">

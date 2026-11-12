@@ -1,0 +1,33 @@
+name: Integration validation
+
+on:
+  push:
+    branches:
+      - integration/turso-paginacion-main-2026-11-12
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: posven-integration-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+      - name: TypeScript check
+        run: npx tsc --noEmit --pretty false
+      - name: Next.js server build
+        if: always()
+        run: npm run build
+        env:
+          TURSO_MIGRATION_BUILD: '1'

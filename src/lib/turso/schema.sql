@@ -181,13 +181,14 @@ CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
 
 -- Mapeo de identidades externas; debe existir incluso en bases Turso recién creadas.
 CREATE TABLE IF NOT EXISTS user_identity_map (
-  id TEXT PRIMARY KEY,
+  source TEXT NOT NULL,
+  legacy_user_id TEXT NOT NULL,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  provider TEXT NOT NULL,
-  provider_user_id TEXT NOT NULL,
+  firebase_uid TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE(provider, provider_user_id)
+  PRIMARY KEY (source, legacy_user_id)
 );
+CREATE INDEX IF NOT EXISTS idx_user_identity_map_user ON user_identity_map(user_id);
 
 -- Registro de migración para poder verificar conteos y repetir pasos de forma segura.
 CREATE TABLE IF NOT EXISTS migration_runs (
@@ -200,3 +201,13 @@ CREATE TABLE IF NOT EXISTS migration_runs (
   counts_json TEXT NOT NULL DEFAULT '{}',
   notes TEXT
 );
+
+CREATE INDEX IF NOT EXISTS idx_productos_updated_at ON productos(updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ventas_fecha ON ventas(fecha);
+CREATE INDEX IF NOT EXISTS idx_devoluciones_fecha ON devoluciones(fecha);
+CREATE INDEX IF NOT EXISTS idx_libro_diario_fecha ON libro_diario(fecha);
+CREATE INDEX IF NOT EXISTS idx_movimientos_producto_fecha ON movimientos(json_extract(data_json,'$.productoId'), fecha DESC);
+
+CREATE INDEX IF NOT EXISTS idx_cxc_estado_fecha ON cxc(json_extract(data_json,'$.estado'), fecha DESC);
+
+CREATE INDEX IF NOT EXISTS idx_cxp_estado_fecha ON cxp(json_extract(data_json,'$.estado'), fecha DESC);

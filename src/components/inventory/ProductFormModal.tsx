@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Card } from '@/components/ui/card';
 
 interface ProductFormModalProps {
+  isOpen?: boolean;
   producto?: Product;
   state: AppState;
   onClose: () => void;
@@ -17,7 +18,7 @@ interface ProductFormModalProps {
   onUpdateLists: (l: any) => void;
 }
 
-export function ProductFormModal({ producto, state, onClose, onSave, onUpdateLists }: ProductFormModalProps) {
+export function ProductFormModal({ isOpen = true, producto, state, onClose, onSave, onUpdateLists }: ProductFormModalProps) {
   const [activeTab, setActiveTab] = useState<'general' | 'precios' | 'kit'>('general');
   const [datos, setDatos] = useState<any>({
     codigo: producto?.codigo || '',
@@ -126,6 +127,8 @@ export function ProductFormModal({ producto, state, onClose, onSave, onUpdateLis
       stockMinimo: parseFloat(datos.stockMinimo) || 0
     });
   };
+
+  if (!isOpen) return null;
 
   return (
     <div className="modal show"><div className="modal-bg" onClick={() => onClose()}></div>

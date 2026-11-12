@@ -46,7 +46,6 @@
     "electron-pos-printer": "^1.4.0",
     "electron-updater": "^6.3.9",
     "embla-carousel-react": "^8.6.0",
-    "firebase": "^11.9.1",
     "genkit": "^1.28.0",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.8",

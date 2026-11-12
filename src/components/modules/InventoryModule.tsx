@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 
 // Normaliza etiquetas de catálogo para comparar sin diferencias de acentos,
 // mayúsculas, espacios duplicados o caracteres invisibles.
@@ -114,6 +114,12 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
   const [selectedKardexId, setSelectedKardexId] = useState<string | null>(null);
   const [selectedCPPId, setSelectedCPPId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
+  const [serverProducts, setServerProducts] = useState<Product[]>([]);
+  const [serverTotal, setServerTotal] = useState(0);
+  const [serverLowStock, setServerLowStock] = useState(0);
+  const [productsLoading, setProductsLoading] = useState(true);
+  const [productsError, setProductsError] = useState('');
+  const productRequestId = useRef(0);
 
   useEffect(() => {
     if (activeTab !== 'productos') {
@@ -127,6 +133,53 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
   useEffect(() => {
     setPage(1);
   }, [search, catFilter, deptFilter]);
+
+  // La tabla consulta únicamente la página solicitada en Turso.
+  // El catálogo completo del estado operativo no se sustituye: POS, compras,
+  // movimientos y validaciones siguen trabajando con state.productos.
+  useEffect(() => {
+    if (activeTab !== 'productos') return;
+    const requestId = ++productRequestId.current;
+    const timer = window.setTimeout(async () => {
+      setProductsLoading(true);
+      setProductsError('');
+      try {
+        const params = new URLSearchParams({
+          special: 'products-page',
+          page: String(page),
+          pageSize: '10',
+          search: search.trim(),
+          departamento: deptFilter,
+          categoria: catFilter,
+        });
+        const response = await fetch('/api/turso/store?' + params.toString(), {
+          credentials: 'include',
+          cache: 'no-store',
+          signal: AbortSignal.timeout(12000),
+        });
+        const body = await response.json().catch(() => null);
+        if (!response.ok || body?.ok !== true) {
+          throw new Error(String(body?.error || 'No se pudo consultar el catálogo en Turso.'));
+        }
+        if (requestId !== productRequestId.current) return;
+        setServerProducts(Array.isArray(body.records) ? body.records : []);
+        setServerTotal(Number(body.total) || 0);
+        setServerLowStock(Number(body.lowStockTotal) || 0);
+        const pages = Math.max(1, Math.ceil((Number(body.total) || 0) / 10));
+        if (page > pages) setPage(pages);
+      } catch (error: any) {
+        if (requestId === productRequestId.current) {
+          setProductsError(String(error?.message || error));
+          setServerProducts([]);
+          setServerTotal(0);
+          setServerLowStock(0);
+        }
+      } finally {
+        if (requestId === productRequestId.current) setProductsLoading(false);
+      }
+    }, search.trim() ? 300 : 0);
+    return () => window.clearTimeout(timer);
+  }, [activeTab, page, search, catFilter, deptFilter, state.productos]);
   
   const [showAjuste, setShowAjuste] = useState<string | null>(null);
   const [showProducto, setShowProducto] = useState<string | null | 'nuevo'>(null);
@@ -161,16 +214,19 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
     (deptFilter ? normalizeCatalogFilter(p.departamento) === normalizeCatalogFilter(deptFilter) : true)
   );
 
-  const lowStockCount = prods.filter(p => p.stock <= (p.stockMinimo || 0)).length;
-
   const pageSize = 10;
-  const totalPages = Math.max(1, Math.ceil(prods.length / pageSize));
+  const totalPages = Math.max(1, Math.ceil(serverTotal / pageSize));
   const safePage = Math.min(page, totalPages);
-  const pageProds = prods.slice((safePage - 1) * pageSize, safePage * pageSize);
+  const pageProds = serverProducts;
+  const lowStockCount = serverLowStock;
 
   const eliminar = (id: string) => {
     if (!confirm('¿Seguro que desea eliminar este producto?')) return;
-    const nuevos = state.productos.map(p => p.id === id ? { ...p, activo: false } : p);
+    const conocidos = [
+      ...(state.productos || []),
+      ...serverProducts.filter(p => !(state.productos || []).some(existing => existing.id === p.id)),
+    ];
+    const nuevos = conocidos.map(p => p.id === id ? { ...p, activo: false } : p);
     updateState({ productos: nuevos });
   };
 
@@ -183,7 +239,7 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
               <div className="p-3 bg-brand-gold-soft rounded-xl"><PackageCheck className="w-6 h-6 text-brand-gold-deep" /></div>
               <div>
                 <p className="text-[10px] font-black uppercase text-ink/40">Total Productos</p>
-                <p className="text-2xl font-black text-ink">{prods.length}</p>
+                <p className="text-2xl font-black text-ink">{serverTotal}</p>
               </div>
             </div>
             <div className={`kpi p-6 rounded-2xl shadow-sm border-l-[6px] flex items-center gap-4 ${lowStockCount > 0 ? 'bg-status-danger-soft border-l-status-danger' : 'bg-white border-line'}`}>
@@ -262,7 +318,11 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
                   </TableRow>
                 </TableHeader>
                 <TableBody className="bg-white">
-                  {prods.length === 0 ? (
+                  {productsLoading ? (
+                    <TableRow><TableCell colSpan={7} className="text-center py-12 text-ink/40 font-black uppercase text-xs">Consultando productos en Turso...</TableCell></TableRow>
+                  ) : productsError ? (
+                    <TableRow><TableCell colSpan={7} className="text-center py-12 text-status-danger font-black text-xs">{productsError}</TableCell></TableRow>
+                  ) : serverTotal === 0 ? (
                     <TableRow><TableCell colSpan={7} className="text-center py-20 text-ink/20 font-black italic uppercase">No se encontraron productos coincidentes</TableCell></TableRow>
                   ) : (
                     pageProds.map(p => (
@@ -296,7 +356,7 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
                 </TableBody>
               </Table>
             </div>
-            <Pagination page={safePage} totalPages={totalPages} total={prods.length} pageSize={pageSize} onPageChange={setPage} />
+            <Pagination page={safePage} totalPages={totalPages} total={serverTotal} pageSize={pageSize} onPageChange={setPage} />
           </Card>
         </div>
       );
