@@ -52,6 +52,16 @@ function table(value: unknown): TursoStoreTable {
   return name as TursoStoreTable;
 }
 
+function publicProductForCashier(product: any) {
+  if (!product || typeof product !== 'object') return product;
+  const {
+    costoUSD, margen, costPrice, profitPercentage,
+    proveedor, supplierId, supplierCode,
+    ...saleProduct
+  } = product;
+  return saleProduct;
+}
+
 async function requireUser(request: Request) {
   const user = await getSessionUser(getRequestSessionId(request));
   if (!user) throw new Error('No autenticado.');
@@ -93,7 +103,8 @@ export async function GET(request: Request) {
     }
     const id = url.searchParams.get('id');
     if (id) {
-      const record = await getRecord(t, id);
+      const rawRecord = await getRecord(t, id);
+      const record = cashier && t === 'productos' ? publicProductForCashier(rawRecord) : rawRecord;
       if (cashier && t === 'terminales' && String(record?.id || '') !== String(assignedTerminal?.id || '')) {
         throw new Error('No tiene acceso a esa terminal.');
       }
@@ -116,7 +127,8 @@ export async function GET(request: Request) {
       since: url.searchParams.get('since') || undefined,
       until: url.searchParams.get('until') || undefined,
     });
-    return NextResponse.json({ ok: true, records });
+    const visibleRecords = cashier && t === 'productos' ? records.map(publicProductForCashier) : records;
+    return NextResponse.json({ ok: true, records: visibleRecords });
   } catch (error: any) {
     const message = String(error?.message || error);
     const forbidden = ['Se requiere administrador', 'No tiene acceso', 'El cajero debe', 'Un cajero no puede', 'no tiene una terminal asignada'];
