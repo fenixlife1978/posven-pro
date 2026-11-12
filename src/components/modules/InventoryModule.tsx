@@ -266,6 +266,38 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
                 </TableBody>
               </Table>
             </div>
+            {prods.length > 0 && (
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-line/60 bg-surface-soft/40 px-4 py-3 no-print">
+                <p className="text-xs font-bold text-ink/60 text-center sm:text-left">
+                  Mostrando <span className="text-ink">{(safePage - 1) * pageSize + 1}-{Math.min(safePage * pageSize, prods.length)}</span> de <span className="text-ink">{prods.length}</span> productos
+                </p>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="h-9 px-3 text-xs font-black uppercase"
+                    onClick={() => setPage(Math.max(1, safePage - 1))}
+                    disabled={safePage <= 1}
+                    aria-label="Página anterior"
+                  >
+                    Anterior
+                  </Button>
+                  <span className="min-w-[58px] text-center text-sm font-black tabular-nums text-ink" aria-live="polite">
+                    {safePage}/{totalPages}
+                  </span>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="h-9 px-3 text-xs font-black uppercase"
+                    onClick={() => setPage(Math.min(totalPages, safePage + 1))}
+                    disabled={safePage >= totalPages}
+                    aria-label="Página siguiente"
+                  >
+                    Siguiente
+                  </Button>
+                </div>
+              </div>
+            )}
           </Card>
         </div>
       );
