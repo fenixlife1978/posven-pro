@@ -202,8 +202,8 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: true, ...result });
       }
       case 'inventory': {
-        if (user.rol !== 'administrador') throw new Error('Se requiere administrador.');
-        const result = await applyInventoryMovementsTransaction(body);
+        const terminalId = String(body.terminalId || body.movements?.[0]?.terminalId || '');
+        const result = await applyInventoryMovementsTransaction({ ...body, user, terminalId });
         return NextResponse.json({ ok: true, ...result });
       }
       case 'sale': {
