@@ -54,9 +54,9 @@ import { DateRangeFilter, DateRange } from '@/components/ui/date-range-filter';
 function normalizeCatalogFilter(value: unknown): string {
   return String(value ?? '')
     .normalize('NFD')
-    .replace(/[\\u0300-\\u036f]/g, '')
-    .replace(/[\\u200B-\\u200D\\uFEFF]/g, '')
-    .replace(/\\s+/g, ' ')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .replace(/\s+/g, ' ')
     .trim()
     .toLocaleUpperCase('es');
 }
@@ -104,7 +104,7 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
   const cleanDepartamentos = useMemo(() => {
     const unique = new Map<string, string>();
     for (const raw of state.departamentos || []) {
-      const value = String(raw ?? '').replace(/\\s+/g, ' ').trim();
+      const value = String(raw ?? '').replace(/\s+/g, ' ').trim();
       const key = normalizeCatalogFilter(value);
       if (key && !unique.has(key)) unique.set(key, value);
     }
@@ -114,7 +114,7 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
   const cleanCategorias = useMemo(() => {
     const unique = new Map<string, string>();
     for (const raw of state.categorias || []) {
-      const value = String(raw ?? '').replace(/\\s+/g, ' ').trim();
+      const value = String(raw ?? '').replace(/\s+/g, ' ').trim();
       const key = normalizeCatalogFilter(value);
       if (key && !unique.has(key)) unique.set(key, value);
     }
