@@ -915,7 +915,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         <button onClick={() => setView('credits')} className={`btn btn-sm ${view === 'credits' ? 'btn-primary shadow-md' : 'bg-white text-ink font-bold border-line border'}`}><ClipboardList className="w-3.5 h-3.5"/> Consultar Créditos</button>
         <button onClick={() => handleOpenReport('REPORT_X')} disabled={reportLoading} className="btn btn-sm bg-white text-ink font-bold border-line border disabled:opacity-50"><FileText className="w-3.5 h-3.5"/> {reportLoadingType === 'REPORT_X' ? 'Cargando…' : 'Reporte X'}</button>
         <button onClick={() => handleOpenReport('REPORT_Z')} disabled={reportLoading} className="btn btn-sm bg-white text-ink font-bold border-line border disabled:opacity-50"><Receipt className="w-3.5 h-3.5"/> {reportLoadingType === 'REPORT_Z' ? 'Cargando…' : 'Reporte Z'}</button>
-        {view === 'pos' && <button onClick={() => { setShowPosAdjustment(true); setAdjustmentError(''); }} className="btn btn-sm bg-white text-ink font-bold border-line border hover:bg-brand-gold-soft"><Settings2 className="w-3.5 h-3.5"/> Ajustes</button>}
+
         <button onClick={() => setView('returns')} className={`btn btn-sm ${view === 'returns' ? 'btn-primary shadow-md' : 'bg-white text-ink font-bold border-line border'}`}><RotateCcw className="w-3.5 h-3.5"/> Devoluciones y Anulaciones</button>
         
         {view === 'pos' && (
@@ -956,6 +956,16 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
               )}
             </div>
 
+            <button
+              type="button"
+              onClick={() => { setShowPosAdjustment(true); setAdjustmentError(''); }}
+              className="shrink-0 inline-flex items-center justify-center gap-2 rounded-xl bg-brand-gold text-black px-3 py-3 font-black shadow-md hover:brightness-95 active:scale-95 transition"
+              title="Ajustes de inventario"
+              aria-label="Ajustes de inventario"
+            >
+              <Settings2 className="w-5 h-5" />
+              <span className="hidden sm:inline">Ajustes</span>
+            </button>
             <div className="flex items-center gap-2 bg-white px-4 py-1.5 rounded-full border border-brand-gold/30 shadow-sm shrink-0">
               <div className="w-8 h-8 rounded-full overflow-hidden border border-line shrink-0"><img src="/bcv-logo.png" alt="BCV" className="w-full h-full object-cover" /></div>
               <div className="flex items-center gap-1.5">{!editandoTasa ? (<><span className="text-ink font-black text-sm tabular-nums">{state.tasa.toFixed(2)}</span><button onClick={() => { setEditandoTasa(true); setNuevaTasa(state.tasa.toString()); }} className="text-brand-gold hover:text-brand-gold-deep p-0.5 transition-colors"><RefreshCw className="w-3.5 h-3.5" /></button></>) : (<><input type="text" value={nuevaTasa} onChange={e => setNuevaTasa(e.target.value.replace(/[^0-9.]/g, ''))} className="w-16 bg-surface-soft border border-brand-gold rounded px-1.5 py-0.5 text-ink font-black text-sm text-right outline-none" autoFocus /><button onClick={guardarNuevaTasa} className="text-status-success p-0.5"><Check className="w-4 h-4" /></button><button onClick={() => setEditandoTasa(false)} className="text-status-danger p-0.5"><X className="w-4 h-4" /></button></>)}</div>
