@@ -181,13 +181,14 @@ CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
 
 -- Mapeo de identidades externas; debe existir incluso en bases Turso recién creadas.
 CREATE TABLE IF NOT EXISTS user_identity_map (
-  id TEXT PRIMARY KEY,
+  source TEXT NOT NULL,
+  legacy_user_id TEXT NOT NULL,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  provider TEXT NOT NULL,
-  provider_user_id TEXT NOT NULL,
+  firebase_uid TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE(provider, provider_user_id)
+  PRIMARY KEY (source, legacy_user_id)
 );
+CREATE INDEX IF NOT EXISTS idx_user_identity_map_user ON user_identity_map(user_id);
 
 -- Registro de migración para poder verificar conteos y repetir pasos de forma segura.
 CREATE TABLE IF NOT EXISTS migration_runs (
