@@ -780,7 +780,7 @@ export async function applyInventoryMovementsTransaction(params: {
   operationType: string;
   movements: any[];
   productPatches?: Record<string, any>;
-  user?: { rol: string; id: string; firebaseUid?: string | null };
+  user: { rol: string; id: string; firebaseUid?: string | null };
   terminalId?: string;
 }) {
   assertTursoReady();
@@ -790,7 +790,7 @@ export async function applyInventoryMovementsTransaction(params: {
     // Los cajeros solo pueden ejecutar ajustes originados en el POS y sobre
     // su propia terminal. La autorización y el estado de caja se verifican
     // dentro de la misma transacción que actualiza el kardex.
-    const cashier = Boolean(params.user && params.user.rol !== 'administrador');
+    const cashier = params.user.rol !== 'administrador';
     let cashierTerminal: any = null;
     if (cashier) {
       const terminalId = String(params.terminalId || '');
@@ -802,7 +802,7 @@ export async function applyInventoryMovementsTransaction(params: {
       }
       cashierTerminal = rowFromDb((await tx.execute(txSelect('terminales', terminalId))).rows[0]);
       if (!cashierTerminal) throw new Error('La caja/terminal asignada ya no existe.');
-      assertTerminalAccess(params.user!, cashierTerminal);
+      assertTerminalAccess(params.user, cashierTerminal);
       if (cashierTerminal.isCashOpen !== true) throw new Error('Debe tener la caja abierta para registrar ajustes.');
       const allowedTypes = new Set(['consumo', 'colaboracion', 'ajuste_entrada', 'ajuste_salida']);
       for (const movement of params.movements) {
