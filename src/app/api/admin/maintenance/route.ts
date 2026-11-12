@@ -105,6 +105,8 @@ export async function GET(request: Request) {
         args: [limit, offset],
       });
     const result = rows.rows.map((row: any) => {
+      let data: any = {};
+      try { data = JSON.parse(String(row.data_json || '{}')); } catch {}
       return { ...data, id: String(row.id), ...(row.fecha ? { _fecha: row.fecha } : {}), ...(row.updated_at ? { _updatedAt: row.updated_at } : {}) };
     });
     return NextResponse.json({ ok: true, table: tableKey, limit, offset, count: result.length, records: result }, { headers: { 'Cache-Control': 'no-store' } });
