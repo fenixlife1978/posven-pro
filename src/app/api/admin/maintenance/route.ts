@@ -28,13 +28,12 @@ const READ_TABLES: Record<string, string> = {
 function normalize(value: unknown): string {
   return String(value ?? '')
     .normalize('NFD')
-    .replace(/[\\u0300-\\u036f]/g, '')
-    .replace(/[\\u200B-\\u200D\\uFEFF]/g, '')
-    .replace(/\\s+/g, ' ')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .replace(/\s+/g, ' ')
     .trim()
     .toLocaleUpperCase('es');
 }
-
 async function requireAdmin(request: Request) {
   const user = await getSessionUser(getRequestSessionId(request));
   if (!user || user.rol !== 'administrador') {
