@@ -664,14 +664,14 @@ async function ensureReportRange(name: string, desde: string, hasta: string, ter
 
   try {
     // En Turso evitamos las consultas compuestas de servidor Turso para el historial.
-    const start = String(desde) + 'T00:00:00';
-    const endDate = new Date(String(hasta) + 'T00:00:00');
-    endDate.setDate(endDate.getDate() + 1);
-    const end = endDate.toISOString().slice(0, 19);
+    const tursoStart = String(desde) + 'T00:00:00';
+    const tursoEndDate = new Date(String(hasta) + 'T00:00:00');
+    tursoEndDate.setDate(tursoEndDate.getDate() + 1);
+    const tursoEnd = tursoEndDate.toISOString().slice(0, 19);
     const tursoItems = await tryTursoRead(name, {
       limit: 10000,
-      since: start,
-      until: end,
+      since: tursoStart,
+      until: tursoEnd,
       ...(terminalId !== 'all' ? { terminalId } : {}),
     });
     if (tursoItems !== null) {
