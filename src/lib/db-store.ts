@@ -536,9 +536,9 @@ async function loadCollection(name: string, options: { estado?: string; terminal
     }
     return all.map(sanitizeForFirestore).filter(Boolean);
   }
-  if (!db) return [];
-  const snap = await getDocs(collection(db, name));
-  return snap.docs.map(d => sanitizeForFirestore(d.data())).filter(Boolean);
+  // Turso es la única fuente de verdad. No convertir una caída de conexión
+  // en una colección vacía ni habilitar una lectura Firebase de respaldo.
+  throw new Error('Turso no está disponible; no se puede hidratar la colección ' + name + '.');
 }
 
 // Carga COMPLETA de una colección paginada de 500 (evita leer doc a doc en loops).
