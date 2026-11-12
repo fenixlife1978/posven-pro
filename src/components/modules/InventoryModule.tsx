@@ -54,9 +54,9 @@ import { DateRangeFilter, DateRange } from '@/components/ui/date-range-filter';
 const normalizeCatalogFilter = (value: unknown): string =>
   String(value ?? '')
     .normalize('NFD')
-    .replace(/[\\u0300-\\u036f]/g, '')
-    .replace(/[\\u200B-\\u200D\\uFEFF]/g, '')
-    .replace(/\\s+/g, ' ')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .replace(/\s+/g, ' ')
     .trim()
     .toLocaleUpperCase('es');
 
