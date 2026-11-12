@@ -89,13 +89,14 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
   // ✅ CORRECCIÓN: Limpiar departamentos y categorías para evitar duplicados
   const cleanDepartamentos = useMemo(() => {
     const unique = new Map<string, string>();
-    (state.departamentos || []).forEach(value => {
+    const productDepartments = (state.productos || []).map(product => product.departamento);
+    [...(state.departamentos || []), ...productDepartments].forEach(value => {
       const label = String(value ?? '').trim();
       const key = normalizeCatalogFilter(label);
       if (key && !unique.has(key)) unique.set(key, label);
     });
     return Array.from(unique.values());
-  }, [state.departamentos]);
+  }, [state.departamentos, state.productos]);
 
   const cleanCategorias = useMemo(() => {
     const unique = new Map<string, string>();
@@ -402,6 +403,19 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
 
 function ReporteGeneral({ state, onAction }: { state: AppState, onAction: (type: string, id: string) => void }) {
   const [deptFilter, setDeptFilter] = useState('');
+  // Este componente tiene su propio ámbito: construir aquí las opciones evita
+  // depender de variables locales de InventoryModule y recupera departamentos
+  // presentes en productos aunque el catálogo de listas esté incompleto.
+  const cleanDepartamentos = useMemo(() => {
+    const unique = new Map<string, string>();
+    const productDepartments = (state.productos || []).map(product => product.departamento);
+    [...(state.departamentos || []), ...productDepartments].forEach(value => {
+      const label = String(value ?? '').trim();
+      const key = normalizeCatalogFilter(label);
+      if (key && !unique.has(key)) unique.set(key, label);
+    });
+    return Array.from(unique.values());
+  }, [state.departamentos, state.productos]);
 
   const filteredProducts = (state.productos || []).filter(p => 
     p.activo && (deptFilter ? normalizeCatalogFilter(p.departamento) === normalizeCatalogFilter(deptFilter) : true)
@@ -424,7 +438,7 @@ function ReporteGeneral({ state, onAction }: { state: AppState, onAction: (type:
             >
               <option value="">TODOS LOS DEPARTAMENTOS</option>
               {cleanDepartamentos.map(d => (
-                <option key={`dept-report-${d}-${Math.random()}`} value={d}>{d?.toUpperCase()}</option>
+                <option key={`dept-report-${normalizeCatalogFilter(d)}`} value={d}>{d?.toUpperCase()}</option>
               ))}
             </select>
           </div>
