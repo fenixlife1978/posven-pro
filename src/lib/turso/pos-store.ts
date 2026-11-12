@@ -622,7 +622,9 @@ export async function createSaleTransaction(params: {
 export async function syncProductsStockFromKardex() {
   assertTursoReady();
   return tursoInteractiveTransaction(async tx => {
-    await tx.execute({
+    // Solo escribir productos cuyo stock realmente difiere del último Kardex.
+    // RETURNING evita una segunda lectura completa de todos los productos con movimientos.
+    const result = await tx.execute({
       sql: `
         UPDATE productos
         SET data_json = json_set(
@@ -642,26 +644,21 @@ export async function syncProductsStockFromKardex() {
           FROM movimientos m2
           WHERE json_extract(m2.data_json,'$.productoId') = productos.id
         )
-      `,
-      args: [],
-      wantRows: false,
-    });
-
-    const result = await tx.execute({
-      sql: `
-        SELECT p.id,p.data_json
-        FROM productos p
-        WHERE EXISTS (
-          SELECT 1
-          FROM movimientos m
-          WHERE json_extract(m.data_json,'$.productoId') = p.id
-        )
+        AND COALESCE(CAST(json_extract(data_json,'$.stock') AS REAL),0) <>
+            COALESCE(CAST((
+              SELECT json_extract(m3.data_json,'$.stockDespues')
+              FROM movimientos m3
+              WHERE json_extract(m3.data_json,'$.productoId') = productos.id
+              ORDER BY COALESCE(m3.fecha,'' ) DESC, m3.id DESC
+              LIMIT 1
+            ) AS REAL),0)
+        RETURNING id,data_json
       `,
       args: [],
     });
 
     const products = result.rows.map(rowFromDb).filter(Boolean);
-    return { products, source: 'kardex' };
+    return { products, source: 'kardex', updatedCount: products.length };
   });
 }
 
