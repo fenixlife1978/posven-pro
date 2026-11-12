@@ -102,7 +102,7 @@ async function tryTursoSpecialRead(kind: 'config' | 'catalog' | 'catalogs', name
   if (kind === 'catalogs') return body.catalogs && typeof body.catalogs === 'object' ? body.catalogs : {};
   return Array.isArray(body.lista) ? body.lista : [];
 }
-async function tryTursoRead(table: string, options: { limit?: number; terminalId?: string; estado?: string; since?: string } = {}): Promise<any[] | null> {
+async function tryTursoRead(table: string, options: { limit?: number; terminalId?: string; estado?: string; since?: string; until?: string } = {}): Promise<any[] | null> {
   if (typeof window === 'undefined') return null;
   let response: Response;
   try {
@@ -112,6 +112,7 @@ async function tryTursoRead(table: string, options: { limit?: number; terminalId
     if (options.terminalId) params.set('terminalId', String(options.terminalId));
     if (options.estado) params.set('estado', String(options.estado));
     if (options.since) params.set('since', String(options.since));
+    if (options.until) params.set('until', String(options.until));
     response = await fetch('/api/turso/store?' + params.toString(), {
       method: 'GET',
       credentials: 'include',
@@ -663,18 +664,18 @@ async function ensureReportRange(name: string, desde: string, hasta: string, ter
 
   try {
     // En Turso evitamos las consultas compuestas de servidor Turso para el historial.
-    const tursoItems = await tryTursoRead(name, { limit: 2000, ...(terminalId !== 'all' ? { terminalId } : {}) });
+    const start = String(desde) + 'T00:00:00';
+    const endDate = new Date(String(hasta) + 'T00:00:00');
+    endDate.setDate(endDate.getDate() + 1);
+    const end = endDate.toISOString().slice(0, 19);
+    const tursoItems = await tryTursoRead(name, {
+      limit: 10000,
+      since: start,
+      until: end,
+      ...(terminalId !== 'all' ? { terminalId } : {}),
+    });
     if (tursoItems !== null) {
-      const start = String(desde) + 'T00:00:00';
-      const endDate = new Date(String(hasta) + 'T00:00:00');
-      endDate.setDate(endDate.getDate() + 1);
-      const end = endDate.toISOString().slice(0, 19);
-      const items = tursoItems.filter((item: any) => {
-        const fecha = String(item?.fecha || '');
-        const terminalOk = terminalId === 'all' || String(item?.terminalId || '') === terminalId;
-        return fecha >= start && fecha < end && terminalOk;
-      });
-      if (items.length) applyPatch({ [name]: mergeById((cache as any)[name], items) });
+      if (tursoItems.length) applyPatch({ [name]: mergeById((cache as any)[name], tursoItems) });
       SINCE_STAMP[key] = 'done';
       return;
     }
