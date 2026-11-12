@@ -205,23 +205,18 @@ export async function listProductsPage(options: {
   }
   const where = filters.join(' AND ');
   const result = await tursoExecute({
-    sql: `WITH filtered AS (
-        SELECT id,data_json FROM productos WHERE ${where}
-      )
-      SELECT filtered.id,filtered.data_json,
-        (SELECT COUNT(*) FROM filtered) AS total,
-        (SELECT COUNT(*) FROM filtered
-          WHERE COALESCE(CAST(json_extract(filtered.data_json,'$.stock') AS REAL),0)
-            <= COALESCE(CAST(json_extract(filtered.data_json,'$.stockMinimo') AS REAL),0)
-        ) AS low_stock_total
-      FROM filtered
-      ORDER BY COALESCE((SELECT updated_at FROM productos p WHERE p.id=filtered.id),'') DESC,filtered.id ASC
-      LIMIT ${pageSize} OFFSET ${offset}`,
+    sql: `SELECT id,data_json,COUNT(*) OVER() AS total
+      FROM productos WHERE ${where}
+      ORDER BY updated_at DESC,id ASC LIMIT ${pageSize} OFFSET ${offset}`,
     args,
   });
   const total = Number(result.rows[0]?.total ?? 0);
-  const lowStockTotal = Number(result.rows[0]?.low_stock_total ?? 0);
-  return { records: result.rows.map(rowFromDb).filter(Boolean), total, lowStockTotal, page, pageSize };
+  return {
+    records: result.rows.map(rowFromDb).filter(Boolean),
+    total,
+    page,
+    pageSize,
+  };
 }
 
 export async function countRecords(table: TursoStoreTable): Promise<number> {

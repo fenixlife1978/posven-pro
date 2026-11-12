@@ -170,9 +170,13 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
   const pageProds = serverProducts;
   const lowStockCount = serverLowStock;
 
+  const productoDisponible = (id: string) =>
+    (state.productos || []).find(p => p.id === id) || serverProducts.find(p => p.id === id);
+
   const eliminar = (id: string) => {
     if (!confirm('¿Seguro que desea eliminar este producto?')) return;
-    const nuevos = state.productos.map(p => p.id === id ? { ...p, activo: false } : p);
+    const conocidos = [...(state.productos || []), ...serverProducts.filter(p => !(state.productos || []).some(existing => existing.id === p.id))];
+    const nuevos = conocidos.map(p => p.id === id ? { ...p, activo: false } : p);
     updateState({ productos: nuevos });
   };
 
@@ -473,10 +477,10 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
 
       {showAjuste && (
         <ModalAjuste 
-          producto={state.productos.find(p => p.id === showAjuste)!} 
+          producto={productoDisponible(showAjuste)!} 
           onClose={() => setShowAjuste(null)}
           onSave={async (mov, nuevoCosto) => {
-            const productoOriginal = state.productos.find(p => p.id === mov.productoId);
+            const productoOriginal = productoDisponible(mov.productoId);
             if (!productoOriginal) return;
 
             const ahora = mov.fecha || Utils.ahora();
@@ -497,7 +501,7 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
                   fecha: ahora,
                   referencia: `${mov.tipo.replace('_', ' ').toUpperCase()} KIT: ${productoOriginal.nombre} - REF: ${mov.referencia}`,
                   terminalId: 'ADMIN',
-                  costoUnitarioUSD: Number(state.productos.find(p => p.id === ki.productoId)?.costoUSD) || 0,
+                  costoUnitarioUSD: Number(productoDisponible(ki.productoId)?.costoUSD) || 0,
                   costoUnitarioBs: (Number(state.productos.find(p => p.id === ki.productoId)?.costoUSD) || 0) * Number(state.tasa || 0),
                   tasaBCV: Number(state.tasa) || 0
                 });
