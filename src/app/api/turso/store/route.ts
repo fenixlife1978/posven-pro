@@ -82,7 +82,7 @@ export async function GET(request: Request) {
     const restrictedAdminTables = new Set(['cxp', 'proveedores', 'compras']);
     if (cashier && restrictedAdminTables.has(t)) throw new Error('Se requiere administrador.');
     const terminalScopedTables = new Set(['ventas', 'movimientos', 'devoluciones', 'anulaciones', 'reportesZ', 'caja', 'libroDiario']);
-    const assignedTerminal = cashier ? await getAssignedTerminal(user) : null;
+    const assignedTerminal = cashier && (terminalScopedTables.has(t) || t === 'terminales') ? await getAssignedTerminal(user) : null;
     if (cashier && !assignedTerminal && (terminalScopedTables.has(t) || t === 'terminales')) {
       throw new Error('El usuario no tiene una terminal asignada.');
     }
@@ -164,6 +164,9 @@ export async function POST(request: Request) {
         const target = String(body.table || '');
         if (!allowed.has(target)) throw new Error('Tabla no permitida para sincronización general.');
         if (target === 'proveedores' && user.rol !== 'administrador') throw new Error('Se requiere administrador.');
+        if (user.rol !== 'administrador' && ['proveedores', 'movimientos', 'libroDiario'].includes(target)) {
+          throw new Error('Se requiere administrador para sincronizar estos registros.');
+        }
         const result = await syncRecords({
           table: target as any,
           records: Array.isArray(body.records) ? body.records : [],
@@ -187,11 +190,20 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: true, ...result });
       }
       case 'sale': {
-        const result = await createSaleTransaction({ ...body, user });
+        const result = await createSaleTransaction({
+          ...body,
+          cajeroId: user.rol === 'administrador' ? body.cajeroId : user.id,
+          user,
+        });
         return NextResponse.json({ ok: true, ...result });
       }
       case 'terminalPatch': {
-        const result = await patchTerminalTransaction({ user, terminalId: String(body.terminalId), patch: body.patch || {} });
+        const patch = body.patch || {};
+        const protectedFields = ['id', 'usuarioId', 'nombre', 'prefijoCaja', 'activo', 'rol', 'permisos', 'cajeroId'];
+        if (user.rol !== 'administrador' && Object.keys(patch).some((key) => protectedFields.includes(key))) {
+          throw new Error('Un cajero no puede modificar la asignación ni la configuración de su terminal.');
+        }
+        const result = await patchTerminalTransaction({ user, terminalId: String(body.terminalId), patch });
         return NextResponse.json({ ok: true, ...result });
       }
       case 'terminalUpsert': {
