@@ -32,7 +32,7 @@ const DEFAULT_PRODUCT_CATEGORIES = [
 const uniqueCatalogOptions = (values: unknown[]) => {
   const seen = new Set<string>();
   return values.map(value => String(value ?? '').trim()).filter(value => {
-    const key = value.normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').replace(/[\\u200B-\\u200D\\uFEFF]/g, '').replace(/\\s+/g, ' ').trim().toLocaleUpperCase('es');
+    const key = value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[\u200B-\u200D\uFEFF]/g, '').replace(/\s+/g, ' ').trim().toLocaleUpperCase('es');
     if (!key || seen.has(key)) return false;
     seen.add(key);
     return true;
