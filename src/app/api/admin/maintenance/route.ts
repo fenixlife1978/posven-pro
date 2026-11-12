@@ -155,7 +155,8 @@ export async function POST(request: Request) {
 
       if (!dryRun) {
         for (const match of matches) {
-          const updated = { ...match.data, id: match.id, departamento: toDepartment };
+          // Conserva intacto el JSON original salvo el departamento solicitado.
+          const updated = { ...match.data, departamento: toDepartment };
           await tx.execute({
             sql: 'UPDATE productos SET data_json=?,updated_at=CURRENT_TIMESTAMP WHERE id=?',
             args: [JSON.stringify(updated), match.id],
