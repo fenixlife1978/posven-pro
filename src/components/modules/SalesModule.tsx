@@ -41,7 +41,6 @@ import {
   Loader2,
   Hash
 } from 'lucide-react';
-import { auth } from '@/lib/firebase';
 import { ReceiptModal } from '@/components/pos/ReceiptModal';
 import { CreditModal } from '@/components/pos/CreditSaleModal';
 import FloatingPaymentModal from '@/components/pos/FloatingPaymentModal';
@@ -184,8 +183,16 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   }, [view]);
 
   const currentTerminal = useMemo(() => {
-    return auth?.currentUser ? state.terminales.find(t => t.usuarioId === auth.currentUser!.uid) : null;
-  }, [state.terminales]);
+    const appUser: any = (state as any).user || null;
+    const explicitTerminalId = String(appUser?.terminalId || '').trim();
+    if (explicitTerminalId) {
+      return state.terminales.find(t => String(t.id) === explicitTerminalId) || null;
+    }
+    const ids = [appUser?.id, appUser?.uid].filter(Boolean).map(String);
+    return ids.length
+      ? state.terminales.find(t => ids.includes(String(t.usuarioId || ''))) || null
+      : null;
+  }, [state.terminales, (state as any).user]);
 
   const histVentas = useMemo(() => {
     const tc = Utils.getTerminalCash(currentTerminal);
@@ -306,7 +313,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     if (showReportType || reportLoadingType) return;
     setReportLoadingType(type);
     try {
-      // Garantiza que las colecciones necesarias estén cargadas desde Firestore
+      // Garantiza que los registros necesarios estén cargados desde Turso
       // antes de calcular el reporte. Evita el bug de reporte en $0 tras reinicio.
       await Store.ensureReportData(currentTerminal?.id || 'GLOBAL', Utils.getTerminalCash(currentTerminal).fechaUltimoZ || new Date().toISOString().split('T')[0]);
       
@@ -631,7 +638,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         payments: [...listadoPagos], 
         terminalId: terminal?.id, 
         terminalName: terminal?.nombre || 'SISTEMA GLOBAL', 
-        cajeroId: auth?.currentUser?.uid, 
+        cajeroId: ((state as any).user?.id || (state as any).user?.uid || ''), 
         baseImponibleUSD: Utils.round(vBase), 
         ivaUSD: Utils.round(vIVA), 
         exentoUSD: Utils.round(vExento), 
@@ -792,7 +799,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         change: 0, 
         terminalId: terminal?.id, 
         terminalName: terminal?.nombre || 'SISTEMA GLOBAL', 
-        cajeroId: auth?.currentUser?.uid, 
+        cajeroId: ((state as any).user?.id || (state as any).user?.uid || ''), 
         baseImponibleUSD: Utils.round(vBase), 
         ivaUSD: Utils.round(vIVA), 
         exentoUSD: Utils.round(vExento), 
