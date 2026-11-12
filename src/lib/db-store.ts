@@ -520,7 +520,7 @@ async function bootstrapProductos(): Promise<boolean> {
 const loadedAll: Record<string, boolean> = {};
 const cursors: Record<string, QueryDocumentSnapshot<DocumentData> | null> = {};
 
-async function loadCollection(name: string, options: { estado?: string; terminalId?: string; productId?: string } = {}): Promise<any[]> {
+async function loadCollection(name: string, options: { estado?: string; terminalId?: string; productId?: string; since?: string; until?: string } = {}): Promise<any[]> {
   const pageSize = 2000;
   const apiTable = name === 'cashHistory' ? 'caja' : name;
   let page = await tryTursoRead(apiTable, { ...options, limit: pageSize, offset: 0 });
@@ -593,22 +593,16 @@ async function loadReportWindow(name: string, terminalId: string, cutoff: string
   const key = `report:${name}:${terminalId}:${cutoff}`;
 
   try {
-    // Turso es la fuente operativa durante la migración. No debemos volver a
-    // consultar servidor Turso para X/Z porque eso agrega latencia y puede devolver
-    // un estado histórico distinto al de la caja actual.
-    const tursoItems = await tryTursoRead(name, { limit: 2000, terminalId, since: cutoff });
-    if (tursoItems !== null) {
-      const items = tursoItems
-        .filter((item: any) => String(item?.fecha || '') > cutoff)
-        .filter((item: any) => name !== 'ventas' && name !== 'libroDiario' || String(item?.terminalId || '') === terminalId);
-      if (items.length) applyPatch({ [name]: mergeById((cache as any)[name], items) });
-      SINCE_STAMP[key] = 'done';
-      console.info("[db-store] Ventana Turso de reporte cargada:", name, items.length, "registros");
-      return;
-    }
+    // Carga completa del período y de la terminal desde Turso; nunca se marca
+    // como listo un X/Z si la respuesta se truncó por un límite fijo.
+    const tursoItems = await loadCollection(name, { terminalId, since: cutoff });
+    const items = tursoItems.filter((item: any) => String(item?.fecha || '') > cutoff);
+    if (items.length) applyPatch({ [name]: mergeById((cache as any)[name], items) });
+    SINCE_STAMP[key] = 'done';
+    console.info("[db-store] Ventana Turso de reporte cargada:", name, items.length, "registros");
+    return;
 
-    // Fallback únicamente cuando Turso no está configurado (503).
-    if (!db || !COLLECTIONS[name]) return;
+    // Código de compatibilidad legado inalcanzable: Turso es la fuente única.
     const filters: any[] = [where('fecha', '>', cutoff)];
     if (name === 'ventas' || name === 'libroDiario') {
       filters.push(where('terminalId', '==', terminalId));
@@ -674,24 +668,20 @@ async function ensureReportRange(name: string, desde: string, hasta: string, ter
   if (SINCE_STAMP[key] === 'done') return;
 
   try {
-    // En Turso evitamos las consultas compuestas de servidor Turso para el historial.
     const tursoStart = String(desde) + 'T00:00:00';
     const tursoEndDate = new Date(String(hasta) + 'T00:00:00');
     tursoEndDate.setDate(tursoEndDate.getDate() + 1);
     const tursoEnd = tursoEndDate.toISOString().slice(0, 19);
-    const tursoItems = await tryTursoRead(name, {
-      limit: 10000,
+    const tursoItems = await loadCollection(name, {
       since: tursoStart,
       until: tursoEnd,
       ...(terminalId !== 'all' ? { terminalId } : {}),
     });
-    if (tursoItems !== null) {
-      if (tursoItems.length) applyPatch({ [name]: mergeById((cache as any)[name], tursoItems) });
-      SINCE_STAMP[key] = 'done';
-      return;
-    }
+    if (tursoItems.length) applyPatch({ [name]: mergeById((cache as any)[name], tursoItems) });
+    SINCE_STAMP[key] = 'done';
+    return;
 
-    if (!db || !COLLECTIONS[name]) return;
+    // Código de compatibilidad legado inalcanzable: Turso es la fuente única.
     const start = String(desde) + 'T00:00:00.000';
     const endDate = new Date(String(hasta) + 'T00:00:00.000');
     endDate.setDate(endDate.getDate() + 1);
