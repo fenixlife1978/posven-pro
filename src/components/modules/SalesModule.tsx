@@ -411,7 +411,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       const fecha = Utils.ahora();
       const paymentParts = payments.map(p => ({
         metodo: p.method,
-        montoUSD: Number(p.usdAmount) || 0,
+        montoUSD: Number(p.usdAmount) || ((Number(p.amount) || 0) / state.tasa),
         montoBS: Number(p.amount) || 0,
         monedaOriginal: p.usdAmount != null ? 'USD' : 'BS',
         tasaAplicada: state.tasa
