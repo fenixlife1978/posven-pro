@@ -718,8 +718,9 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     if (!showAbonoModal || isProcessing) return;
     setIsProcessing(true);
     try {
-      const totalAbonado = pagosAbono.reduce((s, p) => s + p.montoUSD, 0);
-      if (totalAbonado <= 0) return;
+      const totalAbonado = pagosAbono.reduce((s, p) => s + (Number(p.montoUSD) || 0), 0);
+      const totalAbonadoBS = pagosAbono.reduce((s, p) => s + (Number(p.montoBS) || 0), 0);
+      if (totalAbonadoBS <= 0.004 && totalAbonado <= 0.000001) return;
 
       // La deuda histórica puede conservar un nombre antiguo. La identidad
       // operativa se resuelve por la cédula embebida en "cliente" y se contrasta
@@ -736,7 +737,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       const pagoAtomic = {
         fecha: ahoraStr,
         montoUSD: totalAbonado,
-        montoBS: totalAbonado * state.tasa,
+        montoBS: totalAbonadoBS,
         metodo: pagosAbono.length > 1 ? 'mixto' : pagosAbono[0].metodo,
         reciboId: reciboProvisional
       };
@@ -746,7 +747,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       const saleAbono: Sale = {
         id: reciboProvisional, fecha: ahoraStr, cliente: nombreClienteCanonico,
         items: [{ productoId: 'ABONO', nombre: `ABONO A FACTURA #${showAbonoModal.id}`, cantidad: 1, precioUnitUSD: totalAbonado, subtotalUSD: totalAbonado }],
-        subtotalUSD: totalAbonado, descuentoUSD: 0, totalUSD: totalAbonado, totalBS: totalAbonado * state.tasa,
+        subtotalUSD: totalAbonado, descuentoUSD: 0, totalUSD: totalAbonado, totalBS: totalAbonadoBS,
         metodoPago: pagosAbono.length > 1 ? 'mixto' : pagosAbono[0].metodo,
         estado: 'completada', type: 'COBRO DEUDA', payments: [...pagosAbono],
         terminalId: terminal?.id, terminalName: terminal?.nombre || 'SISTEMA GLOBAL', tasa: state.tasa
@@ -757,6 +758,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         collection: 'cxc',
         debtId: showAbonoModal.id,
         amountUSD: totalAbonado,
+        amountBS: totalAbonadoBS,
         payment: pagoAtomic,
         journal: nuevasEntradasDiario,
         sale: saleAbono,
@@ -764,8 +766,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         terminalId: terminal?.id
       });
       if (!resultadoPago) throw new Error('No se pudo registrar el abono.');
-      const appliedUSD = Number(resultadoPago.appliedUSD) || totalAbonado;
-      if (Math.abs(appliedUSD - totalAbonado) > 0.001) throw new Error('El saldo cambió mientras se registraba el abono. La operación fue limitada al saldo real.');
+      const appliedBS = Number(resultadoPago.appliedBS) || 0;
+      if (appliedBS <= 0.004) throw new Error('Turso no confirmó ningún monto aplicado en bolívares.');
 
       const saleFinal = resultadoPago.sale || { ...saleAbono, id: resultadoPago.receiptId || saleAbono.id };
       setLastProcessedSale(saleFinal); 
@@ -1244,8 +1246,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       
       {showAbonoModal && (
         <FloatingPaymentModal 
-          total={showAbonoModal.saldoUSD * state.tasa} 
-          totalCents={Math.round(showAbonoModal.saldoUSD * state.tasa * 100)} 
+          total={saldoDeudaBS(showAbonoModal)} 
+          totalCents={Math.round(saldoDeudaBS(showAbonoModal) * 100)} 
           exchangeRate={state.tasa} 
           onClose={() => setShowAbonoModal(null)} 
           allowPartial={true} 
