@@ -691,7 +691,7 @@ export async function createSaleTransaction(params: {
       id: 'CRD-' + reciboId, fecha: now.slice(0, 10), fechaVencimiento: '2099-12-31',
       cliente: `${customer.name} [${customer.cedula}]`, montoUSD: totals.total,
       subtotalUSD: totals.total, totalUSD: totals.total, totalBS: totals.total * tasa, tasa,
-      abonadoUSD: 0, saldoUSD: totals.total, estado: 'pendiente', historialPagos: [],
+      montoBS: Number((totals.total * tasa).toFixed(2)), tasaInicial: Number(tasa), abonadoUSD: 0, abonadoBS: 0, saldoUSD: totals.total, saldoBS: Number((totals.total * tasa).toFixed(2)), estado: 'pendiente', historialPagos: [],
       ventaId: reciboId, facturaId: reciboId,
       // Snapshot exacto de la factura original para que CxC conserve items,
       // cantidades y precios aun cuando cambie el catálogo posteriormente.
@@ -1122,7 +1122,9 @@ async function applyGlobalPayment(params:any, collection:'cxc'|'cxp'){
       if(remBS<=0.004 && remUSD<=0.000001) break;
       const debtUSD=Math.max(0,Number(d.saldoUSD)||0);
       const historialBS=(Array.isArray(d.historialPagos)?d.historialPagos:[]).reduce((sum:number,p:any)=>sum+Math.max(0,Number(p?.montoBS)||0),0);
-      const montoBSInicial=Math.max(0,Number(d.montoBS)||((debtUSD+historialBS/(tasa||1))*(Number(d.tasaInicial)||tasa)));
+      const historialUSD=(Array.isArray(d.historialPagos)?d.historialPagos:[]).reduce((sum:number,p:any)=>sum+Math.max(0,Number(p?.montoUSD)||0),0);
+      const originalUSD=Math.max(0,Number(d.montoUSD)||debtUSD+historialUSD);
+      const montoBSInicial=Math.max(0,Number(d.montoBS)||(originalUSD*(Number(d.tasaInicial)||Number(d.tasa)||tasa)));
       const debtBS=d.saldoBS!==undefined&&d.saldoBS!==null?Math.max(0,Number(d.saldoBS)||0):Math.max(0,montoBSInicial-historialBS);
       if(debtUSD<=0.000001 && debtBS<=0.005) continue;
       // Un pago exacto en USD liquida la factura completa aunque la conversión
