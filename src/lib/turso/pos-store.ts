@@ -993,13 +993,19 @@ export async function applyDebtPaymentTransaction(params: {
     const abonadoBase = Math.min(montoInicial, Math.max(abonadoRegistrado, abonadoHistorial));
     const saldoCalculado = Math.max(0, montoInicial - abonadoBase);
     const saldoPersistido = Number(debt.saldoUSD);
-    const saldo = Number.isFinite(saldoPersistido) && saldoPersistido >= saldoCalculado
+    const saldoPersistidoUSD = Number.isFinite(saldoPersistido) && saldoPersistido >= saldoCalculado
       ? saldoPersistido
       : saldoCalculado;
     const tasaPago = Number(payment?.tasaAplicada) || 0;
     const historialBS = historialPrevio.reduce((sum:number, p:any) => sum + Math.max(0, Number(p?.montoBS) || 0), 0);
     const montoBSInicial = Math.max(0, Number(debt.montoBS) || montoInicial * (Number(debt.tasaInicial) || tasaPago));
     const saldoBS = debt.saldoBS !== undefined && debt.saldoBS !== null ? Math.max(0, Number(debt.saldoBS) || 0) : Math.max(0, montoBSInicial - historialBS);
+    // En CxC, un saldo USD redondeado a 0,00 no puede ocultar bolívares pendientes.
+    // Si la moneda local conserva saldo, reconstruimos el equivalente técnico
+    // sin redondearlo a centavos para permitir el abono y la conciliación.
+    const saldo = collection === 'cxc' && saldoBS > 0.005 && tasaPago > 0
+      ? Math.max(saldoPersistidoUSD, Number((saldoBS / tasaPago).toFixed(6)))
+      : saldoPersistidoUSD;
     const requestedBS = Math.max(0, Number(amountBS) || Number(payment?.montoBS) || (Number(amountUSD) * tasaPago));
     const amountCents = Math.round(Number(amountUSD) * 100);
     if (collection === 'cxc') {
