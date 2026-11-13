@@ -739,6 +739,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         montoUSD: totalAbonado,
         montoBS: totalAbonadoBS,
         metodo: pagosAbono.length > 1 ? 'mixto' : pagosAbono[0].metodo,
+        tasaAplicada: state.tasa,
         reciboId: reciboProvisional
       };
 
