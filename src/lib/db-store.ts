@@ -1581,7 +1581,7 @@ export const Store = {
   }): Promise<any | null> {
     if (typeof window === 'undefined') return null;
     const { operationId, collection: collectionName, debtId, amountUSD, amountBS, payment, journal, sale, customerCedula, terminalId } = params;
-    if (!(amountUSD > 0)) return null;
+    if (!(Number(amountUSD) > 0) && !(Number(amountBS) > 0) && !(Number(payment?.montoBS) > 0)) return null;
     const tursoResult = await tryTursoOperation('debtPayment', params);
     if (tursoResult) {
       if (tursoResult.id) {
