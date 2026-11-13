@@ -182,6 +182,11 @@ export interface Debt {
   montoUSD: number;
   abonadoUSD: number;
   saldoUSD: number;
+  /** Saldo operativo en bolívares para no perder abonos menores a USD 0.01. */
+  saldoBS?: number;
+  abonadoBS?: number;
+  montoBS?: number;
+  tasaInicial?: number;
   estado: 'pendiente' | 'parcial' | 'pagada';
   historialPagos: Array<{
     id?: string;
