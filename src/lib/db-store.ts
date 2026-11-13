@@ -1421,13 +1421,14 @@ export const Store = {
     amountUSD: number;
     amountBS?: number;
     payment: any;
+    paymentParts?: any[];
     journal?: any;
     terminalId?: string;
   }): Promise<{ appliedUSD: number; appliedBS: number; debts: any[]; receiptId?: string }> {
     if (typeof window === 'undefined') return { appliedUSD: 0, appliedBS: 0, debts: [] };
     const { operationId, customerName, customerCedula, amountUSD, amountBS, payment, journal, terminalId } = params;
     const effectiveTerminalId = String(terminalId || '').trim();
-    if (!(amountUSD > 0)) return { appliedUSD: 0, appliedBS: 0, debts: [] };
+    if (!(Number(amountUSD) > 0) && !(Number(amountBS) > 0)) return { appliedUSD: 0, appliedBS: 0, debts: [] };
     const tursoResult = await tryTursoOperation('globalCustomerPayment', params);
     if (tursoResult) {
       if (Array.isArray(tursoResult.debts)) applyPatch({ cxc: mergeById(cache.cxc, tursoResult.debts) });
