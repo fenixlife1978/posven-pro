@@ -972,7 +972,7 @@ export async function applyDebtPaymentTransaction(params: {
   // CxP se procesa desde Administración y no depende de ninguna Caja/Terminal.
   // Solo CxC conserva la relación con la caja del cajero.
   const terminalForOperation = collection === 'cxc' ? terminalId : undefined;
-  if (!(Number(amountUSD) > 0)) return null;
+  if (!(Number(amountUSD) > 0) && !(Number(amountBS) > 0) && !(Number(payment?.montoBS) > 0)) return null;
   return tursoInteractiveTransaction(async tx => {
     const opId = String(operationId || payment?.id || (collection+'|'+debtId+'|'+amountUSD+'|'+payment?.metodo+'|'+payment?.fecha));
     const check = await tx.execute({sql:'SELECT id FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',args:['PAGO-DEUDA',opId]});
@@ -997,7 +997,9 @@ export async function applyDebtPaymentTransaction(params: {
       ? saldoPersistido
       : saldoCalculado;
     const tasaPago = Number(payment?.tasaAplicada) || 0;
-    const saldoBS = Math.max(0, Number(debt.saldoBS) || saldo * tasaPago);
+    const historialBS = historialPrevio.reduce((sum:number, p:any) => sum + Math.max(0, Number(p?.montoBS) || 0), 0);
+    const montoBSInicial = Math.max(0, Number(debt.montoBS) || montoInicial * (Number(debt.tasaInicial) || tasaPago));
+    const saldoBS = debt.saldoBS !== undefined && debt.saldoBS !== null ? Math.max(0, Number(debt.saldoBS) || 0) : Math.max(0, montoBSInicial - historialBS);
     const requestedBS = Math.max(0, Number(amountBS) || Number(payment?.montoBS) || (Number(amountUSD) * tasaPago));
     const amountCents = Math.round(Number(amountUSD) * 100);
     if (collection === 'cxc') {
@@ -1035,7 +1037,7 @@ export async function applyDebtPaymentTransaction(params: {
     const nextSaldoUSD = collection === 'cxc'
       ? (nextSaldoBS! <= 0.005 ? 0 : (tasaPago > 0 ? Number((nextSaldoBS! / tasaPago).toFixed(6)) : Math.max(0, saldo - applied)))
       : Math.max(0, saldo - applied);
-    const updated={...debt,abonadoUSD:abonadoRegistrado+applied,abonadoBS:(Number(debt.abonadoBS)||0)+appliedBS,saldoUSD:nextSaldoUSD,...(collection==='cxc'?{saldoBS:nextSaldoBS}:{}),estado:collection==='cxc'?(nextSaldoBS!<=0.005?'pagada':'parcial'):(Math.round((saldo-applied)*100)<=0?'pagada':'parcial'),historialPagos:[...historialPrevio,pago]};
+    const updated={...debt,montoBS:collection==='cxc'?(Number(debt.montoBS)||montoBSInicial):debt.montoBS,tasaInicial:collection==='cxc'?(Number(debt.tasaInicial)||tasaPago):debt.tasaInicial,abonadoUSD:abonadoRegistrado+applied,abonadoBS:(Number(debt.abonadoBS)||historialBS)+appliedBS,saldoUSD:nextSaldoUSD,...(collection==='cxc'?{saldoBS:nextSaldoBS}:{}),estado:collection==='cxc'?(nextSaldoBS!<=0.005?'pagada':'parcial'):(Math.round((saldo-applied)*100)<=0?'pagada':'parcial'),historialPagos:[...historialPrevio,pago]};
     const statements:TursoStatement[]=[rowStatement(collection,updated)];
 
     if(collection==='cxc'){
@@ -1119,7 +1121,9 @@ async function applyGlobalPayment(params:any, collection:'cxc'|'cxp'){
     for(const d of docs){
       if(remBS<=0.004 && remUSD<=0.000001) break;
       const debtUSD=Math.max(0,Number(d.saldoUSD)||0);
-      const debtBS=Math.max(0,Number(d.saldoBS)||debtUSD*tasa);
+      const historialBS=(Array.isArray(d.historialPagos)?d.historialPagos:[]).reduce((sum:number,p:any)=>sum+Math.max(0,Number(p?.montoBS)||0),0);
+      const montoBSInicial=Math.max(0,Number(d.montoBS)||debtUSD*(Number(d.tasaInicial)||tasa));
+      const debtBS=d.saldoBS!==undefined&&d.saldoBS!==null?Math.max(0,Number(d.saldoBS)||0):Math.max(0,montoBSInicial-historialBS);
       if(debtUSD<=0.000001 && debtBS<=0.005) continue;
       // Un pago exacto en USD liquida la factura completa aunque la conversión
       // redondeada deje algunos bolívares residuales. En Bs se concilia contra
@@ -1136,7 +1140,7 @@ async function applyGlobalPayment(params:any, collection:'cxc'|'cxp'){
       const nuevoSaldoUSD=(nuevoSaldoBS<=0.005)?0:(tasa>0?Number((nuevoSaldoBS/tasa).toFixed(6)):Math.max(0,debtUSD-pagoUSD));
       const h=[...(Array.isArray(d.historialPagos)?d.historialPagos:[])];
       h.push(clean({...payment,id:receiptId,reciboId:receiptId,terminalId:collection==='cxc'?(terminalForOperation||payment?.terminalId):undefined,montoUSD:pagoUSD,montoBS:pagoBS,tasaAplicada:tasa}));
-      const updated={...d,abonadoUSD:(Number(d.abonadoUSD)||0)+pagoUSD,abonadoBS:(Number(d.abonadoBS)||0)+pagoBS,saldoUSD:nuevoSaldoUSD,saldoBS:nuevoSaldoBS,estado:nuevoSaldoBS<=0.005?'pagada':'parcial',historialPagos:h};
+      const updated={...d,montoBS:Number(d.montoBS)||montoBSInicial,tasaInicial:Number(d.tasaInicial)||tasa,abonadoUSD:(Number(d.abonadoUSD)||0)+pagoUSD,abonadoBS:(Number(d.abonadoBS)||historialBS)+pagoBS,saldoUSD:nuevoSaldoUSD,saldoBS:nuevoSaldoBS,estado:nuevoSaldoBS<=0.005?'pagada':'parcial',historialPagos:h};
       statements.push(rowStatement(collection,updated)); debts.push({...updated,appliedUSD:pagoUSD,appliedBS:pagoBS}); appliedUSD+=pagoUSD; appliedBS+=pagoBS;
     }
     if(appliedBS<=0.004 && appliedUSD<=0.000001) throw new Error('No hay saldo pendiente para registrar este pago.');
