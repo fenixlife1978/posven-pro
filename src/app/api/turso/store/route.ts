@@ -251,8 +251,31 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: true, ...result });
       }
       case 'globalCustomerPayment': {
-        if (user.rol !== 'administrador') throw new Error('Se requiere administrador.');
-        const result = await applyGlobalCustomerPaymentTransaction(body);
+        // El cobro global de CxC también se inicia desde el POS.
+        // Un cajero puede cobrar únicamente desde su terminal asignada y con
+        // la caja abierta; la autorización administrativa de CxP y otras
+        // operaciones globales permanece intacta.
+        let paymentBody = body;
+        if (user.rol !== 'administrador') {
+          const assignedTerminal = await getAssignedTerminal(user);
+          const requestedTerminalId = String(body.terminalId || '').trim();
+          if (!assignedTerminal || !requestedTerminalId || requestedTerminalId !== String(assignedTerminal.id)) {
+            throw new Error('El cajero solo puede registrar cobros desde su terminal asignada.');
+          }
+          const cashOpen = assignedTerminal.isCashOpen === true
+            || assignedTerminal.isCashOpen === 1
+            || ['1', 'true', 'open', 'abierta'].includes(String(assignedTerminal.isCashOpen || '').trim().toLowerCase());
+          if (!cashOpen) throw new Error('Debe abrir la caja de su terminal antes de registrar cobros.');
+          paymentBody = {
+            ...body,
+            terminalId: String(assignedTerminal.id),
+            payment: { ...(body.payment || {}), terminalId: String(assignedTerminal.id) },
+            journal: body.journal
+              ? { ...body.journal, terminalId: String(assignedTerminal.id), terminalName: assignedTerminal.nombre || body.journal.terminalName }
+              : body.journal,
+          };
+        }
+        const result = await applyGlobalCustomerPaymentTransaction(paymentBody);
         return NextResponse.json({ ok: true, ...result });
       }
       case 'customerDebt': {
