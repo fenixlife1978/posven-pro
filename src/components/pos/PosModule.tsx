@@ -54,6 +54,8 @@ import { cn } from '@/lib/utils';
 export default function SalesModule({ state, updateState }: { state: AppState, updateState: (s: Partial<AppState>) => void }) {
   const [search, setSearch] = useState('');
   const [view, setView] = useState<'pos' | 'history' | 'credits' | 'returns'>('pos');
+  const [creditsSearch, setCreditsSearch] = useState('');
+  const [creditsPage, setCreditsPage] = useState(1);
   const [showReportType, setShowReportType] = useState<'REPORT_X' | 'REPORT_Z' | null>(null);
   const [reportSnapshot, setReportSnapshot] = useState<any>(null);
   const [cliente, setCliente] = useState('Consumidor final');
@@ -475,6 +477,25 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     });
     return groups;
   }, [state.cxc]);
+
+  const filteredCreditEntries = useMemo(() => {
+    const query = creditsSearch.trim().toLocaleLowerCase('es-VE');
+    const normalizedQuery = query.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const queryDigits = query.replace(/[^0-9]/g, '');
+    return Object.entries(groupedCredits).filter(([clientName]) => {
+      if (!query) return true;
+      const match = clientName.match(/^(.*?)\s*\[([^\]]+)\]\s*$/);
+      const name = (match?.[1] || clientName).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es-VE');
+      const cedula = (match?.[2] || '').toLocaleLowerCase('es-VE');
+      const cedulaDigits = cedula.replace(/[^0-9]/g, '');
+      return name.includes(normalizedQuery) || cedula.includes(query) || (!!queryDigits && cedulaDigits.includes(queryDigits));
+    }).sort(([a], [b]) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
+  }, [groupedCredits, creditsSearch]);
+
+  const creditsPageSize = 10;
+  const creditsTotalPages = Math.max(1, Math.ceil(filteredCreditEntries.length / creditsPageSize));
+  const safeCreditsPage = Math.min(creditsPage, creditsTotalPages);
+  const paginatedCreditEntries = filteredCreditEntries.slice((safeCreditsPage - 1) * creditsPageSize, safeCreditsPage * creditsPageSize);
 
   const getStockDisponible = (p: Product) => {
     let avail = p.stock || 0;
@@ -1002,6 +1023,16 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       ) : view === 'credits' ? (
         <div className="card flex-1 bg-white flex flex-col overflow-hidden animate-in slide-in-from-bottom-2 duration-300 rounded-xl">
           <div className="card-head px-6 py-4 bg-ink border-b border-white/10 flex justify-between items-center"><h3 className="text-white font-black uppercase italic tracking-tighter flex items-center gap-2 text-xs"><ClipboardList className="w-5 h-5 text-brand-gold" /> CONSULTA CRÉDITOS Y COBRANZA (GLOBAL)</h3><button onClick={() => setView('pos')} className="btn btn-sm bg-white text-ink hover:bg-surface-soft flex items-center gap-2 font-black uppercase text-[10px] rounded-lg border-none px-4"><ArrowLeft className="w-3.5 h-3.5"/> Volver al POS</button></div>
+          <div className="px-4 sm:px-6 py-3 border-b border-line bg-white flex flex-col sm:flex-row gap-2 sm:items-center sm:justify-between">
+            <div className="relative flex-1 max-w-xl">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink/40" />
+              <input type="search" value={creditsSearch}
+                onChange={(e) => { setCreditsSearch(e.target.value); setCreditsPage(1); }}
+                placeholder="Buscar deudor por nombre o cédula..." aria-label="Buscar deudor por nombre o cédula"
+                className="w-full h-11 pl-10 pr-4 rounded-xl border border-line bg-surface-soft text-sm font-bold text-ink outline-none focus:border-brand-gold focus:ring-2 focus:ring-brand-gold/20" />
+            </div>
+            <span className="text-[10px] font-black uppercase text-ink/50">{filteredCreditEntries.length} deudores con saldo</span>
+          </div>
           <div className="table-wrap flex-1 overflow-y-auto">
             <table className="w-full">
               <thead>
@@ -1015,10 +1046,10 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                 </tr>
               </thead>
               <tbody>
-                {Object.entries(groupedCredits).length === 0 ? (
+                {filteredCreditEntries.length === 0 ? (
                   <tr><td colSpan={6} className="text-center py-20 text-ink font-black uppercase italic">No hay deudas registradas</td></tr>
                 ) : (
-                  Object.entries(groupedCredits).map(([clientName, group]) => (
+                  paginatedCreditEntries.map(([clientName, group]) => (
                     <React.Fragment key={clientName}>
                       <tr className="border-b border-line hover:bg-surface-warm/20 transition-colors">
                         <td className="px-6 py-4">
@@ -1064,6 +1095,15 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                 )}
               </tbody>
             </table>
+          </div>
+          <div className="px-4 sm:px-6 py-3 border-t border-line bg-white flex items-center justify-between gap-3">
+            <span className="text-[10px] font-bold text-ink/50">Página {safeCreditsPage} de {creditsTotalPages}</span>
+            <div className="flex gap-2">
+              <button type="button" disabled={safeCreditsPage <= 1} onClick={() => setCreditsPage(p => Math.max(1, p - 1))}
+                className="px-4 py-2 rounded-lg border border-line text-xs font-black uppercase disabled:opacity-40 disabled:cursor-not-allowed">Anterior</button>
+              <button type="button" disabled={safeCreditsPage >= creditsTotalPages} onClick={() => setCreditsPage(p => Math.min(creditsTotalPages, p + 1))}
+                className="px-4 py-2 rounded-lg bg-ink text-white text-xs font-black uppercase disabled:opacity-40 disabled:cursor-not-allowed">Siguiente</button>
+            </div>
           </div>
         </div>
       ) : (
