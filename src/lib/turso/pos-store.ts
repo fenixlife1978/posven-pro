@@ -1122,7 +1122,7 @@ async function applyGlobalPayment(params:any, collection:'cxc'|'cxp'){
       if(remBS<=0.004 && remUSD<=0.000001) break;
       const debtUSD=Math.max(0,Number(d.saldoUSD)||0);
       const historialBS=(Array.isArray(d.historialPagos)?d.historialPagos:[]).reduce((sum:number,p:any)=>sum+Math.max(0,Number(p?.montoBS)||0),0);
-      const montoBSInicial=Math.max(0,Number(d.montoBS)||debtUSD*(Number(d.tasaInicial)||tasa));
+      const montoBSInicial=Math.max(0,Number(d.montoBS)||((debtUSD+historialBS/(tasa||1))*(Number(d.tasaInicial)||tasa)));
       const debtBS=d.saldoBS!==undefined&&d.saldoBS!==null?Math.max(0,Number(d.saldoBS)||0):Math.max(0,montoBSInicial-historialBS);
       if(debtUSD<=0.000001 && debtBS<=0.005) continue;
       // Un pago exacto en USD liquida la factura completa aunque la conversión
