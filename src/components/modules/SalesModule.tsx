@@ -384,53 +384,56 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     setShowReportType(null);
   };
 
+  const saldoDeudaBS = (d: any) => Math.max(0, Number(d?.saldoBS) || (Number(d?.saldoUSD) || 0) * state.tasa);
+
   const handleOpenGlobalCreditPayment = (clientName: string, debts: Debt[]) => {
     const activeDebts = debts
-      .filter(d => d.estado !== 'pagada' && (Number(d.saldoUSD) || 0) > 0.001)
+      .filter(d => d.estado !== 'pagada' && (saldoDeudaBS(d) > 0.005 || (Number(d.saldoUSD) || 0) > 0.001))
       .sort((a, b) => a.fecha.localeCompare(b.fecha) || a.id.localeCompare(b.id));
     if (activeDebts.length <= 1) return;
     const totalUSD = activeDebts.reduce((sum, d) => sum + (Number(d.saldoUSD) || 0), 0);
-    if (totalUSD <= 0.001) return;
+    const totalBS = activeDebts.reduce((sum, d) => sum + saldoDeudaBS(d), 0);
+    if (totalBS <= 0.005) return;
     const cedulaMatch = String(activeDebts[0]?.cliente || '').match(/\[([^\]]+)\]\s*$/);
-    setGlobalCreditCustomer({
-      name: clientName,
-      cedula: cedulaMatch?.[1]?.trim(),
-      totalUSD,
-      totalBS: totalUSD * state.tasa
-    });
+    setGlobalCreditCustomer({ name: clientName, cedula: cedulaMatch?.[1]?.trim(), totalUSD, totalBS });
   };
 
   const handleProcessGlobalCreditPayment = async (payments: any[]) => {
     if (!globalCreditCustomer || isProcessing || !payments?.length) return;
-    const totalUSD = payments.reduce((s, p) => s + (Number(p.usdAmount) || (Number(p.amount) || 0) / state.tasa), 0);
-    const totalBS = payments.reduce((s, p) => s + (Number(p.amount) || 0), 0);
-    if (totalUSD <= 0 || totalBS <= 0) return;
+    const totalUSD = payments.reduce((sum, p) => sum + (Number(p.usdAmount) || (Number(p.amount) || 0) / state.tasa), 0);
+    const totalBS = payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+    if (totalBS <= 0.004) return;
     setIsProcessing(true);
     try {
       const terminal = currentTerminal;
       const operationId = 'PAGO-GLOBAL-CXC-' + Store.uid();
       const receiptId = 'PEND-CXC-' + Store.uid().toUpperCase().slice(0, 8);
+      const fecha = Utils.ahora();
+      const paymentParts = payments.map(p => ({
+        metodo: p.method,
+        montoUSD: Number(p.usdAmount) || 0,
+        montoBS: Number(p.amount) || 0,
+        monedaOriginal: p.usdAmount != null ? 'USD' : 'BS',
+        tasaAplicada: state.tasa
+      }));
       const payment = {
-        id: receiptId, reciboId: receiptId, fecha: Utils.ahora(),
+        id: receiptId, reciboId: receiptId, fecha,
         montoUSD: totalUSD, montoBS: totalBS,
         metodo: payments.length > 1 ? 'mixto' : payments[0].method,
         tasaAplicada: state.tasa, terminalId: terminal?.id
       };
       const result = await Store.applyGlobalCustomerPaymentTransaction({
-        operationId,
-        customerName: globalCreditCustomer.name,
+        operationId, customerName: globalCreditCustomer.name,
         customerCedula: globalCreditCustomer.cedula,
-        amountUSD: totalUSD,
-        amountBS: totalBS,
-        payment,
+        amountUSD: totalUSD, amountBS: totalBS, payment, paymentParts,
         journal: {
-          id: 'JD-' + Store.uid(), fecha: Utils.ahora(), tipo: 'ingreso',
+          id: 'JD-' + Store.uid(), fecha, tipo: 'ingreso',
           categoria: 'COBRO_DEUDA', montoUSD: totalUSD, montoBS: totalBS,
           descripcion: 'PAGO GLOBAL CxC', terminalId: terminal?.id
         },
         terminalId: terminal?.id
       });
-      if (!result) throw new Error('No se pudo registrar el Pago Global.');
+      if (!result || (Number(result.appliedBS) || 0) <= 0.004) throw new Error('Turso no confirmó la aplicación del abono.');
       toast({ title: 'Pago Global registrado', description: `Aplicado: ${Utils.fmtUSD(result.appliedUSD)} · ${Utils.fmtBS(result.appliedBS)}` });
       setGlobalCreditCustomer(null);
     } catch (err: any) {
@@ -441,15 +444,16 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   };
 
   const groupedCredits = useMemo(() => {
-    const groups: Record<string, { totalUSD: number; debts: Debt[] }> = {};
-    (state.cxc || []).filter(x => x.estado !== 'pagada' && (x.saldoUSD || 0) > 0.001).forEach(debt => {
+    const groups: Record<string, { totalUSD: number; totalBS: number; debts: Debt[] }> = {};
+    (state.cxc || []).filter(x => x.estado !== 'pagada' && (Number(x.saldoBS) > 0.005 || (x.saldoUSD || 0) > 0.001)).forEach(debt => {
       const name = debt.cliente || 'DESCONOCIDO';
-      if (!groups[name]) groups[name] = { totalUSD: 0, debts: [] };
-      groups[name].totalUSD += debt.saldoUSD;
+      if (!groups[name]) groups[name] = { totalUSD: 0, totalBS: 0, debts: [] };
+      groups[name].totalUSD += Number(debt.saldoUSD) || 0;
+      groups[name].totalBS += saldoDeudaBS(debt);
       groups[name].debts.push(debt);
     });
     return groups;
-  }, [state.cxc]);
+  }, [state.cxc, state.tasa]);
 
   const getStockDisponible = (p: Product) => {
     let avail = p.stock || 0;
@@ -1072,7 +1076,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                         <td className="py-4"><div className="text-ink font-black text-sm uppercase">{clientName}</div></td>
                         <td className="text-right py-4 font-black text-ink">{group.debts.length} Facturas</td>
                         <td className="text-right py-4 font-black text-status-info text-base">{Utils.fmtUSD(group.totalUSD)}</td>
-                        <td className="text-right py-4 font-black text-ink">{Utils.fmtBS(group.totalUSD * state.tasa)}</td>
+                        <td className="text-right py-4 font-black text-ink">{Utils.fmtBS(group.totalBS)}</td>
                         <td className="text-center py-4"><div className="flex items-center justify-center gap-2">
                           {group.debts.length > 1 && (
                             <button onClick={() => handleOpenGlobalCreditPayment(clientName, group.debts)} className="h-10 px-3 rounded-full flex items-center justify-center gap-1.5 bg-brand-gold text-black border-2 border-brand-gold hover:bg-brand-gold-deep transition-all shadow-md font-black text-[9px] uppercase whitespace-nowrap" title="PAGO GLOBAL" aria-label="PAGO GLOBAL">
