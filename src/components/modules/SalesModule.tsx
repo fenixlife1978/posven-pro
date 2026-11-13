@@ -143,6 +143,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   const [search, setSearch] = useState('');
   const [view, setView] = useState<'pos' | 'history' | 'credits' | 'returns'>('pos');
   const [histPage, setHistPage] = useState(1);
+  const [creditsSearch, setCreditsSearch] = useState('');
+  const [creditsPage, setCreditsPage] = useState(1);
   const [showReportType, setShowReportType] = useState<'REPORT_X' | 'REPORT_Z' | null>(null);
   const [reportSnapshot, setReportSnapshot] = useState<any>(null);
   const [reportLoadingType, setReportLoadingType] = useState<'REPORT_X' | 'REPORT_Z' | null>(null);
@@ -384,53 +386,64 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     setShowReportType(null);
   };
 
+  const saldoDeudaBS = (d: any) => {
+    if (d?.saldoBS !== undefined && d?.saldoBS !== null) return Math.max(0, Number(d.saldoBS) || 0);
+    const montoBS = Math.max(0, Number(d?.montoBS) || 0);
+    const abonadoBS = Math.max(0, Number(d?.abonadoBS) || (Array.isArray(d?.historialPagos)
+      ? d.historialPagos.reduce((sum: number, p: any) => sum + Math.max(0, Number(p?.montoBS) || 0), 0)
+      : 0));
+    if (montoBS > 0) return Math.max(0, montoBS - abonadoBS);
+    return Math.max(0, Number(d?.saldoUSD) || 0) * state.tasa;
+  };
+
   const handleOpenGlobalCreditPayment = (clientName: string, debts: Debt[]) => {
     const activeDebts = debts
-      .filter(d => d.estado !== 'pagada' && (Number(d.saldoUSD) || 0) > 0.001)
+      .filter(d => d.estado !== 'pagada' && (saldoDeudaBS(d) > 0.005 || (Number(d.saldoUSD) || 0) > 0.001))
       .sort((a, b) => a.fecha.localeCompare(b.fecha) || a.id.localeCompare(b.id));
-    if (activeDebts.length <= 1) return;
+    if (activeDebts.length === 0) return;
     const totalUSD = activeDebts.reduce((sum, d) => sum + (Number(d.saldoUSD) || 0), 0);
-    if (totalUSD <= 0.001) return;
+    const totalBS = activeDebts.reduce((sum, d) => sum + saldoDeudaBS(d), 0);
+    if (totalBS <= 0.005) return;
     const cedulaMatch = String(activeDebts[0]?.cliente || '').match(/\[([^\]]+)\]\s*$/);
-    setGlobalCreditCustomer({
-      name: clientName,
-      cedula: cedulaMatch?.[1]?.trim(),
-      totalUSD,
-      totalBS: totalUSD * state.tasa
-    });
+    setGlobalCreditCustomer({ name: clientName, cedula: cedulaMatch?.[1]?.trim(), totalUSD, totalBS });
   };
 
   const handleProcessGlobalCreditPayment = async (payments: any[]) => {
     if (!globalCreditCustomer || isProcessing || !payments?.length) return;
-    const totalUSD = payments.reduce((s, p) => s + (Number(p.usdAmount) || (Number(p.amount) || 0) / state.tasa), 0);
-    const totalBS = payments.reduce((s, p) => s + (Number(p.amount) || 0), 0);
-    if (totalUSD <= 0 || totalBS <= 0) return;
+    const totalUSD = payments.reduce((sum, p) => sum + (Number(p.usdAmount) || (Number(p.amount) || 0) / state.tasa), 0);
+    const totalBS = payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+    if (totalBS <= 0.004) return;
     setIsProcessing(true);
     try {
       const terminal = currentTerminal;
       const operationId = 'PAGO-GLOBAL-CXC-' + Store.uid();
       const receiptId = 'PEND-CXC-' + Store.uid().toUpperCase().slice(0, 8);
+      const fecha = Utils.ahora();
+      const paymentParts = payments.map(p => ({
+        metodo: p.method,
+        montoUSD: Number(p.usdAmount) || ((Number(p.amount) || 0) / state.tasa),
+        montoBS: Number(p.amount) || 0,
+        monedaOriginal: p.usdAmount != null ? 'USD' : 'BS',
+        tasaAplicada: state.tasa
+      }));
       const payment = {
-        id: receiptId, reciboId: receiptId, fecha: Utils.ahora(),
+        id: receiptId, reciboId: receiptId, fecha,
         montoUSD: totalUSD, montoBS: totalBS,
         metodo: payments.length > 1 ? 'mixto' : payments[0].method,
         tasaAplicada: state.tasa, terminalId: terminal?.id
       };
       const result = await Store.applyGlobalCustomerPaymentTransaction({
-        operationId,
-        customerName: globalCreditCustomer.name,
+        operationId, customerName: globalCreditCustomer.name,
         customerCedula: globalCreditCustomer.cedula,
-        amountUSD: totalUSD,
-        amountBS: totalBS,
-        payment,
+        amountUSD: totalUSD, amountBS: totalBS, payment, paymentParts,
         journal: {
-          id: 'JD-' + Store.uid(), fecha: Utils.ahora(), tipo: 'ingreso',
+          id: 'JD-' + Store.uid(), fecha, tipo: 'ingreso',
           categoria: 'COBRO_DEUDA', montoUSD: totalUSD, montoBS: totalBS,
           descripcion: 'PAGO GLOBAL CxC', terminalId: terminal?.id
         },
         terminalId: terminal?.id
       });
-      if (!result) throw new Error('No se pudo registrar el Pago Global.');
+      if (!result || (Number(result.appliedBS) || 0) <= 0.004) throw new Error('Turso no confirmó la aplicación del abono.');
       toast({ title: 'Pago Global registrado', description: `Aplicado: ${Utils.fmtUSD(result.appliedUSD)} · ${Utils.fmtBS(result.appliedBS)}` });
       setGlobalCreditCustomer(null);
     } catch (err: any) {
@@ -441,15 +454,35 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   };
 
   const groupedCredits = useMemo(() => {
-    const groups: Record<string, { totalUSD: number; debts: Debt[] }> = {};
-    (state.cxc || []).filter(x => x.estado !== 'pagada' && (x.saldoUSD || 0) > 0.001).forEach(debt => {
+    const groups: Record<string, { totalUSD: number; totalBS: number; debts: Debt[] }> = {};
+    (state.cxc || []).filter(x => x.estado !== 'pagada' && (saldoDeudaBS(x) > 0.005 || (x.saldoUSD || 0) > 0.001)).forEach(debt => {
       const name = debt.cliente || 'DESCONOCIDO';
-      if (!groups[name]) groups[name] = { totalUSD: 0, debts: [] };
-      groups[name].totalUSD += debt.saldoUSD;
+      if (!groups[name]) groups[name] = { totalUSD: 0, totalBS: 0, debts: [] };
+      groups[name].totalUSD += Number(debt.saldoUSD) || 0;
+      groups[name].totalBS += saldoDeudaBS(debt);
       groups[name].debts.push(debt);
     });
     return groups;
-  }, [state.cxc]);
+  }, [state.cxc, state.tasa]);
+
+  const filteredCreditEntries = useMemo(() => {
+    const query = creditsSearch.trim().toLocaleLowerCase('es-VE');
+    const queryDigits = query.replace(/[^0-9]/g, '');
+    return Object.entries(groupedCredits).filter(([clientName]) => {
+      if (!query) return true;
+      const match = clientName.match(/^(.*?)\s*\[([^\]]+)\]\s*$/);
+      const name = (match?.[1] || clientName).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es-VE');
+      const cedula = (match?.[2] || '').toLocaleLowerCase('es-VE');
+      const cedulaDigits = cedula.replace(/[^0-9]/g, '');
+      const normalizedQuery = query.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      return name.includes(normalizedQuery) || cedula.includes(query) || (!!queryDigits && cedulaDigits.includes(queryDigits));
+    }).sort(([a], [b]) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
+  }, [groupedCredits, creditsSearch]);
+
+  const creditsPageSize = 10;
+  const creditsTotalPages = Math.max(1, Math.ceil(filteredCreditEntries.length / creditsPageSize));
+  const safeCreditsPage = Math.min(creditsPage, creditsTotalPages);
+  const paginatedCreditEntries = filteredCreditEntries.slice((safeCreditsPage - 1) * creditsPageSize, safeCreditsPage * creditsPageSize);
 
   const getStockDisponible = (p: Product) => {
     let avail = p.stock || 0;
@@ -693,8 +726,9 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     if (!showAbonoModal || isProcessing) return;
     setIsProcessing(true);
     try {
-      const totalAbonado = pagosAbono.reduce((s, p) => s + p.montoUSD, 0);
-      if (totalAbonado <= 0) return;
+      const totalAbonado = pagosAbono.reduce((s, p) => s + (Number(p.montoUSD) || 0), 0);
+      const totalAbonadoBS = pagosAbono.reduce((s, p) => s + (Number(p.montoBS) || 0), 0);
+      if (totalAbonadoBS <= 0.004 && totalAbonado <= 0.000001) return;
 
       // La deuda histórica puede conservar un nombre antiguo. La identidad
       // operativa se resuelve por la cédula embebida en "cliente" y se contrasta
@@ -711,8 +745,9 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       const pagoAtomic = {
         fecha: ahoraStr,
         montoUSD: totalAbonado,
-        montoBS: totalAbonado * state.tasa,
+        montoBS: totalAbonadoBS,
         metodo: pagosAbono.length > 1 ? 'mixto' : pagosAbono[0].metodo,
+        tasaAplicada: state.tasa,
         reciboId: reciboProvisional
       };
 
@@ -721,7 +756,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       const saleAbono: Sale = {
         id: reciboProvisional, fecha: ahoraStr, cliente: nombreClienteCanonico,
         items: [{ productoId: 'ABONO', nombre: `ABONO A FACTURA #${showAbonoModal.id}`, cantidad: 1, precioUnitUSD: totalAbonado, subtotalUSD: totalAbonado }],
-        subtotalUSD: totalAbonado, descuentoUSD: 0, totalUSD: totalAbonado, totalBS: totalAbonado * state.tasa,
+        subtotalUSD: totalAbonado, descuentoUSD: 0, totalUSD: totalAbonado, totalBS: totalAbonadoBS,
         metodoPago: pagosAbono.length > 1 ? 'mixto' : pagosAbono[0].metodo,
         estado: 'completada', type: 'COBRO DEUDA', payments: [...pagosAbono],
         terminalId: terminal?.id, terminalName: terminal?.nombre || 'SISTEMA GLOBAL', tasa: state.tasa
@@ -732,6 +767,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         collection: 'cxc',
         debtId: showAbonoModal.id,
         amountUSD: totalAbonado,
+        amountBS: totalAbonadoBS,
         payment: pagoAtomic,
         journal: nuevasEntradasDiario,
         sale: saleAbono,
@@ -739,8 +775,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         terminalId: terminal?.id
       });
       if (!resultadoPago) throw new Error('No se pudo registrar el abono.');
-      const appliedUSD = Number(resultadoPago.appliedUSD) || totalAbonado;
-      if (Math.abs(appliedUSD - totalAbonado) > 0.001) throw new Error('El saldo cambió mientras se registraba el abono. La operación fue limitada al saldo real.');
+      const appliedBS = Number(resultadoPago.appliedBS) || 0;
+      if (appliedBS <= 0.004) throw new Error('Turso no confirmó ningún monto aplicado en bolívares.');
 
       const saleFinal = resultadoPago.sale || { ...saleAbono, id: resultadoPago.receiptId || saleAbono.id };
       setLastProcessedSale(saleFinal); 
@@ -1032,12 +1068,12 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
           <div className="card-head px-6 py-4 bg-ink border-b border-white/10 flex justify-between items-center"><h3 className="text-white font-black uppercase italic tracking-tighter flex items-center gap-2 text-xs"><History className="w-5 h-5 text-brand-gold" /> HISTORIAL TERMINAL: {currentTerminal?.nombre || 'S/T'}</h3><button onClick={() => setView('pos')} className="btn btn-sm bg-white text-ink hover:bg-surface-soft flex items-center gap-2 font-black uppercase text-[10px] rounded-lg border-none px-4"><ArrowLeft className="w-3.5 h-3.5"/> Volver al POS</button></div>
           <div className="table-wrap flex-1 overflow-y-auto">
             <table>
-              <thead><tr><th>Recibo</th><th>Hora</th><th>Terminal</th><th>Cliente</th><th>Tipo</th><th className="text-right">Monto USD</th><th>Método</th><th className="text-center">Estado</th><th className="text-center">Acciones</th></tr></thead>
+              <thead><tr><th>Recibo</th><th>Hora</th><th>Terminal</th><th>Cliente</th><th>Tipo</th><th className="text-right">Monto USD</th><th className="text-right">Monto Bs.</th><th>Método</th><th className="text-center">Estado</th><th className="text-center">Acciones</th></tr></thead>
               <tbody>
                 {histPageVentas.length === 0 ? (
-                  <tr><td colSpan={9} className="text-center py-20 text-ink/20 font-black italic uppercase">Sin ventas registradas en esta terminal</td></tr>
+                  <tr><td colSpan={10} className="text-center py-20 text-ink/20 font-black italic uppercase">Sin ventas registradas en esta terminal</td></tr>
                 ) : histPageVentas.map(v => (
-                  <tr key={v.id} className="border-b border-line/40 hover:bg-surface-warm/20"><td className="text-ink font-black text-xs mono">{v.id}</td><td className="text-ink font-bold text-xs">{v.fecha.split('T')[1]?.slice(0, 5)}</td><td className="text-ink font-black text-[10px] uppercase">{v.terminalName || state.terminales.find(t => t.id === v.terminalId)?.nombre || '-'}</td><td className="text-ink font-black text-xs uppercase truncate max-w-[150px]">{v.cliente}</td><td className="text-ink font-black text-[9px] uppercase"><span className={`badge ${v.type === 'COBRO DEUDA' ? 'badge-info' : 'badge-neutral'}`}>{v.type || 'VENTA'}</span></td><td className="text-brand-gold-deep font-black text-xs text-right">{Utils.fmtUSD(v.totalUSD)}</td><td className="text-ink font-bold text-[10px] uppercase">{Utils.metodoLabel(v.metodoPago)}</td><td className="text-center"><span className={`badge ${v.estado === 'pendiente' ? 'badge-warn' : (v.estado === 'anulada' ? 'badge-err' : 'badge-ok')} font-black text-[9px] uppercase`}>{v.estado}</span></td><td className="text-center"><button onClick={() => setShowSaleDetail(v)} className="w-7 h-7 rounded-full flex items-center justify-center text-status-success hover:bg-status-success/10 transition-colors" title="Ver ítems y detalle de venta"><Eye className="w-4 h-4" /></button></td></tr>
+                  <tr key={v.id} className="border-b border-line/40 hover:bg-surface-warm/20"><td className="text-ink font-black text-xs mono">{v.id}</td><td className="text-ink font-bold text-xs">{v.fecha.split('T')[1]?.slice(0, 5)}</td><td className="text-ink font-black text-[10px] uppercase">{v.terminalName || state.terminales.find(t => t.id === v.terminalId)?.nombre || '-'}</td><td className="text-ink font-black text-xs uppercase truncate max-w-[150px]">{v.cliente}</td><td className="text-ink font-black text-[9px] uppercase"><span className={`badge ${v.type === 'COBRO DEUDA' ? 'badge-info' : 'badge-neutral'}`}>{v.type || 'VENTA'}</span></td><td className="text-brand-gold-deep font-black text-xs text-right">{Number(v.totalUSD) > 0 && Number(v.totalUSD) < 0.01 ? 'USD ' + Number(v.totalUSD).toFixed(4) : Utils.fmtUSD(v.totalUSD)}</td><td className="text-ink font-black text-xs text-right">{Utils.fmtBS(v.totalBS || 0)}</td><td className="text-ink font-bold text-[10px] uppercase">{Utils.metodoLabel(v.metodoPago)}</td><td className="text-center"><span className={`badge ${v.estado === 'pendiente' ? 'badge-warn' : (v.estado === 'anulada' ? 'badge-err' : 'badge-ok')} font-black text-[9px] uppercase`}>{v.estado}</span></td><td className="text-center"><button onClick={() => setShowSaleDetail(v)} className="w-7 h-7 rounded-full flex items-center justify-center text-status-success hover:bg-status-success/10 transition-colors" title="Ver ítems y detalle de venta"><Eye className="w-4 h-4" /></button></td></tr>
                 ))}
               </tbody>
             </table>
@@ -1047,6 +1083,20 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       ) : view === 'credits' ? (
         <div className="card flex-1 bg-white flex flex-col overflow-hidden animate-in slide-in-from-bottom-2 duration-300 rounded-xl">
           <div className="card-head px-6 py-4 bg-ink border-b border-white/10 flex justify-between items-center"><h3 className="text-white font-black uppercase italic tracking-tighter flex items-center gap-2 text-xs"><ClipboardList className="w-5 h-5 text-brand-gold" /> CONSULTA CRÉDITOS Y COBRANZA (GLOBAL)</h3><button onClick={() => setView('pos')} className="btn btn-sm bg-white text-ink hover:bg-surface-soft flex items-center gap-2 font-black uppercase text-[10px] rounded-lg border-none px-4"><ArrowLeft className="w-3.5 h-3.5"/> Volver al POS</button></div>
+          <div className="px-4 sm:px-6 py-3 border-b border-line bg-white flex flex-col sm:flex-row gap-2 sm:items-center sm:justify-between">
+            <div className="relative flex-1 max-w-xl">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink/40" />
+              <input
+                type="search"
+                value={creditsSearch}
+                onChange={(e) => { setCreditsSearch(e.target.value); setCreditsPage(1); }}
+                placeholder="Buscar deudor por nombre o cédula..."
+                aria-label="Buscar deudor por nombre o cédula"
+                className="w-full h-11 pl-10 pr-4 rounded-xl border border-line bg-surface-soft text-sm font-bold text-ink outline-none focus:border-brand-gold focus:ring-2 focus:ring-brand-gold/20"
+              />
+            </div>
+            <span className="text-[10px] font-black uppercase text-ink/50">{filteredCreditEntries.length} deudores con saldo</span>
+          </div>
           <div className="table-wrap flex-1 overflow-y-auto">
             <table className="w-full">
               <thead>
@@ -1060,10 +1110,10 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                 </tr>
               </thead>
               <tbody>
-                {Object.entries(groupedCredits).length === 0 ? (
+                {filteredCreditEntries.length === 0 ? (
                   <tr><td colSpan={6} className="text-center py-20 text-ink font-black uppercase italic">No hay deudas registradas</td></tr>
                 ) : (
-                  Object.entries(groupedCredits).map(([clientName, group]) => (
+                  paginatedCreditEntries.map(([clientName, group]) => (
                     <React.Fragment key={clientName}>
                       <tr className="border-b border-line hover:bg-surface-warm/20 transition-colors">
                         <td className="px-6 py-4">
@@ -1072,13 +1122,11 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                         <td className="py-4"><div className="text-ink font-black text-sm uppercase">{clientName}</div></td>
                         <td className="text-right py-4 font-black text-ink">{group.debts.length} Facturas</td>
                         <td className="text-right py-4 font-black text-status-info text-base">{Utils.fmtUSD(group.totalUSD)}</td>
-                        <td className="text-right py-4 font-black text-ink">{Utils.fmtBS(group.totalUSD * state.tasa)}</td>
+                        <td className="text-right py-4 font-black text-ink">{Utils.fmtBS(group.totalBS)}</td>
                         <td className="text-center py-4"><div className="flex items-center justify-center gap-2">
-                          {group.debts.length > 1 && (
-                            <button onClick={() => handleOpenGlobalCreditPayment(clientName, group.debts)} className="h-10 px-3 rounded-full flex items-center justify-center gap-1.5 bg-brand-gold text-black border-2 border-brand-gold hover:bg-brand-gold-deep transition-all shadow-md font-black text-[9px] uppercase whitespace-nowrap" title="PAGO GLOBAL" aria-label="PAGO GLOBAL">
-                              <HandCoins className="w-4 h-4" /><span>PAGO GLOBAL</span>
-                            </button>
-                          )}
+                          <button onClick={() => handleOpenGlobalCreditPayment(clientName, group.debts)} className="h-10 px-3 rounded-full flex items-center justify-center gap-1.5 bg-brand-gold text-black border-2 border-brand-gold hover:bg-brand-gold-deep transition-all shadow-md font-black text-[9px] uppercase whitespace-nowrap" title="PAGO GLOBAL" aria-label="PAGO GLOBAL">
+                            <HandCoins className="w-4 h-4" /><span>PAGO GLOBAL</span>
+                          </button>
                           <button onClick={() => setShowClientHistory(clientName)} className="w-10 h-10 rounded-full flex items-center justify-center bg-white text-status-success border-2 border-status-success/20 hover:bg-status-success hover:text-white transition-all shadow-md"><Eye className="w-5 h-5" /></button>
                         </div></td>
                       </tr>
@@ -1087,8 +1135,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                            <td colSpan={6} className="px-12 py-4">
                               <div className="card border-line bg-white shadow-inner rounded-xl overflow-hidden">
                                  <table className="w-full">
-                                    <thead className="bg-ink/5"><tr><th className="text-[9px] font-black uppercase p-2 text-left">Emisión</th><th className="text-[9px] font-black uppercase p-2 text-left">Vencimiento</th><th className="text-[9px] font-black uppercase p-2 text-right">Saldo USD</th><th className="text-[9px] font-black uppercase p-2 text-center">Acciones</th></tr></thead>
-                                    <tbody>{group.debts.map(d => (<tr key={d.id} className="border-b border-line/20"><td className="text-[10px] font-black p-2">{Utils.fmtFecha(d.fecha)}</td><td className={`text-[10px] font-black p-2 ${d.saldoUSD > 0.001 && d.fechaVencimiento < Utils.hoy() ? 'text-status-danger' : 'text-ink'}`}>{d.fechaVencimiento === '2099-12-31' ? 'ABIERTA' : Utils.fmtFecha(d.fechaVencimiento)}</td><td className="text-[10px] font-black p-2 text-right text-brand-gold-deep">{Utils.fmtUSD(d.saldoUSD)}</td><td className="p-2 text-center"><div className="flex justify-center gap-2"><button onClick={() => setShowDetails(d)} className="w-8 h-8 rounded-full flex items-center justify-center text-status-success hover:bg-status-success/10"><Eye className="w-4 h-4"/></button><button onClick={() => { setShowAbonoModal(d); }} className="btn btn-sm btn-primary h-7 px-3 text-[8px] uppercase">Abonar</button></div></td></tr>))}</tbody>
+                                    <thead className="bg-ink/5"><tr><th className="text-[9px] font-black uppercase p-2 text-left">Emisión</th><th className="text-[9px] font-black uppercase p-2 text-left">Vencimiento</th><th className="text-[9px] font-black uppercase p-2 text-right">Saldo USD</th><th className="text-[9px] font-black uppercase p-2 text-right">Saldo Bs.</th><th className="text-[9px] font-black uppercase p-2 text-center">Acciones</th></tr></thead>
+                                    <tbody>{group.debts.map(d => (<tr key={d.id} className="border-b border-line/20"><td className="text-[10px] font-black p-2">{Utils.fmtFecha(d.fecha)}</td><td className={`text-[10px] font-black p-2 ${d.saldoUSD > 0.001 && d.fechaVencimiento < Utils.hoy() ? 'text-status-danger' : 'text-ink'}`}>{d.fechaVencimiento === '2099-12-31' ? 'ABIERTA' : Utils.fmtFecha(d.fechaVencimiento)}</td><td className="text-[10px] font-black p-2 text-right text-brand-gold-deep">{Utils.fmtUSD(d.saldoUSD)}</td><td className="text-[10px] font-black p-2 text-right">{Utils.fmtBS(saldoDeudaBS(d))}</td><td className="p-2 text-center"><div className="flex justify-center gap-2"><button onClick={() => setShowDetails(d)} className="w-8 h-8 rounded-full flex items-center justify-center text-status-success hover:bg-status-success/10"><Eye className="w-4 h-4"/></button></div></td></tr>))}</tbody>
                                  </table>
                               </div>
                            </td>
@@ -1099,6 +1147,9 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                 )}
               </tbody>
             </table>
+          </div>
+          <div className="px-4 sm:px-6 py-3 border-t border-line bg-white">
+            <Pagination page={safeCreditsPage} totalPages={creditsTotalPages} total={filteredCreditEntries.length} pageSize={creditsPageSize} onPageChange={setCreditsPage} />
           </div>
         </div>
       ) : (
@@ -1202,8 +1253,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       
       {showAbonoModal && (
         <FloatingPaymentModal 
-          total={showAbonoModal.saldoUSD * state.tasa} 
-          totalCents={Math.round(showAbonoModal.saldoUSD * state.tasa * 100)} 
+          total={saldoDeudaBS(showAbonoModal)} 
+          totalCents={Math.round(saldoDeudaBS(showAbonoModal) * 100)} 
           exchangeRate={state.tasa} 
           onClose={() => setShowAbonoModal(null)} 
           allowPartial={true} 
@@ -1238,7 +1289,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                 </div>
                 <div className="p-3 bg-brand-gold-soft border border-brand-gold/20 rounded-lg">
                   <label className="text-[8px] font-black uppercase text-brand-gold-deep block mb-1">Total USD</label>
-                  <p className="text-lg font-black text-brand-gold-deep">{Utils.fmtUSD(showSaleDetail.totalUSD)}</p>
+                  <p className="text-lg font-black text-brand-gold-deep">{Number(showSaleDetail.totalUSD) > 0 && Number(showSaleDetail.totalUSD) < 0.01 ? 'USD ' + Number(showSaleDetail.totalUSD).toFixed(4) : Utils.fmtUSD(showSaleDetail.totalUSD)}</p>
+                  <p className="text-xs font-bold text-brand-gold-deep/70">{Utils.fmtBS(showSaleDetail.totalBS || 0)}</p>
                 </div>
               </div>
 
@@ -1309,10 +1361,12 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                  <div className="p-3 bg-surface-soft rounded-lg border border-line">
                     <label className="text-[8px] font-black uppercase text-ink block mb-1">Monto Original</label>
                     <p className="text-lg font-black text-ink">{Utils.fmtUSD(showDetails.montoUSD)}</p>
+                    <p className="text-xs font-bold text-ink/60">{Utils.fmtBS(showDetails.montoBS || (Number(showDetails.montoUSD || 0) * Number(showDetails.tasaInicial || state.tasa)))}</p>
                  </div>
                  <div className="p-3 bg-brand-gold-soft border border-brand-gold/20 rounded-lg">
                     <label className="text-[8px] font-black uppercase text-brand-gold-deep block mb-1">Saldo Actual</label>
                     <p className="text-lg font-black text-brand-gold-deep">{Utils.fmtUSD(showDetails.saldoUSD)}</p>
+                    <p className="text-xs font-bold text-brand-gold-deep/70">{Utils.fmtBS(showDetails.saldoBS ?? (Number(showDetails.saldoUSD || 0) * Number(state.tasa)))}</p>
                  </div>
               </div>
 
@@ -1364,8 +1418,9 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                               <p className="text-[8px] font-black text-ink mono">REF: {p.reciboId}</p>
                            </div>
                            <div className="text-right">
-                              <p className="text-xs font-black text-status-success">+{Utils.fmtUSD(p.montoUSD)}</p>
-                              <p className="text-[8px] font-black text-ink uppercase">{Utils.metodoLabel(p.metodo || 'otros')}</p>
+                              <p className="text-xs font-black text-status-success">+{Number(p.montoUSD) > 0 && Number(p.montoUSD) < 0.01 ? 'USD ' + Number(p.montoUSD).toFixed(4) : Utils.fmtUSD(p.montoUSD)}</p>
+                              <p className="text-[9px] font-black text-status-success">{Utils.fmtBS(p.montoBS || 0)}</p>
+                              <p className="text-[8px] font-black text-ink uppercase">{Utils.metodoLabel(p.metodo || 'otros')} · TASA {Number(p.tasaAplicada || 0).toLocaleString('es-VE')}</p>
                            </div>
                         </div>
                       ))

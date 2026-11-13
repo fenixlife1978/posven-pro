@@ -691,7 +691,7 @@ export async function createSaleTransaction(params: {
       id: 'CRD-' + reciboId, fecha: now.slice(0, 10), fechaVencimiento: '2099-12-31',
       cliente: `${customer.name} [${customer.cedula}]`, montoUSD: totals.total,
       subtotalUSD: totals.total, totalUSD: totals.total, totalBS: totals.total * tasa, tasa,
-      abonadoUSD: 0, saldoUSD: totals.total, estado: 'pendiente', historialPagos: [],
+      montoBS: Number((totals.total * tasa).toFixed(2)), tasaInicial: Number(tasa), abonadoUSD: 0, abonadoBS: 0, saldoUSD: totals.total, saldoBS: Number((totals.total * tasa).toFixed(2)), estado: 'pendiente', historialPagos: [],
       ventaId: reciboId, facturaId: reciboId,
       // Snapshot exacto de la factura original para que CxC conserve items,
       // cantidades y precios aun cuando cambie el catálogo posteriormente.
@@ -972,7 +972,7 @@ export async function applyDebtPaymentTransaction(params: {
   // CxP se procesa desde Administración y no depende de ninguna Caja/Terminal.
   // Solo CxC conserva la relación con la caja del cajero.
   const terminalForOperation = collection === 'cxc' ? terminalId : undefined;
-  if (!(Number(amountUSD) > 0)) return null;
+  if (!(Number(amountUSD) > 0) && !(Number(amountBS) > 0) && !(Number(payment?.montoBS) > 0)) return null;
   return tursoInteractiveTransaction(async tx => {
     const opId = String(operationId || payment?.id || (collection+'|'+debtId+'|'+amountUSD+'|'+payment?.metodo+'|'+payment?.fecha));
     const check = await tx.execute({sql:'SELECT id FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',args:['PAGO-DEUDA',opId]});
@@ -993,13 +993,30 @@ export async function applyDebtPaymentTransaction(params: {
     const abonadoBase = Math.min(montoInicial, Math.max(abonadoRegistrado, abonadoHistorial));
     const saldoCalculado = Math.max(0, montoInicial - abonadoBase);
     const saldoPersistido = Number(debt.saldoUSD);
-    const saldo = Number.isFinite(saldoPersistido) && saldoPersistido >= saldoCalculado
+    const saldoPersistidoUSD = Number.isFinite(saldoPersistido) && saldoPersistido >= saldoCalculado
       ? saldoPersistido
       : saldoCalculado;
-    const saldoCents = Math.round(saldo * 100);
+    const tasaPago = Number(payment?.tasaAplicada) || 0;
+    const historialBS = historialPrevio.reduce((sum:number, p:any) => sum + Math.max(0, Number(p?.montoBS) || 0), 0);
+    const montoBSInicial = Math.max(0, Number(debt.montoBS) || montoInicial * (Number(debt.tasaInicial) || tasaPago));
+    const saldoBS = debt.saldoBS !== undefined && debt.saldoBS !== null ? Math.max(0, Number(debt.saldoBS) || 0) : Math.max(0, montoBSInicial - historialBS);
+    // En CxC, un saldo USD redondeado a 0,00 no puede ocultar bolívares pendientes.
+    // Si la moneda local conserva saldo, reconstruimos el equivalente técnico
+    // sin redondearlo a centavos para permitir el abono y la conciliación.
+    const saldo = collection === 'cxc' && saldoBS > 0.005 && tasaPago > 0
+      ? Math.max(saldoPersistidoUSD, Number((saldoBS / tasaPago).toFixed(6)))
+      : saldoPersistidoUSD;
+    const requestedBS = Math.max(0, Number(amountBS) || Number(payment?.montoBS) || (Number(amountUSD) * tasaPago));
     const amountCents = Math.round(Number(amountUSD) * 100);
-    if (saldoCents <= 0) throw new Error('La deuda ya está pagada.');
-    if (amountCents > saldoCents) throw new Error('El monto a pagar no puede ser mayor al saldo pendiente.');
+    if (collection === 'cxc') {
+      if (saldoBS <= 0.005 && saldo <= 0.000001) throw new Error('La deuda ya está pagada.');
+      if (requestedBS <= 0.004 && Number(amountUSD) <= 0) throw new Error('El monto del abono debe ser mayor que cero.');
+      if (requestedBS > saldoBS + 0.005 && Number(amountUSD) < saldo - 0.000001) throw new Error('El monto a pagar no puede ser mayor al saldo pendiente.');
+    } else {
+      const saldoCents = Math.round(saldo * 100);
+      if (saldoCents <= 0) throw new Error('La deuda ya está pagada.');
+      if (amountCents > saldoCents) throw new Error('El monto a pagar no puede ser mayor al saldo pendiente.');
+    }
 
     const terminal = terminalForOperation ? rowFromDb((await tx.execute(txSelect('terminales',terminalForOperation))).rows[0]) : null;
     if (terminalForOperation && !terminal) throw new Error('La caja/terminal ya no existe en Turso.');
@@ -1008,15 +1025,25 @@ export async function applyDebtPaymentTransaction(params: {
     const label = collection==='cxc'?'CXC':'CXP';
     const counter=Number(terminal?.[field])||1;
     const receiptId=terminal?terminalSeries(await terminalUniquePrefix(tx,terminal,terminalForOperation),label,counter,6):terminalSeries('GLOBAL',label,Date.now(),6);
-    const applied=Math.min(amountCents, saldoCents) / 100;
-    const appliedBS=Number(amountBS)>0?Math.min(Number(amountBS),Number(payment?.montoBS)||Number(amountBS)):(Number(payment?.montoBS)||(applied*(Number(payment?.tasaAplicada)||0)));
+    const closesByUSD = collection === 'cxc' && Number(amountUSD) >= saldo - 0.000001;
+    const closesByBS = collection === 'cxc' && requestedBS >= saldoBS - 0.005;
+    const applied = collection === 'cxc'
+      ? (closesByUSD || closesByBS ? saldo : (tasaPago > 0 ? Math.min(saldo, requestedBS / tasaPago) : Math.min(saldo, Number(amountUSD))))
+      : Math.min(amountCents, Math.round(saldo * 100)) / 100;
+    const appliedBS = collection === 'cxc'
+      ? (closesByUSD || closesByBS ? saldoBS : Math.min(saldoBS, requestedBS))
+      : (Number(amountBS)>0?Math.min(Number(amountBS),Number(payment?.montoBS)||Number(amountBS)):(Number(payment?.montoBS)||(applied*(Number(payment?.tasaAplicada)||0))));
 
     const paymentWithTerminal = collection === 'cxc'
       ? {...payment, terminalId: terminalForOperation || payment?.terminalId, terminalName: terminal?.nombre || payment?.terminalName}
       : {...payment, terminalId: undefined, terminalName: undefined};
     const pago=clean({...paymentWithTerminal,id:receiptId,reciboId:receiptId,terminalForOperation:terminalForOperation||payment?.terminalForOperation,montoUSD:applied,montoBS:appliedBS});
 
-    const updated={...debt,abonadoUSD:abonadoRegistrado+applied,saldoUSD:Math.max(0,saldo-applied),estado:Math.round((saldo-applied)*100)<=0?'pagada':'parcial',historialPagos:[...historialPrevio,pago]};
+    const nextSaldoBS = collection === 'cxc' ? Math.max(0, saldoBS - appliedBS) : undefined;
+    const nextSaldoUSD = collection === 'cxc'
+      ? (nextSaldoBS! <= 0.005 ? 0 : (tasaPago > 0 ? Number((nextSaldoBS! / tasaPago).toFixed(6)) : Math.max(0, saldo - applied)))
+      : Math.max(0, saldo - applied);
+    const updated={...debt,montoBS:collection==='cxc'?(Number(debt.montoBS)||montoBSInicial):debt.montoBS,tasaInicial:collection==='cxc'?(Number(debt.tasaInicial)||tasaPago):debt.tasaInicial,abonadoUSD:abonadoRegistrado+applied,abonadoBS:(Number(debt.abonadoBS)||historialBS)+appliedBS,saldoUSD:nextSaldoUSD,...(collection==='cxc'?{saldoBS:nextSaldoBS}:{}),estado:collection==='cxc'?(nextSaldoBS!<=0.005?'pagada':'parcial'):(Math.round((saldo-applied)*100)<=0?'pagada':'parcial'),historialPagos:[...historialPrevio,pago]};
     const statements:TursoStatement[]=[rowStatement(collection,updated)];
 
     if(collection==='cxc'){
@@ -1058,12 +1085,14 @@ export async function applyDebtPaymentTransaction(params: {
 async function applyGlobalPayment(params:any, collection:'cxc'|'cxp'){
   assertTursoReady();
   const {operationId,provider,customerName,customerCedula,amountUSD,amountBS,payment,paymentParts,journal,terminalId}=params;
-  if(!(Number(amountUSD)>0)) return {appliedUSD:0,appliedBS:0,debts:[]};
+  const requestedUSD=Math.max(0,Number(amountUSD)||0);
+  const requestedBS=Math.max(0,Number(amountBS)||0);
+  if(requestedUSD<=0 && requestedBS<=0) return {appliedUSD:0,appliedBS:0,debts:[]};
   // Los pagos globales a proveedores se originan en Administración → CxP
   // y son administrativos: no dependen de ninguna Caja/Terminal.
   const terminalForOperation = collection === 'cxc' ? terminalId : undefined;
   return tursoInteractiveTransaction(async tx=>{
-    const opId=String(operationId||payment?.id||((collection==='cxp'?'CXP-GLOBAL':'CXC-GLOBAL')+'|'+(provider||customerName)+'|'+amountUSD+'|'+payment?.fecha+'|'+payment?.metodo));
+    const opId=String(operationId||payment?.id||((collection==='cxp'?'CXP-GLOBAL':'CXC-GLOBAL')+'|'+(provider||customerName)+'|'+requestedUSD+'|'+requestedBS+'|'+payment?.fecha+'|'+payment?.metodo));
     const prefix=collection==='cxp'?'PAGO-CXP-GLOBAL':'PAGO-CXC-GLOBAL';
     const check=await tx.execute({sql:'SELECT id FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',args:[prefix,opId]});
     if(check.rows.length) throw new Error('Esta operación ya fue procesada. No se registrará nuevamente.');
@@ -1077,98 +1106,66 @@ async function applyGlobalPayment(params:any, collection:'cxc'|'cxp'){
     const matchValue=collection==='cxp'?String(provider||''):String(customerName||'');
     let docs:any[] = [];
     if (collection === 'cxc') {
-      // Las deudas históricas pueden estar guardadas con o sin la cédula
-      // embebida en el campo cliente. El cobro debe localizar ambas formas.
       const candidates = customerCedula
-        ? await tx.execute({
-            sql:"SELECT id,data_json FROM cxc WHERE (json_extract(data_json,'$.cliente')=? OR json_extract(data_json,'$.cliente')=?) ORDER BY COALESCE(fecha,'') ASC,id ASC",
-            args:[String(customerName || ''), String(customerName || '')+' ['+String(customerCedula)+']']
-          })
-        : await tx.execute({
-            sql:"SELECT id,data_json FROM cxc WHERE json_extract(data_json,'$.cliente')=? ORDER BY COALESCE(fecha,'') ASC,id ASC",
-            args:[String(customerName || '')]
-          });
-      docs = candidates.rows.map(rowFromDb);
+        ? await tx.execute({sql:"SELECT id,data_json FROM cxc WHERE (json_extract(data_json,'$.cliente')=? OR json_extract(data_json,'$.cliente')=?) ORDER BY COALESCE(fecha,'') ASC,id ASC",args:[String(customerName||''),String(customerName||'')+' ['+String(customerCedula)+']']})
+        : await tx.execute({sql:"SELECT id,data_json FROM cxc WHERE json_extract(data_json,'$.cliente')=? ORDER BY COALESCE(fecha,'') ASC,id ASC",args:[String(customerName||'')]});
+      docs=candidates.rows.map(rowFromDb);
     } else {
-      const found=await tx.execute({
-        sql:"SELECT id,data_json FROM "+tableName(collection)+" WHERE LOWER(TRIM(COALESCE(json_extract(data_json,'$."+matchField+"'),''))) = LOWER(TRIM(?)) ORDER BY COALESCE(fecha,'') ASC,id ASC",
-        args:[matchValue]
-      });
-      docs = found.rows.map(rowFromDb);
+      const found=await tx.execute({sql:"SELECT id,data_json FROM "+tableName(collection)+" WHERE LOWER(TRIM(COALESCE(json_extract(data_json,'$."+matchField+"'),''))) = LOWER(TRIM(?)) ORDER BY COALESCE(fecha,'') ASC,id ASC",args:[matchValue]});
+      docs=found.rows.map(rowFromDb);
     }
-    docs = docs.filter((d:any)=>(Number(d?.saldoUSD)||0)>0.001&&d?.estado!=='pagada');
-    let remCents=Math.max(0,Math.round(Number(amountUSD)*100));
-    let remBS=Number(amountBS)>0?Number(amountBS):Number(amountUSD)*(Number(payment?.tasaAplicada)||0);
+    const tasa=Number(payment?.tasaAplicada)||0;
+    docs=docs.filter((d:any)=>{
+      if(d?.estado==='pagada') return false;
+      const usd=Math.max(0,Number(d?.saldoUSD)||0);
+      const bs=Math.max(0,Number(d?.saldoBS)||usd*tasa);
+      return collection==='cxc' ? (bs>0.005 || usd>0.001) : usd>0.001;
+    });
+    let remUSD=requestedUSD;
+    let remBS=requestedBS>0?requestedBS:requestedUSD*tasa;
     let appliedUSD=0, appliedBS=0; const debts:any[]=[]; const statements:TursoStatement[]=[];
     for(const d of docs){
-      if(remCents<=0) break;
-      const debtCents=Math.max(0,Math.round((Number(d.saldoUSD)||0)*100));
-      const pagoCents=Math.min(debtCents,remCents); if(pagoCents<=0) continue;
-      const pago=pagoCents/100;
-      const tasa=Number(payment?.tasaAplicada)||0; const pagoBS=Math.min(remBS,pago*tasa);
-      remCents-=pagoCents; remBS=Math.max(0,remBS-pagoBS);
+      if(remBS<=0.004 && remUSD<=0.000001) break;
+      const debtUSD=Math.max(0,Number(d.saldoUSD)||0);
+      const historialBS=(Array.isArray(d.historialPagos)?d.historialPagos:[]).reduce((sum:number,p:any)=>sum+Math.max(0,Number(p?.montoBS)||0),0);
+      const historialUSD=(Array.isArray(d.historialPagos)?d.historialPagos:[]).reduce((sum:number,p:any)=>sum+Math.max(0,Number(p?.montoUSD)||0),0);
+      const originalUSD=Math.max(0,Number(d.montoUSD)||debtUSD+historialUSD);
+      const montoBSInicial=Math.max(0,Number(d.montoBS)||(originalUSD*(Number(d.tasaInicial)||Number(d.tasa)||tasa)));
+      const debtBS=d.saldoBS!==undefined&&d.saldoBS!==null?Math.max(0,Number(d.saldoBS)||0):Math.max(0,montoBSInicial-historialBS);
+      if(debtUSD<=0.000001 && debtBS<=0.005) continue;
+      // Un pago exacto en USD liquida la factura completa aunque la conversión
+      // redondeada deje algunos bolívares residuales. En Bs se concilia contra
+      // el saldo original en Bs, sin redondear su equivalente USD a centavos.
+      const closesByUSD=remUSD>=debtUSD-0.000001 && debtUSD>0;
+      const closesByBS=remBS>=debtBS-0.005 && debtBS>0;
+      let pagoBS=closesByUSD||closesByBS?debtBS:Math.min(debtBS,remBS);
+      let pagoUSD=closesByUSD?debtUSD:(tasa>0?Math.min(debtUSD,pagoBS/tasa):Math.min(debtUSD,remUSD));
+      if(pagoBS<=0.004 && pagoUSD<=0.000001) continue;
+      if(closesByUSD||closesByBS){pagoBS=debtBS;pagoUSD=debtUSD;}
+      remBS=Math.max(0,remBS-pagoBS);
+      remUSD=Math.max(0,remUSD-pagoUSD);
+      const nuevoSaldoBS=Math.max(0,debtBS-pagoBS);
+      const nuevoSaldoUSD=(nuevoSaldoBS<=0.005)?0:(tasa>0?Number((nuevoSaldoBS/tasa).toFixed(6)):Math.max(0,debtUSD-pagoUSD));
       const h=[...(Array.isArray(d.historialPagos)?d.historialPagos:[])];
-      h.push(clean({...payment,id:receiptId,reciboId:receiptId,terminalId:collection==='cxc'?(terminalForOperation||payment?.terminalId):undefined,montoUSD:pago,montoBS:pagoBS}));
-      const updated={...d,abonadoUSD:(Number(d.abonadoUSD)||0)+pago,saldoUSD:Math.max(0,(Number(d.saldoUSD)||0)-pago),estado:(Number(d.saldoUSD)-pago)<=0.001?'pagada':'parcial',historialPagos:h};
-      statements.push(rowStatement(collection,updated)); debts.push({...updated,appliedUSD:pago,appliedBS:pagoBS}); appliedUSD+=pago; appliedBS+=pagoBS;
+      h.push(clean({...payment,id:receiptId,reciboId:receiptId,terminalId:collection==='cxc'?(terminalForOperation||payment?.terminalId):undefined,montoUSD:pagoUSD,montoBS:pagoBS,tasaAplicada:tasa}));
+      const updated={...d,montoBS:Number(d.montoBS)||montoBSInicial,tasaInicial:Number(d.tasaInicial)||tasa,abonadoUSD:(Number(d.abonadoUSD)||0)+pagoUSD,abonadoBS:(Number(d.abonadoBS)||historialBS)+pagoBS,saldoUSD:nuevoSaldoUSD,saldoBS:nuevoSaldoBS,estado:nuevoSaldoBS<=0.005?'pagada':'parcial',historialPagos:h};
+      statements.push(rowStatement(collection,updated)); debts.push({...updated,appliedUSD:pagoUSD,appliedBS:pagoBS}); appliedUSD+=pagoUSD; appliedBS+=pagoBS;
     }
-    if(appliedUSD<=0.000001) throw new Error('No hay saldo pendiente para registrar este pago.');
+    if(appliedBS<=0.004 && appliedUSD<=0.000001) throw new Error('No hay saldo pendiente para registrar este pago.');
     if(collection==='cxc'&&customerCedula){
       const foundCustomer=await tx.execute({sql:"SELECT id,data_json FROM clientes WHERE json_extract(data_json,'$.cedula')=? LIMIT 1",args:[String(customerCedula)]});
       const customer=rowFromDb(foundCustomer.rows[0]); if(customer) statements.push(rowStatement('clientes',{...customer,debt:Math.max(0,(Number(customer.debt)||0)-appliedUSD)}));
     }
     if(journal?.id) statements.push(rowStatement('libroDiario',{...journal,montoUSD:appliedUSD,montoBS:appliedBS,referencia:receiptId,terminalId:collection==='cxc'?(terminalForOperation||journal.terminalId):undefined,terminalName:collection==='cxc'?(terminal?.nombre||journal.terminalName):undefined}));
-
-    // Un cobro de CxC también es una operación visible en el historial del POS,
-    // pero NO es una venta de mercancía. Se guarda como registro de tipo
-    // COBRO DEUDA para trazabilidad; los reportes X/Z lo excluyen del total de
-    // ventas y lo muestran en el renglón específico de cobros.
-    let sale: any = null;
-    if (collection === 'cxc') {
-      sale = {
-        id: receiptId,
-        fecha: String(payment?.fecha || new Date().toISOString()),
-        cliente: String(customerName || 'CLIENTE'),
-        items: [{
-          productoId: 'ABONO',
-          nombre: 'COBRO DE DEUDA',
-          cantidad: 1,
-          precioUnitUSD: appliedUSD,
-          subtotalUSD: appliedUSD,
-        }],
-        subtotalUSD: appliedUSD,
-        descuentoUSD: 0,
-        totalUSD: appliedUSD,
-        totalBS: appliedBS,
-        metodoPago: payment?.metodo || 'mixto',
-        estado: 'completada',
-        type: 'COBRO DEUDA',
-        received: appliedUSD,
-        change: 0,
-        terminalId: terminalId || 'GLOBAL',
-        terminalName: terminal?.nombre || 'SISTEMA GLOBAL',
-        payments: Array.isArray(paymentParts) && paymentParts.length ? (() => {
-          const requestedUSD = paymentParts.reduce((s:number,p:any) => s + (Number(p.montoUSD) || 0), 0);
-          const ratio = requestedUSD > 0 ? Math.min(1, appliedUSD / requestedUSD) : 1;
-          return paymentParts.map((p:any) => ({
-            ...p,
-            id: receiptId + '-' + String(p?.metodo || 'OTROS'),
-            terminalId: terminalId || p?.terminalId,
-            reciboId: receiptId,
-            montoUSD: (Number(p.montoUSD) || 0) * ratio,
-            montoBS: (Number(p.montoBS) || 0) * ratio,
-            tasaAplicada: Number(p?.tasaAplicada) || Number(payment?.tasaAplicada) || 0,
-          })).filter((p:any) => p.montoUSD > 0.000001 || p.montoBS > 0.000001);
-        })() : [{...payment, id: receiptId, reciboId: receiptId, montoUSD: appliedUSD, montoBS: appliedBS, terminalId: terminalId || payment?.terminalId}],
-        baseImponibleUSD: 0,
-        ivaUSD: 0,
-        exentoUSD: 0,
-        igtfUSD: 0,
-        tasa: Number(payment?.tasaAplicada) || 0,
-      };
-      statements.push(rowStatement('ventas', sale));
+    let sale:any=null;
+    if(collection==='cxc'){
+      const ratio=requestedBS>0?Math.min(1,appliedBS/requestedBS):(requestedUSD>0?Math.min(1,appliedUSD/requestedUSD):1);
+      const normalizedParts=Array.isArray(paymentParts)&&paymentParts.length
+        ? paymentParts.map((p:any)=>({...p,id:receiptId+'-'+String(p?.metodo||'OTROS'),terminalId:terminalId||p?.terminalId,reciboId:receiptId,montoUSD:(Number(p.montoUSD)||0)*ratio,montoBS:(Number(p.montoBS)||0)*ratio,tasaAplicada:Number(p.tasaAplicada)||tasa})).filter((p:any)=>p.montoUSD>0.000001||p.montoBS>0.000001)
+        : [{...payment,id:receiptId,reciboId:receiptId,montoUSD:appliedUSD,montoBS:appliedBS,terminalId:terminalId||payment?.terminalId}];
+      sale={id:receiptId,fecha:String(payment?.fecha||new Date().toISOString()),cliente:String(customerName||'CLIENTE'),items:[{productoId:'ABONO',nombre:'COBRO DE DEUDA',cantidad:1,precioUnitUSD:appliedUSD,subtotalUSD:appliedUSD}],subtotalUSD:appliedUSD,descuentoUSD:0,totalUSD:appliedUSD,totalBS:appliedBS,metodoPago:payment?.metodo||'mixto',estado:'completada',type:'COBRO DEUDA',received:appliedUSD,change:0,terminalId:terminalId||'GLOBAL',terminalName:terminal?.nombre||'SISTEMA GLOBAL',payments:normalizedParts,baseImponibleUSD:0,ivaUSD:0,exentoUSD:0,igtfUSD:0,tasa:tasa};
+      statements.push(rowStatement('ventas',sale));
     }
-
     if(terminal) statements.push(rowStatement('terminales',{...terminal,[field]:counter+1}));
     statements.push({sql:'INSERT INTO operaciones(id,prefijo,operation_id,data_json) VALUES(?,?,?,?)',args:[prefix+'-'+opId,prefix,opId,JSON.stringify({tipo:prefix,operationId:opId,referencia:receiptId,terminalId:collection==='cxc'?(terminalForOperation||'GLOBAL'):undefined})],wantRows:false});
     for(const s of statements) await tx.execute(s);

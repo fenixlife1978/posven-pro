@@ -282,8 +282,12 @@ export default function CxCModule({ state, updateState }: CxCModuleProps) {
       fechaVencimiento: nuevaDeuda.sinVencimiento ? '2099-12-31' : nuevaDeuda.vencimiento,
       cliente: nombreFull,
       montoUSD: nuevaDeuda.montoUSD,
+      montoBS: Number((nuevaDeuda.montoUSD * state.tasa).toFixed(2)),
+      tasaInicial: state.tasa,
       abonadoUSD: 0,
+      abonadoBS: 0,
       saldoUSD: nuevaDeuda.montoUSD,
+      saldoBS: Number((nuevaDeuda.montoUSD * state.tasa).toFixed(2)),
       estado: 'pendiente' as 'pendiente',
       historialPagos: []
     };
