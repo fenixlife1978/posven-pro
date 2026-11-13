@@ -1036,12 +1036,744 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
           <div className="card-head px-6 py-4 bg-ink border-b border-white/10 flex justify-between items-center"><h3 className="text-white font-black uppercase italic tracking-tighter flex items-center gap-2 text-xs"><History className="w-5 h-5 text-brand-gold" /> HISTORIAL TERMINAL: {currentTerminal?.nombre || 'S/T'}</h3><button onClick={() => setView('pos')} className="btn btn-sm bg-white text-ink hover:bg-surface-soft flex items-center gap-2 font-black uppercase text-[10px] rounded-lg border-none px-4"><ArrowLeft className="w-3.5 h-3.5"/> Volver al POS</button></div>
           <div className="table-wrap flex-1 overflow-y-auto">
             <table>
-              <thead><tr><th>Recibo</th><th>Hora</th><th>Terminal</th><th>Cliente</th><th>Tipo</th><th className="text-right">Monto USD</th><th>Método</th><th className="text-center">Estado</th><th className="text-center">Acciones</th></tr></thead>
+              <thead><tr><th>Recibo</th><th>Hora</th><th>Terminal</th><th>Cliente</th><th>Tipo</th><th className="text-right">Monto USD</th><th className="text-right">Monto Bs.</th><th>Método</th><th className="text-center">Estado</th><th className="text-center">Acciones</th></tr></thead>
               <tbody>
                 {histPageVentas.length === 0 ? (
-                  <tr><td colSpan={9} className="text-center py-20 text-ink/20 font-black italic uppercase">Sin ventas registradas en esta terminal</td></tr>
+                  <tr><td colSpan={10} className="text-center py-20 text-ink/20 font-black italic uppercase">Sin ventas registradas en esta terminal</td></tr>
                 ) : histPageVentas.map(v => (
-                  <tr key={v.id} className="border-b border-line/40 hover:bg-surface-warm/20"><td className="text-ink font-black text-xs mono">{v.id}</td><td className="text-ink font-bold text-xs">{v.fecha.split('T')[1]?.slice(0, 5)}</td><td className="text-ink font-black text-[10px] uppercase">{v.terminalName || state.terminales.find(t => t.id === v.terminalId)?.nombre || '-'}</td><td className="text-ink font-black text-xs uppercase truncate max-w-[150px]">{v.cliente}</td><td className="text-ink font-black text-[9px] uppercase"><span className={`badge ${v.type === 'COBRO DEUDA' ? 'badge-info' : 'badge-neutral'}`}>{v.type || 'VENTA'}</span></td><td className="text-brand-gold-deep font-black text-xs text-right">{Utils.fmtUSD(v.totalUSD)}</td><td className="text-ink font-bold text-[10px] uppercase">{Utils.metodoLabel(v.metodoPago)}</td><td className="text-center"><span className={`badge ${v.estado === 'pendiente' ? 'badge-warn' : (v.estado === 'anulada' ? 'badge-err' : 'badge-ok')} font-black text-[9px] uppercase`}>{v.estado}</span></td><td className="text-center"><button onClick={() => setShowSaleDetail(v)} className="w-7 h-7 rounded-full flex items-center justify-center text-status-success hover:bg-status-success/10 transition-colors" title="Ver ítems y detalle de venta"><Eye className="w-4 h-4" /></button></td></tr>
+                  <tr key={v.id} className="border-b border-line/40 hover:bg-surface-warm/20"><td className="text-ink font-black text-xs mono">{v.id}</td><td className="text-ink font-bold text-xs">{v.fecha.split('T')[1]?.slice(0, 5)}</td><td className="text-ink font-black text-[10px] uppercase">{v.terminalName || state.terminales.find(t => t.id === v.terminalId)?.nombre || '-'}</td><td className="text-ink font-black text-xs uppercase truncate max-w-[150px]">{v.cliente}</td><td className="text-ink font-black text-[9px] uppercase"><span className={`badge ${v.type === 'COBRO DEUDA' ? 'badge-info' : 'badge-neutral'}`}>{v.type || 'VENTA'}</span></td><td className="text-brand-gold-deep font-black text-xs text-right">{Number(v.totalUSD) > 0 && Number(v.totalUSD) < 0.01 ? '<td className="text-center"><span className={`badge ${v.estado === 'pendiente' ? 'badge-warn' : (v.estado === 'anulada' ? 'badge-err' : 'badge-ok')} font-black text-[9px] uppercase`}>{v.estado}</span></td><td className="text-center"><button onClick={() => setShowSaleDetail(v)} className="w-7 h-7 rounded-full flex items-center justify-center text-status-success hover:bg-status-success/10 transition-colors" title="Ver ítems y detalle de venta"><Eye className="w-4 h-4" /></button></td></tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <Pagination page={histSafePage} totalPages={histTotalPages} total={histVentas.length} pageSize={histPageSize} onPageChange={setHistPage} />
+        </div>
+      ) : view === 'credits' ? (
+        <div className="card flex-1 bg-white flex flex-col overflow-hidden animate-in slide-in-from-bottom-2 duration-300 rounded-xl">
+          <div className="card-head px-6 py-4 bg-ink border-b border-white/10 flex justify-between items-center"><h3 className="text-white font-black uppercase italic tracking-tighter flex items-center gap-2 text-xs"><ClipboardList className="w-5 h-5 text-brand-gold" /> CONSULTA CRÉDITOS Y COBRANZA (GLOBAL)</h3><button onClick={() => setView('pos')} className="btn btn-sm bg-white text-ink hover:bg-surface-soft flex items-center gap-2 font-black uppercase text-[10px] rounded-lg border-none px-4"><ArrowLeft className="w-3.5 h-3.5"/> Volver al POS</button></div>
+          <div className="table-wrap flex-1 overflow-y-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-surface-soft">
+                  <th className="px-6 py-3"></th>
+                  <th className="text-ink font-black text-[10px] uppercase">Cliente / Identificación</th>
+                  <th className="text-ink font-black text-[10px] uppercase text-right">Documentos</th>
+                  <th className="text-ink font-black text-[10px] uppercase text-right">Saldo USD</th>
+                  <th className="text-ink font-black text-[10px] uppercase text-right">Saldo BS</th>
+                  <th className="text-ink font-black text-[10px] uppercase text-center">Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Object.entries(groupedCredits).length === 0 ? (
+                  <tr><td colSpan={6} className="text-center py-20 text-ink font-black uppercase italic">No hay deudas registradas</td></tr>
+                ) : (
+                  Object.entries(groupedCredits).map(([clientName, group]) => (
+                    <React.Fragment key={clientName}>
+                      <tr className="border-b border-line hover:bg-surface-warm/20 transition-colors">
+                        <td className="px-6 py-4">
+                           <button onClick={() => setExpandedClient(expandedClient === clientName ? null : clientName)} className="text-brand-gold hover:scale-110 transition-transform">{expandedClient === clientName ? <ChevronUp /> : <ChevronDown />}</button>
+                        </td>
+                        <td className="py-4"><div className="text-ink font-black text-sm uppercase">{clientName}</div></td>
+                        <td className="text-right py-4 font-black text-ink">{group.debts.length} Facturas</td>
+                        <td className="text-right py-4 font-black text-status-info text-base">{Utils.fmtUSD(group.totalUSD)}</td>
+                        <td className="text-right py-4 font-black text-ink">{Utils.fmtBS(group.totalBS)}</td>
+                        <td className="text-center py-4"><div className="flex items-center justify-center gap-2">
+                          {group.debts.length > 1 && (
+                            <button onClick={() => handleOpenGlobalCreditPayment(clientName, group.debts)} className="h-10 px-3 rounded-full flex items-center justify-center gap-1.5 bg-brand-gold text-black border-2 border-brand-gold hover:bg-brand-gold-deep transition-all shadow-md font-black text-[9px] uppercase whitespace-nowrap" title="PAGO GLOBAL" aria-label="PAGO GLOBAL">
+                              <HandCoins className="w-4 h-4" /><span>PAGO GLOBAL</span>
+                            </button>
+                          )}
+                          <button onClick={() => setShowClientHistory(clientName)} className="w-10 h-10 rounded-full flex items-center justify-center bg-white text-status-success border-2 border-status-success/20 hover:bg-status-success hover:text-white transition-all shadow-md"><Eye className="w-5 h-5" /></button>
+                        </div></td>
+                      </tr>
+                      {expandedClient === clientName && (
+                        <tr className="bg-surface-soft/40 animate-in slide-in-from-top-1 duration-200">
+                           <td colSpan={6} className="px-12 py-4">
+                              <div className="card border-line bg-white shadow-inner rounded-xl overflow-hidden">
+                                 <table className="w-full">
+                                    <thead className="bg-ink/5"><tr><th className="text-[9px] font-black uppercase p-2 text-left">Emisión</th><th className="text-[9px] font-black uppercase p-2 text-left">Vencimiento</th><th className="text-[9px] font-black uppercase p-2 text-right">Saldo USD</th><th className="text-[9px] font-black uppercase p-2 text-center">Acciones</th></tr></thead>
+                                    <tbody>{group.debts.map(d => (<tr key={d.id} className="border-b border-line/20"><td className="text-[10px] font-black p-2">{Utils.fmtFecha(d.fecha)}</td><td className={`text-[10px] font-black p-2 ${d.saldoUSD > 0.001 && d.fechaVencimiento < Utils.hoy() ? 'text-status-danger' : 'text-ink'}`}>{d.fechaVencimiento === '2099-12-31' ? 'ABIERTA' : Utils.fmtFecha(d.fechaVencimiento)}</td><td className="text-[10px] font-black p-2 text-right text-brand-gold-deep">{Utils.fmtUSD(d.saldoUSD)}</td><td className="p-2 text-center"><div className="flex justify-center gap-2"><button onClick={() => setShowDetails(d)} className="w-8 h-8 rounded-full flex items-center justify-center text-status-success hover:bg-status-success/10"><Eye className="w-4 h-4"/></button><button onClick={() => { setShowAbonoModal(d); }} className="btn btn-sm btn-primary h-7 px-3 text-[8px] uppercase">Abonar</button></div></td></tr>))}</tbody>
+                                 </table>
+                              </div>
+                           </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : (
+        <ReturnsModule state={state} updateState={updateState} onBackToPOS={() => setView('pos')} terminalId={currentTerminal?.id} />
+      )}
+
+      {priceSelectorItem && (
+        <div className="modal show" style={{ zIndex: 120 }}><div className="modal-bg" onClick={() => setPriceSelectorItem(null)}></div>
+          <div className="modal-box max-w-sm bg-white border-2 border-line rounded-2xl overflow-hidden shadow-2xl">
+            <div className="modal-head py-3 px-5 border-b border-line bg-ink text-white flex justify-between items-center">
+              <h3 className="font-black text-xs uppercase tracking-widest flex items-center gap-2">
+                <Tag className="w-4 h-4 text-brand-gold" /> Selección de Tarifa
+              </h3>
+              <button onClick={() => setPriceSelectorItem(null)}><X className="w-4 h-4" /></button>
+            </div>
+            <div className="modal-body p-6 space-y-4">
+               <p className="text-[10px] font-black uppercase text-ink/40 text-center tracking-tighter">{priceSelectorItem.product.nombre}</p>
+               
+               <div className="grid grid-cols-1 gap-2">
+                  <button onClick={() => handlePriceChange(priceSelectorItem.index, priceSelectorItem.product.precioUSD)} className="flex justify-between items-center p-4 bg-surface-soft border border-line rounded-xl hover:border-brand-gold transition-all group">
+                    <span className="text-xs font-black text-ink uppercase">Precio Estándar</span>
+                    <span className="text-sm font-black text-ink group-hover:text-brand-gold-deep">{Utils.fmtUSD(priceSelectorItem.product.precioUSD)}</span>
+                  </button>
+                  
+                  {priceSelectorItem.product.precioMayorUSD && priceSelectorItem.product.precioMayorUSD > 0 && (
+                    <button onClick={() => handlePriceChange(priceSelectorItem.index, priceSelectorItem.product.precioMayorUSD!)} className="flex justify-between items-center p-4 bg-brand-gold-soft/20 border border-brand-gold/20 rounded-xl hover:border-brand-gold transition-all group">
+                      <span className="text-xs font-black text-brand-gold-deep uppercase">Precio al Mayor</span>
+                      <span className="text-sm font-black text-brand-gold-deep">{Utils.fmtUSD(priceSelectorItem.product.precioMayorUSD)}</span>
+                    </button>
+                  )}
+
+                  {priceSelectorItem.product.precioOfertaUSD && priceSelectorItem.product.precioOfertaUSD > 0 && (
+                    <button onClick={() => handlePriceChange(priceSelectorItem.index, priceSelectorItem.product.precioOfertaUSD!)} className="flex justify-between items-center p-4 bg-status-success-soft/20 border border-status-success/20 rounded-xl hover:border-status-success transition-all group">
+                      <span className="text-xs font-black text-status-success uppercase">Precio Oferta</span>
+                      <span className="text-sm font-black text-status-success">{Utils.fmtUSD(priceSelectorItem.product.precioOfertaUSD)}</span>
+                    </button>
+                  )}
+
+                  {priceSelectorItem.product.precioPromoUSD && priceSelectorItem.product.precioPromoUSD > 0 && (
+                    <button onClick={() => handlePriceChange(priceSelectorItem.index, priceSelectorItem.product.precioPromoUSD!)} className="flex justify-between items-center p-4 bg-status-info-soft/20 border border-status-info/20 rounded-xl hover:border-status-info transition-all group">
+                      <span className="text-xs font-black text-status-info uppercase">Precio Promoción</span>
+                      <span className="text-sm font-black text-status-info">{Utils.fmtUSD(priceSelectorItem.product.precioPromoUSD)}</span>
+                    </button>
+                  )}
+               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {globalCreditCustomer && (
+        <FloatingPaymentModal
+          total={globalCreditCustomer.totalBS}
+          totalCents={Math.round(globalCreditCustomer.totalBS * 100)}
+          exchangeRate={state.tasa}
+          allowPartial={true}
+          onClose={() => setGlobalCreditCustomer(null)}
+          onConfirm={(data) => { void handleProcessGlobalCreditPayment(data.payments); }}
+        />
+      )}
+      {showReceiptModal && (
+        <ReceiptModal 
+          isOpen={showReceiptModal} 
+          onClose={() => { 
+            setShowReceiptModal(false); 
+            setLastProcessedSale(null); 
+          }} 
+          saleData={lastProcessedSale} 
+          type="SALE" 
+        />
+      )}
+      
+      {showReportType && reportSnapshot && (
+        <ReceiptModal 
+          isOpen={!!showReportType} 
+          onClose={() => { 
+            if (showReportType === 'REPORT_Z') ejecutarCierreZ(); 
+            setShowReportType(null); 
+          }} 
+          reportData={reportSnapshot} 
+          type={showReportType} 
+        />
+      )}
+      
+      {showMultiModal && (
+        <FloatingPaymentModal 
+          total={totalBS} 
+          totalCents={Math.round(totalBS * 100)} 
+          exchangeRate={state.tasa} 
+          onClose={() => setShowMultiModal(false)} 
+          onConfirm={(data) => { 
+            ejecutarVenta(data.payments.map(p => ({ 
+              metodo: p.method as PaymentMethod, 
+              montoUSD: p.usdAmount || (p.amount / state.tasa), 
+              montoBS: p.amount 
+            }))); 
+            setShowMultiModal(false); 
+          }} 
+        />
+      )}
+      
+      {showAbonoModal && (
+        <FloatingPaymentModal 
+          total={showAbonoModal.saldoUSD * state.tasa} 
+          totalCents={Math.round(showAbonoModal.saldoUSD * state.tasa * 100)} 
+          exchangeRate={state.tasa} 
+          onClose={() => setShowAbonoModal(null)} 
+          allowPartial={true} 
+          onConfirm={(data) => { 
+            ejecutarAbono(data.payments.map(p => ({ 
+              metodo: p.method as PaymentMethod, 
+              montoUSD: p.usdAmount || (p.amount / state.tasa), 
+              montoBS: p.amount 
+            }))); 
+          }} 
+        />
+      )}
+
+      {showSaleDetail && (
+        <div className="modal show" style={{ zIndex: 115 }}><div className="modal-bg" onClick={() => setShowSaleDetail(null)}></div>
+          <div className="modal-box max-w-[620px] bg-white border-2 border-line rounded-xl overflow-hidden shadow-2xl">
+            <div className="modal-head py-4 px-6 border-b border-line bg-ink flex justify-between items-center text-white">
+              <h3 className="font-black text-xs uppercase italic tracking-tighter flex items-center gap-2">
+                <Receipt className="w-5 h-5 text-brand-gold" /> AUDITORÍA DE VENTA: {showSaleDetail.id}
+              </h3>
+              <button onClick={() => setShowSaleDetail(null)} className="text-white hover:text-brand-gold"><X className="w-5 h-5"/></button>
+            </div>
+            <div className="modal-body p-6 space-y-5 max-h-[75vh] overflow-y-auto bg-white">
+              <div className="grid grid-cols-3 gap-3">
+                <div className="p-3 bg-surface-soft rounded-lg border border-line">
+                  <label className="text-[8px] font-black uppercase text-ink block mb-1">Fecha</label>
+                  <p className="text-sm font-black text-ink">{Utils.fmtFecha(showSaleDetail.fecha)}</p>
+                </div>
+                <div className="p-3 bg-surface-soft rounded-lg border border-line">
+                  <label className="text-[8px] font-black uppercase text-ink block mb-1">Cliente</label>
+                  <p className="text-sm font-black text-ink uppercase truncate">{showSaleDetail.cliente || 'Consumidor final'}</p>
+                </div>
+                <div className="p-3 bg-brand-gold-soft border border-brand-gold/20 rounded-lg">
+                  <label className="text-[8px] font-black uppercase text-brand-gold-deep block mb-1">Total USD</label>
+                  <p className="text-lg font-black text-brand-gold-deep">{Number(showSaleDetail.totalUSD) > 0 && Number(showSaleDetail.totalUSD) < 0.01 ? '
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div className="p-3 bg-surface-soft rounded-lg border border-line">
+                  <label className="text-[8px] font-black uppercase text-ink block mb-1">Tipo</label>
+                  <p className="text-[10px] font-black text-ink uppercase">{showSaleDetail.type || 'VENTA'}</p>
+                </div>
+                <div className="p-3 bg-surface-soft rounded-lg border border-line">
+                  <label className="text-[8px] font-black uppercase text-ink block mb-1">Método</label>
+                  <p className="text-[10px] font-black text-ink uppercase">{Utils.metodoLabel(showSaleDetail.metodoPago)}</p>
+                </div>
+                <div className="p-3 bg-surface-soft rounded-lg border border-line">
+                  <label className="text-[8px] font-black uppercase text-ink block mb-1">Estado</label>
+                  <p className="text-[10px] font-black uppercase"><span className={`badge ${showSaleDetail.estado === 'pendiente' ? 'badge-warn' : (showSaleDetail.estado === 'anulada' ? 'badge-err' : 'badge-ok')} font-black text-[9px] uppercase`}>{showSaleDetail.estado}</span></p>
+                </div>
+              </div>
+
+              <div className="space-y-3 animate-in slide-in-from-top-2 duration-300">
+                <div className="flex justify-between items-center border-b border-line pb-2">
+                  <h4 className="text-[10px] font-black uppercase text-ink tracking-[0.2em]">DESGLOSE DE ÍTEMS</h4>
+                  <span className="text-[9px] font-black text-ink uppercase">{showSaleDetail.items?.length || 0} ítems</span>
+                </div>
+                <div className="bg-surface-soft/50 rounded-lg overflow-hidden border border-line/30">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="bg-ink/5">
+                        <th className="text-[8px] font-black uppercase p-2 text-left">Cant</th>
+                        <th className="text-[8px] font-black uppercase p-2 text-left">Descripción</th>
+                        <th className="text-[8px] font-black uppercase p-2 text-right">P. Unit</th>
+                        <th className="text-[8px] font-black uppercase p-2 text-right">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(!showSaleDetail.items || showSaleDetail.items.length === 0) ? (
+                        <tr><td colSpan={4} className="text-center py-10 text-ink font-black uppercase italic text-[10px]">Sin desglose de ítems disponible para esta referencia</td></tr>
+                      ) : showSaleDetail.items.map((it: any, idx: number) => (
+                        <tr key={idx} className="border-b border-line/20">
+                          <td className="text-[9px] font-black p-2">{it.cantidad}</td>
+                          <td className="text-[9px] font-black uppercase p-2 truncate max-w-[220px]">{it.nombre}</td>
+                          <td className="text-[9px] font-black p-2 text-right">{Utils.fmtUSD(it.precioUnitUSD)}</td>
+                          <td className="text-[9px] font-black p-2 text-right text-brand-gold-deep">{Utils.fmtUSD(it.subtotalUSD)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div className="modal-foot p-4 bg-surface-soft border-t border-line text-right">
+              <button onClick={() => setShowSaleDetail(null)} className="btn btn-primary px-8 font-black uppercase text-[10px] rounded-lg shadow-md">Cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showDetails && (
+        <div className="modal show" style={{ zIndex: 110 }}><div className="modal-bg" onClick={() => setShowDetails(null)}></div>
+          <div className="modal-box max-w-[600px] bg-white border-2 border-line rounded-xl overflow-hidden shadow-2xl">
+            <div className="modal-head py-4 px-6 border-b border-line bg-ink flex justify-between items-center text-white">
+              <h3 className="font-black text-xs uppercase italic tracking-tighter flex items-center gap-2">
+                <Receipt className="w-5 h-5 text-brand-gold" /> HISTORIAL DETALLADO: {showDetails.id}
+              </h3>
+              <button onClick={() => setShowDetails(null)} className="text-white hover:text-brand-gold"><X className="w-5 h-5"/></button>
+            </div>
+            <div className="modal-body p-6 space-y-6 max-h-[75vh] overflow-y-auto bg-white">
+              <div className="grid grid-cols-2 gap-4">
+                 <div className="p-3 bg-surface-soft rounded-lg border border-line">
+                    <label className="text-[8px] font-black uppercase text-ink block mb-1">Monto Original</label>
+                    <p className="text-lg font-black text-ink">{Utils.fmtUSD(showDetails.montoUSD)}</p>
+                    <p className="text-xs font-bold text-ink/60">{Utils.fmtBS(showDetails.montoBS || (Number(showDetails.montoUSD || 0) * Number(showDetails.tasaInicial || state.tasa)))}</p>
+                 </div>
+                 <div className="p-3 bg-brand-gold-soft border border-brand-gold/20 rounded-lg">
+                    <label className="text-[8px] font-black uppercase text-brand-gold-deep block mb-1">Saldo Actual</label>
+                    <p className="text-lg font-black text-brand-gold-deep">{Utils.fmtUSD(showDetails.saldoUSD)}</p>
+                    <p className="text-xs font-bold text-brand-gold-deep/70">{Utils.fmtBS(showDetails.saldoBS ?? (Number(showDetails.saldoUSD || 0) * Number(state.tasa)))}</p>
+                 </div>
+              </div>
+
+              {(() => {
+                const sale = state.ventas.find(v => v.id === showDetails.ventaId || v.id === showDetails.id);
+                if (!sale) return null;
+                return (
+                  <div className="space-y-3 animate-in slide-in-from-top-2 duration-300">
+                    <div className="flex justify-between items-center border-b border-line pb-2">
+                       <h4 className="text-[10px] font-black uppercase text-ink tracking-[0.2em]">DETALLE DE COMPRA ORIGINAL</h4>
+                       <span className="text-[9px] font-black text-ink uppercase">{Utils.fmtFecha(sale.fecha)}</span>
+                    </div>
+                    <div className="bg-surface-soft/50 rounded-lg overflow-hidden border border-line/30">
+                       <table className="w-full">
+                          <thead>
+                            <tr className="bg-ink/5">
+                               <th className="text-[8px] font-black uppercase p-2 text-left">Cant</th>
+                               <th className="text-[8px] font-black uppercase p-2 text-left">Descripción</th>
+                               <th className="text-[8px] font-black uppercase p-2 text-right">P. Unit</th>
+                               <th className="text-[8px] font-black uppercase p-2 text-right">Total</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {sale.items.map((it: any, idx: number) => (
+                              <tr key={idx} className="border-b border-line/20">
+                                 <td className="text-[9px] font-black p-2">{it.cantidad}</td>
+                                 <td className="text-[9px] font-black uppercase p-2 truncate max-w-[180px]">{it.nombre}</td>
+                                 <td className="text-[9px] font-black p-2 text-right">{Utils.fmtUSD(it.precioUnitUSD)}</td>
+                                 <td className="text-[9px] font-black p-2 text-right text-brand-gold-deep">{Utils.fmtUSD(it.subtotalUSD)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                       </table>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              <div className="space-y-3">
+                 <h4 className="text-[10px] font-black uppercase text-ink tracking-[0.2em] border-b border-line pb-2">CRONOLOGÍA DE ABONOS</h4>
+                 <div className="max-h-[200px] overflow-y-auto space-y-2 pr-1">
+                    {(!showDetails.historialPagos || showDetails.historialPagos.length === 0) ? (
+                      <div className="py-10 text-center text-ink font-black uppercase italic text-[10px]">No se han registrado abonos aún</div>
+                    ) : (
+                      showDetails.historialPagos.map((p: any, idx: number) => (
+                        <div key={idx} className="flex justify-between items-center p-3 bg-surface-soft border border-line rounded-lg">
+                           <div className="space-y-0.5">
+                              <p className="text-[10px] font-black text-ink uppercase">{Utils.fmtFecha(p.fecha)}</p>
+                              <p className="text-[8px] font-black text-ink mono">REF: {p.reciboId}</p>
+                           </div>
+                           <div className="text-right">
+                              <p className="text-xs font-black text-status-success">+{Number(p.montoUSD) > 0 && Number(p.montoUSD) < 0.01 ? '
+                           </div>
+                        </div>
+                      ))
+                    )}
+                 </div>
+              </div>
+            </div>
+            <div className="modal-foot p-4 bg-surface-soft border-t border-line text-right">
+               <button onClick={() => setShowDetails(null)} className="btn btn-primary px-8 font-black uppercase text-[10px] rounded-lg shadow-md">Cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showClientHistory && (
+        <div className="modal show" style={{ zIndex: 105 }}><div className="modal-bg" onClick={() => setShowClientHistory(null)}></div>
+          <div className={`modal-box max-w-4xl bg-white border-2 border-line rounded-xl overflow-hidden shadow-2xl transition-all ${showDetails ? 'blur-sm scale-95 opacity-40 pointer-events-none' : ''}`}>
+            <div className="modal-head py-4 px-6 border-b border-line bg-ink flex justify-between items-center text-white">
+              <h3 className="font-black uppercase italic tracking-tighter text-xs flex items-center gap-2">
+                <Contact className="w-5 h-5 text-brand-gold" /> ESTADO DE CUENTA MAESTRO: {showClientHistory}
+              </h3>
+              <button onClick={() => setShowClientHistory(null)} className="text-white hover:text-brand-gold"><X className="w-5 h-5"/></button>
+            </div>
+            <div className="modal-body p-0 max-h-[70vh] overflow-y-auto bg-white">
+               <div className="table-wrap">
+                  <table className="w-full">
+                    <thead className="bg-surface-soft sticky top-0 z-10">
+                      <tr>
+                        <th className="text-[9px] font-black uppercase p-4 text-left">Fecha</th>
+                        <th className="text-[9px] font-black uppercase p-4 text-left">ID Documento</th>
+                        <th className="text-[9px] font-black uppercase p-4 text-right">Monto Total</th>
+                        <th className="text-[9px] font-black uppercase p-4 text-right">Abonado</th>
+                        <th className="text-[9px] font-black uppercase p-4 text-right">Saldo Pend.</th>
+                        <th className="text-[9px] font-black uppercase p-4 text-center">Estado</th>
+                        <th className="text-[9px] font-black uppercase p-4 text-center">Auditoría</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {state.cxc.filter(d => d.cliente === showClientHistory).sort((a,b) => b.fecha.localeCompare(a.fecha)).map(d => (
+                        <tr key={d.id} className="border-b border-line/30 hover:bg-surface-warm/20 transition-colors">
+                          <td className="p-4 text-xs font-black">{Utils.fmtFecha(d.fecha)}</td>
+                          <td className="p-4 text-xs font-black mono">{d.id}</td>
+                          <td className="p-4 text-right text-xs font-black">{Utils.fmtUSD(d.montoUSD)}</td>
+                          <td className="p-4 text-right text-xs font-black text-status-success">{Utils.fmtUSD(d.abonadoUSD)}</td>
+                          <td className="p-4 text-right text-sm font-black text-brand-gold-deep">{Utils.fmtUSD(d.saldoUSD)}</td>
+                          <td className="p-4 text-center">
+                            <span className={`badge ${d.estado === 'pagada' ? 'badge-ok' : (d.estado === 'parcial' ? 'badge-info' : 'badge-warn')} font-black text-[8px] uppercase px-3`}>
+                              {d.estado}
+                            </span>
+                          </td>
+                          <td className="p-4 text-center">
+                             <button onClick={() => setShowDetails(d)} className="w-10 h-10 rounded-full flex items-center justify-center bg-white text-status-success border-2 border-status-success/20 hover:bg-status-success hover:text-white transition-all shadow-md"><Eye className="w-5 h-5"/></button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+               </div>
+            </div>
+            <div className="modal-foot p-4 bg-surface-soft border-t border-line text-right">
+               <button onClick={() => setShowClientHistory(null)} className="btn btn-primary px-8 font-black uppercase text-[10px] rounded-lg shadow-md">Cerrar Historial</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showPosAdjustment && (
+        <div className="fixed inset-0 z-[170] bg-black/60 flex items-center justify-center p-4 animate-in fade-in-50">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border-2 border-line">
+            <div className="px-5 py-4 bg-surface-soft border-b border-line flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-black uppercase text-ink">Ajustar inventario</h3>
+                <p className="text-[9px] text-ink/50 font-bold uppercase mt-1">{currentTerminal?.nombre || 'Caja activa'}</p>
+              </div>
+              <button onClick={() => setShowPosAdjustment(false)} disabled={savingAdjustment} className="p-1 text-ink/60 hover:text-ink"><X className="w-5 h-5"/></button>
+            </div>
+            <div className="p-5 space-y-4 max-h-[75vh] overflow-y-auto">
+              <div>
+                <label className="text-[10px] font-black uppercase text-ink/60 block mb-1">Buscar producto</label>
+                <input value={adjustmentSearch} onChange={e => { setAdjustmentSearch(e.target.value); setAdjustmentProductId(''); }} className="w-full h-11 px-4 bg-white border border-line rounded-xl text-sm font-bold outline-none focus:border-brand-gold" placeholder="Nombre, código o código de barras"/>
+                <div className="mt-1 max-h-36 overflow-y-auto rounded-lg border border-line divide-y divide-line">
+                  {(state.productos || []).filter(p => p.activo && adjustmentSearch.trim().length > 0 && [p.nombre, p.codigo, p.barcode, p.internalCode, p.alternateCode, p.supplierCode].some(value => String(value || '').toLocaleLowerCase('es').includes(adjustmentSearch.trim().toLocaleLowerCase('es')))).slice(0,8).map(p => (
+                    <button type="button" key={p.id} onClick={() => { setAdjustmentProductId(p.id); setAdjustmentSearch(p.nombre); }} className={`w-full p-3 text-left flex justify-between items-center hover:bg-brand-gold-soft ${adjustmentProductId === p.id ? 'bg-brand-gold-soft' : 'bg-white'}`}>
+                      <span className="text-xs font-black uppercase text-ink min-w-0 truncate">{p.nombre}<span className="block text-[9px] text-ink/50">{p.codigo || p.barcode || p.internalCode || 'Sin código'}</span></span>
+                      <span className="text-xs font-bold text-ink/60 shrink-0 ml-2">Stock: {p.stock}</span>
+                    </button>
+                  ))}
+                </div>
+                {adjustmentProductId && <p className="text-[10px] font-bold text-status-success mt-1">Seleccionado · Existencia: {state.productos.find(p => p.id === adjustmentProductId)?.stock ?? '—'}</p>}
+                {adjustmentSearch.trim().length > 0 && !adjustmentProductId && !(state.productos || []).some(p => p.activo && [p.nombre, p.codigo, p.barcode, p.internalCode, p.alternateCode, p.supplierCode].some(value => String(value || '').toLocaleLowerCase('es').includes(adjustmentSearch.trim().toLocaleLowerCase('es')))) && <p className="text-[10px] text-status-danger mt-1">No se encontraron productos activos.</p>}
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-black uppercase text-ink/60 block mb-1">Tipo / motivo</label>
+                  <select value={adjustmentType} onChange={e => setAdjustmentType(e.target.value as any)} className="form-select h-11 w-full text-xs font-bold">
+                    <option value="consumo">Consumo propio</option>
+                    <option value="colaboracion">Colaboración</option>
+                    <option value="ajuste_salida">Salida (−)</option>
+                    <option value="ajuste_entrada">Entrada (+)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] font-black uppercase text-ink/60 block mb-1">Cantidad</label>
+                  <input inputMode="decimal" value={adjustmentQty} onChange={e => setAdjustmentQty(e.target.value.replace(/[^0-9.,]/g,''))} className="w-full h-11 px-3 border border-line rounded-xl text-center font-black"/>
+                </div>
+              </div>
+              <div>
+                <label className="text-[10px] font-black uppercase text-ink/60 block mb-1">Detalle del motivo</label>
+                <input value={adjustmentDetail} onChange={e => setAdjustmentDetail(e.target.value)} className="w-full h-11 px-4 border border-line rounded-xl text-xs font-bold uppercase" placeholder="Ej.: consumo de administración, colaboración..."/>
+              </div>
+              <button disabled={savingAdjustment || !adjustmentProductId || !(Number(String(adjustmentQty).replace(',','.')) > 0) || !adjustmentDetail.trim()} onClick={async () => {
+                const product = (state.productos || []).find(p => p.id === adjustmentProductId);
+                const qty = Number(String(adjustmentQty).replace(',','.'));
+                if (!product || !currentTerminal?.id || !Utils.getTerminalCash(currentTerminal).isCashOpen || !Number.isFinite(qty) || qty <= 0) {
+                  toast({ variant: 'destructive', title: 'Caja no disponible', description: 'Debe existir una caja identificada y abierta para registrar el ajuste.' });
+                  return;
+                }
+                const signedQty = adjustmentType === 'ajuste_entrada' ? qty : -qty;
+                if (signedQty < 0 && Number(product.stock) < qty) {
+                  toast({ variant: 'destructive', title: 'Existencia insuficiente', description: 'No se puede registrar una salida superior al stock disponible.' });
+                  return;
+                }
+                setSavingAdjustment(true);
+                try {
+                  const movement: Movimiento = {
+                    id: Store.uid(), productoId: product.id, tipo: adjustmentType,
+                    cantidad: signedQty, stockAntes: Number(product.stock) || 0,
+                    stockDespues: (Number(product.stock) || 0) + signedQty,
+                    fecha: Utils.ahora(),
+                    referencia: (adjustmentType === 'consumo' ? 'CONSUMO PROPIO | ' : adjustmentType === 'colaboracion' ? 'COLABORACION | ' : 'AJUSTE | ') + adjustmentDetail.trim().toUpperCase(),
+                    terminalId: currentTerminal.id
+                  };
+                  await Store.applyInventoryMovementsTransaction({
+                    operationId: 'POS-AJUSTE-' + Store.uid(),
+                    operationType: 'AJUSTE-INVENTARIO-POS',
+                    movements: [movement],
+                    productPatches: {}
+                  });
+                  toast({ title: 'Ajuste registrado', description: 'El movimiento quedó guardado en el inventario.' });
+                  setShowPosAdjustment(false);
+                  setAdjustmentProductId('');
+                  setAdjustmentSearch('');
+                  setAdjustmentDetail('');
+                } catch (e: any) {
+                  toast({ variant: 'destructive', title: 'No se pudo registrar el ajuste', description: e?.message || 'Turso no confirmó la operación.' });
+                } finally {
+                  setSavingAdjustment(false);
+                }
+              }} className="w-full h-12 rounded-xl bg-brand-gold text-ink font-black uppercase text-xs shadow-md disabled:opacity-50">{savingAdjustment ? 'Guardando…' : 'Procesar ajuste'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* AJUSTE MANUAL DE STOCK (POS) */}
+      {/* ============================================================ */}
+      {stockEdit && (
+        <div className="fixed inset-0 bg-black/60 flex justify-center items-center z-50 p-4 animate-in fade-in-50">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xs p-5 space-y-4">
+            <div>
+              <p className="text-[10px] font-black uppercase text-gray-400 mb-1">Ajustar Stock Manual</p>
+              <p className="font-black text-sm text-ink uppercase leading-tight truncate">{stockEdit.nombre}</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={stockEditValue}
+                onChange={e => setStockEditValue(e.target.value.replace(/[^0-9.]/g, ''))}
+                onKeyDown={e => e.key === 'Enter' && guardarStockManual()}
+                className="flex-1 h-11 px-4 bg-gray-50 border border-gray-200 rounded-xl font-black focus:ring-2 focus:ring-[#D4A017] outline-none text-center text-lg"
+                autoFocus
+              />
+              <span className="text-[10px] font-black text-gray-400 uppercase">Und.</span>
+            </div>
+            <p className="text-[9px] font-bold text-gray-400 uppercase leading-tight">Stock actual: <b className="text-ink">{stockEdit.stock || 0}</b> Und.</p>
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setStockEdit(null)} className="px-4 py-2 text-gray-400 font-bold hover:text-gray-600 transition-colors text-xs uppercase">Cancelar</button>
+              <button onClick={guardarStockManual} className="px-5 py-2 bg-blue-600 text-white rounded-xl font-black text-xs uppercase hover:bg-blue-700 transition-all"><Check className="w-3.5 h-3.5 inline mr-1" />Guardar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* MODAL DE CRÉDITO - AHORA RECIBE CLIENTES Y DEUDAS PARA MOSTRAR SALDO */}
+      {/* ============================================================ */}
+      <CreditModal
+        isOpen={isCreditModalOpen}
+        onClose={() => setIsCreditModalOpen(false)}
+        onConfirm={handleCreditModalConfirm}
+        totalAmount={subtotalUSD}
+        {...({ 
+          clients: state.clientes || [], 
+          debts: state.cxc || [], 
+          initialClientName: cliente 
+        } as any)}
+      />
+    </div>
+  );
+} + Number(p.montoUSD).toFixed(4) : Utils.fmtUSD(p.montoUSD)}</p>
+                              <p className="text-[9px] font-black text-status-success">{Utils.fmtBS(p.montoBS || 0)}</p>
+                              <p className="text-[8px] font-black text-ink uppercase">{Utils.metodoLabel(p.metodo || 'otros')} · TASA {Number(p.tasaAplicada || 0).toLocaleString('es-VE')}</p>
+                           </div>
+                        </div>
+                      ))
+                    )}
+                 </div>
+              </div>
+            </div>
+            <div className="modal-foot p-4 bg-surface-soft border-t border-line text-right">
+               <button onClick={() => setShowDetails(null)} className="btn btn-primary px-8 font-black uppercase text-[10px] rounded-lg shadow-md">Cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showClientHistory && (
+        <div className="modal show" style={{ zIndex: 105 }}><div className="modal-bg" onClick={() => setShowClientHistory(null)}></div>
+          <div className={`modal-box max-w-4xl bg-white border-2 border-line rounded-xl overflow-hidden shadow-2xl transition-all ${showDetails ? 'blur-sm scale-95 opacity-40 pointer-events-none' : ''}`}>
+            <div className="modal-head py-4 px-6 border-b border-line bg-ink flex justify-between items-center text-white">
+              <h3 className="font-black uppercase italic tracking-tighter text-xs flex items-center gap-2">
+                <Contact className="w-5 h-5 text-brand-gold" /> ESTADO DE CUENTA MAESTRO: {showClientHistory}
+              </h3>
+              <button onClick={() => setShowClientHistory(null)} className="text-white hover:text-brand-gold"><X className="w-5 h-5"/></button>
+            </div>
+            <div className="modal-body p-0 max-h-[70vh] overflow-y-auto bg-white">
+               <div className="table-wrap">
+                  <table className="w-full">
+                    <thead className="bg-surface-soft sticky top-0 z-10">
+                      <tr>
+                        <th className="text-[9px] font-black uppercase p-4 text-left">Fecha</th>
+                        <th className="text-[9px] font-black uppercase p-4 text-left">ID Documento</th>
+                        <th className="text-[9px] font-black uppercase p-4 text-right">Monto Total</th>
+                        <th className="text-[9px] font-black uppercase p-4 text-right">Abonado</th>
+                        <th className="text-[9px] font-black uppercase p-4 text-right">Saldo Pend.</th>
+                        <th className="text-[9px] font-black uppercase p-4 text-center">Estado</th>
+                        <th className="text-[9px] font-black uppercase p-4 text-center">Auditoría</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {state.cxc.filter(d => d.cliente === showClientHistory).sort((a,b) => b.fecha.localeCompare(a.fecha)).map(d => (
+                        <tr key={d.id} className="border-b border-line/30 hover:bg-surface-warm/20 transition-colors">
+                          <td className="p-4 text-xs font-black">{Utils.fmtFecha(d.fecha)}</td>
+                          <td className="p-4 text-xs font-black mono">{d.id}</td>
+                          <td className="p-4 text-right text-xs font-black">{Utils.fmtUSD(d.montoUSD)}</td>
+                          <td className="p-4 text-right text-xs font-black text-status-success">{Utils.fmtUSD(d.abonadoUSD)}</td>
+                          <td className="p-4 text-right text-sm font-black text-brand-gold-deep">{Utils.fmtUSD(d.saldoUSD)}</td>
+                          <td className="p-4 text-center">
+                            <span className={`badge ${d.estado === 'pagada' ? 'badge-ok' : (d.estado === 'parcial' ? 'badge-info' : 'badge-warn')} font-black text-[8px] uppercase px-3`}>
+                              {d.estado}
+                            </span>
+                          </td>
+                          <td className="p-4 text-center">
+                             <button onClick={() => setShowDetails(d)} className="w-10 h-10 rounded-full flex items-center justify-center bg-white text-status-success border-2 border-status-success/20 hover:bg-status-success hover:text-white transition-all shadow-md"><Eye className="w-5 h-5"/></button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+               </div>
+            </div>
+            <div className="modal-foot p-4 bg-surface-soft border-t border-line text-right">
+               <button onClick={() => setShowClientHistory(null)} className="btn btn-primary px-8 font-black uppercase text-[10px] rounded-lg shadow-md">Cerrar Historial</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showPosAdjustment && (
+        <div className="fixed inset-0 z-[170] bg-black/60 flex items-center justify-center p-4 animate-in fade-in-50">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border-2 border-line">
+            <div className="px-5 py-4 bg-surface-soft border-b border-line flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-black uppercase text-ink">Ajustar inventario</h3>
+                <p className="text-[9px] text-ink/50 font-bold uppercase mt-1">{currentTerminal?.nombre || 'Caja activa'}</p>
+              </div>
+              <button onClick={() => setShowPosAdjustment(false)} disabled={savingAdjustment} className="p-1 text-ink/60 hover:text-ink"><X className="w-5 h-5"/></button>
+            </div>
+            <div className="p-5 space-y-4 max-h-[75vh] overflow-y-auto">
+              <div>
+                <label className="text-[10px] font-black uppercase text-ink/60 block mb-1">Buscar producto</label>
+                <input value={adjustmentSearch} onChange={e => { setAdjustmentSearch(e.target.value); setAdjustmentProductId(''); }} className="w-full h-11 px-4 bg-white border border-line rounded-xl text-sm font-bold outline-none focus:border-brand-gold" placeholder="Nombre, código o código de barras"/>
+                <div className="mt-1 max-h-36 overflow-y-auto rounded-lg border border-line divide-y divide-line">
+                  {(state.productos || []).filter(p => p.activo && adjustmentSearch.trim().length > 0 && [p.nombre, p.codigo, p.barcode, p.internalCode, p.alternateCode, p.supplierCode].some(value => String(value || '').toLocaleLowerCase('es').includes(adjustmentSearch.trim().toLocaleLowerCase('es')))).slice(0,8).map(p => (
+                    <button type="button" key={p.id} onClick={() => { setAdjustmentProductId(p.id); setAdjustmentSearch(p.nombre); }} className={`w-full p-3 text-left flex justify-between items-center hover:bg-brand-gold-soft ${adjustmentProductId === p.id ? 'bg-brand-gold-soft' : 'bg-white'}`}>
+                      <span className="text-xs font-black uppercase text-ink min-w-0 truncate">{p.nombre}<span className="block text-[9px] text-ink/50">{p.codigo || p.barcode || p.internalCode || 'Sin código'}</span></span>
+                      <span className="text-xs font-bold text-ink/60 shrink-0 ml-2">Stock: {p.stock}</span>
+                    </button>
+                  ))}
+                </div>
+                {adjustmentProductId && <p className="text-[10px] font-bold text-status-success mt-1">Seleccionado · Existencia: {state.productos.find(p => p.id === adjustmentProductId)?.stock ?? '—'}</p>}
+                {adjustmentSearch.trim().length > 0 && !adjustmentProductId && !(state.productos || []).some(p => p.activo && [p.nombre, p.codigo, p.barcode, p.internalCode, p.alternateCode, p.supplierCode].some(value => String(value || '').toLocaleLowerCase('es').includes(adjustmentSearch.trim().toLocaleLowerCase('es')))) && <p className="text-[10px] text-status-danger mt-1">No se encontraron productos activos.</p>}
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-black uppercase text-ink/60 block mb-1">Tipo / motivo</label>
+                  <select value={adjustmentType} onChange={e => setAdjustmentType(e.target.value as any)} className="form-select h-11 w-full text-xs font-bold">
+                    <option value="consumo">Consumo propio</option>
+                    <option value="colaboracion">Colaboración</option>
+                    <option value="ajuste_salida">Salida (−)</option>
+                    <option value="ajuste_entrada">Entrada (+)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] font-black uppercase text-ink/60 block mb-1">Cantidad</label>
+                  <input inputMode="decimal" value={adjustmentQty} onChange={e => setAdjustmentQty(e.target.value.replace(/[^0-9.,]/g,''))} className="w-full h-11 px-3 border border-line rounded-xl text-center font-black"/>
+                </div>
+              </div>
+              <div>
+                <label className="text-[10px] font-black uppercase text-ink/60 block mb-1">Detalle del motivo</label>
+                <input value={adjustmentDetail} onChange={e => setAdjustmentDetail(e.target.value)} className="w-full h-11 px-4 border border-line rounded-xl text-xs font-bold uppercase" placeholder="Ej.: consumo de administración, colaboración..."/>
+              </div>
+              <button disabled={savingAdjustment || !adjustmentProductId || !(Number(String(adjustmentQty).replace(',','.')) > 0) || !adjustmentDetail.trim()} onClick={async () => {
+                const product = (state.productos || []).find(p => p.id === adjustmentProductId);
+                const qty = Number(String(adjustmentQty).replace(',','.'));
+                if (!product || !currentTerminal?.id || !Utils.getTerminalCash(currentTerminal).isCashOpen || !Number.isFinite(qty) || qty <= 0) {
+                  toast({ variant: 'destructive', title: 'Caja no disponible', description: 'Debe existir una caja identificada y abierta para registrar el ajuste.' });
+                  return;
+                }
+                const signedQty = adjustmentType === 'ajuste_entrada' ? qty : -qty;
+                if (signedQty < 0 && Number(product.stock) < qty) {
+                  toast({ variant: 'destructive', title: 'Existencia insuficiente', description: 'No se puede registrar una salida superior al stock disponible.' });
+                  return;
+                }
+                setSavingAdjustment(true);
+                try {
+                  const movement: Movimiento = {
+                    id: Store.uid(), productoId: product.id, tipo: adjustmentType,
+                    cantidad: signedQty, stockAntes: Number(product.stock) || 0,
+                    stockDespues: (Number(product.stock) || 0) + signedQty,
+                    fecha: Utils.ahora(),
+                    referencia: (adjustmentType === 'consumo' ? 'CONSUMO PROPIO | ' : adjustmentType === 'colaboracion' ? 'COLABORACION | ' : 'AJUSTE | ') + adjustmentDetail.trim().toUpperCase(),
+                    terminalId: currentTerminal.id
+                  };
+                  await Store.applyInventoryMovementsTransaction({
+                    operationId: 'POS-AJUSTE-' + Store.uid(),
+                    operationType: 'AJUSTE-INVENTARIO-POS',
+                    movements: [movement],
+                    productPatches: {}
+                  });
+                  toast({ title: 'Ajuste registrado', description: 'El movimiento quedó guardado en el inventario.' });
+                  setShowPosAdjustment(false);
+                  setAdjustmentProductId('');
+                  setAdjustmentSearch('');
+                  setAdjustmentDetail('');
+                } catch (e: any) {
+                  toast({ variant: 'destructive', title: 'No se pudo registrar el ajuste', description: e?.message || 'Turso no confirmó la operación.' });
+                } finally {
+                  setSavingAdjustment(false);
+                }
+              }} className="w-full h-12 rounded-xl bg-brand-gold text-ink font-black uppercase text-xs shadow-md disabled:opacity-50">{savingAdjustment ? 'Guardando…' : 'Procesar ajuste'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* AJUSTE MANUAL DE STOCK (POS) */}
+      {/* ============================================================ */}
+      {stockEdit && (
+        <div className="fixed inset-0 bg-black/60 flex justify-center items-center z-50 p-4 animate-in fade-in-50">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xs p-5 space-y-4">
+            <div>
+              <p className="text-[10px] font-black uppercase text-gray-400 mb-1">Ajustar Stock Manual</p>
+              <p className="font-black text-sm text-ink uppercase leading-tight truncate">{stockEdit.nombre}</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={stockEditValue}
+                onChange={e => setStockEditValue(e.target.value.replace(/[^0-9.]/g, ''))}
+                onKeyDown={e => e.key === 'Enter' && guardarStockManual()}
+                className="flex-1 h-11 px-4 bg-gray-50 border border-gray-200 rounded-xl font-black focus:ring-2 focus:ring-[#D4A017] outline-none text-center text-lg"
+                autoFocus
+              />
+              <span className="text-[10px] font-black text-gray-400 uppercase">Und.</span>
+            </div>
+            <p className="text-[9px] font-bold text-gray-400 uppercase leading-tight">Stock actual: <b className="text-ink">{stockEdit.stock || 0}</b> Und.</p>
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setStockEdit(null)} className="px-4 py-2 text-gray-400 font-bold hover:text-gray-600 transition-colors text-xs uppercase">Cancelar</button>
+              <button onClick={guardarStockManual} className="px-5 py-2 bg-blue-600 text-white rounded-xl font-black text-xs uppercase hover:bg-blue-700 transition-all"><Check className="w-3.5 h-3.5 inline mr-1" />Guardar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* MODAL DE CRÉDITO - AHORA RECIBE CLIENTES Y DEUDAS PARA MOSTRAR SALDO */}
+      {/* ============================================================ */}
+      <CreditModal
+        isOpen={isCreditModalOpen}
+        onClose={() => setIsCreditModalOpen(false)}
+        onConfirm={handleCreditModalConfirm}
+        totalAmount={subtotalUSD}
+        {...({ 
+          clients: state.clientes || [], 
+          debts: state.cxc || [], 
+          initialClientName: cliente 
+        } as any)}
+      />
+    </div>
+  );
+} + Number(v.totalUSD).toFixed(4) : Utils.fmtUSD(v.totalUSD)}</td><td className="text-ink font-black text-xs text-right">{Utils.fmtBS(v.totalBS || 0)}</td><td className="text-ink font-bold text-[10px] uppercase">{Utils.metodoLabel(v.metodoPago)}</td><td className="text-center"><span className={`badge ${v.estado === 'pendiente' ? 'badge-warn' : (v.estado === 'anulada' ? 'badge-err' : 'badge-ok')} font-black text-[9px] uppercase`}>{v.estado}</span></td><td className="text-center"><button onClick={() => setShowSaleDetail(v)} className="w-7 h-7 rounded-full flex items-center justify-center text-status-success hover:bg-status-success/10 transition-colors" title="Ver ítems y detalle de venta"><Eye className="w-4 h-4" /></button></td></tr>
                 ))}
               </tbody>
             </table>
@@ -1313,10 +2045,12 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                  <div className="p-3 bg-surface-soft rounded-lg border border-line">
                     <label className="text-[8px] font-black uppercase text-ink block mb-1">Monto Original</label>
                     <p className="text-lg font-black text-ink">{Utils.fmtUSD(showDetails.montoUSD)}</p>
+                    <p className="text-xs font-bold text-ink/60">{Utils.fmtBS(showDetails.montoBS || (Number(showDetails.montoUSD || 0) * Number(showDetails.tasaInicial || state.tasa)))}</p>
                  </div>
                  <div className="p-3 bg-brand-gold-soft border border-brand-gold/20 rounded-lg">
                     <label className="text-[8px] font-black uppercase text-brand-gold-deep block mb-1">Saldo Actual</label>
                     <p className="text-lg font-black text-brand-gold-deep">{Utils.fmtUSD(showDetails.saldoUSD)}</p>
+                    <p className="text-xs font-bold text-brand-gold-deep/70">{Utils.fmtBS(showDetails.saldoBS ?? (Number(showDetails.saldoUSD || 0) * Number(state.tasa)))}</p>
                  </div>
               </div>
 
@@ -1368,8 +2102,1476 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                               <p className="text-[8px] font-black text-ink mono">REF: {p.reciboId}</p>
                            </div>
                            <div className="text-right">
-                              <p className="text-xs font-black text-status-success">+{Utils.fmtUSD(p.montoUSD)}</p>
-                              <p className="text-[8px] font-black text-ink uppercase">{Utils.metodoLabel(p.metodo || 'otros')}</p>
+                              <p className="text-xs font-black text-status-success">+{Number(p.montoUSD) > 0 && Number(p.montoUSD) < 0.01 ? '
+                           </div>
+                        </div>
+                      ))
+                    )}
+                 </div>
+              </div>
+            </div>
+            <div className="modal-foot p-4 bg-surface-soft border-t border-line text-right">
+               <button onClick={() => setShowDetails(null)} className="btn btn-primary px-8 font-black uppercase text-[10px] rounded-lg shadow-md">Cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showClientHistory && (
+        <div className="modal show" style={{ zIndex: 105 }}><div className="modal-bg" onClick={() => setShowClientHistory(null)}></div>
+          <div className={`modal-box max-w-4xl bg-white border-2 border-line rounded-xl overflow-hidden shadow-2xl transition-all ${showDetails ? 'blur-sm scale-95 opacity-40 pointer-events-none' : ''}`}>
+            <div className="modal-head py-4 px-6 border-b border-line bg-ink flex justify-between items-center text-white">
+              <h3 className="font-black uppercase italic tracking-tighter text-xs flex items-center gap-2">
+                <Contact className="w-5 h-5 text-brand-gold" /> ESTADO DE CUENTA MAESTRO: {showClientHistory}
+              </h3>
+              <button onClick={() => setShowClientHistory(null)} className="text-white hover:text-brand-gold"><X className="w-5 h-5"/></button>
+            </div>
+            <div className="modal-body p-0 max-h-[70vh] overflow-y-auto bg-white">
+               <div className="table-wrap">
+                  <table className="w-full">
+                    <thead className="bg-surface-soft sticky top-0 z-10">
+                      <tr>
+                        <th className="text-[9px] font-black uppercase p-4 text-left">Fecha</th>
+                        <th className="text-[9px] font-black uppercase p-4 text-left">ID Documento</th>
+                        <th className="text-[9px] font-black uppercase p-4 text-right">Monto Total</th>
+                        <th className="text-[9px] font-black uppercase p-4 text-right">Abonado</th>
+                        <th className="text-[9px] font-black uppercase p-4 text-right">Saldo Pend.</th>
+                        <th className="text-[9px] font-black uppercase p-4 text-center">Estado</th>
+                        <th className="text-[9px] font-black uppercase p-4 text-center">Auditoría</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {state.cxc.filter(d => d.cliente === showClientHistory).sort((a,b) => b.fecha.localeCompare(a.fecha)).map(d => (
+                        <tr key={d.id} className="border-b border-line/30 hover:bg-surface-warm/20 transition-colors">
+                          <td className="p-4 text-xs font-black">{Utils.fmtFecha(d.fecha)}</td>
+                          <td className="p-4 text-xs font-black mono">{d.id}</td>
+                          <td className="p-4 text-right text-xs font-black">{Utils.fmtUSD(d.montoUSD)}</td>
+                          <td className="p-4 text-right text-xs font-black text-status-success">{Utils.fmtUSD(d.abonadoUSD)}</td>
+                          <td className="p-4 text-right text-sm font-black text-brand-gold-deep">{Utils.fmtUSD(d.saldoUSD)}</td>
+                          <td className="p-4 text-center">
+                            <span className={`badge ${d.estado === 'pagada' ? 'badge-ok' : (d.estado === 'parcial' ? 'badge-info' : 'badge-warn')} font-black text-[8px] uppercase px-3`}>
+                              {d.estado}
+                            </span>
+                          </td>
+                          <td className="p-4 text-center">
+                             <button onClick={() => setShowDetails(d)} className="w-10 h-10 rounded-full flex items-center justify-center bg-white text-status-success border-2 border-status-success/20 hover:bg-status-success hover:text-white transition-all shadow-md"><Eye className="w-5 h-5"/></button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+               </div>
+            </div>
+            <div className="modal-foot p-4 bg-surface-soft border-t border-line text-right">
+               <button onClick={() => setShowClientHistory(null)} className="btn btn-primary px-8 font-black uppercase text-[10px] rounded-lg shadow-md">Cerrar Historial</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showPosAdjustment && (
+        <div className="fixed inset-0 z-[170] bg-black/60 flex items-center justify-center p-4 animate-in fade-in-50">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border-2 border-line">
+            <div className="px-5 py-4 bg-surface-soft border-b border-line flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-black uppercase text-ink">Ajustar inventario</h3>
+                <p className="text-[9px] text-ink/50 font-bold uppercase mt-1">{currentTerminal?.nombre || 'Caja activa'}</p>
+              </div>
+              <button onClick={() => setShowPosAdjustment(false)} disabled={savingAdjustment} className="p-1 text-ink/60 hover:text-ink"><X className="w-5 h-5"/></button>
+            </div>
+            <div className="p-5 space-y-4 max-h-[75vh] overflow-y-auto">
+              <div>
+                <label className="text-[10px] font-black uppercase text-ink/60 block mb-1">Buscar producto</label>
+                <input value={adjustmentSearch} onChange={e => { setAdjustmentSearch(e.target.value); setAdjustmentProductId(''); }} className="w-full h-11 px-4 bg-white border border-line rounded-xl text-sm font-bold outline-none focus:border-brand-gold" placeholder="Nombre, código o código de barras"/>
+                <div className="mt-1 max-h-36 overflow-y-auto rounded-lg border border-line divide-y divide-line">
+                  {(state.productos || []).filter(p => p.activo && adjustmentSearch.trim().length > 0 && [p.nombre, p.codigo, p.barcode, p.internalCode, p.alternateCode, p.supplierCode].some(value => String(value || '').toLocaleLowerCase('es').includes(adjustmentSearch.trim().toLocaleLowerCase('es')))).slice(0,8).map(p => (
+                    <button type="button" key={p.id} onClick={() => { setAdjustmentProductId(p.id); setAdjustmentSearch(p.nombre); }} className={`w-full p-3 text-left flex justify-between items-center hover:bg-brand-gold-soft ${adjustmentProductId === p.id ? 'bg-brand-gold-soft' : 'bg-white'}`}>
+                      <span className="text-xs font-black uppercase text-ink min-w-0 truncate">{p.nombre}<span className="block text-[9px] text-ink/50">{p.codigo || p.barcode || p.internalCode || 'Sin código'}</span></span>
+                      <span className="text-xs font-bold text-ink/60 shrink-0 ml-2">Stock: {p.stock}</span>
+                    </button>
+                  ))}
+                </div>
+                {adjustmentProductId && <p className="text-[10px] font-bold text-status-success mt-1">Seleccionado · Existencia: {state.productos.find(p => p.id === adjustmentProductId)?.stock ?? '—'}</p>}
+                {adjustmentSearch.trim().length > 0 && !adjustmentProductId && !(state.productos || []).some(p => p.activo && [p.nombre, p.codigo, p.barcode, p.internalCode, p.alternateCode, p.supplierCode].some(value => String(value || '').toLocaleLowerCase('es').includes(adjustmentSearch.trim().toLocaleLowerCase('es')))) && <p className="text-[10px] text-status-danger mt-1">No se encontraron productos activos.</p>}
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-black uppercase text-ink/60 block mb-1">Tipo / motivo</label>
+                  <select value={adjustmentType} onChange={e => setAdjustmentType(e.target.value as any)} className="form-select h-11 w-full text-xs font-bold">
+                    <option value="consumo">Consumo propio</option>
+                    <option value="colaboracion">Colaboración</option>
+                    <option value="ajuste_salida">Salida (−)</option>
+                    <option value="ajuste_entrada">Entrada (+)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] font-black uppercase text-ink/60 block mb-1">Cantidad</label>
+                  <input inputMode="decimal" value={adjustmentQty} onChange={e => setAdjustmentQty(e.target.value.replace(/[^0-9.,]/g,''))} className="w-full h-11 px-3 border border-line rounded-xl text-center font-black"/>
+                </div>
+              </div>
+              <div>
+                <label className="text-[10px] font-black uppercase text-ink/60 block mb-1">Detalle del motivo</label>
+                <input value={adjustmentDetail} onChange={e => setAdjustmentDetail(e.target.value)} className="w-full h-11 px-4 border border-line rounded-xl text-xs font-bold uppercase" placeholder="Ej.: consumo de administración, colaboración..."/>
+              </div>
+              <button disabled={savingAdjustment || !adjustmentProductId || !(Number(String(adjustmentQty).replace(',','.')) > 0) || !adjustmentDetail.trim()} onClick={async () => {
+                const product = (state.productos || []).find(p => p.id === adjustmentProductId);
+                const qty = Number(String(adjustmentQty).replace(',','.'));
+                if (!product || !currentTerminal?.id || !Utils.getTerminalCash(currentTerminal).isCashOpen || !Number.isFinite(qty) || qty <= 0) {
+                  toast({ variant: 'destructive', title: 'Caja no disponible', description: 'Debe existir una caja identificada y abierta para registrar el ajuste.' });
+                  return;
+                }
+                const signedQty = adjustmentType === 'ajuste_entrada' ? qty : -qty;
+                if (signedQty < 0 && Number(product.stock) < qty) {
+                  toast({ variant: 'destructive', title: 'Existencia insuficiente', description: 'No se puede registrar una salida superior al stock disponible.' });
+                  return;
+                }
+                setSavingAdjustment(true);
+                try {
+                  const movement: Movimiento = {
+                    id: Store.uid(), productoId: product.id, tipo: adjustmentType,
+                    cantidad: signedQty, stockAntes: Number(product.stock) || 0,
+                    stockDespues: (Number(product.stock) || 0) + signedQty,
+                    fecha: Utils.ahora(),
+                    referencia: (adjustmentType === 'consumo' ? 'CONSUMO PROPIO | ' : adjustmentType === 'colaboracion' ? 'COLABORACION | ' : 'AJUSTE | ') + adjustmentDetail.trim().toUpperCase(),
+                    terminalId: currentTerminal.id
+                  };
+                  await Store.applyInventoryMovementsTransaction({
+                    operationId: 'POS-AJUSTE-' + Store.uid(),
+                    operationType: 'AJUSTE-INVENTARIO-POS',
+                    movements: [movement],
+                    productPatches: {}
+                  });
+                  toast({ title: 'Ajuste registrado', description: 'El movimiento quedó guardado en el inventario.' });
+                  setShowPosAdjustment(false);
+                  setAdjustmentProductId('');
+                  setAdjustmentSearch('');
+                  setAdjustmentDetail('');
+                } catch (e: any) {
+                  toast({ variant: 'destructive', title: 'No se pudo registrar el ajuste', description: e?.message || 'Turso no confirmó la operación.' });
+                } finally {
+                  setSavingAdjustment(false);
+                }
+              }} className="w-full h-12 rounded-xl bg-brand-gold text-ink font-black uppercase text-xs shadow-md disabled:opacity-50">{savingAdjustment ? 'Guardando…' : 'Procesar ajuste'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* AJUSTE MANUAL DE STOCK (POS) */}
+      {/* ============================================================ */}
+      {stockEdit && (
+        <div className="fixed inset-0 bg-black/60 flex justify-center items-center z-50 p-4 animate-in fade-in-50">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xs p-5 space-y-4">
+            <div>
+              <p className="text-[10px] font-black uppercase text-gray-400 mb-1">Ajustar Stock Manual</p>
+              <p className="font-black text-sm text-ink uppercase leading-tight truncate">{stockEdit.nombre}</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={stockEditValue}
+                onChange={e => setStockEditValue(e.target.value.replace(/[^0-9.]/g, ''))}
+                onKeyDown={e => e.key === 'Enter' && guardarStockManual()}
+                className="flex-1 h-11 px-4 bg-gray-50 border border-gray-200 rounded-xl font-black focus:ring-2 focus:ring-[#D4A017] outline-none text-center text-lg"
+                autoFocus
+              />
+              <span className="text-[10px] font-black text-gray-400 uppercase">Und.</span>
+            </div>
+            <p className="text-[9px] font-bold text-gray-400 uppercase leading-tight">Stock actual: <b className="text-ink">{stockEdit.stock || 0}</b> Und.</p>
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setStockEdit(null)} className="px-4 py-2 text-gray-400 font-bold hover:text-gray-600 transition-colors text-xs uppercase">Cancelar</button>
+              <button onClick={guardarStockManual} className="px-5 py-2 bg-blue-600 text-white rounded-xl font-black text-xs uppercase hover:bg-blue-700 transition-all"><Check className="w-3.5 h-3.5 inline mr-1" />Guardar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* MODAL DE CRÉDITO - AHORA RECIBE CLIENTES Y DEUDAS PARA MOSTRAR SALDO */}
+      {/* ============================================================ */}
+      <CreditModal
+        isOpen={isCreditModalOpen}
+        onClose={() => setIsCreditModalOpen(false)}
+        onConfirm={handleCreditModalConfirm}
+        totalAmount={subtotalUSD}
+        {...({ 
+          clients: state.clientes || [], 
+          debts: state.cxc || [], 
+          initialClientName: cliente 
+        } as any)}
+      />
+    </div>
+  );
+} + Number(p.montoUSD).toFixed(4) : Utils.fmtUSD(p.montoUSD)}</p>
+                              <p className="text-[9px] font-black text-status-success">{Utils.fmtBS(p.montoBS || 0)}</p>
+                              <p className="text-[8px] font-black text-ink uppercase">{Utils.metodoLabel(p.metodo || 'otros')} · TASA {Number(p.tasaAplicada || 0).toLocaleString('es-VE')}</p>
+                           </div>
+                        </div>
+                      ))
+                    )}
+                 </div>
+              </div>
+            </div>
+            <div className="modal-foot p-4 bg-surface-soft border-t border-line text-right">
+               <button onClick={() => setShowDetails(null)} className="btn btn-primary px-8 font-black uppercase text-[10px] rounded-lg shadow-md">Cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showClientHistory && (
+        <div className="modal show" style={{ zIndex: 105 }}><div className="modal-bg" onClick={() => setShowClientHistory(null)}></div>
+          <div className={`modal-box max-w-4xl bg-white border-2 border-line rounded-xl overflow-hidden shadow-2xl transition-all ${showDetails ? 'blur-sm scale-95 opacity-40 pointer-events-none' : ''}`}>
+            <div className="modal-head py-4 px-6 border-b border-line bg-ink flex justify-between items-center text-white">
+              <h3 className="font-black uppercase italic tracking-tighter text-xs flex items-center gap-2">
+                <Contact className="w-5 h-5 text-brand-gold" /> ESTADO DE CUENTA MAESTRO: {showClientHistory}
+              </h3>
+              <button onClick={() => setShowClientHistory(null)} className="text-white hover:text-brand-gold"><X className="w-5 h-5"/></button>
+            </div>
+            <div className="modal-body p-0 max-h-[70vh] overflow-y-auto bg-white">
+               <div className="table-wrap">
+                  <table className="w-full">
+                    <thead className="bg-surface-soft sticky top-0 z-10">
+                      <tr>
+                        <th className="text-[9px] font-black uppercase p-4 text-left">Fecha</th>
+                        <th className="text-[9px] font-black uppercase p-4 text-left">ID Documento</th>
+                        <th className="text-[9px] font-black uppercase p-4 text-right">Monto Total</th>
+                        <th className="text-[9px] font-black uppercase p-4 text-right">Abonado</th>
+                        <th className="text-[9px] font-black uppercase p-4 text-right">Saldo Pend.</th>
+                        <th className="text-[9px] font-black uppercase p-4 text-center">Estado</th>
+                        <th className="text-[9px] font-black uppercase p-4 text-center">Auditoría</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {state.cxc.filter(d => d.cliente === showClientHistory).sort((a,b) => b.fecha.localeCompare(a.fecha)).map(d => (
+                        <tr key={d.id} className="border-b border-line/30 hover:bg-surface-warm/20 transition-colors">
+                          <td className="p-4 text-xs font-black">{Utils.fmtFecha(d.fecha)}</td>
+                          <td className="p-4 text-xs font-black mono">{d.id}</td>
+                          <td className="p-4 text-right text-xs font-black">{Utils.fmtUSD(d.montoUSD)}</td>
+                          <td className="p-4 text-right text-xs font-black text-status-success">{Utils.fmtUSD(d.abonadoUSD)}</td>
+                          <td className="p-4 text-right text-sm font-black text-brand-gold-deep">{Utils.fmtUSD(d.saldoUSD)}</td>
+                          <td className="p-4 text-center">
+                            <span className={`badge ${d.estado === 'pagada' ? 'badge-ok' : (d.estado === 'parcial' ? 'badge-info' : 'badge-warn')} font-black text-[8px] uppercase px-3`}>
+                              {d.estado}
+                            </span>
+                          </td>
+                          <td className="p-4 text-center">
+                             <button onClick={() => setShowDetails(d)} className="w-10 h-10 rounded-full flex items-center justify-center bg-white text-status-success border-2 border-status-success/20 hover:bg-status-success hover:text-white transition-all shadow-md"><Eye className="w-5 h-5"/></button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+               </div>
+            </div>
+            <div className="modal-foot p-4 bg-surface-soft border-t border-line text-right">
+               <button onClick={() => setShowClientHistory(null)} className="btn btn-primary px-8 font-black uppercase text-[10px] rounded-lg shadow-md">Cerrar Historial</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showPosAdjustment && (
+        <div className="fixed inset-0 z-[170] bg-black/60 flex items-center justify-center p-4 animate-in fade-in-50">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border-2 border-line">
+            <div className="px-5 py-4 bg-surface-soft border-b border-line flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-black uppercase text-ink">Ajustar inventario</h3>
+                <p className="text-[9px] text-ink/50 font-bold uppercase mt-1">{currentTerminal?.nombre || 'Caja activa'}</p>
+              </div>
+              <button onClick={() => setShowPosAdjustment(false)} disabled={savingAdjustment} className="p-1 text-ink/60 hover:text-ink"><X className="w-5 h-5"/></button>
+            </div>
+            <div className="p-5 space-y-4 max-h-[75vh] overflow-y-auto">
+              <div>
+                <label className="text-[10px] font-black uppercase text-ink/60 block mb-1">Buscar producto</label>
+                <input value={adjustmentSearch} onChange={e => { setAdjustmentSearch(e.target.value); setAdjustmentProductId(''); }} className="w-full h-11 px-4 bg-white border border-line rounded-xl text-sm font-bold outline-none focus:border-brand-gold" placeholder="Nombre, código o código de barras"/>
+                <div className="mt-1 max-h-36 overflow-y-auto rounded-lg border border-line divide-y divide-line">
+                  {(state.productos || []).filter(p => p.activo && adjustmentSearch.trim().length > 0 && [p.nombre, p.codigo, p.barcode, p.internalCode, p.alternateCode, p.supplierCode].some(value => String(value || '').toLocaleLowerCase('es').includes(adjustmentSearch.trim().toLocaleLowerCase('es')))).slice(0,8).map(p => (
+                    <button type="button" key={p.id} onClick={() => { setAdjustmentProductId(p.id); setAdjustmentSearch(p.nombre); }} className={`w-full p-3 text-left flex justify-between items-center hover:bg-brand-gold-soft ${adjustmentProductId === p.id ? 'bg-brand-gold-soft' : 'bg-white'}`}>
+                      <span className="text-xs font-black uppercase text-ink min-w-0 truncate">{p.nombre}<span className="block text-[9px] text-ink/50">{p.codigo || p.barcode || p.internalCode || 'Sin código'}</span></span>
+                      <span className="text-xs font-bold text-ink/60 shrink-0 ml-2">Stock: {p.stock}</span>
+                    </button>
+                  ))}
+                </div>
+                {adjustmentProductId && <p className="text-[10px] font-bold text-status-success mt-1">Seleccionado · Existencia: {state.productos.find(p => p.id === adjustmentProductId)?.stock ?? '—'}</p>}
+                {adjustmentSearch.trim().length > 0 && !adjustmentProductId && !(state.productos || []).some(p => p.activo && [p.nombre, p.codigo, p.barcode, p.internalCode, p.alternateCode, p.supplierCode].some(value => String(value || '').toLocaleLowerCase('es').includes(adjustmentSearch.trim().toLocaleLowerCase('es')))) && <p className="text-[10px] text-status-danger mt-1">No se encontraron productos activos.</p>}
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-black uppercase text-ink/60 block mb-1">Tipo / motivo</label>
+                  <select value={adjustmentType} onChange={e => setAdjustmentType(e.target.value as any)} className="form-select h-11 w-full text-xs font-bold">
+                    <option value="consumo">Consumo propio</option>
+                    <option value="colaboracion">Colaboración</option>
+                    <option value="ajuste_salida">Salida (−)</option>
+                    <option value="ajuste_entrada">Entrada (+)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] font-black uppercase text-ink/60 block mb-1">Cantidad</label>
+                  <input inputMode="decimal" value={adjustmentQty} onChange={e => setAdjustmentQty(e.target.value.replace(/[^0-9.,]/g,''))} className="w-full h-11 px-3 border border-line rounded-xl text-center font-black"/>
+                </div>
+              </div>
+              <div>
+                <label className="text-[10px] font-black uppercase text-ink/60 block mb-1">Detalle del motivo</label>
+                <input value={adjustmentDetail} onChange={e => setAdjustmentDetail(e.target.value)} className="w-full h-11 px-4 border border-line rounded-xl text-xs font-bold uppercase" placeholder="Ej.: consumo de administración, colaboración..."/>
+              </div>
+              <button disabled={savingAdjustment || !adjustmentProductId || !(Number(String(adjustmentQty).replace(',','.')) > 0) || !adjustmentDetail.trim()} onClick={async () => {
+                const product = (state.productos || []).find(p => p.id === adjustmentProductId);
+                const qty = Number(String(adjustmentQty).replace(',','.'));
+                if (!product || !currentTerminal?.id || !Utils.getTerminalCash(currentTerminal).isCashOpen || !Number.isFinite(qty) || qty <= 0) {
+                  toast({ variant: 'destructive', title: 'Caja no disponible', description: 'Debe existir una caja identificada y abierta para registrar el ajuste.' });
+                  return;
+                }
+                const signedQty = adjustmentType === 'ajuste_entrada' ? qty : -qty;
+                if (signedQty < 0 && Number(product.stock) < qty) {
+                  toast({ variant: 'destructive', title: 'Existencia insuficiente', description: 'No se puede registrar una salida superior al stock disponible.' });
+                  return;
+                }
+                setSavingAdjustment(true);
+                try {
+                  const movement: Movimiento = {
+                    id: Store.uid(), productoId: product.id, tipo: adjustmentType,
+                    cantidad: signedQty, stockAntes: Number(product.stock) || 0,
+                    stockDespues: (Number(product.stock) || 0) + signedQty,
+                    fecha: Utils.ahora(),
+                    referencia: (adjustmentType === 'consumo' ? 'CONSUMO PROPIO | ' : adjustmentType === 'colaboracion' ? 'COLABORACION | ' : 'AJUSTE | ') + adjustmentDetail.trim().toUpperCase(),
+                    terminalId: currentTerminal.id
+                  };
+                  await Store.applyInventoryMovementsTransaction({
+                    operationId: 'POS-AJUSTE-' + Store.uid(),
+                    operationType: 'AJUSTE-INVENTARIO-POS',
+                    movements: [movement],
+                    productPatches: {}
+                  });
+                  toast({ title: 'Ajuste registrado', description: 'El movimiento quedó guardado en el inventario.' });
+                  setShowPosAdjustment(false);
+                  setAdjustmentProductId('');
+                  setAdjustmentSearch('');
+                  setAdjustmentDetail('');
+                } catch (e: any) {
+                  toast({ variant: 'destructive', title: 'No se pudo registrar el ajuste', description: e?.message || 'Turso no confirmó la operación.' });
+                } finally {
+                  setSavingAdjustment(false);
+                }
+              }} className="w-full h-12 rounded-xl bg-brand-gold text-ink font-black uppercase text-xs shadow-md disabled:opacity-50">{savingAdjustment ? 'Guardando…' : 'Procesar ajuste'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* AJUSTE MANUAL DE STOCK (POS) */}
+      {/* ============================================================ */}
+      {stockEdit && (
+        <div className="fixed inset-0 bg-black/60 flex justify-center items-center z-50 p-4 animate-in fade-in-50">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xs p-5 space-y-4">
+            <div>
+              <p className="text-[10px] font-black uppercase text-gray-400 mb-1">Ajustar Stock Manual</p>
+              <p className="font-black text-sm text-ink uppercase leading-tight truncate">{stockEdit.nombre}</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={stockEditValue}
+                onChange={e => setStockEditValue(e.target.value.replace(/[^0-9.]/g, ''))}
+                onKeyDown={e => e.key === 'Enter' && guardarStockManual()}
+                className="flex-1 h-11 px-4 bg-gray-50 border border-gray-200 rounded-xl font-black focus:ring-2 focus:ring-[#D4A017] outline-none text-center text-lg"
+                autoFocus
+              />
+              <span className="text-[10px] font-black text-gray-400 uppercase">Und.</span>
+            </div>
+            <p className="text-[9px] font-bold text-gray-400 uppercase leading-tight">Stock actual: <b className="text-ink">{stockEdit.stock || 0}</b> Und.</p>
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setStockEdit(null)} className="px-4 py-2 text-gray-400 font-bold hover:text-gray-600 transition-colors text-xs uppercase">Cancelar</button>
+              <button onClick={guardarStockManual} className="px-5 py-2 bg-blue-600 text-white rounded-xl font-black text-xs uppercase hover:bg-blue-700 transition-all"><Check className="w-3.5 h-3.5 inline mr-1" />Guardar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* MODAL DE CRÉDITO - AHORA RECIBE CLIENTES Y DEUDAS PARA MOSTRAR SALDO */}
+      {/* ============================================================ */}
+      <CreditModal
+        isOpen={isCreditModalOpen}
+        onClose={() => setIsCreditModalOpen(false)}
+        onConfirm={handleCreditModalConfirm}
+        totalAmount={subtotalUSD}
+        {...({ 
+          clients: state.clientes || [], 
+          debts: state.cxc || [], 
+          initialClientName: cliente 
+        } as any)}
+      />
+    </div>
+  );
+} + Number(showSaleDetail.totalUSD).toFixed(4) : Utils.fmtUSD(showSaleDetail.totalUSD)}</p>
+                  <p className="text-xs font-bold text-brand-gold-deep/70">{Utils.fmtBS(showSaleDetail.totalBS || 0)}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div className="p-3 bg-surface-soft rounded-lg border border-line">
+                  <label className="text-[8px] font-black uppercase text-ink block mb-1">Tipo</label>
+                  <p className="text-[10px] font-black text-ink uppercase">{showSaleDetail.type || 'VENTA'}</p>
+                </div>
+                <div className="p-3 bg-surface-soft rounded-lg border border-line">
+                  <label className="text-[8px] font-black uppercase text-ink block mb-1">Método</label>
+                  <p className="text-[10px] font-black text-ink uppercase">{Utils.metodoLabel(showSaleDetail.metodoPago)}</p>
+                </div>
+                <div className="p-3 bg-surface-soft rounded-lg border border-line">
+                  <label className="text-[8px] font-black uppercase text-ink block mb-1">Estado</label>
+                  <p className="text-[10px] font-black uppercase"><span className={`badge ${showSaleDetail.estado === 'pendiente' ? 'badge-warn' : (showSaleDetail.estado === 'anulada' ? 'badge-err' : 'badge-ok')} font-black text-[9px] uppercase`}>{showSaleDetail.estado}</span></p>
+                </div>
+              </div>
+
+              <div className="space-y-3 animate-in slide-in-from-top-2 duration-300">
+                <div className="flex justify-between items-center border-b border-line pb-2">
+                  <h4 className="text-[10px] font-black uppercase text-ink tracking-[0.2em]">DESGLOSE DE ÍTEMS</h4>
+                  <span className="text-[9px] font-black text-ink uppercase">{showSaleDetail.items?.length || 0} ítems</span>
+                </div>
+                <div className="bg-surface-soft/50 rounded-lg overflow-hidden border border-line/30">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="bg-ink/5">
+                        <th className="text-[8px] font-black uppercase p-2 text-left">Cant</th>
+                        <th className="text-[8px] font-black uppercase p-2 text-left">Descripción</th>
+                        <th className="text-[8px] font-black uppercase p-2 text-right">P. Unit</th>
+                        <th className="text-[8px] font-black uppercase p-2 text-right">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(!showSaleDetail.items || showSaleDetail.items.length === 0) ? (
+                        <tr><td colSpan={4} className="text-center py-10 text-ink font-black uppercase italic text-[10px]">Sin desglose de ítems disponible para esta referencia</td></tr>
+                      ) : showSaleDetail.items.map((it: any, idx: number) => (
+                        <tr key={idx} className="border-b border-line/20">
+                          <td className="text-[9px] font-black p-2">{it.cantidad}</td>
+                          <td className="text-[9px] font-black uppercase p-2 truncate max-w-[220px]">{it.nombre}</td>
+                          <td className="text-[9px] font-black p-2 text-right">{Utils.fmtUSD(it.precioUnitUSD)}</td>
+                          <td className="text-[9px] font-black p-2 text-right text-brand-gold-deep">{Utils.fmtUSD(it.subtotalUSD)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div className="modal-foot p-4 bg-surface-soft border-t border-line text-right">
+              <button onClick={() => setShowSaleDetail(null)} className="btn btn-primary px-8 font-black uppercase text-[10px] rounded-lg shadow-md">Cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showDetails && (
+        <div className="modal show" style={{ zIndex: 110 }}><div className="modal-bg" onClick={() => setShowDetails(null)}></div>
+          <div className="modal-box max-w-[600px] bg-white border-2 border-line rounded-xl overflow-hidden shadow-2xl">
+            <div className="modal-head py-4 px-6 border-b border-line bg-ink flex justify-between items-center text-white">
+              <h3 className="font-black text-xs uppercase italic tracking-tighter flex items-center gap-2">
+                <Receipt className="w-5 h-5 text-brand-gold" /> HISTORIAL DETALLADO: {showDetails.id}
+              </h3>
+              <button onClick={() => setShowDetails(null)} className="text-white hover:text-brand-gold"><X className="w-5 h-5"/></button>
+            </div>
+            <div className="modal-body p-6 space-y-6 max-h-[75vh] overflow-y-auto bg-white">
+              <div className="grid grid-cols-2 gap-4">
+                 <div className="p-3 bg-surface-soft rounded-lg border border-line">
+                    <label className="text-[8px] font-black uppercase text-ink block mb-1">Monto Original</label>
+                    <p className="text-lg font-black text-ink">{Utils.fmtUSD(showDetails.montoUSD)}</p>
+                    <p className="text-xs font-bold text-ink/60">{Utils.fmtBS(showDetails.montoBS || (Number(showDetails.montoUSD || 0) * Number(showDetails.tasaInicial || state.tasa)))}</p>
+                 </div>
+                 <div className="p-3 bg-brand-gold-soft border border-brand-gold/20 rounded-lg">
+                    <label className="text-[8px] font-black uppercase text-brand-gold-deep block mb-1">Saldo Actual</label>
+                    <p className="text-lg font-black text-brand-gold-deep">{Utils.fmtUSD(showDetails.saldoUSD)}</p>
+                    <p className="text-xs font-bold text-brand-gold-deep/70">{Utils.fmtBS(showDetails.saldoBS ?? (Number(showDetails.saldoUSD || 0) * Number(state.tasa)))}</p>
+                 </div>
+              </div>
+
+              {(() => {
+                const sale = state.ventas.find(v => v.id === showDetails.ventaId || v.id === showDetails.id);
+                if (!sale) return null;
+                return (
+                  <div className="space-y-3 animate-in slide-in-from-top-2 duration-300">
+                    <div className="flex justify-between items-center border-b border-line pb-2">
+                       <h4 className="text-[10px] font-black uppercase text-ink tracking-[0.2em]">DETALLE DE COMPRA ORIGINAL</h4>
+                       <span className="text-[9px] font-black text-ink uppercase">{Utils.fmtFecha(sale.fecha)}</span>
+                    </div>
+                    <div className="bg-surface-soft/50 rounded-lg overflow-hidden border border-line/30">
+                       <table className="w-full">
+                          <thead>
+                            <tr className="bg-ink/5">
+                               <th className="text-[8px] font-black uppercase p-2 text-left">Cant</th>
+                               <th className="text-[8px] font-black uppercase p-2 text-left">Descripción</th>
+                               <th className="text-[8px] font-black uppercase p-2 text-right">P. Unit</th>
+                               <th className="text-[8px] font-black uppercase p-2 text-right">Total</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {sale.items.map((it: any, idx: number) => (
+                              <tr key={idx} className="border-b border-line/20">
+                                 <td className="text-[9px] font-black p-2">{it.cantidad}</td>
+                                 <td className="text-[9px] font-black uppercase p-2 truncate max-w-[180px]">{it.nombre}</td>
+                                 <td className="text-[9px] font-black p-2 text-right">{Utils.fmtUSD(it.precioUnitUSD)}</td>
+                                 <td className="text-[9px] font-black p-2 text-right text-brand-gold-deep">{Utils.fmtUSD(it.subtotalUSD)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                       </table>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              <div className="space-y-3">
+                 <h4 className="text-[10px] font-black uppercase text-ink tracking-[0.2em] border-b border-line pb-2">CRONOLOGÍA DE ABONOS</h4>
+                 <div className="max-h-[200px] overflow-y-auto space-y-2 pr-1">
+                    {(!showDetails.historialPagos || showDetails.historialPagos.length === 0) ? (
+                      <div className="py-10 text-center text-ink font-black uppercase italic text-[10px]">No se han registrado abonos aún</div>
+                    ) : (
+                      showDetails.historialPagos.map((p: any, idx: number) => (
+                        <div key={idx} className="flex justify-between items-center p-3 bg-surface-soft border border-line rounded-lg">
+                           <div className="space-y-0.5">
+                              <p className="text-[10px] font-black text-ink uppercase">{Utils.fmtFecha(p.fecha)}</p>
+                              <p className="text-[8px] font-black text-ink mono">REF: {p.reciboId}</p>
+                           </div>
+                           <div className="text-right">
+                              <p className="text-xs font-black text-status-success">+{Number(p.montoUSD) > 0 && Number(p.montoUSD) < 0.01 ? '
+                           </div>
+                        </div>
+                      ))
+                    )}
+                 </div>
+              </div>
+            </div>
+            <div className="modal-foot p-4 bg-surface-soft border-t border-line text-right">
+               <button onClick={() => setShowDetails(null)} className="btn btn-primary px-8 font-black uppercase text-[10px] rounded-lg shadow-md">Cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showClientHistory && (
+        <div className="modal show" style={{ zIndex: 105 }}><div className="modal-bg" onClick={() => setShowClientHistory(null)}></div>
+          <div className={`modal-box max-w-4xl bg-white border-2 border-line rounded-xl overflow-hidden shadow-2xl transition-all ${showDetails ? 'blur-sm scale-95 opacity-40 pointer-events-none' : ''}`}>
+            <div className="modal-head py-4 px-6 border-b border-line bg-ink flex justify-between items-center text-white">
+              <h3 className="font-black uppercase italic tracking-tighter text-xs flex items-center gap-2">
+                <Contact className="w-5 h-5 text-brand-gold" /> ESTADO DE CUENTA MAESTRO: {showClientHistory}
+              </h3>
+              <button onClick={() => setShowClientHistory(null)} className="text-white hover:text-brand-gold"><X className="w-5 h-5"/></button>
+            </div>
+            <div className="modal-body p-0 max-h-[70vh] overflow-y-auto bg-white">
+               <div className="table-wrap">
+                  <table className="w-full">
+                    <thead className="bg-surface-soft sticky top-0 z-10">
+                      <tr>
+                        <th className="text-[9px] font-black uppercase p-4 text-left">Fecha</th>
+                        <th className="text-[9px] font-black uppercase p-4 text-left">ID Documento</th>
+                        <th className="text-[9px] font-black uppercase p-4 text-right">Monto Total</th>
+                        <th className="text-[9px] font-black uppercase p-4 text-right">Abonado</th>
+                        <th className="text-[9px] font-black uppercase p-4 text-right">Saldo Pend.</th>
+                        <th className="text-[9px] font-black uppercase p-4 text-center">Estado</th>
+                        <th className="text-[9px] font-black uppercase p-4 text-center">Auditoría</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {state.cxc.filter(d => d.cliente === showClientHistory).sort((a,b) => b.fecha.localeCompare(a.fecha)).map(d => (
+                        <tr key={d.id} className="border-b border-line/30 hover:bg-surface-warm/20 transition-colors">
+                          <td className="p-4 text-xs font-black">{Utils.fmtFecha(d.fecha)}</td>
+                          <td className="p-4 text-xs font-black mono">{d.id}</td>
+                          <td className="p-4 text-right text-xs font-black">{Utils.fmtUSD(d.montoUSD)}</td>
+                          <td className="p-4 text-right text-xs font-black text-status-success">{Utils.fmtUSD(d.abonadoUSD)}</td>
+                          <td className="p-4 text-right text-sm font-black text-brand-gold-deep">{Utils.fmtUSD(d.saldoUSD)}</td>
+                          <td className="p-4 text-center">
+                            <span className={`badge ${d.estado === 'pagada' ? 'badge-ok' : (d.estado === 'parcial' ? 'badge-info' : 'badge-warn')} font-black text-[8px] uppercase px-3`}>
+                              {d.estado}
+                            </span>
+                          </td>
+                          <td className="p-4 text-center">
+                             <button onClick={() => setShowDetails(d)} className="w-10 h-10 rounded-full flex items-center justify-center bg-white text-status-success border-2 border-status-success/20 hover:bg-status-success hover:text-white transition-all shadow-md"><Eye className="w-5 h-5"/></button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+               </div>
+            </div>
+            <div className="modal-foot p-4 bg-surface-soft border-t border-line text-right">
+               <button onClick={() => setShowClientHistory(null)} className="btn btn-primary px-8 font-black uppercase text-[10px] rounded-lg shadow-md">Cerrar Historial</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showPosAdjustment && (
+        <div className="fixed inset-0 z-[170] bg-black/60 flex items-center justify-center p-4 animate-in fade-in-50">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border-2 border-line">
+            <div className="px-5 py-4 bg-surface-soft border-b border-line flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-black uppercase text-ink">Ajustar inventario</h3>
+                <p className="text-[9px] text-ink/50 font-bold uppercase mt-1">{currentTerminal?.nombre || 'Caja activa'}</p>
+              </div>
+              <button onClick={() => setShowPosAdjustment(false)} disabled={savingAdjustment} className="p-1 text-ink/60 hover:text-ink"><X className="w-5 h-5"/></button>
+            </div>
+            <div className="p-5 space-y-4 max-h-[75vh] overflow-y-auto">
+              <div>
+                <label className="text-[10px] font-black uppercase text-ink/60 block mb-1">Buscar producto</label>
+                <input value={adjustmentSearch} onChange={e => { setAdjustmentSearch(e.target.value); setAdjustmentProductId(''); }} className="w-full h-11 px-4 bg-white border border-line rounded-xl text-sm font-bold outline-none focus:border-brand-gold" placeholder="Nombre, código o código de barras"/>
+                <div className="mt-1 max-h-36 overflow-y-auto rounded-lg border border-line divide-y divide-line">
+                  {(state.productos || []).filter(p => p.activo && adjustmentSearch.trim().length > 0 && [p.nombre, p.codigo, p.barcode, p.internalCode, p.alternateCode, p.supplierCode].some(value => String(value || '').toLocaleLowerCase('es').includes(adjustmentSearch.trim().toLocaleLowerCase('es')))).slice(0,8).map(p => (
+                    <button type="button" key={p.id} onClick={() => { setAdjustmentProductId(p.id); setAdjustmentSearch(p.nombre); }} className={`w-full p-3 text-left flex justify-between items-center hover:bg-brand-gold-soft ${adjustmentProductId === p.id ? 'bg-brand-gold-soft' : 'bg-white'}`}>
+                      <span className="text-xs font-black uppercase text-ink min-w-0 truncate">{p.nombre}<span className="block text-[9px] text-ink/50">{p.codigo || p.barcode || p.internalCode || 'Sin código'}</span></span>
+                      <span className="text-xs font-bold text-ink/60 shrink-0 ml-2">Stock: {p.stock}</span>
+                    </button>
+                  ))}
+                </div>
+                {adjustmentProductId && <p className="text-[10px] font-bold text-status-success mt-1">Seleccionado · Existencia: {state.productos.find(p => p.id === adjustmentProductId)?.stock ?? '—'}</p>}
+                {adjustmentSearch.trim().length > 0 && !adjustmentProductId && !(state.productos || []).some(p => p.activo && [p.nombre, p.codigo, p.barcode, p.internalCode, p.alternateCode, p.supplierCode].some(value => String(value || '').toLocaleLowerCase('es').includes(adjustmentSearch.trim().toLocaleLowerCase('es')))) && <p className="text-[10px] text-status-danger mt-1">No se encontraron productos activos.</p>}
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-black uppercase text-ink/60 block mb-1">Tipo / motivo</label>
+                  <select value={adjustmentType} onChange={e => setAdjustmentType(e.target.value as any)} className="form-select h-11 w-full text-xs font-bold">
+                    <option value="consumo">Consumo propio</option>
+                    <option value="colaboracion">Colaboración</option>
+                    <option value="ajuste_salida">Salida (−)</option>
+                    <option value="ajuste_entrada">Entrada (+)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] font-black uppercase text-ink/60 block mb-1">Cantidad</label>
+                  <input inputMode="decimal" value={adjustmentQty} onChange={e => setAdjustmentQty(e.target.value.replace(/[^0-9.,]/g,''))} className="w-full h-11 px-3 border border-line rounded-xl text-center font-black"/>
+                </div>
+              </div>
+              <div>
+                <label className="text-[10px] font-black uppercase text-ink/60 block mb-1">Detalle del motivo</label>
+                <input value={adjustmentDetail} onChange={e => setAdjustmentDetail(e.target.value)} className="w-full h-11 px-4 border border-line rounded-xl text-xs font-bold uppercase" placeholder="Ej.: consumo de administración, colaboración..."/>
+              </div>
+              <button disabled={savingAdjustment || !adjustmentProductId || !(Number(String(adjustmentQty).replace(',','.')) > 0) || !adjustmentDetail.trim()} onClick={async () => {
+                const product = (state.productos || []).find(p => p.id === adjustmentProductId);
+                const qty = Number(String(adjustmentQty).replace(',','.'));
+                if (!product || !currentTerminal?.id || !Utils.getTerminalCash(currentTerminal).isCashOpen || !Number.isFinite(qty) || qty <= 0) {
+                  toast({ variant: 'destructive', title: 'Caja no disponible', description: 'Debe existir una caja identificada y abierta para registrar el ajuste.' });
+                  return;
+                }
+                const signedQty = adjustmentType === 'ajuste_entrada' ? qty : -qty;
+                if (signedQty < 0 && Number(product.stock) < qty) {
+                  toast({ variant: 'destructive', title: 'Existencia insuficiente', description: 'No se puede registrar una salida superior al stock disponible.' });
+                  return;
+                }
+                setSavingAdjustment(true);
+                try {
+                  const movement: Movimiento = {
+                    id: Store.uid(), productoId: product.id, tipo: adjustmentType,
+                    cantidad: signedQty, stockAntes: Number(product.stock) || 0,
+                    stockDespues: (Number(product.stock) || 0) + signedQty,
+                    fecha: Utils.ahora(),
+                    referencia: (adjustmentType === 'consumo' ? 'CONSUMO PROPIO | ' : adjustmentType === 'colaboracion' ? 'COLABORACION | ' : 'AJUSTE | ') + adjustmentDetail.trim().toUpperCase(),
+                    terminalId: currentTerminal.id
+                  };
+                  await Store.applyInventoryMovementsTransaction({
+                    operationId: 'POS-AJUSTE-' + Store.uid(),
+                    operationType: 'AJUSTE-INVENTARIO-POS',
+                    movements: [movement],
+                    productPatches: {}
+                  });
+                  toast({ title: 'Ajuste registrado', description: 'El movimiento quedó guardado en el inventario.' });
+                  setShowPosAdjustment(false);
+                  setAdjustmentProductId('');
+                  setAdjustmentSearch('');
+                  setAdjustmentDetail('');
+                } catch (e: any) {
+                  toast({ variant: 'destructive', title: 'No se pudo registrar el ajuste', description: e?.message || 'Turso no confirmó la operación.' });
+                } finally {
+                  setSavingAdjustment(false);
+                }
+              }} className="w-full h-12 rounded-xl bg-brand-gold text-ink font-black uppercase text-xs shadow-md disabled:opacity-50">{savingAdjustment ? 'Guardando…' : 'Procesar ajuste'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* AJUSTE MANUAL DE STOCK (POS) */}
+      {/* ============================================================ */}
+      {stockEdit && (
+        <div className="fixed inset-0 bg-black/60 flex justify-center items-center z-50 p-4 animate-in fade-in-50">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xs p-5 space-y-4">
+            <div>
+              <p className="text-[10px] font-black uppercase text-gray-400 mb-1">Ajustar Stock Manual</p>
+              <p className="font-black text-sm text-ink uppercase leading-tight truncate">{stockEdit.nombre}</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={stockEditValue}
+                onChange={e => setStockEditValue(e.target.value.replace(/[^0-9.]/g, ''))}
+                onKeyDown={e => e.key === 'Enter' && guardarStockManual()}
+                className="flex-1 h-11 px-4 bg-gray-50 border border-gray-200 rounded-xl font-black focus:ring-2 focus:ring-[#D4A017] outline-none text-center text-lg"
+                autoFocus
+              />
+              <span className="text-[10px] font-black text-gray-400 uppercase">Und.</span>
+            </div>
+            <p className="text-[9px] font-bold text-gray-400 uppercase leading-tight">Stock actual: <b className="text-ink">{stockEdit.stock || 0}</b> Und.</p>
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setStockEdit(null)} className="px-4 py-2 text-gray-400 font-bold hover:text-gray-600 transition-colors text-xs uppercase">Cancelar</button>
+              <button onClick={guardarStockManual} className="px-5 py-2 bg-blue-600 text-white rounded-xl font-black text-xs uppercase hover:bg-blue-700 transition-all"><Check className="w-3.5 h-3.5 inline mr-1" />Guardar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* MODAL DE CRÉDITO - AHORA RECIBE CLIENTES Y DEUDAS PARA MOSTRAR SALDO */}
+      {/* ============================================================ */}
+      <CreditModal
+        isOpen={isCreditModalOpen}
+        onClose={() => setIsCreditModalOpen(false)}
+        onConfirm={handleCreditModalConfirm}
+        totalAmount={subtotalUSD}
+        {...({ 
+          clients: state.clientes || [], 
+          debts: state.cxc || [], 
+          initialClientName: cliente 
+        } as any)}
+      />
+    </div>
+  );
+} + Number(p.montoUSD).toFixed(4) : Utils.fmtUSD(p.montoUSD)}</p>
+                              <p className="text-[9px] font-black text-status-success">{Utils.fmtBS(p.montoBS || 0)}</p>
+                              <p className="text-[8px] font-black text-ink uppercase">{Utils.metodoLabel(p.metodo || 'otros')} · TASA {Number(p.tasaAplicada || 0).toLocaleString('es-VE')}</p>
+                           </div>
+                        </div>
+                      ))
+                    )}
+                 </div>
+              </div>
+            </div>
+            <div className="modal-foot p-4 bg-surface-soft border-t border-line text-right">
+               <button onClick={() => setShowDetails(null)} className="btn btn-primary px-8 font-black uppercase text-[10px] rounded-lg shadow-md">Cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showClientHistory && (
+        <div className="modal show" style={{ zIndex: 105 }}><div className="modal-bg" onClick={() => setShowClientHistory(null)}></div>
+          <div className={`modal-box max-w-4xl bg-white border-2 border-line rounded-xl overflow-hidden shadow-2xl transition-all ${showDetails ? 'blur-sm scale-95 opacity-40 pointer-events-none' : ''}`}>
+            <div className="modal-head py-4 px-6 border-b border-line bg-ink flex justify-between items-center text-white">
+              <h3 className="font-black uppercase italic tracking-tighter text-xs flex items-center gap-2">
+                <Contact className="w-5 h-5 text-brand-gold" /> ESTADO DE CUENTA MAESTRO: {showClientHistory}
+              </h3>
+              <button onClick={() => setShowClientHistory(null)} className="text-white hover:text-brand-gold"><X className="w-5 h-5"/></button>
+            </div>
+            <div className="modal-body p-0 max-h-[70vh] overflow-y-auto bg-white">
+               <div className="table-wrap">
+                  <table className="w-full">
+                    <thead className="bg-surface-soft sticky top-0 z-10">
+                      <tr>
+                        <th className="text-[9px] font-black uppercase p-4 text-left">Fecha</th>
+                        <th className="text-[9px] font-black uppercase p-4 text-left">ID Documento</th>
+                        <th className="text-[9px] font-black uppercase p-4 text-right">Monto Total</th>
+                        <th className="text-[9px] font-black uppercase p-4 text-right">Abonado</th>
+                        <th className="text-[9px] font-black uppercase p-4 text-right">Saldo Pend.</th>
+                        <th className="text-[9px] font-black uppercase p-4 text-center">Estado</th>
+                        <th className="text-[9px] font-black uppercase p-4 text-center">Auditoría</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {state.cxc.filter(d => d.cliente === showClientHistory).sort((a,b) => b.fecha.localeCompare(a.fecha)).map(d => (
+                        <tr key={d.id} className="border-b border-line/30 hover:bg-surface-warm/20 transition-colors">
+                          <td className="p-4 text-xs font-black">{Utils.fmtFecha(d.fecha)}</td>
+                          <td className="p-4 text-xs font-black mono">{d.id}</td>
+                          <td className="p-4 text-right text-xs font-black">{Utils.fmtUSD(d.montoUSD)}</td>
+                          <td className="p-4 text-right text-xs font-black text-status-success">{Utils.fmtUSD(d.abonadoUSD)}</td>
+                          <td className="p-4 text-right text-sm font-black text-brand-gold-deep">{Utils.fmtUSD(d.saldoUSD)}</td>
+                          <td className="p-4 text-center">
+                            <span className={`badge ${d.estado === 'pagada' ? 'badge-ok' : (d.estado === 'parcial' ? 'badge-info' : 'badge-warn')} font-black text-[8px] uppercase px-3`}>
+                              {d.estado}
+                            </span>
+                          </td>
+                          <td className="p-4 text-center">
+                             <button onClick={() => setShowDetails(d)} className="w-10 h-10 rounded-full flex items-center justify-center bg-white text-status-success border-2 border-status-success/20 hover:bg-status-success hover:text-white transition-all shadow-md"><Eye className="w-5 h-5"/></button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+               </div>
+            </div>
+            <div className="modal-foot p-4 bg-surface-soft border-t border-line text-right">
+               <button onClick={() => setShowClientHistory(null)} className="btn btn-primary px-8 font-black uppercase text-[10px] rounded-lg shadow-md">Cerrar Historial</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showPosAdjustment && (
+        <div className="fixed inset-0 z-[170] bg-black/60 flex items-center justify-center p-4 animate-in fade-in-50">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border-2 border-line">
+            <div className="px-5 py-4 bg-surface-soft border-b border-line flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-black uppercase text-ink">Ajustar inventario</h3>
+                <p className="text-[9px] text-ink/50 font-bold uppercase mt-1">{currentTerminal?.nombre || 'Caja activa'}</p>
+              </div>
+              <button onClick={() => setShowPosAdjustment(false)} disabled={savingAdjustment} className="p-1 text-ink/60 hover:text-ink"><X className="w-5 h-5"/></button>
+            </div>
+            <div className="p-5 space-y-4 max-h-[75vh] overflow-y-auto">
+              <div>
+                <label className="text-[10px] font-black uppercase text-ink/60 block mb-1">Buscar producto</label>
+                <input value={adjustmentSearch} onChange={e => { setAdjustmentSearch(e.target.value); setAdjustmentProductId(''); }} className="w-full h-11 px-4 bg-white border border-line rounded-xl text-sm font-bold outline-none focus:border-brand-gold" placeholder="Nombre, código o código de barras"/>
+                <div className="mt-1 max-h-36 overflow-y-auto rounded-lg border border-line divide-y divide-line">
+                  {(state.productos || []).filter(p => p.activo && adjustmentSearch.trim().length > 0 && [p.nombre, p.codigo, p.barcode, p.internalCode, p.alternateCode, p.supplierCode].some(value => String(value || '').toLocaleLowerCase('es').includes(adjustmentSearch.trim().toLocaleLowerCase('es')))).slice(0,8).map(p => (
+                    <button type="button" key={p.id} onClick={() => { setAdjustmentProductId(p.id); setAdjustmentSearch(p.nombre); }} className={`w-full p-3 text-left flex justify-between items-center hover:bg-brand-gold-soft ${adjustmentProductId === p.id ? 'bg-brand-gold-soft' : 'bg-white'}`}>
+                      <span className="text-xs font-black uppercase text-ink min-w-0 truncate">{p.nombre}<span className="block text-[9px] text-ink/50">{p.codigo || p.barcode || p.internalCode || 'Sin código'}</span></span>
+                      <span className="text-xs font-bold text-ink/60 shrink-0 ml-2">Stock: {p.stock}</span>
+                    </button>
+                  ))}
+                </div>
+                {adjustmentProductId && <p className="text-[10px] font-bold text-status-success mt-1">Seleccionado · Existencia: {state.productos.find(p => p.id === adjustmentProductId)?.stock ?? '—'}</p>}
+                {adjustmentSearch.trim().length > 0 && !adjustmentProductId && !(state.productos || []).some(p => p.activo && [p.nombre, p.codigo, p.barcode, p.internalCode, p.alternateCode, p.supplierCode].some(value => String(value || '').toLocaleLowerCase('es').includes(adjustmentSearch.trim().toLocaleLowerCase('es')))) && <p className="text-[10px] text-status-danger mt-1">No se encontraron productos activos.</p>}
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-black uppercase text-ink/60 block mb-1">Tipo / motivo</label>
+                  <select value={adjustmentType} onChange={e => setAdjustmentType(e.target.value as any)} className="form-select h-11 w-full text-xs font-bold">
+                    <option value="consumo">Consumo propio</option>
+                    <option value="colaboracion">Colaboración</option>
+                    <option value="ajuste_salida">Salida (−)</option>
+                    <option value="ajuste_entrada">Entrada (+)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] font-black uppercase text-ink/60 block mb-1">Cantidad</label>
+                  <input inputMode="decimal" value={adjustmentQty} onChange={e => setAdjustmentQty(e.target.value.replace(/[^0-9.,]/g,''))} className="w-full h-11 px-3 border border-line rounded-xl text-center font-black"/>
+                </div>
+              </div>
+              <div>
+                <label className="text-[10px] font-black uppercase text-ink/60 block mb-1">Detalle del motivo</label>
+                <input value={adjustmentDetail} onChange={e => setAdjustmentDetail(e.target.value)} className="w-full h-11 px-4 border border-line rounded-xl text-xs font-bold uppercase" placeholder="Ej.: consumo de administración, colaboración..."/>
+              </div>
+              <button disabled={savingAdjustment || !adjustmentProductId || !(Number(String(adjustmentQty).replace(',','.')) > 0) || !adjustmentDetail.trim()} onClick={async () => {
+                const product = (state.productos || []).find(p => p.id === adjustmentProductId);
+                const qty = Number(String(adjustmentQty).replace(',','.'));
+                if (!product || !currentTerminal?.id || !Utils.getTerminalCash(currentTerminal).isCashOpen || !Number.isFinite(qty) || qty <= 0) {
+                  toast({ variant: 'destructive', title: 'Caja no disponible', description: 'Debe existir una caja identificada y abierta para registrar el ajuste.' });
+                  return;
+                }
+                const signedQty = adjustmentType === 'ajuste_entrada' ? qty : -qty;
+                if (signedQty < 0 && Number(product.stock) < qty) {
+                  toast({ variant: 'destructive', title: 'Existencia insuficiente', description: 'No se puede registrar una salida superior al stock disponible.' });
+                  return;
+                }
+                setSavingAdjustment(true);
+                try {
+                  const movement: Movimiento = {
+                    id: Store.uid(), productoId: product.id, tipo: adjustmentType,
+                    cantidad: signedQty, stockAntes: Number(product.stock) || 0,
+                    stockDespues: (Number(product.stock) || 0) + signedQty,
+                    fecha: Utils.ahora(),
+                    referencia: (adjustmentType === 'consumo' ? 'CONSUMO PROPIO | ' : adjustmentType === 'colaboracion' ? 'COLABORACION | ' : 'AJUSTE | ') + adjustmentDetail.trim().toUpperCase(),
+                    terminalId: currentTerminal.id
+                  };
+                  await Store.applyInventoryMovementsTransaction({
+                    operationId: 'POS-AJUSTE-' + Store.uid(),
+                    operationType: 'AJUSTE-INVENTARIO-POS',
+                    movements: [movement],
+                    productPatches: {}
+                  });
+                  toast({ title: 'Ajuste registrado', description: 'El movimiento quedó guardado en el inventario.' });
+                  setShowPosAdjustment(false);
+                  setAdjustmentProductId('');
+                  setAdjustmentSearch('');
+                  setAdjustmentDetail('');
+                } catch (e: any) {
+                  toast({ variant: 'destructive', title: 'No se pudo registrar el ajuste', description: e?.message || 'Turso no confirmó la operación.' });
+                } finally {
+                  setSavingAdjustment(false);
+                }
+              }} className="w-full h-12 rounded-xl bg-brand-gold text-ink font-black uppercase text-xs shadow-md disabled:opacity-50">{savingAdjustment ? 'Guardando…' : 'Procesar ajuste'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* AJUSTE MANUAL DE STOCK (POS) */}
+      {/* ============================================================ */}
+      {stockEdit && (
+        <div className="fixed inset-0 bg-black/60 flex justify-center items-center z-50 p-4 animate-in fade-in-50">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xs p-5 space-y-4">
+            <div>
+              <p className="text-[10px] font-black uppercase text-gray-400 mb-1">Ajustar Stock Manual</p>
+              <p className="font-black text-sm text-ink uppercase leading-tight truncate">{stockEdit.nombre}</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={stockEditValue}
+                onChange={e => setStockEditValue(e.target.value.replace(/[^0-9.]/g, ''))}
+                onKeyDown={e => e.key === 'Enter' && guardarStockManual()}
+                className="flex-1 h-11 px-4 bg-gray-50 border border-gray-200 rounded-xl font-black focus:ring-2 focus:ring-[#D4A017] outline-none text-center text-lg"
+                autoFocus
+              />
+              <span className="text-[10px] font-black text-gray-400 uppercase">Und.</span>
+            </div>
+            <p className="text-[9px] font-bold text-gray-400 uppercase leading-tight">Stock actual: <b className="text-ink">{stockEdit.stock || 0}</b> Und.</p>
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setStockEdit(null)} className="px-4 py-2 text-gray-400 font-bold hover:text-gray-600 transition-colors text-xs uppercase">Cancelar</button>
+              <button onClick={guardarStockManual} className="px-5 py-2 bg-blue-600 text-white rounded-xl font-black text-xs uppercase hover:bg-blue-700 transition-all"><Check className="w-3.5 h-3.5 inline mr-1" />Guardar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* MODAL DE CRÉDITO - AHORA RECIBE CLIENTES Y DEUDAS PARA MOSTRAR SALDO */}
+      {/* ============================================================ */}
+      <CreditModal
+        isOpen={isCreditModalOpen}
+        onClose={() => setIsCreditModalOpen(false)}
+        onConfirm={handleCreditModalConfirm}
+        totalAmount={subtotalUSD}
+        {...({ 
+          clients: state.clientes || [], 
+          debts: state.cxc || [], 
+          initialClientName: cliente 
+        } as any)}
+      />
+    </div>
+  );
+} + Number(v.totalUSD).toFixed(4) : Utils.fmtUSD(v.totalUSD)}</td><td className="text-ink font-black text-xs text-right">{Utils.fmtBS(v.totalBS || 0)}</td><td className="text-ink font-bold text-[10px] uppercase">{Utils.metodoLabel(v.metodoPago)}</td><td className="text-center"><span className={`badge ${v.estado === 'pendiente' ? 'badge-warn' : (v.estado === 'anulada' ? 'badge-err' : 'badge-ok')} font-black text-[9px] uppercase`}>{v.estado}</span></td><td className="text-center"><button onClick={() => setShowSaleDetail(v)} className="w-7 h-7 rounded-full flex items-center justify-center text-status-success hover:bg-status-success/10 transition-colors" title="Ver ítems y detalle de venta"><Eye className="w-4 h-4" /></button></td></tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <Pagination page={histSafePage} totalPages={histTotalPages} total={histVentas.length} pageSize={histPageSize} onPageChange={setHistPage} />
+        </div>
+      ) : view === 'credits' ? (
+        <div className="card flex-1 bg-white flex flex-col overflow-hidden animate-in slide-in-from-bottom-2 duration-300 rounded-xl">
+          <div className="card-head px-6 py-4 bg-ink border-b border-white/10 flex justify-between items-center"><h3 className="text-white font-black uppercase italic tracking-tighter flex items-center gap-2 text-xs"><ClipboardList className="w-5 h-5 text-brand-gold" /> CONSULTA CRÉDITOS Y COBRANZA (GLOBAL)</h3><button onClick={() => setView('pos')} className="btn btn-sm bg-white text-ink hover:bg-surface-soft flex items-center gap-2 font-black uppercase text-[10px] rounded-lg border-none px-4"><ArrowLeft className="w-3.5 h-3.5"/> Volver al POS</button></div>
+          <div className="table-wrap flex-1 overflow-y-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-surface-soft">
+                  <th className="px-6 py-3"></th>
+                  <th className="text-ink font-black text-[10px] uppercase">Cliente / Identificación</th>
+                  <th className="text-ink font-black text-[10px] uppercase text-right">Documentos</th>
+                  <th className="text-ink font-black text-[10px] uppercase text-right">Saldo USD</th>
+                  <th className="text-ink font-black text-[10px] uppercase text-right">Saldo BS</th>
+                  <th className="text-ink font-black text-[10px] uppercase text-center">Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Object.entries(groupedCredits).length === 0 ? (
+                  <tr><td colSpan={6} className="text-center py-20 text-ink font-black uppercase italic">No hay deudas registradas</td></tr>
+                ) : (
+                  Object.entries(groupedCredits).map(([clientName, group]) => (
+                    <React.Fragment key={clientName}>
+                      <tr className="border-b border-line hover:bg-surface-warm/20 transition-colors">
+                        <td className="px-6 py-4">
+                           <button onClick={() => setExpandedClient(expandedClient === clientName ? null : clientName)} className="text-brand-gold hover:scale-110 transition-transform">{expandedClient === clientName ? <ChevronUp /> : <ChevronDown />}</button>
+                        </td>
+                        <td className="py-4"><div className="text-ink font-black text-sm uppercase">{clientName}</div></td>
+                        <td className="text-right py-4 font-black text-ink">{group.debts.length} Facturas</td>
+                        <td className="text-right py-4 font-black text-status-info text-base">{Utils.fmtUSD(group.totalUSD)}</td>
+                        <td className="text-right py-4 font-black text-ink">{Utils.fmtBS(group.totalBS)}</td>
+                        <td className="text-center py-4"><div className="flex items-center justify-center gap-2">
+                          {group.debts.length > 1 && (
+                            <button onClick={() => handleOpenGlobalCreditPayment(clientName, group.debts)} className="h-10 px-3 rounded-full flex items-center justify-center gap-1.5 bg-brand-gold text-black border-2 border-brand-gold hover:bg-brand-gold-deep transition-all shadow-md font-black text-[9px] uppercase whitespace-nowrap" title="PAGO GLOBAL" aria-label="PAGO GLOBAL">
+                              <HandCoins className="w-4 h-4" /><span>PAGO GLOBAL</span>
+                            </button>
+                          )}
+                          <button onClick={() => setShowClientHistory(clientName)} className="w-10 h-10 rounded-full flex items-center justify-center bg-white text-status-success border-2 border-status-success/20 hover:bg-status-success hover:text-white transition-all shadow-md"><Eye className="w-5 h-5" /></button>
+                        </div></td>
+                      </tr>
+                      {expandedClient === clientName && (
+                        <tr className="bg-surface-soft/40 animate-in slide-in-from-top-1 duration-200">
+                           <td colSpan={6} className="px-12 py-4">
+                              <div className="card border-line bg-white shadow-inner rounded-xl overflow-hidden">
+                                 <table className="w-full">
+                                    <thead className="bg-ink/5"><tr><th className="text-[9px] font-black uppercase p-2 text-left">Emisión</th><th className="text-[9px] font-black uppercase p-2 text-left">Vencimiento</th><th className="text-[9px] font-black uppercase p-2 text-right">Saldo USD</th><th className="text-[9px] font-black uppercase p-2 text-center">Acciones</th></tr></thead>
+                                    <tbody>{group.debts.map(d => (<tr key={d.id} className="border-b border-line/20"><td className="text-[10px] font-black p-2">{Utils.fmtFecha(d.fecha)}</td><td className={`text-[10px] font-black p-2 ${d.saldoUSD > 0.001 && d.fechaVencimiento < Utils.hoy() ? 'text-status-danger' : 'text-ink'}`}>{d.fechaVencimiento === '2099-12-31' ? 'ABIERTA' : Utils.fmtFecha(d.fechaVencimiento)}</td><td className="text-[10px] font-black p-2 text-right text-brand-gold-deep">{Utils.fmtUSD(d.saldoUSD)}</td><td className="p-2 text-center"><div className="flex justify-center gap-2"><button onClick={() => setShowDetails(d)} className="w-8 h-8 rounded-full flex items-center justify-center text-status-success hover:bg-status-success/10"><Eye className="w-4 h-4"/></button><button onClick={() => { setShowAbonoModal(d); }} className="btn btn-sm btn-primary h-7 px-3 text-[8px] uppercase">Abonar</button></div></td></tr>))}</tbody>
+                                 </table>
+                              </div>
+                           </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : (
+        <ReturnsModule state={state} updateState={updateState} onBackToPOS={() => setView('pos')} terminalId={currentTerminal?.id} />
+      )}
+
+      {priceSelectorItem && (
+        <div className="modal show" style={{ zIndex: 120 }}><div className="modal-bg" onClick={() => setPriceSelectorItem(null)}></div>
+          <div className="modal-box max-w-sm bg-white border-2 border-line rounded-2xl overflow-hidden shadow-2xl">
+            <div className="modal-head py-3 px-5 border-b border-line bg-ink text-white flex justify-between items-center">
+              <h3 className="font-black text-xs uppercase tracking-widest flex items-center gap-2">
+                <Tag className="w-4 h-4 text-brand-gold" /> Selección de Tarifa
+              </h3>
+              <button onClick={() => setPriceSelectorItem(null)}><X className="w-4 h-4" /></button>
+            </div>
+            <div className="modal-body p-6 space-y-4">
+               <p className="text-[10px] font-black uppercase text-ink/40 text-center tracking-tighter">{priceSelectorItem.product.nombre}</p>
+               
+               <div className="grid grid-cols-1 gap-2">
+                  <button onClick={() => handlePriceChange(priceSelectorItem.index, priceSelectorItem.product.precioUSD)} className="flex justify-between items-center p-4 bg-surface-soft border border-line rounded-xl hover:border-brand-gold transition-all group">
+                    <span className="text-xs font-black text-ink uppercase">Precio Estándar</span>
+                    <span className="text-sm font-black text-ink group-hover:text-brand-gold-deep">{Utils.fmtUSD(priceSelectorItem.product.precioUSD)}</span>
+                  </button>
+                  
+                  {priceSelectorItem.product.precioMayorUSD && priceSelectorItem.product.precioMayorUSD > 0 && (
+                    <button onClick={() => handlePriceChange(priceSelectorItem.index, priceSelectorItem.product.precioMayorUSD!)} className="flex justify-between items-center p-4 bg-brand-gold-soft/20 border border-brand-gold/20 rounded-xl hover:border-brand-gold transition-all group">
+                      <span className="text-xs font-black text-brand-gold-deep uppercase">Precio al Mayor</span>
+                      <span className="text-sm font-black text-brand-gold-deep">{Utils.fmtUSD(priceSelectorItem.product.precioMayorUSD)}</span>
+                    </button>
+                  )}
+
+                  {priceSelectorItem.product.precioOfertaUSD && priceSelectorItem.product.precioOfertaUSD > 0 && (
+                    <button onClick={() => handlePriceChange(priceSelectorItem.index, priceSelectorItem.product.precioOfertaUSD!)} className="flex justify-between items-center p-4 bg-status-success-soft/20 border border-status-success/20 rounded-xl hover:border-status-success transition-all group">
+                      <span className="text-xs font-black text-status-success uppercase">Precio Oferta</span>
+                      <span className="text-sm font-black text-status-success">{Utils.fmtUSD(priceSelectorItem.product.precioOfertaUSD)}</span>
+                    </button>
+                  )}
+
+                  {priceSelectorItem.product.precioPromoUSD && priceSelectorItem.product.precioPromoUSD > 0 && (
+                    <button onClick={() => handlePriceChange(priceSelectorItem.index, priceSelectorItem.product.precioPromoUSD!)} className="flex justify-between items-center p-4 bg-status-info-soft/20 border border-status-info/20 rounded-xl hover:border-status-info transition-all group">
+                      <span className="text-xs font-black text-status-info uppercase">Precio Promoción</span>
+                      <span className="text-sm font-black text-status-info">{Utils.fmtUSD(priceSelectorItem.product.precioPromoUSD)}</span>
+                    </button>
+                  )}
+               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {globalCreditCustomer && (
+        <FloatingPaymentModal
+          total={globalCreditCustomer.totalBS}
+          totalCents={Math.round(globalCreditCustomer.totalBS * 100)}
+          exchangeRate={state.tasa}
+          allowPartial={true}
+          onClose={() => setGlobalCreditCustomer(null)}
+          onConfirm={(data) => { void handleProcessGlobalCreditPayment(data.payments); }}
+        />
+      )}
+      {showReceiptModal && (
+        <ReceiptModal 
+          isOpen={showReceiptModal} 
+          onClose={() => { 
+            setShowReceiptModal(false); 
+            setLastProcessedSale(null); 
+          }} 
+          saleData={lastProcessedSale} 
+          type="SALE" 
+        />
+      )}
+      
+      {showReportType && reportSnapshot && (
+        <ReceiptModal 
+          isOpen={!!showReportType} 
+          onClose={() => { 
+            if (showReportType === 'REPORT_Z') ejecutarCierreZ(); 
+            setShowReportType(null); 
+          }} 
+          reportData={reportSnapshot} 
+          type={showReportType} 
+        />
+      )}
+      
+      {showMultiModal && (
+        <FloatingPaymentModal 
+          total={totalBS} 
+          totalCents={Math.round(totalBS * 100)} 
+          exchangeRate={state.tasa} 
+          onClose={() => setShowMultiModal(false)} 
+          onConfirm={(data) => { 
+            ejecutarVenta(data.payments.map(p => ({ 
+              metodo: p.method as PaymentMethod, 
+              montoUSD: p.usdAmount || (p.amount / state.tasa), 
+              montoBS: p.amount 
+            }))); 
+            setShowMultiModal(false); 
+          }} 
+        />
+      )}
+      
+      {showAbonoModal && (
+        <FloatingPaymentModal 
+          total={showAbonoModal.saldoUSD * state.tasa} 
+          totalCents={Math.round(showAbonoModal.saldoUSD * state.tasa * 100)} 
+          exchangeRate={state.tasa} 
+          onClose={() => setShowAbonoModal(null)} 
+          allowPartial={true} 
+          onConfirm={(data) => { 
+            ejecutarAbono(data.payments.map(p => ({ 
+              metodo: p.method as PaymentMethod, 
+              montoUSD: p.usdAmount || (p.amount / state.tasa), 
+              montoBS: p.amount 
+            }))); 
+          }} 
+        />
+      )}
+
+      {showSaleDetail && (
+        <div className="modal show" style={{ zIndex: 115 }}><div className="modal-bg" onClick={() => setShowSaleDetail(null)}></div>
+          <div className="modal-box max-w-[620px] bg-white border-2 border-line rounded-xl overflow-hidden shadow-2xl">
+            <div className="modal-head py-4 px-6 border-b border-line bg-ink flex justify-between items-center text-white">
+              <h3 className="font-black text-xs uppercase italic tracking-tighter flex items-center gap-2">
+                <Receipt className="w-5 h-5 text-brand-gold" /> AUDITORÍA DE VENTA: {showSaleDetail.id}
+              </h3>
+              <button onClick={() => setShowSaleDetail(null)} className="text-white hover:text-brand-gold"><X className="w-5 h-5"/></button>
+            </div>
+            <div className="modal-body p-6 space-y-5 max-h-[75vh] overflow-y-auto bg-white">
+              <div className="grid grid-cols-3 gap-3">
+                <div className="p-3 bg-surface-soft rounded-lg border border-line">
+                  <label className="text-[8px] font-black uppercase text-ink block mb-1">Fecha</label>
+                  <p className="text-sm font-black text-ink">{Utils.fmtFecha(showSaleDetail.fecha)}</p>
+                </div>
+                <div className="p-3 bg-surface-soft rounded-lg border border-line">
+                  <label className="text-[8px] font-black uppercase text-ink block mb-1">Cliente</label>
+                  <p className="text-sm font-black text-ink uppercase truncate">{showSaleDetail.cliente || 'Consumidor final'}</p>
+                </div>
+                <div className="p-3 bg-brand-gold-soft border border-brand-gold/20 rounded-lg">
+                  <label className="text-[8px] font-black uppercase text-brand-gold-deep block mb-1">Total USD</label>
+                  <p className="text-lg font-black text-brand-gold-deep">{Utils.fmtUSD(showSaleDetail.totalUSD)}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div className="p-3 bg-surface-soft rounded-lg border border-line">
+                  <label className="text-[8px] font-black uppercase text-ink block mb-1">Tipo</label>
+                  <p className="text-[10px] font-black text-ink uppercase">{showSaleDetail.type || 'VENTA'}</p>
+                </div>
+                <div className="p-3 bg-surface-soft rounded-lg border border-line">
+                  <label className="text-[8px] font-black uppercase text-ink block mb-1">Método</label>
+                  <p className="text-[10px] font-black text-ink uppercase">{Utils.metodoLabel(showSaleDetail.metodoPago)}</p>
+                </div>
+                <div className="p-3 bg-surface-soft rounded-lg border border-line">
+                  <label className="text-[8px] font-black uppercase text-ink block mb-1">Estado</label>
+                  <p className="text-[10px] font-black uppercase"><span className={`badge ${showSaleDetail.estado === 'pendiente' ? 'badge-warn' : (showSaleDetail.estado === 'anulada' ? 'badge-err' : 'badge-ok')} font-black text-[9px] uppercase`}>{showSaleDetail.estado}</span></p>
+                </div>
+              </div>
+
+              <div className="space-y-3 animate-in slide-in-from-top-2 duration-300">
+                <div className="flex justify-between items-center border-b border-line pb-2">
+                  <h4 className="text-[10px] font-black uppercase text-ink tracking-[0.2em]">DESGLOSE DE ÍTEMS</h4>
+                  <span className="text-[9px] font-black text-ink uppercase">{showSaleDetail.items?.length || 0} ítems</span>
+                </div>
+                <div className="bg-surface-soft/50 rounded-lg overflow-hidden border border-line/30">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="bg-ink/5">
+                        <th className="text-[8px] font-black uppercase p-2 text-left">Cant</th>
+                        <th className="text-[8px] font-black uppercase p-2 text-left">Descripción</th>
+                        <th className="text-[8px] font-black uppercase p-2 text-right">P. Unit</th>
+                        <th className="text-[8px] font-black uppercase p-2 text-right">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(!showSaleDetail.items || showSaleDetail.items.length === 0) ? (
+                        <tr><td colSpan={4} className="text-center py-10 text-ink font-black uppercase italic text-[10px]">Sin desglose de ítems disponible para esta referencia</td></tr>
+                      ) : showSaleDetail.items.map((it: any, idx: number) => (
+                        <tr key={idx} className="border-b border-line/20">
+                          <td className="text-[9px] font-black p-2">{it.cantidad}</td>
+                          <td className="text-[9px] font-black uppercase p-2 truncate max-w-[220px]">{it.nombre}</td>
+                          <td className="text-[9px] font-black p-2 text-right">{Utils.fmtUSD(it.precioUnitUSD)}</td>
+                          <td className="text-[9px] font-black p-2 text-right text-brand-gold-deep">{Utils.fmtUSD(it.subtotalUSD)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div className="modal-foot p-4 bg-surface-soft border-t border-line text-right">
+              <button onClick={() => setShowSaleDetail(null)} className="btn btn-primary px-8 font-black uppercase text-[10px] rounded-lg shadow-md">Cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showDetails && (
+        <div className="modal show" style={{ zIndex: 110 }}><div className="modal-bg" onClick={() => setShowDetails(null)}></div>
+          <div className="modal-box max-w-[600px] bg-white border-2 border-line rounded-xl overflow-hidden shadow-2xl">
+            <div className="modal-head py-4 px-6 border-b border-line bg-ink flex justify-between items-center text-white">
+              <h3 className="font-black text-xs uppercase italic tracking-tighter flex items-center gap-2">
+                <Receipt className="w-5 h-5 text-brand-gold" /> HISTORIAL DETALLADO: {showDetails.id}
+              </h3>
+              <button onClick={() => setShowDetails(null)} className="text-white hover:text-brand-gold"><X className="w-5 h-5"/></button>
+            </div>
+            <div className="modal-body p-6 space-y-6 max-h-[75vh] overflow-y-auto bg-white">
+              <div className="grid grid-cols-2 gap-4">
+                 <div className="p-3 bg-surface-soft rounded-lg border border-line">
+                    <label className="text-[8px] font-black uppercase text-ink block mb-1">Monto Original</label>
+                    <p className="text-lg font-black text-ink">{Utils.fmtUSD(showDetails.montoUSD)}</p>
+                    <p className="text-xs font-bold text-ink/60">{Utils.fmtBS(showDetails.montoBS || (Number(showDetails.montoUSD || 0) * Number(showDetails.tasaInicial || state.tasa)))}</p>
+                 </div>
+                 <div className="p-3 bg-brand-gold-soft border border-brand-gold/20 rounded-lg">
+                    <label className="text-[8px] font-black uppercase text-brand-gold-deep block mb-1">Saldo Actual</label>
+                    <p className="text-lg font-black text-brand-gold-deep">{Utils.fmtUSD(showDetails.saldoUSD)}</p>
+                    <p className="text-xs font-bold text-brand-gold-deep/70">{Utils.fmtBS(showDetails.saldoBS ?? (Number(showDetails.saldoUSD || 0) * Number(state.tasa)))}</p>
+                 </div>
+              </div>
+
+              {(() => {
+                const sale = state.ventas.find(v => v.id === showDetails.ventaId || v.id === showDetails.id);
+                if (!sale) return null;
+                return (
+                  <div className="space-y-3 animate-in slide-in-from-top-2 duration-300">
+                    <div className="flex justify-between items-center border-b border-line pb-2">
+                       <h4 className="text-[10px] font-black uppercase text-ink tracking-[0.2em]">DETALLE DE COMPRA ORIGINAL</h4>
+                       <span className="text-[9px] font-black text-ink uppercase">{Utils.fmtFecha(sale.fecha)}</span>
+                    </div>
+                    <div className="bg-surface-soft/50 rounded-lg overflow-hidden border border-line/30">
+                       <table className="w-full">
+                          <thead>
+                            <tr className="bg-ink/5">
+                               <th className="text-[8px] font-black uppercase p-2 text-left">Cant</th>
+                               <th className="text-[8px] font-black uppercase p-2 text-left">Descripción</th>
+                               <th className="text-[8px] font-black uppercase p-2 text-right">P. Unit</th>
+                               <th className="text-[8px] font-black uppercase p-2 text-right">Total</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {sale.items.map((it: any, idx: number) => (
+                              <tr key={idx} className="border-b border-line/20">
+                                 <td className="text-[9px] font-black p-2">{it.cantidad}</td>
+                                 <td className="text-[9px] font-black uppercase p-2 truncate max-w-[180px]">{it.nombre}</td>
+                                 <td className="text-[9px] font-black p-2 text-right">{Utils.fmtUSD(it.precioUnitUSD)}</td>
+                                 <td className="text-[9px] font-black p-2 text-right text-brand-gold-deep">{Utils.fmtUSD(it.subtotalUSD)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                       </table>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              <div className="space-y-3">
+                 <h4 className="text-[10px] font-black uppercase text-ink tracking-[0.2em] border-b border-line pb-2">CRONOLOGÍA DE ABONOS</h4>
+                 <div className="max-h-[200px] overflow-y-auto space-y-2 pr-1">
+                    {(!showDetails.historialPagos || showDetails.historialPagos.length === 0) ? (
+                      <div className="py-10 text-center text-ink font-black uppercase italic text-[10px]">No se han registrado abonos aún</div>
+                    ) : (
+                      showDetails.historialPagos.map((p: any, idx: number) => (
+                        <div key={idx} className="flex justify-between items-center p-3 bg-surface-soft border border-line rounded-lg">
+                           <div className="space-y-0.5">
+                              <p className="text-[10px] font-black text-ink uppercase">{Utils.fmtFecha(p.fecha)}</p>
+                              <p className="text-[8px] font-black text-ink mono">REF: {p.reciboId}</p>
+                           </div>
+                           <div className="text-right">
+                              <p className="text-xs font-black text-status-success">+{Number(p.montoUSD) > 0 && Number(p.montoUSD) < 0.01 ? '
+                           </div>
+                        </div>
+                      ))
+                    )}
+                 </div>
+              </div>
+            </div>
+            <div className="modal-foot p-4 bg-surface-soft border-t border-line text-right">
+               <button onClick={() => setShowDetails(null)} className="btn btn-primary px-8 font-black uppercase text-[10px] rounded-lg shadow-md">Cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showClientHistory && (
+        <div className="modal show" style={{ zIndex: 105 }}><div className="modal-bg" onClick={() => setShowClientHistory(null)}></div>
+          <div className={`modal-box max-w-4xl bg-white border-2 border-line rounded-xl overflow-hidden shadow-2xl transition-all ${showDetails ? 'blur-sm scale-95 opacity-40 pointer-events-none' : ''}`}>
+            <div className="modal-head py-4 px-6 border-b border-line bg-ink flex justify-between items-center text-white">
+              <h3 className="font-black uppercase italic tracking-tighter text-xs flex items-center gap-2">
+                <Contact className="w-5 h-5 text-brand-gold" /> ESTADO DE CUENTA MAESTRO: {showClientHistory}
+              </h3>
+              <button onClick={() => setShowClientHistory(null)} className="text-white hover:text-brand-gold"><X className="w-5 h-5"/></button>
+            </div>
+            <div className="modal-body p-0 max-h-[70vh] overflow-y-auto bg-white">
+               <div className="table-wrap">
+                  <table className="w-full">
+                    <thead className="bg-surface-soft sticky top-0 z-10">
+                      <tr>
+                        <th className="text-[9px] font-black uppercase p-4 text-left">Fecha</th>
+                        <th className="text-[9px] font-black uppercase p-4 text-left">ID Documento</th>
+                        <th className="text-[9px] font-black uppercase p-4 text-right">Monto Total</th>
+                        <th className="text-[9px] font-black uppercase p-4 text-right">Abonado</th>
+                        <th className="text-[9px] font-black uppercase p-4 text-right">Saldo Pend.</th>
+                        <th className="text-[9px] font-black uppercase p-4 text-center">Estado</th>
+                        <th className="text-[9px] font-black uppercase p-4 text-center">Auditoría</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {state.cxc.filter(d => d.cliente === showClientHistory).sort((a,b) => b.fecha.localeCompare(a.fecha)).map(d => (
+                        <tr key={d.id} className="border-b border-line/30 hover:bg-surface-warm/20 transition-colors">
+                          <td className="p-4 text-xs font-black">{Utils.fmtFecha(d.fecha)}</td>
+                          <td className="p-4 text-xs font-black mono">{d.id}</td>
+                          <td className="p-4 text-right text-xs font-black">{Utils.fmtUSD(d.montoUSD)}</td>
+                          <td className="p-4 text-right text-xs font-black text-status-success">{Utils.fmtUSD(d.abonadoUSD)}</td>
+                          <td className="p-4 text-right text-sm font-black text-brand-gold-deep">{Utils.fmtUSD(d.saldoUSD)}</td>
+                          <td className="p-4 text-center">
+                            <span className={`badge ${d.estado === 'pagada' ? 'badge-ok' : (d.estado === 'parcial' ? 'badge-info' : 'badge-warn')} font-black text-[8px] uppercase px-3`}>
+                              {d.estado}
+                            </span>
+                          </td>
+                          <td className="p-4 text-center">
+                             <button onClick={() => setShowDetails(d)} className="w-10 h-10 rounded-full flex items-center justify-center bg-white text-status-success border-2 border-status-success/20 hover:bg-status-success hover:text-white transition-all shadow-md"><Eye className="w-5 h-5"/></button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+               </div>
+            </div>
+            <div className="modal-foot p-4 bg-surface-soft border-t border-line text-right">
+               <button onClick={() => setShowClientHistory(null)} className="btn btn-primary px-8 font-black uppercase text-[10px] rounded-lg shadow-md">Cerrar Historial</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showPosAdjustment && (
+        <div className="fixed inset-0 z-[170] bg-black/60 flex items-center justify-center p-4 animate-in fade-in-50">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border-2 border-line">
+            <div className="px-5 py-4 bg-surface-soft border-b border-line flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-black uppercase text-ink">Ajustar inventario</h3>
+                <p className="text-[9px] text-ink/50 font-bold uppercase mt-1">{currentTerminal?.nombre || 'Caja activa'}</p>
+              </div>
+              <button onClick={() => setShowPosAdjustment(false)} disabled={savingAdjustment} className="p-1 text-ink/60 hover:text-ink"><X className="w-5 h-5"/></button>
+            </div>
+            <div className="p-5 space-y-4 max-h-[75vh] overflow-y-auto">
+              <div>
+                <label className="text-[10px] font-black uppercase text-ink/60 block mb-1">Buscar producto</label>
+                <input value={adjustmentSearch} onChange={e => { setAdjustmentSearch(e.target.value); setAdjustmentProductId(''); }} className="w-full h-11 px-4 bg-white border border-line rounded-xl text-sm font-bold outline-none focus:border-brand-gold" placeholder="Nombre, código o código de barras"/>
+                <div className="mt-1 max-h-36 overflow-y-auto rounded-lg border border-line divide-y divide-line">
+                  {(state.productos || []).filter(p => p.activo && adjustmentSearch.trim().length > 0 && [p.nombre, p.codigo, p.barcode, p.internalCode, p.alternateCode, p.supplierCode].some(value => String(value || '').toLocaleLowerCase('es').includes(adjustmentSearch.trim().toLocaleLowerCase('es')))).slice(0,8).map(p => (
+                    <button type="button" key={p.id} onClick={() => { setAdjustmentProductId(p.id); setAdjustmentSearch(p.nombre); }} className={`w-full p-3 text-left flex justify-between items-center hover:bg-brand-gold-soft ${adjustmentProductId === p.id ? 'bg-brand-gold-soft' : 'bg-white'}`}>
+                      <span className="text-xs font-black uppercase text-ink min-w-0 truncate">{p.nombre}<span className="block text-[9px] text-ink/50">{p.codigo || p.barcode || p.internalCode || 'Sin código'}</span></span>
+                      <span className="text-xs font-bold text-ink/60 shrink-0 ml-2">Stock: {p.stock}</span>
+                    </button>
+                  ))}
+                </div>
+                {adjustmentProductId && <p className="text-[10px] font-bold text-status-success mt-1">Seleccionado · Existencia: {state.productos.find(p => p.id === adjustmentProductId)?.stock ?? '—'}</p>}
+                {adjustmentSearch.trim().length > 0 && !adjustmentProductId && !(state.productos || []).some(p => p.activo && [p.nombre, p.codigo, p.barcode, p.internalCode, p.alternateCode, p.supplierCode].some(value => String(value || '').toLocaleLowerCase('es').includes(adjustmentSearch.trim().toLocaleLowerCase('es')))) && <p className="text-[10px] text-status-danger mt-1">No se encontraron productos activos.</p>}
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-black uppercase text-ink/60 block mb-1">Tipo / motivo</label>
+                  <select value={adjustmentType} onChange={e => setAdjustmentType(e.target.value as any)} className="form-select h-11 w-full text-xs font-bold">
+                    <option value="consumo">Consumo propio</option>
+                    <option value="colaboracion">Colaboración</option>
+                    <option value="ajuste_salida">Salida (−)</option>
+                    <option value="ajuste_entrada">Entrada (+)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] font-black uppercase text-ink/60 block mb-1">Cantidad</label>
+                  <input inputMode="decimal" value={adjustmentQty} onChange={e => setAdjustmentQty(e.target.value.replace(/[^0-9.,]/g,''))} className="w-full h-11 px-3 border border-line rounded-xl text-center font-black"/>
+                </div>
+              </div>
+              <div>
+                <label className="text-[10px] font-black uppercase text-ink/60 block mb-1">Detalle del motivo</label>
+                <input value={adjustmentDetail} onChange={e => setAdjustmentDetail(e.target.value)} className="w-full h-11 px-4 border border-line rounded-xl text-xs font-bold uppercase" placeholder="Ej.: consumo de administración, colaboración..."/>
+              </div>
+              <button disabled={savingAdjustment || !adjustmentProductId || !(Number(String(adjustmentQty).replace(',','.')) > 0) || !adjustmentDetail.trim()} onClick={async () => {
+                const product = (state.productos || []).find(p => p.id === adjustmentProductId);
+                const qty = Number(String(adjustmentQty).replace(',','.'));
+                if (!product || !currentTerminal?.id || !Utils.getTerminalCash(currentTerminal).isCashOpen || !Number.isFinite(qty) || qty <= 0) {
+                  toast({ variant: 'destructive', title: 'Caja no disponible', description: 'Debe existir una caja identificada y abierta para registrar el ajuste.' });
+                  return;
+                }
+                const signedQty = adjustmentType === 'ajuste_entrada' ? qty : -qty;
+                if (signedQty < 0 && Number(product.stock) < qty) {
+                  toast({ variant: 'destructive', title: 'Existencia insuficiente', description: 'No se puede registrar una salida superior al stock disponible.' });
+                  return;
+                }
+                setSavingAdjustment(true);
+                try {
+                  const movement: Movimiento = {
+                    id: Store.uid(), productoId: product.id, tipo: adjustmentType,
+                    cantidad: signedQty, stockAntes: Number(product.stock) || 0,
+                    stockDespues: (Number(product.stock) || 0) + signedQty,
+                    fecha: Utils.ahora(),
+                    referencia: (adjustmentType === 'consumo' ? 'CONSUMO PROPIO | ' : adjustmentType === 'colaboracion' ? 'COLABORACION | ' : 'AJUSTE | ') + adjustmentDetail.trim().toUpperCase(),
+                    terminalId: currentTerminal.id
+                  };
+                  await Store.applyInventoryMovementsTransaction({
+                    operationId: 'POS-AJUSTE-' + Store.uid(),
+                    operationType: 'AJUSTE-INVENTARIO-POS',
+                    movements: [movement],
+                    productPatches: {}
+                  });
+                  toast({ title: 'Ajuste registrado', description: 'El movimiento quedó guardado en el inventario.' });
+                  setShowPosAdjustment(false);
+                  setAdjustmentProductId('');
+                  setAdjustmentSearch('');
+                  setAdjustmentDetail('');
+                } catch (e: any) {
+                  toast({ variant: 'destructive', title: 'No se pudo registrar el ajuste', description: e?.message || 'Turso no confirmó la operación.' });
+                } finally {
+                  setSavingAdjustment(false);
+                }
+              }} className="w-full h-12 rounded-xl bg-brand-gold text-ink font-black uppercase text-xs shadow-md disabled:opacity-50">{savingAdjustment ? 'Guardando…' : 'Procesar ajuste'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* AJUSTE MANUAL DE STOCK (POS) */}
+      {/* ============================================================ */}
+      {stockEdit && (
+        <div className="fixed inset-0 bg-black/60 flex justify-center items-center z-50 p-4 animate-in fade-in-50">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xs p-5 space-y-4">
+            <div>
+              <p className="text-[10px] font-black uppercase text-gray-400 mb-1">Ajustar Stock Manual</p>
+              <p className="font-black text-sm text-ink uppercase leading-tight truncate">{stockEdit.nombre}</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={stockEditValue}
+                onChange={e => setStockEditValue(e.target.value.replace(/[^0-9.]/g, ''))}
+                onKeyDown={e => e.key === 'Enter' && guardarStockManual()}
+                className="flex-1 h-11 px-4 bg-gray-50 border border-gray-200 rounded-xl font-black focus:ring-2 focus:ring-[#D4A017] outline-none text-center text-lg"
+                autoFocus
+              />
+              <span className="text-[10px] font-black text-gray-400 uppercase">Und.</span>
+            </div>
+            <p className="text-[9px] font-bold text-gray-400 uppercase leading-tight">Stock actual: <b className="text-ink">{stockEdit.stock || 0}</b> Und.</p>
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setStockEdit(null)} className="px-4 py-2 text-gray-400 font-bold hover:text-gray-600 transition-colors text-xs uppercase">Cancelar</button>
+              <button onClick={guardarStockManual} className="px-5 py-2 bg-blue-600 text-white rounded-xl font-black text-xs uppercase hover:bg-blue-700 transition-all"><Check className="w-3.5 h-3.5 inline mr-1" />Guardar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* MODAL DE CRÉDITO - AHORA RECIBE CLIENTES Y DEUDAS PARA MOSTRAR SALDO */}
+      {/* ============================================================ */}
+      <CreditModal
+        isOpen={isCreditModalOpen}
+        onClose={() => setIsCreditModalOpen(false)}
+        onConfirm={handleCreditModalConfirm}
+        totalAmount={subtotalUSD}
+        {...({ 
+          clients: state.clientes || [], 
+          debts: state.cxc || [], 
+          initialClientName: cliente 
+        } as any)}
+      />
+    </div>
+  );
+} + Number(p.montoUSD).toFixed(4) : Utils.fmtUSD(p.montoUSD)}</p>
+                              <p className="text-[9px] font-black text-status-success">{Utils.fmtBS(p.montoBS || 0)}</p>
+                              <p className="text-[8px] font-black text-ink uppercase">{Utils.metodoLabel(p.metodo || 'otros')} · TASA {Number(p.tasaAplicada || 0).toLocaleString('es-VE')}</p>
                            </div>
                         </div>
                       ))
