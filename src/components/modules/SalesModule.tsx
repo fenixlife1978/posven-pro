@@ -386,7 +386,15 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     setShowReportType(null);
   };
 
-  const saldoDeudaBS = (d: any) => Math.max(0, Number(d?.saldoBS) || (Number(d?.saldoUSD) || 0) * state.tasa);
+  const saldoDeudaBS = (d: any) => {
+    if (d?.saldoBS !== undefined && d?.saldoBS !== null) return Math.max(0, Number(d.saldoBS) || 0);
+    const montoBS = Math.max(0, Number(d?.montoBS) || 0);
+    const abonadoBS = Math.max(0, Number(d?.abonadoBS) || (Array.isArray(d?.historialPagos)
+      ? d.historialPagos.reduce((sum: number, p: any) => sum + Math.max(0, Number(p?.montoBS) || 0), 0)
+      : 0));
+    if (montoBS > 0) return Math.max(0, montoBS - abonadoBS);
+    return Math.max(0, Number(d?.saldoUSD) || 0) * state.tasa;
+  };
 
   const handleOpenGlobalCreditPayment = (clientName: string, debts: Debt[]) => {
     const activeDebts = debts
@@ -447,7 +455,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
 
   const groupedCredits = useMemo(() => {
     const groups: Record<string, { totalUSD: number; totalBS: number; debts: Debt[] }> = {};
-    (state.cxc || []).filter(x => x.estado !== 'pagada' && (Number(x.saldoBS) > 0.005 || (x.saldoUSD || 0) > 0.001)).forEach(debt => {
+    (state.cxc || []).filter(x => x.estado !== 'pagada' && (saldoDeudaBS(x) > 0.005 || (x.saldoUSD || 0) > 0.001)).forEach(debt => {
       const name = debt.cliente || 'DESCONOCIDO';
       if (!groups[name]) groups[name] = { totalUSD: 0, totalBS: 0, debts: [] };
       groups[name].totalUSD += Number(debt.saldoUSD) || 0;
