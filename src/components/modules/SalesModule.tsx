@@ -180,6 +180,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   // ===== ESTADOS PARA CREDIT MODAL =====
   const [isCreditModalOpen, setIsCreditModalOpen] = useState(false);
   const [clientSearch, setClientSearch] = useState('');
+  const [creditSearch, setCreditSearch] = useState('');
   const [selectedClient, setSelectedClient] = useState<Customer | null>(null);
   const [showNewClientForm, setShowNewClientForm] = useState(false);
   const [newClient, setNewClient] = useState({ name: '', tipoDoc: 'V', cedula: '', phone: '', address: '' });
@@ -1075,6 +1076,19 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       ) : view === 'credits' ? (
         <div className="card flex-1 bg-white flex flex-col overflow-hidden animate-in slide-in-from-bottom-2 duration-300 rounded-xl">
           <div className="card-head px-6 py-4 bg-ink border-b border-white/10 flex justify-between items-center"><h3 className="text-white font-black uppercase italic tracking-tighter flex items-center gap-2 text-xs"><ClipboardList className="w-5 h-5 text-brand-gold" /> CONSULTA CRÉDITOS Y COBRANZA (GLOBAL)</h3><button onClick={() => setView('pos')} className="btn btn-sm bg-white text-ink hover:bg-surface-soft flex items-center gap-2 font-black uppercase text-[10px] rounded-lg border-none px-4"><ArrowLeft className="w-3.5 h-3.5"/> Volver al POS</button></div>
+          <div className="px-4 py-3 border-b border-line bg-white shrink-0">
+            <div className="relative max-w-xl">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink/40" />
+              <input
+                type="search"
+                value={creditSearch}
+                onChange={e => setCreditSearch(e.target.value)}
+                placeholder="Buscar cliente por nombre o cédula..."
+                className="w-full h-11 pl-10 pr-4 rounded-xl border border-line bg-surface-soft text-sm font-bold text-ink outline-none focus:border-brand-gold"
+                aria-label="Buscar créditos por cliente o cédula"
+              />
+            </div>
+          </div>
           <div className="table-wrap flex-1 overflow-y-auto">
             <table className="w-full">
               <thead>
@@ -1088,10 +1102,10 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                 </tr>
               </thead>
               <tbody>
-                {Object.entries(groupedCredits).length === 0 ? (
+                {Object.entries(groupedCredits).filter(([name]) => !creditSearch.trim() || name.toLowerCase().includes(creditSearch.trim().toLowerCase()) || name.replace(/[^0-9a-z]/gi, '').toLowerCase().includes(creditSearch.replace(/[^0-9a-z]/gi, '').toLowerCase())).length === 0 ? (
                   <tr><td colSpan={6} className="text-center py-20 text-ink font-black uppercase italic">No hay deudas registradas</td></tr>
                 ) : (
-                  Object.entries(groupedCredits).map(([clientName, group]) => (
+                  Object.entries(groupedCredits).filter(([name]) => !creditSearch.trim() || name.toLowerCase().includes(creditSearch.trim().toLowerCase()) || name.replace(/[^0-9a-z]/gi, '').toLowerCase().includes(creditSearch.replace(/[^0-9a-z]/gi, '').toLowerCase())).map(([clientName, group]) => (
                     <React.Fragment key={clientName}>
                       <tr className="border-b border-line hover:bg-surface-warm/20 transition-colors">
                         <td className="px-6 py-4">
