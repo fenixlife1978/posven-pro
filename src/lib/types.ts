@@ -304,7 +304,9 @@ export interface ReportZ {
   cobrosDeudaUSD?: number; cobrosDeudaBS?: number;
   manualSalidasBS?: number; manualSalidasUSD?: number;
   manualEntradasBS?: number; manualEntradasUSD?: number;
+  // Efectivo esperado según sistema y efectivo físico contado en el cierre.
   totalNetoEfectivoBS?: number; totalNetoEfectivoUSD?: number;
+  montoRealEfectivoBS?: number; montoRealEfectivoUSD?: number;
   differenceBs?: number; differenceUSD?: number;
   tasaBCV?: number;
   empresa?: { nombre?: string; rif?: string; subtitulo?: string };

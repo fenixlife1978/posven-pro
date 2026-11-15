@@ -484,7 +484,10 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         cobrosDeudaUSD: data.cobrosDeudaUSD, cobrosDeudaBS: data.cobrosDeudaBS,
         manualSalidasBS: data.manualSalidasBS, manualSalidasUSD: data.manualSalidasUSD,
         manualEntradasBS: data.manualEntradasBS, manualEntradasUSD: data.manualEntradasUSD,
-        totalNetoEfectivoBS: realBs, totalNetoEfectivoUSD: realUSD,
+        // Totales del sistema: no se sustituyen por el conteo físico.
+        totalNetoEfectivoBS: Number(data.totalNetoEfectivoBS) || 0,
+        totalNetoEfectivoUSD: Number(data.totalNetoEfectivoUSD) || 0,
+        montoRealEfectivoBS: realBs, montoRealEfectivoUSD: realUSD,
         differenceBs: diff.bs, differenceUSD: diff.usd,
         tasaBCV: data.tasaBCV, empresa: liveState.empresa,
       } as ReportZ;
