@@ -621,7 +621,14 @@ async function loadReportWindow(name: string, terminalId: string, cutoff: string
     // Carga completa del período y de la terminal desde Turso; nunca se marca
     // como listo un X/Z si la respuesta se truncó por un límite fijo.
     const tursoItems = await loadCollection(name, { terminalId, since: cutoff });
-    const items = tursoItems.filter((item: any) => String(item?.fecha || '') > cutoff);
+    const cutoffMs = Date.parse(cutoff);
+    const items = tursoItems.filter((item: any) => {
+      const value = String(item?.fecha || '').trim();
+      if (!value) return false;
+      const itemMs = Date.parse(value);
+      if (Number.isFinite(itemMs) && Number.isFinite(cutoffMs)) return itemMs >= cutoffMs;
+      return value >= cutoff;
+    });
     if (items.length) applyPatch({ [name]: mergeById((cache as any)[name], items) });
     SINCE_STAMP[key] = 'done';
     console.info("[db-store] Ventana Turso de reporte cargada:", name, items.length, "registros");
