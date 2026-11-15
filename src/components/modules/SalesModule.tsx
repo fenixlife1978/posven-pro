@@ -358,7 +358,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       }
     });
 
-    ["efectivo_bs","efectivo_usd","zelle","pagomovil","biopago","transferencia_bs","transferencia_usd","tarjeta","credito"].forEach(ensureRow);
+    ["efectivo_bs","efectivo_usd","zelle","pagomovil","biopago","transferencia_bs","transferencia_usd","tarjeta"].forEach(ensureRow);
     const metodosArqueo = Object.values(arqueoMap).map((row:any) => ({ ...row, moneda:isUsdMethod(row.metodo) ? "USD" : "BS" }));
     const arqueoWarnings = allSales
       .filter((sale:any) => inWindow(sale.fecha) && String(sale.terminalId || "") === termId

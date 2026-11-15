@@ -14,7 +14,7 @@ type Props = {
 
 const METHODS = [
   "efectivo_bs", "efectivo_usd", "zelle", "pagomovil", "biopago",
-  "transferencia_bs", "transferencia_usd", "tarjeta", "credito",
+  "transferencia_bs", "transferencia_usd", "tarjeta",
 ];
 
 const LABELS: Record<string, string> = {
@@ -26,7 +26,6 @@ const LABELS: Record<string, string> = {
   transferencia_bs: "Transferencia Bs.",
   transferencia_usd: "Transferencia USD",
   tarjeta: "Tarjeta / Punto de venta",
-  credito: "Ventas a crédito",
   otros: "Otros métodos",
   mixto: "Mixto sin desglose",
 };
