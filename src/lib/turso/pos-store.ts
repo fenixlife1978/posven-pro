@@ -1126,7 +1126,14 @@ export async function applyDebtPaymentTransaction(params: {
 async function applyGlobalPayment(params:any, collection:'cxc'|'cxp'){
   assertTursoReady();
   const {operationId,provider,customerName,customerCedula,amountUSD,amountBS,payment,paymentParts,journal,terminalId}=params;
-  if(!(Number(amountUSD)>0)) return {appliedUSD:0,appliedBS:0,debts:[]};
+  const tasaInicial=Number(payment?.tasaAplicada)||0;
+  const esPagoBsCxpInicial=collection==='cxp'
+    && ['efectivo_bs','pagomovil'].includes(String(payment?.metodo||'').toLowerCase())
+    && Number(amountBS)>0 && tasaInicial>0;
+  // Para liquidaciones CxP en Bs, el USD equivalente puede ser menor a un
+  // centavo; el importe válido de entrada es el monto en bolívares.
+  if(esPagoBsCxpInicial ? !(Number(amountBS)>0) : !(Number(amountUSD)>0))
+    return {appliedUSD:0,appliedBS:0,debts:[]};
   // Los pagos globales a proveedores se originan en Administración → CxP
   // y son administrativos: no dependen de ninguna Caja/Terminal.
   const terminalForOperation = collection === 'cxc' ? terminalId : undefined;
