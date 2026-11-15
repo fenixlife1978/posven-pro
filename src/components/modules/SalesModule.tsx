@@ -934,22 +934,21 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   return (
     <div className="flex flex-col gap-2 h-[calc(100vh-100px)] max-w-7xl mx-auto w-full overflow-hidden">
       <div className="flex gap-2 no-print shrink-0 overflow-x-auto pb-1 items-center">
-        <button onClick={() => setView('pos')} className={`btn btn-sm ${view === 'pos' ? 'btn-primary shadow-md' : 'bg-white text-ink font-bold border-line border'}`}><ShoppingCart className="w-3.5 h-3.5"/> Punto de Venta</button>
-        <button onClick={() => setView('history')} className={`btn btn-sm ${view === 'history' ? 'btn-primary shadow-md' : 'bg-white text-ink font-bold border-line border'}`}><History className="w-3.5 h-3.5"/> Historial</button>
-        <button onClick={() => setView('credits')} className={`btn btn-sm ${view === 'credits' ? 'btn-primary shadow-md' : 'bg-white text-ink font-bold border-line border'}`}><ClipboardList className="w-3.5 h-3.5"/> Consultar Créditos</button>
-        <button onClick={() => handleOpenReport('REPORT_X')} disabled={!!reportLoadingType} className="btn btn-sm bg-white text-ink font-bold border-line border disabled:opacity-50"><FileText className="w-3.5 h-3.5"/> {reportLoadingType === 'REPORT_X' ? 'Cargando…' : 'Reporte X'}</button>
-        <button onClick={() => handleOpenReport('REPORT_Z')} disabled={!!reportLoadingType} className="btn btn-sm bg-white text-ink font-bold border-line border disabled:opacity-50"><Receipt className="w-3.5 h-3.5"/> {reportLoadingType === 'REPORT_Z' ? 'Cargando…' : 'Reporte Z'}</button>
-        <button onClick={() => setView('returns')} className={`btn btn-sm ${view === 'returns' ? 'btn-primary shadow-md' : 'bg-white text-ink font-bold border-line border'}`}><RotateCcw className="w-3.5 h-3.5"/> Devoluciones y Anulaciones</button>
+        <button onClick={() => setView('pos')} className={`btn btn-sm shrink-0 ${view === 'pos' ? 'btn-primary shadow-md' : 'bg-white text-ink font-bold border-line border'}`}><ShoppingCart className="w-3.5 h-3.5"/> Punto de Venta</button>
         {view === 'pos' && (
           <button
             onClick={() => { setAdjustmentSearch(''); setAdjustmentProductId(''); setAdjustmentType('consumo'); setAdjustmentQty('1'); setAdjustmentDetail(''); setShowPosAdjustment(true); }}
-            className="btn btn-sm bg-white text-ink font-bold border border-brand-gold/40 hover:bg-brand-gold-soft transition-colors"
+            className="btn btn-sm shrink-0 bg-white text-ink font-bold border border-brand-gold/40 hover:bg-brand-gold-soft transition-colors"
             title="Registrar consumo, colaboración o ajuste de inventario"
             aria-label="Ajustes de inventario"
           ><Settings2 className="w-3.5 h-3.5 text-brand-gold-deep"/> Ajustes</button>
         )}
-        
-        
+        <button onClick={() => setView('history')} className={`btn btn-sm shrink-0 ${view === 'history' ? 'btn-primary shadow-md' : 'bg-white text-ink font-bold border-line border'}`}><History className="w-3.5 h-3.5"/> Historial</button>
+        <button onClick={() => setView('credits')} className={`btn btn-sm ${view === 'credits' ? 'btn-primary shadow-md' : 'bg-white text-ink font-bold border-line border'}`}><ClipboardList className="w-3.5 h-3.5"/> Consultar Créditos</button>
+        <button onClick={() => handleOpenReport('REPORT_X')} disabled={!!reportLoadingType} className="btn btn-sm bg-white text-ink font-bold border-line border disabled:opacity-50"><FileText className="w-3.5 h-3.5"/> {reportLoadingType === 'REPORT_X' ? 'Cargando…' : 'Reporte X'}</button>
+        <button onClick={() => handleOpenReport('REPORT_Z')} disabled={!!reportLoadingType} className="btn btn-sm bg-white text-ink font-bold border-line border disabled:opacity-50"><Receipt className="w-3.5 h-3.5"/> {reportLoadingType === 'REPORT_Z' ? 'Cargando…' : 'Reporte Z'}</button>
+        <button onClick={() => setView('returns')} className={`btn btn-sm ${view === 'returns' ? 'btn-primary shadow-md' : 'bg-white text-ink font-bold border-line border'}`}><RotateCcw className="w-3.5 h-3.5"/> Devoluciones y Anulaciones</button>
+
         {view === 'pos' && (
           <button 
             onClick={() => setIsFullScreen(!isFullScreen)} 
