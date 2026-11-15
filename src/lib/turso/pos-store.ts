@@ -955,9 +955,19 @@ export async function createZClosureTransaction(params: {
     // El servidor es la autoridad final del correlativo Z. Ignoramos cualquier
     // ID provisional enviado por el navegador y construimos uno exclusivo de
     // esta terminal para evitar que dos cajas puedan sobrescribirse.
-    let report = { ...clean(params.report), id: terminalSeries(prefix, 'Z', expectedNumber, 6), terminalId: params.terminalId, numeroZ: expectedNumber };
-    const canonical = await tx.execute(txSelect('reportesZ', report.id));
-    if (canonical.rows.length) throw new Error('El corte Z de esta terminal ya fue registrado.');
+    // Recuperación de correlativos atrasados: si el ID Z calculado ya existe,
+    // avanzar únicamente esta terminal hasta encontrar el siguiente consecutivo
+    // libre. Así un registro histórico no bloquea para siempre el cierre vigente.
+    let assignedNumber = expectedNumber;
+    let reportId = terminalSeries(prefix, 'Z', assignedNumber, 6);
+    for (let guard = 0; guard < 100000; guard++) {
+      const canonical = await tx.execute(txSelect('reportesZ', reportId));
+      if (!canonical.rows.length) break;
+      assignedNumber += 1;
+      reportId = terminalSeries(prefix, 'Z', assignedNumber, 6);
+      if (guard === 99999) throw new Error('No se pudo obtener un consecutivo Z libre para esta terminal.');
+    }
+    let report = { ...clean(params.report), id: reportId, terminalId: params.terminalId, numeroZ: assignedNumber };
 
     const closeDate = String(report.fecha || new Date().toISOString());
     const closedSession = {
@@ -973,7 +983,7 @@ export async function createZClosureTransaction(params: {
     const updatedTerminal = {
       ...current,
       ...clean(params.terminalPatch),
-      ultimoZ: expectedNumber,
+      ultimoZ: assignedNumber,
       fechaUltimoZ: closeDate,
       isCashOpen: false,
       cashData: null,
