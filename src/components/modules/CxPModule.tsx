@@ -193,6 +193,7 @@ export default function CxPModule({ state, updateState, terminalId }: CxPModuleP
         collection: 'cxp',
         debtId: showPaymentModal.id,
         amountUSD: amount,
+        amountBS: montoBS,
         payment: pago,
         journal: nuevoAsiento,
         terminalId
