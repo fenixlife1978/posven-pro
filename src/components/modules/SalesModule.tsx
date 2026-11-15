@@ -307,7 +307,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       // Un registro mixto sin detalle de pagos no permite saber cuánto entró
       // en cada moneda/método. Se muestra como incidencia y nunca se inventa
       // una distribución en Bs. o USD.
-      if (p.method === "credito" || p.method === "mixto") return;
+      if (p.method === "credito" || p.method === "nota_credito" || p.method === "mixto") return;
       const row = ensureRow(p.method);
       if (isUsdMethod(p.method)) row[bucket + "USD"] += p.usd * factor;
       else row[bucket + "BS"] += p.bs * factor;

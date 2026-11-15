@@ -118,7 +118,7 @@ export default function CashZArqueoModal({ open, mode, report, onCancel, onConfi
               {report.terminalName || "Caja"} · {mode === "Z" ? "Z-" + String(report.numeroZ || 0).padStart(6, "0") : "Consulta sin cierre"}
             </p>
           </div>
-          <button onClick={onCancel} className="p-2 text-white/60 hover:text-white" aria-label="Cerrar"><X className="w-5 h-5" /></button>
+          <button onClick={onCancel} disabled={busy} className="p-2 text-white/60 hover:text-white disabled:opacity-30" aria-label="Cerrar"><X className="w-5 h-5" /></button>
         </div>
 
         <div className="p-4 overflow-auto">
@@ -170,6 +170,11 @@ export default function CashZArqueoModal({ open, mode, report, onCancel, onConfi
             {hasAnyReal && (
               <div className="text-xs mt-1">Diferencia Bs.: <b>{money(diff.bs, "BS")}</b> · Diferencia USD: <b>{money(diff.usd, "USD")}</b></div>
             )}
+            {hasUnresolvedPayments && (
+              <div className="text-[10px] text-status-danger font-bold mt-2">
+                Documentos pendientes: {report.arqueoWarnings.join(", ")}
+              </div>
+            )}
             <div className="text-[10px] text-ink/50 mt-1">
               {mode === "X"
                 ? "El conteo de Corte X es temporal: no se guarda, no altera saldos y no cierra la caja."
@@ -181,7 +186,7 @@ export default function CashZArqueoModal({ open, mode, report, onCancel, onConfi
         </div>
 
         <div className="p-4 bg-surface-soft border-t border-line flex justify-end gap-2 shrink-0">
-          <button onClick={onCancel} className="px-5 h-10 rounded-xl border border-line text-ink font-black uppercase text-[10px]">Cerrar</button>
+          <button onClick={onCancel} disabled={busy} className="px-5 h-10 rounded-xl border border-line text-ink font-black uppercase text-[10px] disabled:opacity-40">Cerrar</button>
           {mode === "Z" && (
             <button disabled={!allAmountsEntered || hasUnresolvedPayments || busy} onClick={() => onConfirm(real, diff)}
               className="px-5 h-10 rounded-xl bg-status-danger text-white font-black uppercase text-[10px] shadow-md disabled:opacity-40 disabled:cursor-not-allowed">
