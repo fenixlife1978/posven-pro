@@ -90,8 +90,11 @@ export default function CashZArqueoModal({ open, mode, report, onCancel, onConfi
 
   const reconciled = mode === "Z" && allAmountsEntered && Math.abs(diff.bs) < 0.01 && Math.abs(diff.usd) < 0.01;
   const hasShortage = diff.bs < -0.01 || diff.usd < -0.01;
+  const hasAnyReal = rows.some(row => String(real[row.method] ?? "").trim() !== "");
   const status = mode === "X"
-    ? "LECTURA PARCIAL — NO CIERRA LA CAJA"
+    ? !hasAnyReal ? "LECTURA X — SIN CONTEO REAL"
+      : !allAmountsEntered ? "CONTEO PARCIAL — NO CIERRA LA CAJA"
+        : reconciled ? "ARQUEO INFORMATIVO CONCILIADO" : hasShortage ? "FALTANTE INFORMATIVO" : "SOBRANTE INFORMATIVO"
     : !allAmountsEntered ? "FALTAN MONTOS REALES POR CONTAR"
       : reconciled ? "ARQUEO CONCILIADO" : hasShortage ? "FALTANTE" : "SOBRANTE";
 
@@ -134,12 +137,11 @@ export default function CashZArqueoModal({ open, mode, report, onCancel, onConfi
                     <td className="p-2 border border-line text-right">{money(row.minus, row.currency)}</td>
                     <td className="p-2 border border-line text-right font-black">{money(row.system, row.currency)}</td>
                     <td className="p-1 border border-line">
-                      {mode === "Z" ? (
-                        <input type="text" inputMode="decimal" value={raw}
-                          onChange={e => setReal(prev => ({ ...prev, [row.method]: e.target.value.replace(/[^0-9.,]/g, "") }))}
-                          placeholder={row.currency === "BS" ? "Bs." : "USD"}
-                          className="w-32 px-2 py-1.5 border border-line rounded-lg text-right font-bold" />
-                      ) : <span className="block text-center text-ink/40">—</span>}
+                      <input type="text" inputMode="decimal" value={raw}
+                        onChange={e => setReal(prev => ({ ...prev, [row.method]: e.target.value.replace(/[^0-9.,]/g, "") }))}
+                        placeholder={row.currency === "BS" ? "Bs." : "USD"}
+                        className="w-32 px-2 py-1.5 border border-line rounded-lg text-right font-bold"
+                        disabled={busy} />
                     </td>
                     <td className="p-2 border border-line text-right font-black">
                       {rowDiff === null ? "—" : <span className={rowDiff > 0.005 ? "text-status-success" : rowDiff < -0.005 ? "text-status-danger" : "text-ink"}>{money(rowDiff, row.currency)}</span>}
@@ -155,12 +157,14 @@ export default function CashZArqueoModal({ open, mode, report, onCancel, onConfi
               {reconciled ? <CheckCircle2 className="w-5 h-5 text-status-success" /> : <AlertTriangle className="w-5 h-5 text-brand-gold-deep" />}
               {status}
             </div>
-            {mode === "Z" && (
-              <>
-                <div className="text-xs mt-1">Diferencia Bs.: <b>{money(diff.bs, "BS")}</b> · Diferencia USD: <b>{money(diff.usd, "USD")}</b></div>
-                <div className="text-[10px] text-ink/50 mt-1">Debe introducir el efectivo y saldo real de cada medio de pago, incluso cero. Los medios electrónicos no se convierten en efectivo.</div>
-              </>
+            {hasAnyReal && (
+              <div className="text-xs mt-1">Diferencia Bs.: <b>{money(diff.bs, "BS")}</b> · Diferencia USD: <b>{money(diff.usd, "USD")}</b></div>
             )}
+            <div className="text-[10px] text-ink/50 mt-1">
+              {mode === "X"
+                ? "El conteo de Corte X es temporal: no se guarda, no altera saldos y no cierra la caja."
+                : "Debe introducir el monto real de cada método, incluso cero. Los medios electrónicos no se convierten en efectivo."}
+            </div>
           </div>
         </div>
 
