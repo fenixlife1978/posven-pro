@@ -43,6 +43,7 @@ import {
   Settings2
 } from 'lucide-react';
 import { ReceiptModal } from '@/components/pos/ReceiptModal';
+import CashZArqueoModal from '@/components/pos/CashZArqueoModal';
 import { CreditModal } from '@/components/pos/CreditSaleModal';
 import FloatingPaymentModal from '@/components/pos/FloatingPaymentModal';
 import { toast } from '@/hooks/use-toast';
@@ -147,6 +148,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   const [reportSnapshot, setReportSnapshot] = useState<any>(null);
   const [reportLoadingType, setReportLoadingType] = useState<'REPORT_X' | 'REPORT_Z' | null>(null);
   const [isClosingZ, setIsClosingZ] = useState(false);
+  const [showZArqueo, setShowZArqueo] = useState(false);
+  const [arqueoMode, setArqueoMode] = useState<'X' | 'Z'>('X');
   const [globalCreditCustomer, setGlobalCreditCustomer] = useState<{ name: string; cedula?: string; totalUSD: number; totalBS: number } | null>(null);
   const [cliente, setCliente] = useState('Consumidor final');
   const [isFullScreen, setIsFullScreen] = useState(false);
@@ -241,167 +244,242 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   };
 
   const getFreshReportData = () => {
-    // ✅ FIX: Obtener datos frescos del Store para evitar inconsistencias
     const freshState = Store.get();
-    // Cada caja usa SU PROPIO corte Z / fondo de apertura / correlativo Z.
-    const tc = Utils.getTerminalCash(currentTerminal);
-    const corteTimestamp = tc.fechaUltimoZ || '';
-    const termId = currentTerminal?.id || 'GLOBAL';
-    
-    // Usar datos frescos del Store en lugar del state del componente
-    const allVentas = freshState.ventas || [];
-    const allDevoluciones = freshState.devoluciones || [];
-    const allLibroDiario = freshState.libroDiario || [];
-    
-    const vActivas = allVentas.filter(v => v.fecha > corteTimestamp && v.estado !== 'anulada' && v.terminalId === termId);
-    const vAnuladas = allVentas.filter(v => v.fecha > corteTimestamp && v.estado === 'anulada' && v.terminalId === termId);
-    const dHoy = allDevoluciones.filter(d => d.fecha > corteTimestamp && (allVentas.find(v => v.id === d.ventaId)?.terminalId === termId));
-    
-    const brUSD = vActivas.reduce((s, v) => s + v.totalUSD, 0);
-    const devUSD = dHoy.reduce((s, d) => s + d.totalUSD, 0);
-    const descUSD = vActivas.reduce((s, v) => s + (v.descuentoUSD || 0), 0);
-    const netUSD = brUSD - devUSD - descUSD;
+    const termId = String(currentTerminal?.id || "GLOBAL");
+    const terminal = (freshState.terminales || []).find((t:any) => String(t.id) === termId) || currentTerminal;
+    const tc = Utils.getTerminalCash(terminal);
+    const since = tc.fechaUltimoZ || "";
+    const inWindow = (date: string) => String(date || "") > since;
+    const allSales = freshState.ventas || [];
+    const allReturns = freshState.devoluciones || [];
+    const allCancellations = freshState.anulaciones || [];
+    const allJournal = freshState.libroDiario || [];
+    const isDebtCollection = (v:any) => ["COBRO DEUDA","ABONO DEUDA","COBRO_DEUDA"].includes(String(v?.type || "").trim().toUpperCase());
 
-    const baseImponibleUSD = vActivas.reduce((s, v) => s + (v.baseImponibleUSD || 0), 0);
-    const ivaUSD = vActivas.reduce((s, v) => s + (v.ivaUSD || 0), 0);
-    const exentoUSD = vActivas.reduce((s, v) => s + (v.exentoUSD || 0), 0);
-    const igtfUSD = vActivas.reduce((s, v) => s + (v.igtfUSD || 0), 0);
+    const activeSales = allSales.filter((v:any) => inWindow(v.fecha) && v.estado !== "anulada" && String(v.terminalId || "") === termId && !isDebtCollection(v));
+    const canceledSales = allSales.filter((v:any) => inWindow(v.fecha) && v.estado === "anulada" && String(v.terminalId || "") === termId && !isDebtCollection(v));
+    const returns = allReturns.filter((d:any) => inWindow(d.fecha) && String(allSales.find((v:any) => v.id === d.ventaId)?.terminalId || "") === termId);
+    const cancellations = allCancellations.filter((a:any) => inWindow(a.fecha) && String(allSales.find((v:any) => v.id === a.ventaId)?.terminalId || "") === termId);
 
-    const paymentMethodsMap: Record<string, number> = {};
-    vActivas.forEach(v => {
-      if (v.payments && v.payments.length > 0) {
-        v.payments.forEach(p => {
-          paymentMethodsMap[p.metodo] = (paymentMethodsMap[p.metodo] || 0) + p.montoUSD;
-        });
-      } else if (v.metodoPago) {
-        paymentMethodsMap[v.metodoPago] = (paymentMethodsMap[v.metodoPago] || 0) + v.totalUSD;
+    const grossUSD = activeSales.reduce((sum:number,v:any) => sum + (Number(v.totalUSD) || 0), 0);
+    const returnUSD = returns.reduce((sum:number,d:any) => sum + (Number(d.totalUSD) || 0), 0);
+    const cancellationUSD = cancellations.reduce((sum:number,a:any) => sum + (Number(a.totalUSD) || 0), 0);
+    const canceledWithoutDocument = canceledSales.filter((v:any) => !cancellations.some((a:any) => String(a.ventaId) === String(v.id)));
+    const canceledFallbackUSD = canceledWithoutDocument.reduce((sum:number,v:any) => sum + (Number(v.totalUSD) || 0), 0);
+    const refundsUSD = returnUSD + cancellationUSD + canceledFallbackUSD;
+    const discountsUSD = activeSales.reduce((sum:number,v:any) => sum + (Number(v.descuentoUSD) || 0), 0);
+    const netUSD = grossUSD - refundsUSD - discountsUSD;
+    const baseImponibleUSD = activeSales.reduce((sum:number,v:any) => sum + (Number(v.baseImponibleUSD) || 0), 0);
+    const ivaUSD = activeSales.reduce((sum:number,v:any) => sum + (Number(v.ivaUSD) || 0), 0);
+    const exentoUSD = activeSales.reduce((sum:number,v:any) => sum + (Number(v.exentoUSD) || 0), 0);
+    const igtfUSD = activeSales.reduce((sum:number,v:any) => sum + (Number(v.igtfUSD) || 0), 0);
+    const rate = Number(freshState.tasa) || 1;
+
+    const normalizeMethod = (method:any) => {
+      const key = String(method || "otros").trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, "_");
+      if (["punto_venta","punto_de_venta","punto_pago","punto_de_pago","tarjeta_debito","tarjeta_credito"].includes(key)) return "tarjeta";
+      if (key === "pago_movil") return "pagomovil";
+      if (key === "transferencia") return "transferencia_bs";
+      return key;
+    };
+    const isUsdMethod = (method:string) => ["efectivo_usd","zelle","transferencia_usd","usd","dolar","dolares"].includes(normalizeMethod(method));
+    const arqueoMap:Record<string,any> = {};
+    const ensureRow = (method:string) => {
+      if (!arqueoMap[method]) arqueoMap[method] = { metodo:method, ventasBS:0, ventasUSD:0, cobrosBS:0, cobrosUSD:0, devBS:0, devUSD:0, movPlusBS:0, movPlusUSD:0, movMinusBS:0, movMinusUSD:0 };
+      return arqueoMap[method];
+    };
+    const paymentParts = (record:any) => Array.isArray(record?.payments) && record.payments.length
+      ? record.payments
+      : [{ metodo:record?.metodoPago || "otros", montoUSD:record?.totalUSD || 0, montoBS:record?.totalBS || 0 }];
+    const readPayment = (payment:any) => {
+      const method = normalizeMethod(payment?.metodo || payment?.method || "otros");
+      const usd = Number(payment?.montoUSD ?? payment?.usdAmount ?? 0) || 0;
+      const bs = Number(payment?.montoBS ?? payment?.amountBS ?? payment?.totalBS ?? 0) || (isUsdMethod(method) ? 0 : Number(payment?.amount) || usd * rate);
+      return { method, usd, bs };
+    };
+    const addPayment = (payment:any, bucket:"ventas"|"cobros"|"dev", factor=1) => {
+      const p = readPayment(payment);
+      if (p.method === "credito") return;
+      const row = ensureRow(p.method);
+      if (isUsdMethod(p.method)) row[bucket + "USD"] += p.usd * factor;
+      else row[bucket + "BS"] += p.bs * factor;
+    };
+
+    activeSales.forEach((sale:any) => paymentParts(sale).forEach((p:any) => addPayment(p,"ventas")));
+    const debtSales = allSales.filter((v:any) => inWindow(v.fecha) && String(v.terminalId || "") === termId && isDebtCollection(v));
+    debtSales.forEach((sale:any) => paymentParts(sale).forEach((p:any) => addPayment(p,"cobros")));
+
+    const relevantJournal = allJournal.filter((entry:any) => inWindow(entry.fecha) && String(entry.terminalId || "") === termId);
+    const debtJournal = relevantJournal.filter((entry:any) => String(entry.categoria || "").toUpperCase() === "COBRO_DEUDA");
+    const debtSaleIds = new Set(debtSales.map((sale:any) => String(sale.id)));
+    debtJournal.filter((entry:any) => !debtSaleIds.has(String(entry.referencia || entry.id))).forEach((entry:any) => {
+      addPayment({ metodo:entry.metodo, montoUSD:entry.montoUSD, montoBS:entry.montoBS }, "cobros");
+    });
+
+    const applyRefund = (document:any, kind:"devolucion"|"anulacion") => {
+      const sale = allSales.find((v:any) => String(v.id) === String(document.ventaId));
+      const explicit = Array.isArray(document.refundPayments) && document.refundPayments.length ? document.refundPayments : null;
+      const pays = explicit || paymentParts(sale || {});
+      const saleTotal = Math.max(Number(sale?.totalUSD) || 0.000001, 0.000001);
+      const factor = explicit || !sale ? 1 : (Number(document.totalUSD) || 0) / saleTotal;
+      pays.forEach((p:any) => addPayment(p,"dev",factor));
+    };
+    returns.forEach((d:any) => applyRefund(d,"devolucion"));
+    cancellations.forEach((a:any) => applyRefund(a,"anulacion"));
+    canceledWithoutDocument.forEach((sale:any) => paymentParts(sale).forEach((p:any) => addPayment(p,"dev")));
+
+    const cashMovements = relevantJournal.filter((entry:any) => {
+      const category = String(entry.categoria || "").trim().toUpperCase().replace(/Á/g,"A");
+      return ["MOVIMIENTO_CAJA","MOVIMIENTO DE CAJA"].includes(category) && ["ingreso","egreso"].includes(String(entry.tipo));
+    });
+    cashMovements.forEach((entry:any) => {
+      const method = normalizeMethod(entry.metodo || "otros");
+      const row = ensureRow(method);
+      if (isUsdMethod(method)) {
+        if (entry.tipo === "ingreso") row.movPlusUSD += Number(entry.montoUSD) || 0;
+        else row.movMinusUSD += Number(entry.montoUSD) || 0;
+      } else {
+        if (entry.tipo === "ingreso") row.movPlusBS += Number(entry.montoBS) || 0;
+        else row.movMinusBS += Number(entry.montoBS) || 0;
       }
     });
 
-    const sortedVentas = vActivas.sort((a,b) => a.fecha.localeCompare(b.fecha));
-    const desdeFactura = sortedVentas.length > 0 ? sortedVentas[0].id : 'N/A';
-    const hastaFactura = sortedVentas.length > 0 ? sortedVentas[sortedVentas.length - 1].id : 'N/A';
-    
-    const sortedDevs = dHoy.sort((a,b) => a.fecha.localeCompare(b.fecha));
-    const desdeNC = sortedDevs.length > 0 ? sortedDevs[0].id : 'N/A';
-    const hastaNC = sortedDevs.length > 0 ? sortedDevs[sortedDevs.length - 1].id : 'N/A';
-
-    // Movimientos de caja del periodo SOLO de ESTA caja. Cada asiento generado
-    // por el POS lleva su terminalId, así ninguna caja ve las entradas/salidas
-    // de otra. Los asientos manuales (contabilidad) se registran por terminal si
-    // el operador tiene uno asignado; si no, quedan como globales.
-    const relevantDiario = allLibroDiario.filter(e => e.fecha > corteTimestamp && e.terminalId === termId);
-    const totalSalidasCaja = relevantDiario.filter(e => e.tipo === 'egreso').reduce((s, e) => s + e.montoUSD, 0);
-    const totalEntradasCaja = relevantDiario.filter(e => e.tipo === 'ingreso' && e.categoria !== 'VENTA' && e.categoria !== 'COBRO_DEUDA').reduce((s, e) => s + e.montoUSD, 0);
-    // Cobros de deuda (ingresos de caja por cobros de créditos).
-    const cobrosDeudaUSD = relevantDiario.filter(e => e.tipo === 'ingreso' && e.categoria === 'COBRO_DEUDA').reduce((s, e) => s + e.montoUSD, 0);
-    const cobrosDeudaBS = relevantDiario.filter(e => e.tipo === 'ingreso' && e.categoria === 'COBRO_DEUDA').reduce((s, e) => s + e.montoBS, 0);
-
-    const terminalName = currentTerminal ? currentTerminal.nombre : 'SISTEMA GLOBAL';
-
-    return { 
-      brUSD, devUSD, descUSD, netUSD, igtfUSD, ivaUSD, baseImponibleUSD, exentoUSD,
-      paymentMethods: paymentMethodsMap,
-      manualSalidas: totalSalidasCaja,
-      manualEntradas: totalEntradasCaja,
-      cobrosDeudaUSD,
-      cobrosDeudaBS,
-      fondoAperturaUSD: tc.fondoCajaHoyUSD || 0,
-      fondoAperturaBS: tc.fondoCajaHoyBS || 0,
-      desdeFactura, hastaFactura, desdeNC, hastaNC,
-      stats: { facturas: vActivas.length, devoluciones: dHoy.length, anulaciones: vAnuladas.length, ticketPromedio: vActivas.length > 0 ? (netUSD / vActivas.length) : 0 },
-      fecha: Utils.ahora(), terminalName, terminalId: termId, numeroZ: tc.ultimoZ + 1, acumuladoHistoricoUSD: tc.acumuladoHistorico + netUSD,
-      // Total explícito en USD del día (ventas brutas, antes de descuentos/devoluciones).
-      // Suma de v.totalUSD: ya incluye conversión BS→USD por la tasa de la venta.
-      totalVentasUSD: brUSD,
-      tasaBCV: freshState.tasa || 0
+    ["efectivo_bs","efectivo_usd","zelle","pagomovil","biopago","transferencia_bs","transferencia_usd","tarjeta","credito"].forEach(ensureRow);
+    const metodosArqueo = Object.values(arqueoMap).map((row:any) => ({ ...row, moneda:isUsdMethod(row.metodo) ? "USD" : "BS" }));
+    const methods:Record<string,number> = {};
+    activeSales.forEach((sale:any) => paymentParts(sale).forEach((p:any) => {
+      const parsed = readPayment(p);
+      methods[parsed.method] = (methods[parsed.method] || 0) + parsed.usd;
+    }));
+    const sortedSales = [...activeSales].sort((a:any,b:any) => String(a.fecha).localeCompare(String(b.fecha)));
+    const sortedReturns = [...returns].sort((a:any,b:any) => String(a.fecha).localeCompare(String(b.fecha)));
+    const manualMovements = relevantJournal.filter((entry:any) => !["VENTA","COBRO_DEUDA"].includes(String(entry.categoria || "").toUpperCase()));
+    const manualSalidas = manualMovements.filter((e:any) => e.tipo === "egreso").reduce((s:number,e:any) => s + (Number(e.montoUSD)||0),0);
+    const manualEntradas = manualMovements.filter((e:any) => e.tipo === "ingreso").reduce((s:number,e:any) => s + (Number(e.montoUSD)||0),0);
+    const manualSalidasBS = cashMovements.filter((e:any) => e.tipo === "egreso" && normalizeMethod(e.metodo) === "efectivo_bs").reduce((s:number,e:any)=>s+(Number(e.montoBS)||0),0);
+    const manualSalidasUSD = cashMovements.filter((e:any) => e.tipo === "egreso" && normalizeMethod(e.metodo) === "efectivo_usd").reduce((s:number,e:any)=>s+(Number(e.montoUSD)||0),0);
+    const manualEntradasBS = cashMovements.filter((e:any) => e.tipo === "ingreso" && normalizeMethod(e.metodo) === "efectivo_bs").reduce((s:number,e:any)=>s+(Number(e.montoBS)||0),0);
+    const manualEntradasUSD = cashMovements.filter((e:any) => e.tipo === "ingreso" && normalizeMethod(e.metodo) === "efectivo_usd").reduce((s:number,e:any)=>s+(Number(e.montoUSD)||0),0);
+    const cobrosDeudaUSD = debtSales.reduce((s:number,v:any)=>s+(Number(v.totalUSD)||0),0) + debtJournal.reduce((s:number,e:any)=>s+(Number(e.montoUSD)||0),0);
+    const cobrosDeudaBS = debtSales.reduce((s:number,v:any)=>s+(Number(v.totalBS)||0),0) + debtJournal.reduce((s:number,e:any)=>s+(Number(e.montoBS)||0),0);
+    const fondoAperturaBS = Number(tc.fondoCajaHoyBS) || 0;
+    const fondoAperturaUSD = Number(tc.fondoCajaHoyUSD) || 0;
+    const cashBs = ensureRow("efectivo_bs");
+    const cashUsd = ensureRow("efectivo_usd");
+    const totalNetoEfectivoBS = fondoAperturaBS + cashBs.ventasBS + cashBs.cobrosBS - cashBs.devBS + cashBs.movPlusBS - cashBs.movMinusBS;
+    const totalNetoEfectivoUSD = fondoAperturaUSD + cashUsd.ventasUSD + cashUsd.cobrosUSD - cashUsd.devUSD + cashUsd.movPlusUSD - cashUsd.movMinusUSD;
+    const terminalName = terminal?.nombre || "CAJA NO IDENTIFICADA";
+    const totalUSD = grossUSD;
+    return {
+      brUSD:grossUSD, devUSD:refundsUSD, descUSD:discountsUSD, netUSD, igtfUSD, ivaUSD, baseImponibleUSD, exentoUSD,
+      paymentMethods:methods, metodosArqueo, manualSalidas, manualEntradas, manualSalidasBS, manualSalidasUSD,
+      manualEntradasBS, manualEntradasUSD, cobrosDeudaUSD, cobrosDeudaBS, fondoAperturaUSD, fondoAperturaBS,
+      desdeFactura:sortedSales[0]?.id || "N/A", hastaFactura:sortedSales[sortedSales.length-1]?.id || "N/A",
+      desdeNC:sortedReturns[0]?.id || "N/A", hastaNC:sortedReturns[sortedReturns.length-1]?.id || "N/A",
+      stats:{ facturas:activeSales.length, devoluciones:returns.length, anulaciones:cancellations.length + canceledWithoutDocument.length, ticketPromedio:activeSales.length ? netUSD/activeSales.length : 0 },
+      fecha:Utils.ahora(), terminalName, terminalId:termId, numeroZ:Number(tc.ultimoZ || 0)+1,
+      acumuladoHistoricoUSD:(Number(tc.acumuladoHistorico)||0)+netUSD, totalVentasUSD:totalUSD, tasaBCV:rate,
+      estimadoEfectivoBS:{entradas:manualEntradasBS,egresos:manualSalidasBS,total:totalNetoEfectivoBS},
+      estimadoEfectivoUSD:{entradas:manualEntradasUSD,egresos:manualSalidasUSD,total:totalNetoEfectivoUSD},
+      totalNetoEfectivoBS,totalNetoEfectivoUSD,
     };
   };
 
   const handleOpenReport = async (type: 'REPORT_X' | 'REPORT_Z') => {
-    if (showReportType || reportLoadingType) return;
+    if (showReportType || showZArqueo || reportLoadingType) return;
     setReportLoadingType(type);
     try {
-      // Corte Z solo puede iniciarse sobre una apertura vigente de esta terminal.
       const openingState = Utils.getTerminalCash(currentTerminal);
       if (type === 'REPORT_Z' && (!currentTerminal?.id || !openingState.isCashOpen || !openingState.cashData?.openDate || openingState.cashData?.closeDate)) {
         throw new Error('No existe una apertura de caja vigente. Abra la caja antes de ejecutar un nuevo Corte Z.');
       }
       await Store.ensureReportData(currentTerminal?.id || 'GLOBAL', openingState.fechaUltimoZ || new Date().toISOString().split('T')[0]);
-      
-      // ✅ Verificar que los datos se cargaron correctamente
-      const state = Store.get();
-      const termId = currentTerminal?.id || 'GLOBAL';
-      const ventasDelDia = (state.ventas || []).filter(v => v.estado !== 'anulada' && v.terminalId === termId);
-      
-      // Si no hay ventas pero la caja (de ESTE terminal) está abierta, mostrar advertencia
-      if (ventasDelDia.length === 0 && Utils.getTerminalCash(currentTerminal).isCashOpen) {
-        toast({ 
-          variant: 'default', 
-          title: 'Sin ventas registradas', 
-          description: 'Las ventas aún se están sincronizando. Si el problema persiste, recarga la página.' 
-        });
-      }
-      
       const data = getFreshReportData();
       setReportSnapshot(data);
-      setShowReportType(type);
-    } catch (e) {
-      console.error('Error abriendo reporte X/Z:', e);
-      toast({ variant: 'destructive', title: 'Error', description: 'No se pudieron cargar los datos del reporte. Reintenta.' });
+      setArqueoMode(type === 'REPORT_Z' ? 'Z' : 'X');
+      setShowZArqueo(true);
+    } catch (error:any) {
+      console.error('Error abriendo arqueo X/Z:', error);
+      toast({ variant: 'destructive', title: 'Error', description: error?.message || 'No se pudieron cargar los datos del arqueo.' });
     } finally {
       setReportLoadingType(null);
     }
   };
 
-  const ejecutarCierreZ = async () => {
+  const ejecutarCierreZ = async (real: Record<string,string>, diff: {bs:number;usd:number}) => {
     const data = reportSnapshot;
     if (!data || isClosingZ) return;
     const liveState = Store.get();
-    const terminal = (liveState.terminales || []).find(t => t.id === currentTerminal?.id);
+    const terminal = (liveState.terminales || []).find((t:any) => String(t.id) === String(currentTerminal?.id));
     const tc = Utils.getTerminalCash(terminal || currentTerminal);
     if (!terminal?.id || !tc.isCashOpen || !tc.cashData?.openDate || tc.cashData?.closeDate) {
       toast({ variant: 'destructive', title: 'Corte Z rechazado', description: 'La caja no tiene una apertura vigente. No se generó ningún cierre.' });
       return;
     }
+    const rows = Array.isArray(data.metodosArqueo) ? data.metodosArqueo : [];
+    const missing = rows.some((row:any) => {
+      const raw = String(real[row.metodo] ?? '').trim().replace(',', '.');
+      return raw === '' || !Number.isFinite(Number(raw)) || Number(raw) < 0;
+    });
+    if (missing) {
+      toast({ variant: 'destructive', title: 'Arqueo incompleto', description: 'Registre el monto real de cada método de pago, incluso cuando sea cero.' });
+      return;
+    }
+
     setIsClosingZ(true);
     try {
       const ahora = Utils.ahora();
       const numeroZ = Number(tc.ultimoZ || 0) + 1;
       const termId = terminal.id;
+      const metodosArqueo = rows.map((row:any) => {
+        const method = String(row.metodo);
+        const currency = ['efectivo_usd','zelle','transferencia_usd'].includes(method) ? 'USD' : 'BS';
+        const opening = method === 'efectivo_bs' ? Number(data.fondoAperturaBS || 0) : method === 'efectivo_usd' ? Number(data.fondoAperturaUSD || 0) : 0;
+        const sales = currency === 'BS' ? Number(row.ventasBS || 0) : Number(row.ventasUSD || 0);
+        const cxc = currency === 'BS' ? Number(row.cobrosBS || 0) : Number(row.cobrosUSD || 0);
+        const returns = currency === 'BS' ? Number(row.devBS || 0) : Number(row.devUSD || 0);
+        const plus = currency === 'BS' ? Number(row.movPlusBS || 0) : Number(row.movPlusUSD || 0);
+        const minus = currency === 'BS' ? Number(row.movMinusBS || 0) : Number(row.movMinusUSD || 0);
+        const system = Number((opening + sales + cxc - returns + plus - minus).toFixed(2));
+        const amountReal = Number(String(real[method]).replace(',', '.'));
+        return { ...row, montoSistema:system, montoReal:amountReal, diferencia:Number((amountReal-system).toFixed(2)), moneda:currency };
+      });
+      const realBs = Number(String(real.efectivo_bs || '0').replace(',', '.')) || 0;
+      const realUSD = Number(String(real.efectivo_usd || '0').replace(',', '.')) || 0;
       const nuevoZ: ReportZ = {
         id: 'Z-' + String(numeroZ).padStart(6, '0'), fecha: ahora, numeroZ, terminalId: termId, terminalName: data.terminalName,
         desdeFactura: data.desdeFactura, hastaFactura: data.hastaFactura, desdeNotaCredito: data.desdeNC, hastaNotaCredito: data.hastaNC,
         cantidadAnuladas: data.stats.anulaciones, ventaBrutaUSD: data.brUSD, descuentoUSD: data.descUSD, devolucionesUSD: data.devUSD,
         ventaNetaUSD: data.netUSD, baseImponibleUSD: data.baseImponibleUSD, ivaUSD: data.ivaUSD, exentoUSD: data.exentoUSD,
-        igtfUSD: data.igtfUSD, metodosPago: { ...data.paymentMethods }, salidasCajaUSD: data.manualSalidas, entradasCajaUSD: data.manualEntradas,
-        fondoAperturaUSD: data.fondoAperturaUSD, fondoAperturaBS: data.fondoAperturaBS, acumuladoHistoricoUSD: data.acumuladoHistoricoUSD, stats: { ...data.stats }
-      };
+        igtfUSD: data.igtfUSD, metodosPago: { ...data.paymentMethods }, metodosArqueo,
+        salidasCajaUSD: data.manualSalidas, entradasCajaUSD: data.manualEntradas,
+        fondoAperturaUSD: data.fondoAperturaUSD, fondoAperturaBS: data.fondoAperturaBS,
+        acumuladoHistoricoUSD: data.acumuladoHistoricoUSD, stats: { ...data.stats },
+        cobrosDeudaUSD: data.cobrosDeudaUSD, cobrosDeudaBS: data.cobrosDeudaBS,
+        manualSalidasBS: data.manualSalidasBS, manualSalidasUSD: data.manualSalidasUSD,
+        manualEntradasBS: data.manualEntradasBS, manualEntradasUSD: data.manualEntradasUSD,
+        totalNetoEfectivoBS: realBs, totalNetoEfectivoUSD: realUSD,
+        differenceBs: diff.bs, differenceUSD: diff.usd,
+        tasaBCV: data.tasaBCV, empresa: liveState.empresa,
+      } as ReportZ;
       const closedSession = {
-        ...tc.cashData,
-        closeDate: ahora,
-        closeAmount: null,
-        closeAmountBs: null,
-        closeAmountUsd: null,
+        ...tc.cashData, closeDate: ahora, closeAmount: realBs + realUSD * (Number(data.tasaBCV) || 1),
+        closeAmountBs: realBs, closeAmountUsd: realUSD,
+        difference: diff.bs + diff.usd * (Number(data.tasaBCV) || 1),
         closeNotes: 'Cierre de caja realizado mediante Corte Z ' + nuevoZ.id,
       };
-      const terminales = (liveState.terminales || []).map(t => t.id === termId ? {
-        ...t,
-        ultimoZ: numeroZ,
-        fechaUltimoZ: ahora,
-        acumuladoHistorico: data.acumuladoHistoricoUSD,
-        fondoCajaHoyBS: 0,
-        fondoCajaHoyUSD: 0,
-        isCashOpen: false,
-        cashData: null,
+      const terminales = (liveState.terminales || []).map((t:any) => t.id === termId ? {
+        ...t, ultimoZ: numeroZ, fechaUltimoZ: ahora, acumuladoHistorico: data.acumuladoHistoricoUSD,
+        fondoCajaHoyBS: 0, fondoCajaHoyUSD: 0, isCashOpen: false, cashData: null,
         cashHistory: [closedSession, ...(t.cashHistory || [])],
       } : t);
       await Store.set({ reportesZ: [...(liveState.reportesZ || []), nuevoZ], terminales });
       if (typeof localStorage !== 'undefined') localStorage.removeItem('posven_apertura_done');
-      toast({ title: 'Corte Z confirmado', description: 'La caja quedó cerrada. Para otro Z deberá realizar una nueva apertura.' });
-      setShowReportType(null);
-      setReportSnapshot(null);
-    } catch (error: any) {
+      setShowZArqueo(false);
+      setShowReportType('REPORT_Z');
+      setReportSnapshot({ ...data, ...nuevoZ, numeroZ, empresa: liveState.empresa, generatedAt: ahora, closedAt: ahora, openedAt: tc.cashData?.openDate, closedBy: data.cajeroNombre, differenceBs: diff.bs, differenceUSD: diff.usd });
+      toast({ title: 'Corte Z confirmado', description: 'El arqueo y el cierre de caja quedaron guardados. Para otro Z debe realizar una nueva apertura.' });
+    } catch (error:any) {
       toast({ variant: 'destructive', title: 'No se pudo ejecutar el Corte Z', description: error?.message || 'Turso no confirmó el cierre. La caja permanece abierta.' });
     } finally {
       setIsClosingZ(false);
@@ -1196,14 +1274,20 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       )}
       
       {showReportType && reportSnapshot && (
-        <ReceiptModal 
-          isOpen={!!showReportType} 
-          onClose={() => {
-            if (showReportType === 'REPORT_Z') void ejecutarCierreZ();
-            else setShowReportType(null);
-          }} 
-          reportData={reportSnapshot} 
-          type={showReportType} 
+        <ReceiptModal
+          isOpen={!!showReportType}
+          onClose={() => { setShowReportType(null); setReportSnapshot(null); }}
+          reportData={reportSnapshot}
+          type={showReportType}
+        />
+      )}
+      {showZArqueo && reportSnapshot && (
+        <CashZArqueoModal
+          open={showZArqueo}
+          mode={arqueoMode}
+          report={reportSnapshot}
+          onCancel={() => { setShowZArqueo(false); setReportSnapshot(null); }}
+          onConfirm={(real, diff) => { void ejecutarCierreZ(real, diff); }}
         />
       )}
       

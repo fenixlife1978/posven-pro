@@ -294,6 +294,20 @@ export interface ReportZ {
   exentoUSD: number;
   igtfUSD: number;
   metodosPago: Record<string, number>;
+  metodosArqueo?: Array<{
+    metodo: string; moneda?: string;
+    ventasBS: number; ventasUSD: number; cobrosBS: number; cobrosUSD: number;
+    devBS: number; devUSD: number; movPlusBS: number; movPlusUSD: number;
+    movMinusBS: number; movMinusUSD: number;
+    montoSistema?: number; montoReal?: number; diferencia?: number;
+  }>;
+  cobrosDeudaUSD?: number; cobrosDeudaBS?: number;
+  manualSalidasBS?: number; manualSalidasUSD?: number;
+  manualEntradasBS?: number; manualEntradasUSD?: number;
+  totalNetoEfectivoBS?: number; totalNetoEfectivoUSD?: number;
+  differenceBs?: number; differenceUSD?: number;
+  tasaBCV?: number;
+  empresa?: { nombre?: string; rif?: string; subtitulo?: string };
   salidasCajaUSD: number;
   entradasCajaUSD: number;
   fondoAperturaUSD: number;

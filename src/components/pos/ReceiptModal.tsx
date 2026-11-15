@@ -439,6 +439,31 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
 
                    <div className="separator-dashed"></div>
 
+                   {type === 'REPORT_Z' && Array.isArray(data.metodosArqueo) && data.metodosArqueo.length > 0 && (
+                     <>
+                       <div className="separator-dashed"></div>
+                       <div className="text-center font-bold">ARQUEO DETALLADO POR MÉTODO</div>
+                       <div className="separator-dashed"></div>
+                       {data.metodosArqueo.map((row:any) => {
+                         const currency = row.moneda === 'USD' ? 'USD' : 'BS';
+                         const fmt = (value:number) => currency === 'USD' ? '$ ' + formatUsd(value || 0) : formatBs(value || 0);
+                         return (
+                           <div key={row.metodo} className="mb-2">
+                             <div className="font-bold">{String(row.metodo).replace(/_/g,' ').toUpperCase()}</div>
+                             <table><tbody>
+                               <tr><td>Fondo inicial</td><td className="text-right">{fmt(row.metodo === 'efectivo_bs' ? data.fondoAperturaBS : row.metodo === 'efectivo_usd' ? data.fondoAperturaUSD : 0)}</td></tr>
+                               <tr><td>Ventas / CxC</td><td className="text-right">{fmt((currency === 'USD' ? row.ventasUSD : row.ventasBS) || 0)} / {fmt((currency === 'USD' ? row.cobrosUSD : row.cobrosBS) || 0)}</td></tr>
+                               <tr><td>Dev/Anu. / Mov. (+)</td><td className="text-right">{fmt((currency === 'USD' ? row.devUSD : row.devBS) || 0)} / {fmt((currency === 'USD' ? row.movPlusUSD : row.movPlusBS) || 0)}</td></tr>
+                               <tr><td>Mov. (-)</td><td className="text-right">{fmt((currency === 'USD' ? row.movMinusUSD : row.movMinusBS) || 0)}</td></tr>
+                               <tr className="bold"><td>Sistema / Real</td><td className="text-right">{fmt(row.montoSistema || 0)} / {fmt(row.montoReal || 0)}</td></tr>
+                               <tr className="bold"><td>Diferencia (+/-)</td><td className="text-right">{fmt(row.diferencia || 0)}</td></tr>
+                             </tbody></table>
+                           </div>
+                         );
+                       })}
+                     </>
+                   )}
+
                    {/* ===== MOVIMIENTO DE CAJA ===== */}
                    <div className="text-center font-bold">MOVIMIENTO DE CAJA</div>
                    <div className="separator-dashed"></div>
