@@ -248,7 +248,11 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     const termId = String(currentTerminal?.id || "GLOBAL");
     const terminal = (freshState.terminales || []).find((t:any) => String(t.id) === termId) || currentTerminal;
     const tc = Utils.getTerminalCash(terminal);
-    const since = tc.fechaUltimoZ || "";
+    // El arqueo pertenece a la sesión actualmente abierta, no a todo el día
+    // ni a todo el histórico anterior. Si existe una apertura posterior al
+    // último Z, ella define el inicio de la jornada operativa.
+    const cutoffs = [tc.fechaUltimoZ, tc.cashData?.openDate].filter(Boolean).map(String).sort();
+    const since = cutoffs[cutoffs.length - 1] || Utils.hoy();
     const inWindow = (date: string) => String(date || "") > since;
     const allSales = freshState.ventas || [];
     const allReturns = freshState.devoluciones || [];
@@ -437,7 +441,9 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       if (type === 'REPORT_Z' && (!currentTerminal?.id || !openingState.isCashOpen || !openingState.cashData?.openDate || openingState.cashData?.closeDate)) {
         throw new Error('No existe una apertura de caja vigente. Abra la caja antes de ejecutar un nuevo Corte Z.');
       }
-      await Store.ensureReportData(currentTerminal?.id || 'GLOBAL', openingState.fechaUltimoZ || new Date().toISOString().split('T')[0]);
+      const reportCutoffs = [openingState.fechaUltimoZ, openingState.cashData?.openDate].filter(Boolean).map(String).sort();
+      const reportSince = reportCutoffs[reportCutoffs.length - 1] || Utils.hoy();
+      await Store.ensureReportData(currentTerminal?.id || 'GLOBAL', reportSince);
       const data = getFreshReportData();
       setReportSnapshot(data);
       setArqueoMode(type === 'REPORT_Z' ? 'Z' : 'X');
