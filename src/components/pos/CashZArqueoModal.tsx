@@ -88,13 +88,14 @@ export default function CashZArqueoModal({ open, mode, report, onCancel, onConfi
 
   if (!open || !report) return null;
 
-  const reconciled = mode === "Z" && allAmountsEntered && Math.abs(diff.bs) < 0.01 && Math.abs(diff.usd) < 0.01;
+  const balanced = allAmountsEntered && Math.abs(diff.bs) < 0.01 && Math.abs(diff.usd) < 0.01;
+  const reconciled = mode === "Z" && balanced;
   const hasShortage = diff.bs < -0.01 || diff.usd < -0.01;
   const hasAnyReal = rows.some(row => String(real[row.method] ?? "").trim() !== "");
   const status = mode === "X"
     ? !hasAnyReal ? "LECTURA X — SIN CONTEO REAL"
       : !allAmountsEntered ? "CONTEO PARCIAL — NO CIERRA LA CAJA"
-        : reconciled ? "ARQUEO INFORMATIVO CONCILIADO" : hasShortage ? "FALTANTE INFORMATIVO" : "SOBRANTE INFORMATIVO"
+        : balanced ? "ARQUEO INFORMATIVO CONCILIADO" : hasShortage ? "FALTANTE INFORMATIVO" : "SOBRANTE INFORMATIVO"
     : !allAmountsEntered ? "FALTAN MONTOS REALES POR CONTAR"
       : reconciled ? "ARQUEO CONCILIADO" : hasShortage ? "FALTANTE" : "SOBRANTE";
 
