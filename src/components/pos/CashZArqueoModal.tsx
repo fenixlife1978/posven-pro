@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, X } from "lucide-react";
 
 type Props = {
@@ -27,6 +27,8 @@ const LABELS: Record<string, string> = {
   transferencia_usd: "Transferencia USD",
   tarjeta: "Tarjeta / Punto de venta",
   credito: "Ventas a crédito",
+  otros: "Otros métodos",
+  mixto: "Mixto sin desglose",
 };
 
 const isUsd = (method: string) =>
@@ -39,6 +41,10 @@ const money = (value: number, currency: "BS" | "USD") =>
 
 export default function CashZArqueoModal({ open, mode, report, onCancel, onConfirm, busy = false }: Props) {
   const [real, setReal] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (open) setReal({});
+  }, [open, mode, report?.fecha, report?.numeroZ]);
 
   const rows = useMemo(() => {
     if (!report) return [];
@@ -53,7 +59,7 @@ export default function CashZArqueoModal({ open, mode, report, onCancel, onConfi
     });
 
     return Array.from(map.entries()).map(([method, value]) => {
-      const currency: "BS" | "USD" = isUsd(method) ? "USD" : "BS";
+      const currency: "BS" | "USD" = value.moneda === "USD" || isUsd(method) ? "USD" : "BS";
       const opening = method === "efectivo_bs"
         ? Number(report.fondoAperturaBS || 0)
         : method === "efectivo_usd" ? Number(report.fondoAperturaUSD || 0) : 0;
@@ -92,12 +98,15 @@ export default function CashZArqueoModal({ open, mode, report, onCancel, onConfi
   const reconciled = mode === "Z" && balanced;
   const hasShortage = diff.bs < -0.01 || diff.usd < -0.01;
   const hasAnyReal = rows.some(row => String(real[row.method] ?? "").trim() !== "");
-  const status = mode === "X"
-    ? !hasAnyReal ? "LECTURA X — SIN CONTEO REAL"
-      : !allAmountsEntered ? "CONTEO PARCIAL — NO CIERRA LA CAJA"
-        : balanced ? "ARQUEO INFORMATIVO CONCILIADO" : hasShortage ? "FALTANTE INFORMATIVO" : "SOBRANTE INFORMATIVO"
-    : !allAmountsEntered ? "FALTAN MONTOS REALES POR CONTAR"
-      : reconciled ? "ARQUEO CONCILIADO" : hasShortage ? "FALTANTE" : "SOBRANTE";
+  const hasUnresolvedPayments = Array.isArray(report.arqueoWarnings) && report.arqueoWarnings.length > 0;
+  const status = hasUnresolvedPayments
+    ? "PAGOS MIXTOS SIN DESGLOSE — REVISAR VENTAS"
+    : mode === "X"
+      ? !hasAnyReal ? "LECTURA X — SIN CONTEO REAL"
+        : !allAmountsEntered ? "CONTEO PARCIAL — NO CIERRA LA CAJA"
+          : balanced ? "ARQUEO INFORMATIVO CONCILIADO" : hasShortage ? "FALTANTE INFORMATIVO" : "SOBRANTE INFORMATIVO"
+      : !allAmountsEntered ? "FALTAN MONTOS REALES POR CONTAR"
+        : reconciled ? "ARQUEO CONCILIADO" : hasShortage ? "FALTANTE" : "SOBRANTE";
 
   return (
     <div className="fixed inset-0 z-[220] bg-black/60 flex items-center justify-center p-3">
@@ -164,7 +173,9 @@ export default function CashZArqueoModal({ open, mode, report, onCancel, onConfi
             <div className="text-[10px] text-ink/50 mt-1">
               {mode === "X"
                 ? "El conteo de Corte X es temporal: no se guarda, no altera saldos y no cierra la caja."
-                : "Debe introducir el monto real de cada método, incluso cero. Los medios electrónicos no se convierten en efectivo."}
+                : hasUnresolvedPayments
+                  ? "Hay ventas mixtas sin desglose de sus pagos. No se puede calcular el arqueo correctamente; corrija esos documentos antes del Z."
+                  : "Debe introducir el monto real de cada método, incluso cero. Los medios electrónicos no se convierten en efectivo."}
             </div>
           </div>
         </div>
@@ -172,7 +183,7 @@ export default function CashZArqueoModal({ open, mode, report, onCancel, onConfi
         <div className="p-4 bg-surface-soft border-t border-line flex justify-end gap-2 shrink-0">
           <button onClick={onCancel} className="px-5 h-10 rounded-xl border border-line text-ink font-black uppercase text-[10px]">Cerrar</button>
           {mode === "Z" && (
-            <button disabled={!allAmountsEntered || busy} onClick={() => onConfirm(real, diff)}
+            <button disabled={!allAmountsEntered || hasUnresolvedPayments || busy} onClick={() => onConfirm(real, diff)}
               className="px-5 h-10 rounded-xl bg-status-danger text-white font-black uppercase text-[10px] shadow-md disabled:opacity-40 disabled:cursor-not-allowed">
               {busy ? "Guardando y cerrando…" : "Guardar y ejecutar Z"}
             </button>

@@ -278,12 +278,16 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     const normalizeMethod = (method:any) => {
       const key = String(method || "otros").trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, "_");
       if (["punto_venta","punto_de_venta","punto_pago","punto_de_pago","tarjeta_debito","tarjeta_credito"].includes(key)) return "tarjeta";
-      if (key === "pago_movil") return "pagomovil";
-      if (key === "efectivo") return "efectivo_bs";
-      if (key === "transferencia") return "transferencia_bs";
+      if (["pago_movil", "pago_movil_bs"].includes(key)) return "pagomovil";
+      if (["efectivo", "efectivo_bs", "efectivo_bolivares", "bs", "bolivares"].includes(key)) return "efectivo_bs";
+      if (["efectivo_usd", "efectivo_usd_dolares", "usd", "dolar", "dolares", "efectivo_dolares"].includes(key)) return "efectivo_usd";
+      if (["transferencia", "transferencia_bs", "transferencia_bolivares"].includes(key)) return "transferencia_bs";
+      if (["transferencia_usd", "transferencia_dolares"].includes(key)) return "transferencia_usd";
+      if (["punto_venta", "punto_de_venta", "punto_pago", "punto_de_pago", "tarjeta_debito", "tarjeta_credito"].includes(key)) return "tarjeta";
+      if (key === "mixto") return "mixto";
       return key;
     };
-    const isUsdMethod = (method:string) => ["efectivo_usd","zelle","transferencia_usd","usd","dolar","dolares"].includes(normalizeMethod(method));
+    const isUsdMethod = (method:string) => ["efectivo_usd","zelle","transferencia_usd"].includes(normalizeMethod(method));
     const arqueoMap:Record<string,any> = {};
     const ensureRow = (method:string) => {
       if (!arqueoMap[method]) arqueoMap[method] = { metodo:method, ventasBS:0, ventasUSD:0, cobrosBS:0, cobrosUSD:0, devBS:0, devUSD:0, movPlusBS:0, movPlusUSD:0, movMinusBS:0, movMinusUSD:0 };
@@ -300,7 +304,10 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     };
     const addPayment = (payment:any, bucket:"ventas"|"cobros"|"dev", factor=1) => {
       const p = readPayment(payment);
-      if (p.method === "credito") return;
+      // Un registro mixto sin detalle de pagos no permite saber cuánto entró
+      // en cada moneda/método. Se muestra como incidencia y nunca se inventa
+      // una distribución en Bs. o USD.
+      if (p.method === "credito" || p.method === "mixto") return;
       const row = ensureRow(p.method);
       if (isUsdMethod(p.method)) row[bucket + "USD"] += p.usd * factor;
       else row[bucket + "BS"] += p.bs * factor;
@@ -332,7 +339,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
 
     const cashMovements = relevantJournal.filter((entry:any) => {
       const category = String(entry.categoria || "").trim().toUpperCase().replace(/Á/g,"A");
-      return ["MOVIMIENTO_CAJA","MOVIMIENTO DE CAJA"].includes(category) && ["ingreso","egreso"].includes(String(entry.tipo));
+      return !["VENTA", "COBRO_DEUDA", "DEVOLUCION", "ANULACION"].includes(category)
+        && ["ingreso","egreso"].includes(String(entry.tipo));
     });
     cashMovements.forEach((entry:any) => {
       const method = normalizeMethod(entry.metodo || "otros");
@@ -348,6 +356,12 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
 
     ["efectivo_bs","efectivo_usd","zelle","pagomovil","biopago","transferencia_bs","transferencia_usd","tarjeta","credito"].forEach(ensureRow);
     const metodosArqueo = Object.values(arqueoMap).map((row:any) => ({ ...row, moneda:isUsdMethod(row.metodo) ? "USD" : "BS" }));
+    const arqueoWarnings = allSales
+      .filter((sale:any) => inWindow(sale.fecha) && String(sale.terminalId || "") === termId
+        && String(sale.estado || "").toLowerCase() !== "anulada"
+        && normalizeMethod(sale.metodoPago) === "mixto"
+        && !(Array.isArray(sale.payments) && sale.payments.length))
+      .map((sale:any) => String(sale.id));
     const methods:Record<string,number> = {};
     activeSales.forEach((sale:any) => paymentParts(sale).forEach((p:any) => {
       const parsed = readPayment(p);
@@ -374,7 +388,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     const totalUSD = grossUSD;
     return {
       brUSD:grossUSD, devUSD:refundsUSD, descUSD:discountsUSD, netUSD, igtfUSD, ivaUSD, baseImponibleUSD, exentoUSD,
-      paymentMethods:methods, metodosArqueo, manualSalidas, manualEntradas, manualSalidasBS, manualSalidasUSD,
+      paymentMethods:methods, metodosArqueo, arqueoWarnings, manualSalidas, manualEntradas, manualSalidasBS, manualSalidasUSD,
       manualEntradasBS, manualEntradasUSD, cobrosDeudaUSD, cobrosDeudaBS, fondoAperturaUSD, fondoAperturaBS,
       desdeFactura:sortedSales[0]?.id || "N/A", hastaFactura:sortedSales[sortedSales.length-1]?.id || "N/A",
       desdeNC:sortedReturns[0]?.id || "N/A", hastaNC:sortedReturns[sortedReturns.length-1]?.id || "N/A",
