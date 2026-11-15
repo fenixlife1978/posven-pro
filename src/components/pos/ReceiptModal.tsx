@@ -541,7 +541,13 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
                         </tbody></table>
 
                         <div className="separator-dashed"></div>
-                        <div className="text-center font-bold">CIERRE DE JORNADA EXITOSO</div>
+                        <div className="text-center font-bold">
+                          {Math.abs(Number(data.differenceBs) || 0) < 0.01 && Math.abs(Number(data.differenceUSD) || 0) < 0.01
+                            ? "ARQUEO CONCILIADO"
+                            : (Number(data.differenceBs) < -0.01 || Number(data.differenceUSD) < -0.01)
+                              ? "CIERRE CON FALTANTE"
+                              : "CIERRE CON SOBRANTE"}
+                        </div>
                      </>
                    )}
                    {type === 'REPORT_X' && (
