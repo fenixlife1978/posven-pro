@@ -675,6 +675,7 @@ async function ensureReportData(terminalId?: string, cutoff?: string): Promise<v
     await Promise.all([
       ensureLoaded('ventas'),
       ensureLoaded('devoluciones'),
+      ensureLoaded('anulaciones'),
       ensureLoaded('libroDiario'),
     ]);
     return;
@@ -683,6 +684,7 @@ async function ensureReportData(terminalId?: string, cutoff?: string): Promise<v
   await Promise.all([
     loadReportWindow('ventas', termId, desde),
     loadReportWindow('devoluciones', termId, desde),
+    loadReportWindow('anulaciones', termId, desde),
     loadReportWindow('libroDiario', termId, desde),
   ]);
 }
