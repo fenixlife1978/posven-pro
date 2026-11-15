@@ -963,9 +963,11 @@ export async function createZClosureTransaction(params: {
     const closedSession = {
       ...current.cashData,
       closeDate,
-      closeAmount: current.cashData?.closeAmount ?? null,
-      closeAmountBs: current.cashData?.closeAmountBs ?? null,
-      closeAmountUsd: current.cashData?.closeAmountUsd ?? null,
+      closeAmount: null,
+      // Los montos reales se guardan en la sesión histórica, además del
+      // desglose completo por método que queda dentro del reporte Z.
+      closeAmountBs: Number(report.totalNetoEfectivoBS) || 0,
+      closeAmountUsd: Number(report.totalNetoEfectivoUSD) || 0,
       closeNotes: 'Cierre de caja mediante ' + report.id,
     };
     const updatedTerminal = {
