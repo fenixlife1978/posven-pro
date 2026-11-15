@@ -432,6 +432,10 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       toast({ variant: 'destructive', title: 'Corte Z rechazado', description: 'La caja no tiene una apertura vigente. No se generó ningún cierre.' });
       return;
     }
+    if (Array.isArray(data.arqueoWarnings) && data.arqueoWarnings.length) {
+      toast({ variant: 'destructive', title: 'Arqueo no confiable', description: 'Hay ventas mixtas sin desglose de pagos. Corrija esos documentos antes de cerrar la caja.' });
+      return;
+    }
     const rows = Array.isArray(data.metodosArqueo) ? data.metodosArqueo : [];
     const missing = rows.some((row:any) => {
       const raw = String(real[row.metodo] ?? '').trim().replace(',', '.');
