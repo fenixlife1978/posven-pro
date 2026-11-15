@@ -2229,8 +2229,6 @@ export const Store = {
               terminalPatch,
             });
           } catch (error) {
-            // Revertir el eco optimista: si Turso no confirmó el Z, la UI debe
-            // conservar la caja abierta y el correlativo anterior.
             applyPatch({ reportesZ: previousReports, terminales: prevTerminals });
             throw error;
           }
@@ -2248,6 +2246,7 @@ export const Store = {
             });
             return;
           }
+          throw new Error('Turso no devolvió confirmación del Corte Z. El cierre fue revertido localmente.');
         }
       }
 

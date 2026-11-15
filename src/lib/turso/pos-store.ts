@@ -938,10 +938,10 @@ export async function createZClosureTransaction(params: {
     if (!current) throw new Error('La terminal ya no existe en Turso.');
     assertTerminalAccess(params.user, current);
 
-    // El cierre solo se admite una vez por cada apertura confirmada.
-    // Esta validación vive en el servidor para impedir dobles clics, recargas
-    // o solicitudes concurrentes que intenten generar Z vacíos.
-    if (current.isCashOpen !== true || !current.cashData?.openDate || current.cashData?.closeDate) {
+    const cashIsOpen = current.isCashOpen === true || current.isCashOpen === 1 || String(current.isCashOpen).toLowerCase() === 'true';
+    const openingDate = String(current.cashData?.openDate || '');
+    const closingDate = current.cashData?.closeDate;
+    if (!cashIsOpen || !openingDate || closingDate) {
       throw new Error('No existe una sesión de caja abierta. Debe realizar una nueva apertura antes de otro Corte Z.');
     }
 
@@ -963,9 +963,9 @@ export async function createZClosureTransaction(params: {
     const closedSession = {
       ...current.cashData,
       closeDate,
-      closeAmount: null,
-      closeAmountBs: null,
-      closeAmountUsd: null,
+      closeAmount: current.cashData?.closeAmount ?? null,
+      closeAmountBs: current.cashData?.closeAmountBs ?? null,
+      closeAmountUsd: current.cashData?.closeAmountUsd ?? null,
       closeNotes: 'Cierre de caja mediante ' + report.id,
     };
     const updatedTerminal = {

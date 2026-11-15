@@ -322,13 +322,12 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     if (showReportType || reportLoadingType) return;
     setReportLoadingType(type);
     try {
-      // Corte Z solo puede iniciarse sobre una sesión de caja abierta y persistida.
-      const terminalCash = Utils.getTerminalCash(currentTerminal);
-      if (type === 'REPORT_Z' && (!currentTerminal?.id || !terminalCash.isCashOpen || !terminalCash.cashData?.openDate)) {
-        throw new Error('No hay una apertura de caja vigente. Abra la caja antes de ejecutar un nuevo Corte Z.');
+      // Corte Z solo puede iniciarse sobre una apertura vigente de esta terminal.
+      const openingState = Utils.getTerminalCash(currentTerminal);
+      if (type === 'REPORT_Z' && (!currentTerminal?.id || !openingState.isCashOpen || !openingState.cashData?.openDate || openingState.cashData?.closeDate)) {
+        throw new Error('No existe una apertura de caja vigente. Abra la caja antes de ejecutar un nuevo Corte Z.');
       }
-      // Garantiza que los registros necesarios estén cargados desde Turso antes de calcular el reporte.
-      await Store.ensureReportData(currentTerminal?.id || 'GLOBAL', terminalCash.fechaUltimoZ || new Date().toISOString().split('T')[0]);
+      await Store.ensureReportData(currentTerminal?.id || 'GLOBAL', openingState.fechaUltimoZ || new Date().toISOString().split('T')[0]);
       
       // ✅ Verificar que los datos se cargaron correctamente
       const state = Store.get();
@@ -361,44 +360,24 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     const liveState = Store.get();
     const terminal = (liveState.terminales || []).find(t => t.id === currentTerminal?.id);
     const tc = Utils.getTerminalCash(terminal || currentTerminal);
-    if (!terminal?.id || !tc.isCashOpen || !tc.cashData?.openDate) {
-      toast({ variant: 'destructive', title: 'Corte Z rechazado', description: 'La caja no tiene una apertura vigente. No se generó ningún Z.' });
+    if (!terminal?.id || !tc.isCashOpen || !tc.cashData?.openDate || tc.cashData?.closeDate) {
+      toast({ variant: 'destructive', title: 'Corte Z rechazado', description: 'La caja no tiene una apertura vigente. No se generó ningún cierre.' });
       return;
     }
-
     setIsClosingZ(true);
     try {
       const ahora = Utils.ahora();
       const numeroZ = Number(tc.ultimoZ || 0) + 1;
       const termId = terminal.id;
       const nuevoZ: ReportZ = {
-        id: 'Z-' + String(numeroZ).padStart(6, '0'),
-        fecha: ahora,
-        numeroZ,
-        terminalId: termId,
-        terminalName: data.terminalName,
-        desdeFactura: data.desdeFactura,
-        hastaFactura: data.hastaFactura,
-        desdeNotaCredito: data.desdeNC,
-        hastaNotaCredito: data.hastaNC,
-        cantidadAnuladas: data.stats.anulaciones,
-        ventaBrutaUSD: data.brUSD,
-        descuentoUSD: data.descUSD,
-        devolucionesUSD: data.devUSD,
-        ventaNetaUSD: data.netUSD,
-        baseImponibleUSD: data.baseImponibleUSD,
-        ivaUSD: data.ivaUSD,
-        exentoUSD: data.exentoUSD,
-        igtfUSD: data.igtfUSD,
-        metodosPago: { ...data.paymentMethods },
-        salidasCajaUSD: data.manualSalidas,
-        entradasCajaUSD: data.manualEntradas,
-        fondoAperturaUSD: data.fondoAperturaUSD,
-        fondoAperturaBS: data.fondoAperturaBS,
-        acumuladoHistoricoUSD: data.acumuladoHistoricoUSD,
-        stats: { ...data.stats },
+        id: 'Z-' + String(numeroZ).padStart(6, '0'), fecha: ahora, numeroZ, terminalId: termId, terminalName: data.terminalName,
+        desdeFactura: data.desdeFactura, hastaFactura: data.hastaFactura, desdeNotaCredito: data.desdeNC, hastaNotaCredito: data.hastaNC,
+        cantidadAnuladas: data.stats.anulaciones, ventaBrutaUSD: data.brUSD, descuentoUSD: data.descUSD, devolucionesUSD: data.devUSD,
+        ventaNetaUSD: data.netUSD, baseImponibleUSD: data.baseImponibleUSD, ivaUSD: data.ivaUSD, exentoUSD: data.exentoUSD,
+        igtfUSD: data.igtfUSD, metodosPago: { ...data.paymentMethods }, salidasCajaUSD: data.manualSalidas, entradasCajaUSD: data.manualEntradas,
+        fondoAperturaUSD: data.fondoAperturaUSD, fondoAperturaBS: data.fondoAperturaBS, acumuladoHistoricoUSD: data.acumuladoHistoricoUSD, stats: { ...data.stats }
       };
-      const cierreSesion = {
+      const closedSession = {
         ...tc.cashData,
         closeDate: ahora,
         closeAmount: null,
@@ -415,14 +394,11 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         fondoCajaHoyUSD: 0,
         isCashOpen: false,
         cashData: null,
-        cashHistory: [cierreSesion, ...(t.cashHistory || [])],
+        cashHistory: [closedSession, ...(t.cashHistory || [])],
       } : t);
-
-      // Store.set espera la confirmación transaccional de Turso. No mostrar éxito
-      // ni cerrar el reporte si el servidor rechaza o no confirma el cierre.
       await Store.set({ reportesZ: [...(liveState.reportesZ || []), nuevoZ], terminales });
       if (typeof localStorage !== 'undefined') localStorage.removeItem('posven_apertura_done');
-      toast({ title: 'Corte Z confirmado', description: 'La caja quedó cerrada y el consecutivo fue guardado.' });
+      toast({ title: 'Corte Z confirmado', description: 'La caja quedó cerrada. Para otro Z deberá realizar una nueva apertura.' });
       setShowReportType(null);
       setReportSnapshot(null);
     } catch (error: any) {
