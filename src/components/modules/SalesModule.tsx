@@ -791,6 +791,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       });
       if (!result?.sale?.id) throw new Error('Turso no confirmó la venta.');
       if (typeof window !== 'undefined') sessionStorage.removeItem('posven_current_cart');
+      updateState({ carrito: [] });
       setLastProcessedSale(result.sale);
       setShowReceiptModal(true);
       setPagos([]);
@@ -897,6 +898,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       });
       if (!result?.sale?.id || !result?.debt?.id) throw new Error('Turso no confirmó la venta y su deuda CxC.');
       if (typeof window !== 'undefined') sessionStorage.removeItem('posven_current_cart');
+      updateState({ carrito: [] });
       setLastProcessedSale(result.sale);
       setShowReceiptModal(true);
       setIsCreditModalOpen(false);
