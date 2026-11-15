@@ -254,7 +254,17 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     // último Z, ella define el inicio de la jornada operativa.
     const cutoffs = [tc.fechaUltimoZ, tc.cashData?.openDate].filter(Boolean).map(String).sort();
     const since = cutoffs[cutoffs.length - 1] || Utils.hoy();
-    const inWindow = (date: string) => String(date || "") > since;
+    // Compara fechas como instantes, no como texto: Turso puede devolver
+    // ISO con/sin milisegundos y el corte de apertura puede venir en otro formato.
+    // Se incluye el instante de apertura para no perder operaciones con la misma marca temporal.
+    const inWindow = (date: string) => {
+      const value = String(date || "").trim();
+      if (!value) return false;
+      const dateMs = Date.parse(value);
+      const sinceMs = Date.parse(since);
+      if (Number.isFinite(dateMs) && Number.isFinite(sinceMs)) return dateMs >= sinceMs;
+      return value >= since;
+    };
     const allSales = freshState.ventas || [];
     const allReturns = freshState.devoluciones || [];
     const allCancellations = freshState.anulaciones || [];
@@ -303,8 +313,9 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       : [{ metodo:record?.metodoPago || "otros", montoUSD:record?.totalUSD || 0, montoBS:record?.totalBS || 0 }];
     const readPayment = (payment:any) => {
       const method = normalizeMethod(payment?.metodo || payment?.method || "otros");
-      const usd = Number(payment?.montoUSD ?? payment?.usdAmount ?? 0) || 0;
-      const bs = Number(payment?.montoBS ?? payment?.amountBS ?? payment?.totalBS ?? 0) || (isUsdMethod(method) ? 0 : Number(payment?.amount) || usd * rate);
+      const usd = Number(payment?.montoUSD ?? payment?.montoUsd ?? payment?.usdAmount ?? payment?.amountUSD ?? 0) || 0;
+      const explicitBs = payment?.montoBS ?? payment?.montoBs ?? payment?.amountBS ?? payment?.amountBs ?? payment?.totalBS ?? payment?.totalBs;
+      const bs = Number(explicitBs ?? 0) || (isUsdMethod(method) ? 0 : Number(payment?.amount) || usd * rate);
       return { method, usd, bs };
     };
     const addPayment = (payment:any, bucket:"ventas"|"cobros"|"dev", factor=1) => {
@@ -371,17 +382,18 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     const cashMovements = relevantJournal.filter((entry:any) => {
       const category = String(entry.categoria || "").trim().toUpperCase().replace(/Á/g,"A");
       return !["VENTA", "COBRO_DEUDA", "DEVOLUCION", "ANULACION"].includes(category)
-        && ["ingreso","egreso"].includes(String(entry.tipo));
+        && ["ingreso","egreso"].includes(String(entry.tipo || "").trim().toLowerCase());
     });
     cashMovements.forEach((entry:any) => {
       const method = normalizeMethod(entry.metodo || "otros");
       const row = ensureRow(method);
+      const movementType = String(entry.tipo || "").trim().toLowerCase();
       if (isUsdMethod(method)) {
-        if (entry.tipo === "ingreso") row.movPlusUSD += Number(entry.montoUSD) || 0;
+        if (movementType === "ingreso") row.movPlusUSD += Number(entry.montoUSD) || 0;
         else row.movMinusUSD += Number(entry.montoUSD) || 0;
       } else {
-        if (entry.tipo === "ingreso") row.movPlusBS += Number(entry.montoBS) || 0;
-        else row.movMinusBS += Number(entry.montoBS) || 0;
+        if (movementType === "ingreso") row.movPlusBS += Number(entry.montoBS ?? entry.montoBs ?? 0) || 0;
+        else row.movMinusBS += Number(entry.montoBS ?? entry.montoBs ?? 0) || 0;
       }
     });
 
@@ -1061,12 +1073,12 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
           <div className="card-head px-6 py-4 bg-ink border-b border-white/10 flex justify-between items-center"><h3 className="text-white font-black uppercase italic tracking-tighter flex items-center gap-2 text-xs"><History className="w-5 h-5 text-brand-gold" /> HISTORIAL TERMINAL: {currentTerminal?.nombre || 'S/T'}</h3><button onClick={() => setView('pos')} className="btn btn-sm bg-white text-ink hover:bg-surface-soft flex items-center gap-2 font-black uppercase text-[10px] rounded-lg border-none px-4"><ArrowLeft className="w-3.5 h-3.5"/> Volver al POS</button></div>
           <div className="table-wrap flex-1 overflow-y-auto">
             <table>
-              <thead><tr><th>Recibo</th><th>Hora</th><th>Terminal</th><th>Cliente</th><th>Tipo</th><th className="text-right">Monto USD</th><th>Método</th><th className="text-center">Estado</th><th className="text-center">Acciones</th></tr></thead>
+              <thead><tr><th>Recibo</th><th>Hora</th><th>Terminal</th><th>Cliente</th><th>Tipo</th><th className="text-right">Monto USD</th><th className="text-right">Monto en Bs.</th><th>Método</th><th className="text-center">Estado</th><th className="text-center">Acciones</th></tr></thead>
               <tbody>
                 {histPageVentas.length === 0 ? (
-                  <tr><td colSpan={9} className="text-center py-20 text-ink/20 font-black italic uppercase">Sin ventas registradas en esta terminal</td></tr>
+                  <tr><td colSpan={10} className="text-center py-20 text-ink/20 font-black italic uppercase">Sin ventas registradas en esta terminal</td></tr>
                 ) : histPageVentas.map(v => (
-                  <tr key={v.id} className="border-b border-line/40 hover:bg-surface-warm/20"><td className="text-ink font-black text-xs mono">{v.id}</td><td className="text-ink font-bold text-xs">{v.fecha.split('T')[1]?.slice(0, 5)}</td><td className="text-ink font-black text-[10px] uppercase">{v.terminalName || state.terminales.find(t => t.id === v.terminalId)?.nombre || '-'}</td><td className="text-ink font-black text-xs uppercase truncate max-w-[150px]">{v.cliente}</td><td className="text-ink font-black text-[9px] uppercase"><span className={`badge ${v.type === 'COBRO DEUDA' ? 'badge-info' : 'badge-neutral'}`}>{v.type || 'VENTA'}</span></td><td className="text-brand-gold-deep font-black text-xs text-right">{Utils.fmtUSD(v.totalUSD)}</td><td className="text-ink font-bold text-[10px] uppercase">{Utils.metodoLabel(v.metodoPago)}</td><td className="text-center"><span className={`badge ${v.estado === 'pendiente' ? 'badge-warn' : (v.estado === 'anulada' ? 'badge-err' : 'badge-ok')} font-black text-[9px] uppercase`}>{v.estado}</span></td><td className="text-center"><button onClick={() => setShowSaleDetail(v)} className="w-7 h-7 rounded-full flex items-center justify-center text-status-success hover:bg-status-success/10 transition-colors" title="Ver ítems y detalle de venta"><Eye className="w-4 h-4" /></button></td></tr>
+                  <tr key={v.id} className="border-b border-line/40 hover:bg-surface-warm/20"><td className="text-ink font-black text-xs mono">{v.id}</td><td className="text-ink font-bold text-xs">{v.fecha.split('T')[1]?.slice(0, 5)}</td><td className="text-ink font-black text-[10px] uppercase">{v.terminalName || state.terminales.find(t => t.id === v.terminalId)?.nombre || '-'}</td><td className="text-ink font-black text-xs uppercase truncate max-w-[150px]">{v.cliente}</td><td className="text-ink font-black text-[9px] uppercase"><span className={`badge ${v.type === 'COBRO DEUDA' ? 'badge-info' : 'badge-neutral'}`}>{v.type || 'VENTA'}</span></td><td className="text-brand-gold-deep font-black text-xs text-right">{Utils.fmtUSD(v.totalUSD)}</td><td className="text-ink font-black text-xs text-right">{Utils.fmtBS(Number(v.totalBS) || (Number(v.totalUSD) || 0) * (Number(v.tasa) || 0))}</td><td className="text-ink font-bold text-[10px] uppercase">{Utils.metodoLabel(v.metodoPago)}</td><td className="text-center"><span className={`badge ${v.estado === 'pendiente' ? 'badge-warn' : (v.estado === 'anulada' ? 'badge-err' : 'badge-ok')} font-black text-[9px] uppercase`}>{v.estado}</span></td><td className="text-center"><button onClick={() => setShowSaleDetail(v)} className="w-7 h-7 rounded-full flex items-center justify-center text-status-success hover:bg-status-success/10 transition-colors" title="Ver ítems y detalle de venta"><Eye className="w-4 h-4" /></button></td></tr>
                 ))}
               </tbody>
             </table>
@@ -1083,7 +1095,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                 type="search"
                 value={creditSearch}
                 onChange={e => setCreditSearch(e.target.value)}
-                placeholder="Buscar cliente por nombre o cédula..."
+                placeholder="Búsqueda inteligente: nombre, cédula o identificación..."
                 className="w-full h-11 pl-10 pr-4 rounded-xl border border-line bg-surface-soft text-sm font-bold text-ink outline-none focus:border-brand-gold"
                 aria-label="Buscar créditos por cliente o cédula"
               />
@@ -1102,7 +1114,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                 </tr>
               </thead>
               <tbody>
-                {Object.entries(groupedCredits).filter(([name]) => !creditSearch.trim() || name.toLowerCase().includes(creditSearch.trim().toLowerCase()) || name.replace(/[^0-9a-z]/gi, '').toLowerCase().includes(creditSearch.replace(/[^0-9a-z]/gi, '').toLowerCase())).length === 0 ? (
+                {Object.entries(groupedCredits).filter(([name]) => !creditSearch.trim() || name.toLowerCase().includes(creditSearch.trim().toLowerCase()) || name.replace(/[^0-9a-z]/gi, '').toLowerCase().includes(creditSearch.replace(/[^0-9a-z]/gi, '').toLowerCase()) || getRawCedula(name).includes(getRawCedula(creditSearch))).length === 0 ? (
                   <tr><td colSpan={6} className="text-center py-20 text-ink font-black uppercase italic">No hay deudas registradas</td></tr>
                 ) : (
                   Object.entries(groupedCredits).filter(([name]) => !creditSearch.trim() || name.toLowerCase().includes(creditSearch.trim().toLowerCase()) || name.replace(/[^0-9a-z]/gi, '').toLowerCase().includes(creditSearch.replace(/[^0-9a-z]/gi, '').toLowerCase())).map(([clientName, group]) => (
