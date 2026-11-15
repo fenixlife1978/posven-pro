@@ -1011,7 +1011,11 @@ export async function applyDebtPaymentTransaction(params: {
   // CxP se procesa desde Administración y no depende de ninguna Caja/Terminal.
   // Solo CxC conserva la relación con la caja del cajero.
   const terminalForOperation = collection === 'cxc' ? terminalId : undefined;
-  if (!(Number(amountUSD) > 0)) return null;
+  const esPagoBsCxp = collection === 'cxp'
+    && ['efectivo_bs', 'pagomovil'].includes(String(payment?.metodo || '').toLowerCase())
+    && Number(amountBS) > 0
+    && Number(payment?.tasaAplicada) > 0;
+  if (!(Number(amountUSD) > 0) || (esPagoBsCxp && !(Number(amountBS) > 0))) return null;
   return tursoInteractiveTransaction(async tx => {
     const opId = String(operationId || payment?.id || (collection+'|'+debtId+'|'+amountUSD+'|'+payment?.metodo+'|'+payment?.fecha));
     const check = await tx.execute({sql:'SELECT id FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',args:['PAGO-DEUDA',opId]});
@@ -1037,8 +1041,16 @@ export async function applyDebtPaymentTransaction(params: {
       : saldoCalculado;
     const saldoCents = Math.round(saldo * 100);
     const amountCents = Math.round(Number(amountUSD) * 100);
-    if (saldoCents <= 0) throw new Error('La deuda ya está pagada.');
-    if (amountCents > saldoCents) throw new Error('El monto a pagar no puede ser mayor al saldo pendiente.');
+    const tasaPago = Number(payment?.tasaAplicada) || 0;
+    const saldoBSExacto = esPagoBsCxp
+      ? Math.round((saldo * tasaPago + Number.EPSILON) * 100) / 100
+      : 0;
+    if (esPagoBsCxp ? saldoBSExacto <= 0 : saldoCents <= 0) throw new Error('La deuda ya está pagada.');
+    if (esPagoBsCxp
+      ? Number(amountBS) > saldoBSExacto + 0.005
+      : amountCents > saldoCents) {
+      throw new Error('El monto a pagar no puede ser mayor al saldo pendiente.');
+    }
 
     const terminal = terminalForOperation ? rowFromDb((await tx.execute(txSelect('terminales',terminalForOperation))).rows[0]) : null;
     if (terminalForOperation && !terminal) throw new Error('La caja/terminal ya no existe en Turso.');
@@ -1047,15 +1059,30 @@ export async function applyDebtPaymentTransaction(params: {
     const label = collection==='cxc'?'CXC':'CXP';
     const counter=Number(terminal?.[field])||1;
     const receiptId=terminal?terminalSeries(await terminalUniquePrefix(tx,terminal,terminalForOperation),label,counter,6):terminalSeries('GLOBAL',label,Date.now(),6);
-    const applied=Math.min(amountCents, saldoCents) / 100;
-    const appliedBS=Number(amountBS)>0?Math.min(Number(amountBS),Number(payment?.montoBS)||Number(amountBS)):(Number(payment?.montoBS)||(applied*(Number(payment?.tasaAplicada)||0)));
+    const appliedBS = esPagoBsCxp
+      ? Math.min(Math.round((Number(amountBS) + Number.EPSILON) * 100) / 100, saldoBSExacto)
+      : (Number(amountBS) > 0
+        ? Math.min(Number(amountBS), Number(payment?.montoBS) || Number(amountBS))
+        : (Number(payment?.montoBS) || (Math.min(amountCents, saldoCents) / 100) * tasaPago));
+    const applied = esPagoBsCxp
+      ? (appliedBS >= saldoBSExacto - 0.005 ? saldo : Math.min(saldo, Math.round((appliedBS / tasaPago + Number.EPSILON) * 1000000) / 1000000))
+      : Math.min(amountCents, saldoCents) / 100;
 
     const paymentWithTerminal = collection === 'cxc'
       ? {...payment, terminalId: terminalForOperation || payment?.terminalId, terminalName: terminal?.nombre || payment?.terminalName}
       : {...payment, terminalId: undefined, terminalName: undefined};
     const pago=clean({...paymentWithTerminal,id:receiptId,reciboId:receiptId,terminalForOperation:terminalForOperation||payment?.terminalForOperation,montoUSD:applied,montoBS:appliedBS});
 
-    const updated={...debt,abonadoUSD:abonadoRegistrado+applied,saldoUSD:Math.max(0,saldo-applied),estado:Math.round((saldo-applied)*100)<=0?'pagada':'parcial',historialPagos:[...historialPrevio,pago]};
+    const saldoFinal = esPagoBsCxp && appliedBS >= saldoBSExacto - 0.005
+      ? 0
+      : Math.max(0, saldo - applied);
+    const updated={
+      ...debt,
+      abonadoUSD: abonadoRegistrado + applied,
+      saldoUSD: saldoFinal,
+      estado: saldoFinal <= 0.0000005 ? 'pagada' : 'parcial',
+      historialPagos: [...historialPrevio, pago]
+    };
     const statements:TursoStatement[]=[rowStatement(collection,updated)];
 
     if(collection==='cxc'){
