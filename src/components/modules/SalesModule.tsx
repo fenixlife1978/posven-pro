@@ -1114,7 +1114,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                 </tr>
               </thead>
               <tbody>
-                {Object.entries(groupedCredits).filter(([name]) => !creditSearch.trim() || name.toLowerCase().includes(creditSearch.trim().toLowerCase()) || name.replace(/[^0-9a-z]/gi, '').toLowerCase().includes(creditSearch.replace(/[^0-9a-z]/gi, '').toLowerCase()) || getRawCedula(name).includes(getRawCedula(creditSearch))).length === 0 ? (
+                {Object.entries(groupedCredits).filter(([name]) => !creditSearch.trim() || name.toLowerCase().includes(creditSearch.trim().toLowerCase()) || name.replace(/[^0-9a-z]/gi, '').toLowerCase().includes(creditSearch.replace(/[^0-9a-z]/gi, '').toLowerCase()) || (getRawCedula(creditSearch).length > 0 && getRawCedula(name).includes(getRawCedula(creditSearch)))).length === 0 ? (
                   <tr><td colSpan={6} className="text-center py-20 text-ink font-black uppercase italic">No hay deudas registradas</td></tr>
                 ) : (
                   Object.entries(groupedCredits).filter(([name]) => !creditSearch.trim() || name.toLowerCase().includes(creditSearch.trim().toLowerCase()) || name.replace(/[^0-9a-z]/gi, '').toLowerCase().includes(creditSearch.replace(/[^0-9a-z]/gi, '').toLowerCase())).map(([clientName, group]) => (
