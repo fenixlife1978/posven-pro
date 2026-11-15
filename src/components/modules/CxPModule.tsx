@@ -214,7 +214,7 @@ export default function CxPModule({ state, updateState, terminalId }: CxPModuleP
     if (!grupo) return;
     const total = grupo.saldoTotal;
     if (total <= 0) return;
-    setGlobalProvider({ proveedor: provider, total });
+    setGlobalProvider({ proveedor: provider, total, debts: grupo.pendientes });
     setPaymentAmount('');
     setPaymentMethod('efectivo_usd');
     setPagoAtrasado(false);
@@ -831,7 +831,7 @@ export default function CxPModule({ state, updateState, terminalId }: CxPModuleP
                <div className="bg-surface-soft p-5 rounded-[20px] text-center border border-line shadow-inner">
                   <p className="text-ink text-[9px] font-black uppercase tracking-[0.2em] mb-2">TOTAL PENDIENTE</p>
                   <p className="text-3xl font-black text-status-danger">{Utils.fmtUSD(globalProvider.total)}</p>
-                  <p className="text-sm font-black text-ink mt-1">{Utils.fmtBS(globalProvider.total * (pagoAtrasado ? (parseFloat(pagoAtrasadoTasa) || state.tasa) : state.tasa))}</p>
+                  <p className="text-sm font-black text-ink mt-1">{Utils.fmtBS((globalProvider.debts || []).reduce((sum: number, debt: Debt) => sum + Math.round((Number(debt.saldoUSD || 0) * (pagoAtrasado ? (parseFloat(pagoAtrasadoTasa) || state.tasa) : state.tasa) + Number.EPSILON) * 100) / 100, 0))}</p>
                   <p className="text-[8px] font-bold text-ink/60 uppercase tracking-tight">Equivalente en Bs. · Tasa {(pagoAtrasado ? (parseFloat(pagoAtrasadoTasa) || state.tasa) : state.tasa).toFixed(2)} Bs/USD</p>
                   <p className="text-[9px] font-black text-ink mt-2 uppercase tracking-tight italic">
                     Se liquidarán las deudas desde la más antigua; el excedente se aplica como abono.
@@ -920,7 +920,7 @@ export default function CxPModule({ state, updateState, terminalId }: CxPModuleP
                   {esBS && (
                     <div className="mt-1 space-y-1">
                       <p className="text-[9px] font-black text-ink/70 uppercase">
-                        Para liquidar el total: {Utils.fmtBS(globalProvider.total * tasaPrev)}
+                        Para liquidar el total: {Utils.fmtBS((globalProvider.debts || []).reduce((sum: number, debt: Debt) => sum + Math.round((Number(debt.saldoUSD || 0) * tasaPrev + Number.EPSILON) * 100) / 100, 0))}
                       </p>
                       {appliedUSD > 0 && (
                         <p className="text-[9px] font-black text-ink/60 uppercase">

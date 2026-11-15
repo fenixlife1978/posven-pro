@@ -1139,32 +1139,35 @@ async function applyGlobalPayment(params:any, collection:'cxc'|'cxp'){
     const esPagoBsCxp=collection==='cxp'&&['efectivo_bs','pagomovil'].includes(String(payment?.metodo||'').toLowerCase())&&Number(amountBS)>0&&tasaAplicada>0;
     docs = docs.filter((d:any)=>(Number(d?.saldoUSD)||0)>(collection==='cxp'?0.000001:0.001)&&d?.estado!=='pagada');
     let remCents=esPagoBsCxp?0:Math.max(0,Math.round(Number(amountUSD)*100));
-    let remUSD=esPagoBsCxp?Number(amountBS)/tasaAplicada:0;
     let remBS=collection==='cxp'
       ? (Number(amountBS)>0?Math.round((Number(amountBS)+Number.EPSILON)*100)/100:Number(amountUSD)*tasaAplicada)
       : (Number(amountBS)>0?Number(amountBS):Number(amountUSD)*tasaAplicada);
     let appliedUSD=0, appliedBS=0; const debts:any[]=[]; const statements:TursoStatement[]=[];
     for(const d of docs){
-      if(esPagoBsCxp ? remUSD<=0.0000005 : remCents<=0) break;
+      if(esPagoBsCxp ? remBS<=0.0000005 : remCents<=0) break;
       const saldo=Math.max(0,Number(d.saldoUSD)||0);
       const debtCents=Math.max(0,Math.round(saldo*100));
-      const pago=esPagoBsCxp
-        ? Math.round((Math.min(saldo,remUSD)+Number.EPSILON)*1000000)/1000000
-        : Math.min(debtCents,remCents)/100;
-      if(pago<=0.0000005) continue;
-      const tasa=tasaAplicada;
+      const debtBS=Math.round((saldo*tasaAplicada+Number.EPSILON)*100)/100;
       const pagoBS=esPagoBsCxp
-        ? Math.min(remBS,Math.round((pago*tasa+Number.EPSILON)*100)/100)
-        : Math.min(remBS,pago*tasa);
-      if(esPagoBsCxp) remUSD=Math.max(0,Math.round((remUSD-pago+Number.EPSILON)*1000000)/1000000);
-      else remCents-=Math.round(pago*100);
-      remBS=collection==='cxp'
-        ? Math.max(0,Math.round((remBS-pagoBS+Number.EPSILON)*100)/100)
-        : Math.max(0,remBS-pagoBS);
+        ? Math.min(remBS,debtBS)
+        : collection==='cxp'
+          ? Math.min(remBS,Math.round((Math.min(debtCents,remCents)/100*tasaAplicada+Number.EPSILON)*100)/100)
+          : Math.min(remBS,(Math.min(debtCents,remCents)/100)*tasaAplicada);
+      const pago=esPagoBsCxp
+        ? (pagoBS>=debtBS-0.0000005 ? saldo : Math.min(saldo,Math.round((pagoBS/tasaAplicada+Number.EPSILON)*1000000)/1000000))
+        : Math.min(debtCents,remCents)/100;
+      if(pago<=0.0000005 || (esPagoBsCxp && pagoBS<=0.0000005)) continue;
+      if(esPagoBsCxp) remBS=Math.max(0,Math.round((remBS-pagoBS+Number.EPSILON)*100)/100);
+      else {
+        remCents-=Math.round(pago*100);
+        remBS=collection==='cxp'
+          ? Math.max(0,Math.round((remBS-pagoBS+Number.EPSILON)*100)/100)
+          : Math.max(0,remBS-pagoBS);
+      }
       const h=[...(Array.isArray(d.historialPagos)?d.historialPagos:[])];
       h.push(clean({...payment,id:receiptId,reciboId:receiptId,terminalId:collection==='cxc'?(terminalForOperation||payment?.terminalId):undefined,montoUSD:pago,montoBS:pagoBS}));
       const saldoNuevo=esPagoBsCxp
-        ? Math.max(0,Math.round((saldo-pago+Number.EPSILON)*1000000)/1000000)
+        ? (pagoBS>=debtBS-0.0000005 ? 0 : Math.max(0,Math.round((saldo-pago+Number.EPSILON)*1000000)/1000000))
         : Math.max(0,saldo-pago);
       const saldoFinal=esPagoBsCxp ? (saldoNuevo<=0.0000005?0:saldoNuevo) : saldoNuevo;
       const updated={
