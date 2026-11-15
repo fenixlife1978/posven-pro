@@ -372,7 +372,10 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     }));
     const sortedSales = [...activeSales].sort((a:any,b:any) => String(a.fecha).localeCompare(String(b.fecha)));
     const sortedReturns = [...returns].sort((a:any,b:any) => String(a.fecha).localeCompare(String(b.fecha)));
-    const manualMovements = relevantJournal.filter((entry:any) => !["VENTA","COBRO_DEUDA"].includes(String(entry.categoria || "").toUpperCase()));
+    const manualMovements = relevantJournal.filter((entry:any) => {
+      const category = String(entry.categoria || "").trim().toUpperCase().replace(/Á/g, "A");
+      return !["VENTA", "COBRO_DEUDA", "DEVOLUCION", "ANULACION"].includes(category);
+    });
     const manualSalidas = manualMovements.filter((e:any) => e.tipo === "egreso").reduce((s:number,e:any) => s + (Number(e.montoUSD)||0),0);
     const manualEntradas = manualMovements.filter((e:any) => e.tipo === "ingreso").reduce((s:number,e:any) => s + (Number(e.montoUSD)||0),0);
     const manualSalidasBS = cashMovements.filter((e:any) => e.tipo === "egreso" && normalizeMethod(e.metodo) === "efectivo_bs").reduce((s:number,e:any)=>s+(Number(e.montoBS)||0),0);
