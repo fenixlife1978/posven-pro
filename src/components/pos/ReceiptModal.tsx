@@ -439,6 +439,10 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
 
                    <div className="separator-dashed"></div>
 
+                   {/* El arqueo por método se conserva en la vista de arqueo X/Z.
+                       El reporte Z impreso mantiene el resumen compacto de operaciones,
+                       impuestos, métodos de pago, movimiento de caja y cobros. */}
+
                    {/* ===== MOVIMIENTO DE CAJA ===== */}
                    <div className="text-center font-bold">MOVIMIENTO DE CAJA</div>
                    <div className="separator-dashed"></div>
@@ -516,7 +520,15 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
                         </tbody></table>
 
                         <div className="separator-dashed"></div>
-                        <div className="text-center font-bold">CIERRE DE JORNADA EXITOSO</div>
+                        <div className="text-center font-bold">
+                          {data.differenceBs == null || data.differenceUSD == null
+                            ? "ARQUEO REAL NO REGISTRADO"
+                            : Math.abs(Number(data.differenceBs)) < 0.01 && Math.abs(Number(data.differenceUSD)) < 0.01
+                              ? "ARQUEO CONCILIADO"
+                              : (Number(data.differenceBs) < -0.01 || Number(data.differenceUSD) < -0.01)
+                                ? "CIERRE CON FALTANTE"
+                                : "CIERRE CON SOBRANTE"}
+                        </div>
                      </>
                    )}
                    {type === 'REPORT_X' && (

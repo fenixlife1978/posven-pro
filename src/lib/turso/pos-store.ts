@@ -938,6 +938,13 @@ export async function createZClosureTransaction(params: {
     if (!current) throw new Error('La terminal ya no existe en Turso.');
     assertTerminalAccess(params.user, current);
 
+    const cashIsOpen = current.isCashOpen === true || current.isCashOpen === 1 || String(current.isCashOpen).toLowerCase() === 'true';
+    const openingDate = String(current.cashData?.openDate || '');
+    const closingDate = current.cashData?.closeDate;
+    if (!cashIsOpen || !openingDate || closingDate) {
+      throw new Error('No existe una sesión de caja abierta. Debe realizar una nueva apertura antes de otro Corte Z.');
+    }
+
     const expectedNumber = Number(current.ultimoZ || 0) + 1;
     const requestedNumber = Number(params.report?.numeroZ || expectedNumber);
     if (requestedNumber !== expectedNumber) {
@@ -948,11 +955,43 @@ export async function createZClosureTransaction(params: {
     // El servidor es la autoridad final del correlativo Z. Ignoramos cualquier
     // ID provisional enviado por el navegador y construimos uno exclusivo de
     // esta terminal para evitar que dos cajas puedan sobrescribirse.
-    let report = { ...clean(params.report), id: terminalSeries(prefix, 'Z', expectedNumber, 6), terminalId: params.terminalId, numeroZ: expectedNumber };
-    const canonical = await tx.execute(txSelect('reportesZ', report.id));
-    if (canonical.rows.length) throw new Error('El corte Z de esta terminal ya fue registrado.');
+    // Recuperación de correlativos atrasados: si el ID Z calculado ya existe,
+    // avanzar únicamente esta terminal hasta encontrar el siguiente consecutivo
+    // libre. Así un registro histórico no bloquea para siempre el cierre vigente.
+    let assignedNumber = expectedNumber;
+    let reportId = terminalSeries(prefix, 'Z', assignedNumber, 6);
+    for (let guard = 0; guard < 100000; guard++) {
+      const canonical = await tx.execute(txSelect('reportesZ', reportId));
+      if (!canonical.rows.length) break;
+      assignedNumber += 1;
+      reportId = terminalSeries(prefix, 'Z', assignedNumber, 6);
+      if (guard === 99999) throw new Error('No se pudo obtener un consecutivo Z libre para esta terminal.');
+    }
+    let report = { ...clean(params.report), id: reportId, terminalId: params.terminalId, numeroZ: assignedNumber };
 
-    const updatedTerminal = { ...current, ...clean(params.terminalPatch), ultimoZ: expectedNumber, id: params.terminalId };
+    const closeDate = String(report.fecha || new Date().toISOString());
+    const closedSession = {
+      ...current.cashData,
+      closeDate,
+      closeAmount: null,
+      // Los montos reales se guardan en la sesión histórica, además del
+      // desglose completo por método que queda dentro del reporte Z.
+      closeAmountBs: Number(report.montoRealEfectivoBS) || 0,
+      closeAmountUsd: Number(report.montoRealEfectivoUSD) || 0,
+      closeNotes: 'Cierre de caja mediante ' + report.id,
+    };
+    const updatedTerminal = {
+      ...current,
+      ...clean(params.terminalPatch),
+      ultimoZ: assignedNumber,
+      fechaUltimoZ: closeDate,
+      isCashOpen: false,
+      cashData: null,
+      fondoCajaHoyBS: 0,
+      fondoCajaHoyUSD: 0,
+      cashHistory: [closedSession, ...(Array.isArray(current.cashHistory) ? current.cashHistory : [])],
+      id: params.terminalId,
+    };
     await tx.execute(rowStatement('reportesZ', report));
     await tx.execute(rowStatement('terminales', updatedTerminal));
     return { report, terminal: updatedTerminal };

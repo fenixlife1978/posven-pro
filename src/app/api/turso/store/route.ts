@@ -251,8 +251,16 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: true, ...result });
       }
       case 'globalCustomerPayment': {
-        if (user.rol !== 'administrador') throw new Error('Se requiere administrador.');
-        const result = await applyGlobalCustomerPaymentTransaction(body);
+        // Toda caja autenticada puede cobrar CxC global del cliente.
+        // La operación se atribuye y limita a la terminal asignada al cajero.
+        let terminalId = String(body.terminalId || '');
+        if (user.rol !== 'administrador') {
+          const assignedTerminal = await getAssignedTerminal(user);
+          if (!assignedTerminal?.id) throw new Error('El usuario no tiene una terminal asignada.');
+          if (terminalId && terminalId !== String(assignedTerminal.id)) throw new Error('No tiene acceso a esa terminal.');
+          terminalId = String(assignedTerminal.id);
+        }
+        const result = await applyGlobalCustomerPaymentTransaction({ ...body, terminalId: terminalId || undefined });
         return NextResponse.json({ ok: true, ...result });
       }
       case 'customerDebt': {

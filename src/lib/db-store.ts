@@ -621,7 +621,14 @@ async function loadReportWindow(name: string, terminalId: string, cutoff: string
     // Carga completa del período y de la terminal desde Turso; nunca se marca
     // como listo un X/Z si la respuesta se truncó por un límite fijo.
     const tursoItems = await loadCollection(name, { terminalId, since: cutoff });
-    const items = tursoItems.filter((item: any) => String(item?.fecha || '') > cutoff);
+    const cutoffMs = Date.parse(cutoff);
+    const items = tursoItems.filter((item: any) => {
+      const value = String(item?.fecha || '').trim();
+      if (!value) return false;
+      const itemMs = Date.parse(value);
+      if (Number.isFinite(itemMs) && Number.isFinite(cutoffMs)) return itemMs >= cutoffMs;
+      return value >= cutoff;
+    });
     if (items.length) applyPatch({ [name]: mergeById((cache as any)[name], items) });
     SINCE_STAMP[key] = 'done';
     console.info("[db-store] Ventana Turso de reporte cargada:", name, items.length, "registros");
@@ -675,6 +682,7 @@ async function ensureReportData(terminalId?: string, cutoff?: string): Promise<v
     await Promise.all([
       ensureLoaded('ventas'),
       ensureLoaded('devoluciones'),
+      ensureLoaded('anulaciones'),
       ensureLoaded('libroDiario'),
     ]);
     return;
@@ -683,6 +691,7 @@ async function ensureReportData(terminalId?: string, cutoff?: string): Promise<v
   await Promise.all([
     loadReportWindow('ventas', termId, desde),
     loadReportWindow('devoluciones', termId, desde),
+    loadReportWindow('anulaciones', termId, desde),
     loadReportWindow('libroDiario', termId, desde),
   ]);
 }
@@ -1781,8 +1790,11 @@ export const Store = {
     if (Array.isArray(result.movements) && result.movements.length) {
       patch.movimientos = mergeById(cache.movimientos || [], result.movements);
     }
-    if (Array.isArray(result.journal) && result.journal.length) {
-      patch.libroDiario = mergeById(cache.libroDiario || [], result.journal);
+    const saleJournals = Array.isArray(result.journals)
+      ? result.journals
+      : (Array.isArray(result.journal) ? result.journal : []);
+    if (saleJournals.length) {
+      patch.libroDiario = mergeById(cache.libroDiario || [], saleJournals);
     }
     if (result.terminal) {
       patch.terminales = mergeById(cache.terminales || [], [result.terminal]);
@@ -2221,11 +2233,17 @@ export const Store = {
             if (key === 'id') return;
             if (JSON.stringify(terminal[key]) !== JSON.stringify(previousTerminal[key])) terminalPatch[key] = terminal[key];
           });
-          const zResult = await tryTursoOperation('zClosure', {
-            terminalId,
-            report: newestReport,
-            terminalPatch,
-          });
+          let zResult: any;
+          try {
+            zResult = await tryTursoOperation('zClosure', {
+              terminalId,
+              report: newestReport,
+              terminalPatch,
+            });
+          } catch (error) {
+            applyPatch({ reportesZ: previousReports, terminales: prevTerminals });
+            throw error;
+          }
           if (zResult) {
             const canonicalReport = zResult.report;
             applyPatch({
@@ -2240,6 +2258,8 @@ export const Store = {
             });
             return;
           }
+          applyPatch({ reportesZ: previousReports, terminales: prevTerminals });
+          throw new Error('Turso no devolvió confirmación del Corte Z. El cierre fue revertido localmente.');
         }
       }
 
