@@ -287,7 +287,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       if (key === "mixto") return "mixto";
       return key;
     };
-    const isUsdMethod = (method:string) => ["efectivo_usd","zelle","transferencia_usd"].includes(normalizeMethod(method));
+    const isUsdMethod = (method:string) => ["efectivo_usd","zelle","transferencia_usd","nota_credito"].includes(normalizeMethod(method));
     const arqueoMap:Record<string,any> = {};
     const ensureRow = (method:string) => {
       if (!arqueoMap[method]) arqueoMap[method] = { metodo:method, ventasBS:0, ventasUSD:0, cobrosBS:0, cobrosUSD:0, devBS:0, devUSD:0, movPlusBS:0, movPlusUSD:0, movMinusBS:0, movMinusUSD:0 };
@@ -331,15 +331,37 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
 
     const applyRefund = (document:any, kind:"devolucion"|"anulacion") => {
       const sale = allSales.find((v:any) => String(v.id) === String(document.ventaId));
+      const category = kind === "devolucion" ? "DEVOLUCION" : "ANULACION";
+      const journal = relevantJournal.find((entry:any) =>
+        String(entry.categoria || "").trim().toUpperCase() === category &&
+        String(entry.referencia || "") === String(document.id)
+      );
+      // Sin asiento de egreso no hay evidencia de reintegro de dinero físico.
+      if (!journal) return;
+      const journalMethod = normalizeMethod(journal.metodo || "otros");
+      if (journalMethod === "nota_credito") {
+        // Vale/crédito interno: se informa en su propia fila, pero no reduce caja.
+        addPayment({ metodo:"nota_credito", montoUSD:journal.montoUSD, montoBS:journal.montoBS }, "dev");
+        return;
+      }
       const explicit = Array.isArray(document.refundPayments) && document.refundPayments.length ? document.refundPayments : null;
-      const pays = explicit || paymentParts(sale || {});
-      const saleTotal = Math.max(Number(sale?.totalUSD) || 0.000001, 0.000001);
-      const factor = explicit || !sale ? 1 : (Number(document.totalUSD) || 0) / saleTotal;
-      pays.forEach((p:any) => addPayment(p,"dev",factor));
+      const sameOriginalMethod = kind === "devolucion" && String(document.metodoReembolso || "").toUpperCase() === "MISMO_METODO";
+      const mixedCancellation = kind === "anulacion" && journalMethod === "mixto";
+      if (explicit || sameOriginalMethod || mixedCancellation) {
+        const pays = explicit || paymentParts(sale || {});
+        const saleTotal = Math.max(Number(sale?.totalUSD) || 0.000001, 0.000001);
+        const factor = explicit ? 1 : (Number(document.totalUSD) || 0) / saleTotal;
+        pays.forEach((p:any) => addPayment(p,"dev",factor));
+        return;
+      }
+      // Reintegro efectivo u otro método expresamente registrado en el asiento.
+      addPayment({ metodo:journal.metodo, montoUSD:journal.montoUSD, montoBS:journal.montoBS }, "dev");
     };
     returns.forEach((d:any) => applyRefund(d,"devolucion"));
     cancellations.forEach((a:any) => applyRefund(a,"anulacion"));
-    canceledWithoutDocument.forEach((sale:any) => paymentParts(sale).forEach((p:any) => addPayment(p,"dev")));
+    // Las ventas anuladas sin documento/asiento no prueban que el dinero se haya reintegrado.
+    // Se incluyen en el resumen de anulaciones, pero no se inventa una salida de caja.
+
 
     const cashMovements = relevantJournal.filter((entry:any) => {
       const category = String(entry.categoria || "").trim().toUpperCase().replace(/Á/g,"A");
@@ -358,7 +380,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       }
     });
 
-    ["efectivo_bs","efectivo_usd","zelle","pagomovil","biopago","transferencia_bs","transferencia_usd","tarjeta"].forEach(ensureRow);
+    ["efectivo_bs","efectivo_usd","zelle","pagomovil","biopago","transferencia_bs","transferencia_usd","tarjeta","nota_credito"].forEach(ensureRow);
     const metodosArqueo = Object.values(arqueoMap).map((row:any) => ({ ...row, moneda:isUsdMethod(row.metodo) ? "USD" : "BS" }));
     const arqueoWarnings = allSales
       .filter((sale:any) => inWindow(sale.fecha) && String(sale.terminalId || "") === termId

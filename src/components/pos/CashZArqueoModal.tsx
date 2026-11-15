@@ -14,7 +14,7 @@ type Props = {
 
 const METHODS = [
   "efectivo_bs", "efectivo_usd", "zelle", "pagomovil", "biopago",
-  "transferencia_bs", "transferencia_usd", "tarjeta",
+  "transferencia_bs", "transferencia_usd", "tarjeta", "nota_credito",
 ];
 
 const LABELS: Record<string, string> = {
@@ -26,12 +26,13 @@ const LABELS: Record<string, string> = {
   transferencia_bs: "Transferencia Bs.",
   transferencia_usd: "Transferencia USD",
   tarjeta: "Tarjeta / Punto de venta",
+  nota_credito: "Crédito / Vale interno",
   otros: "Otros métodos",
   mixto: "Mixto sin desglose",
 };
 
 const isUsd = (method: string) =>
-  ["efectivo_usd", "zelle", "transferencia_usd"].includes(method);
+  ["efectivo_usd", "zelle", "transferencia_usd", "nota_credito"].includes(method);
 
 const money = (value: number, currency: "BS" | "USD") =>
   currency === "BS"
@@ -67,7 +68,11 @@ export default function CashZArqueoModal({ open, mode, report, onCancel, onConfi
       const returns = currency === "BS" ? Number(value.devBS || 0) : Number(value.devUSD || 0);
       const plus = currency === "BS" ? Number(value.movPlusBS || 0) : Number(value.movPlusUSD || 0);
       const minus = currency === "BS" ? Number(value.movMinusBS || 0) : Number(value.movMinusUSD || 0);
-      const system = Number((opening + sales + cxc - returns + plus - minus).toFixed(2));
+      // Un vale/crédito interno se informa como devolución, pero no representa
+      // dinero que deba existir físicamente ni una salida de caja.
+      const system = method === "nota_credito"
+        ? 0
+        : Number((opening + sales + cxc - returns + plus - minus).toFixed(2));
       return { method, currency, opening, sales, cxc, returns, plus, minus, system };
     });
   }, [report]);
