@@ -319,8 +319,12 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
 
     const relevantJournal = allJournal.filter((entry:any) => inWindow(entry.fecha) && String(entry.terminalId || "") === termId);
     const debtJournal = relevantJournal.filter((entry:any) => String(entry.categoria || "").toUpperCase() === "COBRO_DEUDA");
-    const debtSaleIds = new Set(debtSales.map((sale:any) => String(sale.id)));
-    const uniqueDebtJournal = debtJournal.filter((entry:any) => !debtSaleIds.has(String(entry.referencia || entry.id)));
+    const uniqueDebtJournal = debtJournal.filter((entry:any) => {
+      const reference = String(entry.referencia || "");
+      return !reference || !debtSales.some((sale:any) =>
+        reference === String(sale.id) || reference.includes(String(sale.id))
+      );
+    });
     uniqueDebtJournal.forEach((entry:any) => {
       addPayment({ metodo:entry.metodo, montoUSD:entry.montoUSD, montoBS:entry.montoBS }, "cobros");
     });
@@ -358,7 +362,6 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     const metodosArqueo = Object.values(arqueoMap).map((row:any) => ({ ...row, moneda:isUsdMethod(row.metodo) ? "USD" : "BS" }));
     const arqueoWarnings = allSales
       .filter((sale:any) => inWindow(sale.fecha) && String(sale.terminalId || "") === termId
-        && String(sale.estado || "").toLowerCase() !== "anulada"
         && normalizeMethod(sale.metodoPago) === "mixto"
         && !(Array.isArray(sale.payments) && sale.payments.length))
       .map((sale:any) => String(sale.id));
