@@ -1015,7 +1015,9 @@ export async function applyDebtPaymentTransaction(params: {
     && ['efectivo_bs', 'pagomovil'].includes(String(payment?.metodo || '').toLowerCase())
     && Number(amountBS) > 0
     && Number(payment?.tasaAplicada) > 0;
-  if (!(Number(amountUSD) > 0) || (esPagoBsCxp && !(Number(amountBS) > 0))) return null;
+  // En CxP pagada en Bs, el equivalente USD puede ser inferior a medio centavo
+  // y mostrarse como $0.00. El importe válido para esta operación es el Bs.
+  if (esPagoBsCxp ? !(Number(amountBS) > 0) : !(Number(amountUSD) > 0)) return null;
   return tursoInteractiveTransaction(async tx => {
     const opId = String(operationId || payment?.id || (collection+'|'+debtId+'|'+amountUSD+'|'+payment?.metodo+'|'+payment?.fecha));
     const check = await tx.execute({sql:'SELECT id FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',args:['PAGO-DEUDA',opId]});
