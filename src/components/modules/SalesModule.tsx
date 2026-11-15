@@ -530,10 +530,16 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         cashHistory: [closedSession, ...(t.cashHistory || [])],
       } : t);
       await Store.set({ reportesZ: [...(liveState.reportesZ || []), nuevoZ], terminales });
+      // Store.set devuelve el reporte canónico confirmado por Turso, cuyo ID
+      // incorpora el prefijo exclusivo de esta caja. El comprobante debe usarlo.
+      const confirmedState = Store.get();
+      const confirmedZ = (confirmedState.reportesZ || []).find((r:any) =>
+        String(r.terminalId || "") === String(termId) && Number(r.numeroZ) === numeroZ
+      ) || nuevoZ;
       if (typeof localStorage !== 'undefined') localStorage.removeItem('posven_apertura_done');
       setShowZArqueo(false);
       setShowReportType('REPORT_Z');
-      setReportSnapshot({ ...data, ...nuevoZ, numeroZ, empresa: liveState.empresa, generatedAt: ahora, closedAt: ahora, openedAt: tc.cashData?.openDate, closedBy: data.cajeroNombre, differenceBs: diff.bs, differenceUSD: diff.usd });
+      setReportSnapshot({ ...data, ...confirmedZ, numeroZ, empresa: liveState.empresa, generatedAt: ahora, closedAt: ahora, openedAt: tc.cashData?.openDate, closedBy: data.cajeroNombre, differenceBs: diff.bs, differenceUSD: diff.usd });
       toast({ title: 'Corte Z confirmado', description: 'El arqueo y el cierre de caja quedaron guardados. Para otro Z debe realizar una nueva apertura.' });
     } catch (error:any) {
       toast({ variant: 'destructive', title: 'No se pudo ejecutar el Corte Z', description: error?.message || 'Turso no confirmó el cierre. La caja permanece abierta.' });
