@@ -1135,25 +1135,47 @@ async function applyGlobalPayment(params:any, collection:'cxc'|'cxp'){
       });
       docs = found.rows.map(rowFromDb);
     }
-    docs = docs.filter((d:any)=>(Number(d?.saldoUSD)||0)>0.001&&d?.estado!=='pagada');
-    let remCents=Math.max(0,Math.round(Number(amountUSD)*100));
+    const tasaAplicada=Number(payment?.tasaAplicada)||0;
+    const esPagoBsCxp=collection==='cxp'&&['efectivo_bs','pagomovil'].includes(String(payment?.metodo||'').toLowerCase())&&Number(amountBS)>0&&tasaAplicada>0;
+    docs = docs.filter((d:any)=>(Number(d?.saldoUSD)||0)>(collection==='cxp'?0.000001:0.001)&&d?.estado!=='pagada');
+    let remCents=esPagoBsCxp?0:Math.max(0,Math.round(Number(amountUSD)*100));
+    let remUSD=esPagoBsCxp?Number(amountBS)/tasaAplicada:0;
     let remBS=collection==='cxp'
       ? (Number(amountBS)>0?Math.round((Number(amountBS)+Number.EPSILON)*100)/100:Number(amountUSD)*tasaAplicada)
       : (Number(amountBS)>0?Number(amountBS):Number(amountUSD)*tasaAplicada);
     let appliedUSD=0, appliedBS=0; const debts:any[]=[]; const statements:TursoStatement[]=[];
     for(const d of docs){
-      if(remCents<=0) break;
-      const debtCents=Math.max(0,Math.round((Number(d.saldoUSD)||0)*100));
-      const pagoCents=Math.min(debtCents,remCents); if(pagoCents<=0) continue;
-      const pago=pagoCents/100;
-      const tasa=Number(payment?.tasaAplicada)||0; const pagoBS=Math.min(remBS,pago*tasa);
-      remCents-=pagoCents;
+      if(esPagoBsCxp ? remUSD<=0.0000005 : remCents<=0) break;
+      const saldo=Math.max(0,Number(d.saldoUSD)||0);
+      const debtCents=Math.max(0,Math.round(saldo*100));
+      const pago=esPagoBsCxp
+        ? Math.round((Math.min(saldo,remUSD)+Number.EPSILON)*1000000)/1000000
+        : Math.min(debtCents,remCents)/100;
+      if(pago<=0.0000005) continue;
+      const tasa=tasaAplicada;
+      const pagoBS=esPagoBsCxp
+        ? Math.min(remBS,Math.round((pago*tasa+Number.EPSILON)*100)/100)
+        : Math.min(remBS,pago*tasa);
+      if(esPagoBsCxp) remUSD=Math.max(0,Math.round((remUSD-pago+Number.EPSILON)*1000000)/1000000);
+      else remCents-=Math.round(pago*100);
       remBS=collection==='cxp'
         ? Math.max(0,Math.round((remBS-pagoBS+Number.EPSILON)*100)/100)
         : Math.max(0,remBS-pagoBS);
       const h=[...(Array.isArray(d.historialPagos)?d.historialPagos:[])];
       h.push(clean({...payment,id:receiptId,reciboId:receiptId,terminalId:collection==='cxc'?(terminalForOperation||payment?.terminalId):undefined,montoUSD:pago,montoBS:pagoBS}));
-      const updated={...d,abonadoUSD:(Number(d.abonadoUSD)||0)+pago,saldoUSD:Math.max(0,(Number(d.saldoUSD)||0)-pago),estado:(Number(d.saldoUSD)-pago)<=0.001?'pagada':'parcial',historialPagos:h};
+      const saldoNuevo=esPagoBsCxp
+        ? Math.max(0,Math.round((saldo-pago+Number.EPSILON)*1000000)/1000000)
+        : Math.max(0,saldo-pago);
+      const saldoFinal=esPagoBsCxp ? (saldoNuevo<=0.0000005?0:saldoNuevo) : saldoNuevo;
+      const updated={
+        ...d,
+        abonadoUSD:esPagoBsCxp
+          ? Math.round(((Number(d.abonadoUSD)||0)+pago+Number.EPSILON)*1000000)/1000000
+          : (Number(d.abonadoUSD)||0)+pago,
+        saldoUSD:saldoFinal,
+        estado:esPagoBsCxp ? (saldoFinal===0?'pagada':'parcial') : ((Number(d.saldoUSD)-pago)<=0.001?'pagada':'parcial'),
+        historialPagos:h
+      };
       statements.push(rowStatement(collection,updated)); debts.push({...updated,appliedUSD:pago,appliedBS:pagoBS}); appliedUSD+=pago; appliedBS+=pagoBS;
     }
     if(appliedUSD<=0.000001) throw new Error('No hay saldo pendiente para registrar este pago.');
