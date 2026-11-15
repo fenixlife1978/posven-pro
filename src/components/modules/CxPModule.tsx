@@ -292,15 +292,17 @@ export default function CxPModule({ state, updateState, terminalId }: CxPModuleP
       if (resultadoPago.queuedOffline) { toast({ title: 'Pago global guardado sin conexión', description: 'Quedó pendiente y se sincronizará automáticamente al regresar Internet.' }); return; }
 
       const totalAplicado = resultadoPago.appliedUSD;
-      if (totalAplicado <= 0.001) {
+      const aplicadoBS = Number.isFinite(Number(resultadoPago.appliedBS))
+        ? Number(resultadoPago.appliedBS)
+        : Math.round((totalAplicado * tasaAplicada + Number.EPSILON) * 100) / 100;
+      // En pagos en Bs, un equivalente USD menor a $0.001 sigue siendo
+      // un pago válido: la confirmación debe basarse en los Bs realmente aplicados.
+      if (esMetodoBS ? aplicadoBS <= 0 : totalAplicado <= 0.001) {
         throw new Error('El saldo del proveedor cambió en otra caja. Actualice la pantalla y vuelva a intentar.');
       }
 
       const remanente = Math.max(0, amount - totalAplicado);
       const aplicados = resultadoPago.debts;
-      const aplicadoBS = Number.isFinite(Number(resultadoPago.appliedBS))
-        ? Number(resultadoPago.appliedBS)
-        : Math.round((totalAplicado * tasaAplicada + Number.EPSILON) * 100) / 100;
 
       toast({
         title: "Pago global registrado",
