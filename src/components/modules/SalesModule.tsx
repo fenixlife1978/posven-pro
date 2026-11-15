@@ -279,6 +279,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       const key = String(method || "otros").trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, "_");
       if (["punto_venta","punto_de_venta","punto_pago","punto_de_pago","tarjeta_debito","tarjeta_credito"].includes(key)) return "tarjeta";
       if (key === "pago_movil") return "pagomovil";
+      if (key === "efectivo") return "efectivo_bs";
       if (key === "transferencia") return "transferencia_bs";
       return key;
     };
@@ -312,7 +313,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     const relevantJournal = allJournal.filter((entry:any) => inWindow(entry.fecha) && String(entry.terminalId || "") === termId);
     const debtJournal = relevantJournal.filter((entry:any) => String(entry.categoria || "").toUpperCase() === "COBRO_DEUDA");
     const debtSaleIds = new Set(debtSales.map((sale:any) => String(sale.id)));
-    debtJournal.filter((entry:any) => !debtSaleIds.has(String(entry.referencia || entry.id))).forEach((entry:any) => {
+    const uniqueDebtJournal = debtJournal.filter((entry:any) => !debtSaleIds.has(String(entry.referencia || entry.id)));
+    uniqueDebtJournal.forEach((entry:any) => {
       addPayment({ metodo:entry.metodo, montoUSD:entry.montoUSD, montoBS:entry.montoBS }, "cobros");
     });
 
@@ -360,8 +362,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     const manualSalidasUSD = cashMovements.filter((e:any) => e.tipo === "egreso" && normalizeMethod(e.metodo) === "efectivo_usd").reduce((s:number,e:any)=>s+(Number(e.montoUSD)||0),0);
     const manualEntradasBS = cashMovements.filter((e:any) => e.tipo === "ingreso" && normalizeMethod(e.metodo) === "efectivo_bs").reduce((s:number,e:any)=>s+(Number(e.montoBS)||0),0);
     const manualEntradasUSD = cashMovements.filter((e:any) => e.tipo === "ingreso" && normalizeMethod(e.metodo) === "efectivo_usd").reduce((s:number,e:any)=>s+(Number(e.montoUSD)||0),0);
-    const cobrosDeudaUSD = debtSales.reduce((s:number,v:any)=>s+(Number(v.totalUSD)||0),0) + debtJournal.reduce((s:number,e:any)=>s+(Number(e.montoUSD)||0),0);
-    const cobrosDeudaBS = debtSales.reduce((s:number,v:any)=>s+(Number(v.totalBS)||0),0) + debtJournal.reduce((s:number,e:any)=>s+(Number(e.montoBS)||0),0);
+    const cobrosDeudaUSD = debtSales.reduce((s:number,v:any)=>s+(Number(v.totalUSD)||0),0) + uniqueDebtJournal.reduce((s:number,e:any)=>s+(Number(e.montoUSD)||0),0);
+    const cobrosDeudaBS = debtSales.reduce((s:number,v:any)=>s+(Number(v.totalBS)||0),0) + uniqueDebtJournal.reduce((s:number,e:any)=>s+(Number(e.montoBS)||0),0);
     const fondoAperturaBS = Number(tc.fondoCajaHoyBS) || 0;
     const fondoAperturaUSD = Number(tc.fondoCajaHoyUSD) || 0;
     const cashBs = ensureRow("efectivo_bs");
@@ -463,9 +465,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         tasaBCV: data.tasaBCV, empresa: liveState.empresa,
       } as ReportZ;
       const closedSession = {
-        ...tc.cashData, closeDate: ahora, closeAmount: realBs + realUSD * (Number(data.tasaBCV) || 1),
+        ...tc.cashData, closeDate: ahora, closeAmount: null,
         closeAmountBs: realBs, closeAmountUsd: realUSD,
-        difference: diff.bs + diff.usd * (Number(data.tasaBCV) || 1),
         closeNotes: 'Cierre de caja realizado mediante Corte Z ' + nuevoZ.id,
       };
       const terminales = (liveState.terminales || []).map((t:any) => t.id === termId ? {
