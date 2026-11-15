@@ -1783,8 +1783,11 @@ export const Store = {
     if (Array.isArray(result.movements) && result.movements.length) {
       patch.movimientos = mergeById(cache.movimientos || [], result.movements);
     }
-    if (Array.isArray(result.journal) && result.journal.length) {
-      patch.libroDiario = mergeById(cache.libroDiario || [], result.journal);
+    const saleJournals = Array.isArray(result.journals)
+      ? result.journals
+      : (Array.isArray(result.journal) ? result.journal : []);
+    if (saleJournals.length) {
+      patch.libroDiario = mergeById(cache.libroDiario || [], saleJournals);
     }
     if (result.terminal) {
       patch.terminales = mergeById(cache.terminales || [], [result.terminal]);

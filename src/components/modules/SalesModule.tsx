@@ -757,97 +757,34 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     setIsProcessing(true);
     try {
       const listadoPagos = pagosFinales || pagos;
-      const totalPagadoRecibido = listadoPagos.reduce((s, p) => s + p.montoUSD, 0);
       const terminal = getCurrentTerminal();
-      const nextNum = terminal?.proximoRecibo || state.proximoRecibo;
-      const prefijo = Utils.prefijoCaja(terminal, state.terminales);
-      const reciboId = prefijo + '-' + String(nextNum).padStart(9, '0');
-      const ahoraStr = Utils.ahora();
-      
-      let vExento = 0, vBase = 0, vIVA = 0;
-      let prodsActualizados = [...state.productos], nuevosMovimientos: Movimiento[] = [];
-
-      state.carrito.forEach(item => {
-        const pIdx = prodsActualizados.findIndex(x => x.id === item.productoId);
-        if (pIdx === -1) return;
-        const p = { ...prodsActualizados[pIdx] };
-        if (p.aplicaIVA) { const base = item.subtotalUSD / 1.16; vBase += base; vIVA += (item.subtotalUSD - base); } else { vExento += item.subtotalUSD; }
-        if (p.isKit && p.kitType === 'stock_componentes' && p.kitItems) {
-          p.kitItems.forEach(ki => {
-            const cpIdx = prodsActualizados.findIndex(cp => cp.id === ki.productoId);
-            if (cpIdx !== -1) {
-              const cp = { ...prodsActualizados[cpIdx] };
-              const qty = item.cantidad * ki.cantidad, stockAntes = cp.stock;
-              cp.stock -= qty;
-              nuevosMovimientos.push({ id: Store.uid(), productoId: cp.id, tipo: 'venta', cantidad: -qty, stockAntes, stockDespues: cp.stock, fecha: ahoraStr, referencia: `KIT: ${p.nombre} - VENTA ${reciboId}`, terminalId: terminal?.id || 'GLOBAL' });
-              prodsActualizados[cpIdx] = cp;
-            }
-          });
-        } else {
-          const stockAntes = p.stock;
-          p.stock -= item.cantidad;
-          nuevosMovimientos.push({ id: Store.uid(), productoId: item.productoId, tipo: 'venta', cantidad: -item.cantidad, stockAntes, stockDespues: p.stock, fecha: ahoraStr, referencia: `VENTA ${reciboId}`, terminalId: terminal?.id || 'GLOBAL' });
-          prodsActualizados[pIdx] = p;
-        }
+      if (!terminal?.id) throw new Error('No hay una caja asignada para registrar la venta.');
+      const result = await Store.createSaleTransaction({
+        operationId: 'VENTA-POS-' + Store.uid(),
+        cart: [...state.carrito],
+        payments: listadoPagos.map((p:any) => ({
+          ...p,
+          metodo: p.metodo || p.method,
+          montoBS: Number(p.montoBS ?? p.amount) || 0,
+          montoUSD: Number(p.montoUSD ?? p.usdAmount) || 0,
+        })),
+        clientName: cliente,
+        terminalId: terminal.id,
+        fallbackReceiptNumber: terminal.proximoRecibo || state.proximoRecibo,
+        now: Utils.ahora(),
+        tasa: state.tasa,
+        saleType: 'VENTA',
+        cajeroId: (state as any).user?.id || (state as any).user?.uid || '',
       });
-
-      const vIgtf = listadoPagos.filter(p => p.metodo === 'efectivo_usd' || p.metodo === 'zelle').reduce((acc, p) => acc + (p.montoUSD * 0.03), 0);
-      
-      const nuevaVenta: Sale = { 
-        id: reciboId, 
-        fecha: ahoraStr, 
-        cliente, 
-        items: [...state.carrito], 
-        subtotalUSD, 
-        descuentoUSD: 0, 
-        totalUSD: subtotalUSD, 
-        totalBS, 
-        metodoPago: listadoPagos.length > 1 ? 'mixto' : (listadoPagos[0]?.metodo || 'efectivo_usd'), 
-        estado: 'completada', 
-        type: 'VENTA', 
-        received: totalPagadoRecibido, 
-        change: Math.max(0, totalPagadoRecibido - subtotalUSD), 
-        payments: [...listadoPagos], 
-        terminalId: terminal?.id, 
-        terminalName: terminal?.nombre || 'SISTEMA GLOBAL', 
-        cajeroId: ((state as any).user?.id || (state as any).user?.uid || ''), 
-        baseImponibleUSD: Utils.round(vBase), 
-        ivaUSD: Utils.round(vIVA), 
-        exentoUSD: Utils.round(vExento), 
-        igtfUSD: Utils.round(vIgtf),
-        tasa: state.tasa
-      };
-      
-      const nuevasEntradasDiario: LibroDiarioEntry[] = listadoPagos.map(p => ({ 
-        id: 'ACC-' + Store.uid().toUpperCase().slice(0, 5), 
-        fecha: ahoraStr, 
-        tipo: 'ingreso', 
-        categoria: 'VENTA', 
-        concepto: `VENTA #${reciboId} - CLIENTE: ${cliente.toUpperCase()}`, 
-        montoUSD: p.montoUSD, 
-        montoBS: p.montoBS, 
-        metodo: p.metodo, 
-        referencia: reciboId + '-' + (terminal?.id || 'GLOBAL'),
-        terminalId: terminal?.id || 'GLOBAL',
-        terminalName: terminal?.nombre || 'SISTEMA GLOBAL'
-      }));
-      
-      await updateState({ 
-        productos: prodsActualizados, 
-        ventas: [...state.ventas, nuevaVenta], 
-        movimientos: [...state.movimientos, ...nuevosMovimientos], 
-        libroDiario: [...nuevasEntradasDiario, ...(state.libroDiario || [])], 
-        carrito: [], 
-        proximoRecibo: state.proximoRecibo + 1, 
-        terminales: state.terminales.map(t => t.id === terminal?.id ? { ...t, proximoRecibo: t.proximoRecibo + 1 } : t) 
-      });
+      if (!result?.sale?.id) throw new Error('Turso no confirmó la venta.');
       if (typeof window !== 'undefined') sessionStorage.removeItem('posven_current_cart');
-      
-      setLastProcessedSale(nuevaVenta); 
-      setShowReceiptModal(true); 
-      setPagos([]); 
-      setCliente('Consumidor final'); 
+      setLastProcessedSale(result.sale);
+      setShowReceiptModal(true);
+      setPagos([]);
+      setCliente('Consumidor final');
       setSelectedProductDisplay(null);
+    } catch (error: any) {
+      toast({ variant: 'destructive', title: 'Venta no registrada', description: error?.message || 'Turso no confirmó la operación.' });
     } finally {
       setIsProcessing(false);
     }
@@ -919,114 +856,41 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   const ejecutarVentaACredito = async (customer: Customer) => {
     if (state.carrito.length === 0 || isProcessing) return;
     if (!customer) return alert("Seleccione un cliente.");
-    
     setIsProcessing(true);
     try {
       const terminal = getCurrentTerminal();
-      const nextNum = terminal?.proximoRecibo || state.proximoRecibo;
-      const prefijo = Utils.prefijoCaja(terminal, state.terminales);
-      const reciboId = prefijo + '-' + String(nextNum).padStart(9, '0');
-      const ahoraStr = Utils.ahora();
-      
-      let vExento = 0, vBase = 0, vIVA = 0;
-      let prodsActualizados = [...state.productos], nuevosMovimientos: Movimiento[] = [];
-      
-      state.carrito.forEach(item => {
-        const pIdx = prodsActualizados.findIndex(x => x.id === item.productoId);
-        if (pIdx === -1) return;
-        const p = { ...prodsActualizados[pIdx] };
-        if (p.aplicaIVA) { const base = item.subtotalUSD / 1.16; vBase += base; vIVA += (item.subtotalUSD - base); } else { vExento += item.subtotalUSD; }
-        if (p.isKit && p.kitType === 'stock_componentes' && p.kitItems) {
-          p.kitItems.forEach(ki => {
-            const cpIdx = prodsActualizados.findIndex(cp => cp.id === ki.productoId);
-            if (cpIdx !== -1) {
-              const cp = { ...prodsActualizados[cpIdx] };
-              const qty = item.cantidad * ki.cantidad, stockAntes = cp.stock;
-              cp.stock -= qty;
-              nuevosMovimientos.push({ id: Store.uid(), productoId: cp.id, tipo: 'venta', cantidad: -qty, stockAntes, stockDespues: cp.stock, fecha: ahoraStr, referencia: `KIT: ${p.nombre} - CRÉDITO ${reciboId}`, terminalId: terminal?.id || 'GLOBAL' });
-              prodsActualizados[cpIdx] = cp;
-            }
-          });
-        } else {
-          const stockAntes = p.stock;
-          p.stock -= item.cantidad;
-          nuevosMovimientos.push({ id: Store.uid(), productoId: item.productoId, tipo: 'venta', cantidad: -item.cantidad, stockAntes, stockDespues: p.stock, fecha: ahoraStr, referencia: `CRÉDITO ${reciboId}`, terminalId: terminal?.id || 'GLOBAL' });
-          prodsActualizados[pIdx] = p;
-        }
-      });
-      
-      const nuevaVenta: Sale = { 
-        id: reciboId, 
-        fecha: ahoraStr, 
-        cliente: customer.name, 
-        items: [...state.carrito], 
-        subtotalUSD, 
-        descuentoUSD: 0, 
-        totalUSD: subtotalUSD, 
-        totalBS, 
-        metodoPago: 'credito', 
-        estado: 'completada', 
-        type: 'VENTA CRÉDITO', 
-        received: 0, 
-        change: 0, 
-        terminalId: terminal?.id, 
-        terminalName: terminal?.nombre || 'SISTEMA GLOBAL', 
-        cajeroId: ((state as any).user?.id || (state as any).user?.uid || ''), 
-        baseImponibleUSD: Utils.round(vBase), 
-        ivaUSD: Utils.round(vIVA), 
-        exentoUSD: Utils.round(vExento), 
-        igtfUSD: 0,
-        tasa: state.tasa
-      };
-      
-      // Normalizar cédula para la deuda (asegurar formato correcto)
+      if (!terminal?.id) throw new Error('No hay una caja asignada para registrar la venta a crédito.');
       const cedulaNormalizada = normalizeCedula(customer.cedula, extractDocType(customer.cedula));
-      const nombreCliente = customer.name;
-      
-      const nuevaDeuda: Debt = { 
-        id: 'CRD-' + reciboId.slice(-6), 
-        fecha: ahoraStr.slice(0, 10), 
-        fechaVencimiento: '2099-12-31', 
-        cliente: `${nombreCliente} [${cedulaNormalizada}]`, 
-        montoUSD: subtotalUSD, 
-        abonadoUSD: 0, 
-        saldoUSD: subtotalUSD, 
-        estado: 'pendiente' as 'pendiente', 
-        historialPagos: [], 
-        ventaId: reciboId 
+      const customerForTurso = {
+        ...customer,
+        id: customer.id || undefined,
+        name: String(customer.name || '').trim().toUpperCase(),
+        cedula: cedulaNormalizada,
+        phone: customer.phone || '',
+        address: customer.address || '',
       };
-      
-      // Asegurar que el cliente quede registrado en la cartera (upsert) y su saldo
-      // refleje la nueva deuda, para que persista en todos los usuarios/dispositivos.
-      const clientesBase = state.clientes || [];
-      const clienteIdx = clientesBase.findIndex(c => c.id === customer.id);
-      const clientesActualizados = clienteIdx >= 0
-        ? clientesBase.map(c => c.id === customer.id ? { ...c, debt: (c.debt || 0) + subtotalUSD } : c)
-        : [...clientesBase, {
-            id: customer.id,
-            name: nombreCliente,
-            cedula: cedulaNormalizada,
-            phone: customer.phone || '',
-            address: customer.address || '',
-            debt: subtotalUSD
-          }];
-
-      await updateState({ 
-        productos: prodsActualizados, 
-        ventas: [...state.ventas, nuevaVenta], 
-        movimientos: [...state.movimientos, ...nuevosMovimientos], 
-        cxc: [...state.cxc, nuevaDeuda], 
-        clientes: clientesActualizados, 
-        proximoRecibo: state.proximoRecibo + 1, 
-        terminales: state.terminales.map(t => t.id === terminal?.id ? { ...t, proximoRecibo: t.proximoRecibo + 1 } : t), 
-        carrito: [] 
+      const result = await Store.createSaleTransaction({
+        operationId: 'VENTA-CREDITO-POS-' + Store.uid(),
+        cart: [...state.carrito],
+        payments: [],
+        clientName: customerForTurso.name,
+        terminalId: terminal.id,
+        fallbackReceiptNumber: terminal.proximoRecibo || state.proximoRecibo,
+        now: Utils.ahora(),
+        tasa: state.tasa,
+        saleType: 'VENTA CRÉDITO',
+        credit: { customer: customerForTurso, debtId: 'PENDIENTE' },
+        cajeroId: (state as any).user?.id || (state as any).user?.uid || '',
       });
+      if (!result?.sale?.id || !result?.debt?.id) throw new Error('Turso no confirmó la venta y su deuda CxC.');
       if (typeof window !== 'undefined') sessionStorage.removeItem('posven_current_cart');
-      
-      setLastProcessedSale(nuevaVenta); 
-      setShowReceiptModal(true); 
-      setIsCreditModalOpen(false); 
+      setLastProcessedSale(result.sale);
+      setShowReceiptModal(true);
+      setIsCreditModalOpen(false);
       setSelectedClient(null);
+      setClientSearch('');
+    } catch (error: any) {
+      toast({ variant: 'destructive', title: 'Venta a crédito no registrada', description: error?.message || 'Turso no confirmó la operación.' });
     } finally {
       setIsProcessing(false);
     }
@@ -1252,7 +1116,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                               <div className="card border-line bg-white shadow-inner rounded-xl overflow-hidden">
                                  <table className="w-full">
                                     <thead className="bg-ink/5"><tr><th className="text-[9px] font-black uppercase p-2 text-left">Emisión</th><th className="text-[9px] font-black uppercase p-2 text-left">Vencimiento</th><th className="text-[9px] font-black uppercase p-2 text-right">Saldo USD</th><th className="text-[9px] font-black uppercase p-2 text-center">Acciones</th></tr></thead>
-                                    <tbody>{group.debts.map(d => (<tr key={d.id} className="border-b border-line/20"><td className="text-[10px] font-black p-2">{Utils.fmtFecha(d.fecha)}</td><td className={`text-[10px] font-black p-2 ${d.saldoUSD > 0.001 && d.fechaVencimiento < Utils.hoy() ? 'text-status-danger' : 'text-ink'}`}>{d.fechaVencimiento === '2099-12-31' ? 'ABIERTA' : Utils.fmtFecha(d.fechaVencimiento)}</td><td className="text-[10px] font-black p-2 text-right text-brand-gold-deep">{Utils.fmtUSD(d.saldoUSD)}</td><td className="p-2 text-center"><div className="flex justify-center gap-2"><button onClick={() => setShowDetails(d)} className="w-8 h-8 rounded-full flex items-center justify-center text-status-success hover:bg-status-success/10"><Eye className="w-4 h-4"/></button><button onClick={() => { setShowAbonoModal(d); }} className="btn btn-sm btn-primary h-7 px-3 text-[8px] uppercase">Abonar</button></div></td></tr>))}</tbody>
+                                    <tbody>{group.debts.map(d => (<tr key={d.id} className="border-b border-line/20"><td className="text-[10px] font-black p-2">{Utils.fmtFecha(d.fecha)}</td><td className={`text-[10px] font-black p-2 ${d.saldoUSD > 0.001 && d.fechaVencimiento < Utils.hoy() ? 'text-status-danger' : 'text-ink'}`}>{d.fechaVencimiento === '2099-12-31' ? 'ABIERTA' : Utils.fmtFecha(d.fechaVencimiento)}</td><td className="text-[10px] font-black p-2 text-right text-brand-gold-deep">{Utils.fmtUSD(d.saldoUSD)}</td><td className="p-2 text-center"><div className="flex justify-center gap-2"><button onClick={() => setShowDetails(d)} className="w-8 h-8 rounded-full flex items-center justify-center text-status-success hover:bg-status-success/10"><Eye className="w-4 h-4"/></button></div></td></tr>))}</tbody>
                                  </table>
                               </div>
                            </td>
@@ -1536,6 +1400,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                            </div>
                            <div className="text-right">
                               <p className="text-xs font-black text-status-success">+{Utils.fmtUSD(p.montoUSD)}</p>
+                              <p className="text-[9px] font-black text-ink">{p.montoBS !== undefined && p.montoBS !== null ? Utils.fmtBS(p.montoBS) : 'Bs. —'}</p>
                               <p className="text-[8px] font-black text-ink uppercase">{Utils.metodoLabel(p.metodo || 'otros')}</p>
                            </div>
                         </div>
