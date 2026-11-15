@@ -2246,6 +2246,7 @@ export const Store = {
             });
             return;
           }
+          applyPatch({ reportesZ: previousReports, terminales: prevTerminals });
           throw new Error('Turso no devolvió confirmación del Corte Z. El cierre fue revertido localmente.');
         }
       }
