@@ -240,8 +240,10 @@ export default function CxPModule({ state, updateState, terminalId }: CxPModuleP
       return;
     }
 
-    const montoBS = esMetodoBS ? rawMonto : rawMonto * tasaAplicada;
-    const amount = esMetodoBS ? rawMonto / tasaAplicada : rawMonto;
+    const montoBS = esMetodoBS
+      ? Math.round((rawMonto + Number.EPSILON) * 100) / 100
+      : Math.round((rawMonto * tasaAplicada + Number.EPSILON) * 100) / 100;
+    const amount = esMetodoBS ? montoBS / tasaAplicada : rawMonto;
     const fechaPago = pagoAtrasado && pagoAtrasadoFecha
       ? pagoAtrasadoFecha + 'T' + Utils.ahora().split('T')[1]
       : Utils.ahora();
@@ -280,6 +282,7 @@ export default function CxPModule({ state, updateState, terminalId }: CxPModuleP
       const resultadoPago = await Store.applyGlobalProviderPaymentTransaction({
         provider: globalProvider.proveedor,
         amountUSD: amount,
+        amountBS: montoBS,
         payment: pagoBase,
         journal: nuevoAsiento,
         terminalId
@@ -294,7 +297,9 @@ export default function CxPModule({ state, updateState, terminalId }: CxPModuleP
 
       const remanente = Math.max(0, amount - totalAplicado);
       const aplicados = resultadoPago.debts;
-      const aplicadoBS = totalAplicado * tasaAplicada;
+      const aplicadoBS = Number.isFinite(Number(resultadoPago.appliedBS))
+        ? Number(resultadoPago.appliedBS)
+        : Math.round((totalAplicado * tasaAplicada + Number.EPSILON) * 100) / 100;
 
       toast({
         title: "Pago global registrado",
@@ -826,6 +831,8 @@ export default function CxPModule({ state, updateState, terminalId }: CxPModuleP
                <div className="bg-surface-soft p-5 rounded-[20px] text-center border border-line shadow-inner">
                   <p className="text-ink text-[9px] font-black uppercase tracking-[0.2em] mb-2">TOTAL PENDIENTE</p>
                   <p className="text-3xl font-black text-status-danger">{Utils.fmtUSD(globalProvider.total)}</p>
+                  <p className="text-sm font-black text-ink mt-1">{Utils.fmtBS(globalProvider.total * (pagoAtrasado ? (parseFloat(pagoAtrasadoTasa) || state.tasa) : state.tasa))}</p>
+                  <p className="text-[8px] font-bold text-ink/60 uppercase tracking-tight">Equivalente en Bs. · Tasa {(pagoAtrasado ? (parseFloat(pagoAtrasadoTasa) || state.tasa) : state.tasa).toFixed(2)} Bs/USD</p>
                   <p className="text-[9px] font-black text-ink mt-2 uppercase tracking-tight italic">
                     Se liquidarán las deudas desde la más antigua; el excedente se aplica como abono.
                   </p>
@@ -910,10 +917,17 @@ export default function CxPModule({ state, updateState, terminalId }: CxPModuleP
                         onChange={e => setPaymentAmount(e.target.value)}
                      />
                   </div>
-                  {esBS && appliedUSD > 0 && (
-                    <p className="text-[9px] font-black text-ink/60 mt-1 uppercase">
-                      Equiv. {Utils.fmtUSD(appliedUSD)} · Tasa {pagoAtrasado && pagoAtrasadoTasa ? `aplicada ${tasaPrev.toFixed(2)}` : `BCV ${state.tasa.toFixed(2)}`}
-                    </p>
+                  {esBS && (
+                    <div className="mt-1 space-y-1">
+                      <p className="text-[9px] font-black text-ink/70 uppercase">
+                        Para liquidar el total: {Utils.fmtBS(globalProvider.total * tasaPrev)}
+                      </p>
+                      {appliedUSD > 0 && (
+                        <p className="text-[9px] font-black text-ink/60 uppercase">
+                          Monto ingresado equivale a {Utils.fmtUSD(appliedUSD)} · Tasa {pagoAtrasado && pagoAtrasadoTasa ? `aplicada ${tasaPrev.toFixed(2)}` : `BCV ${state.tasa.toFixed(2)}`}
+                        </p>
+                      )}
+                    </div>
                   )}
                 </div>
                 <button onClick={handleProcessGlobalPayment} disabled={isProcessing} className="btn btn-primary w-full h-14 font-black uppercase text-xs shadow-xl">

@@ -1137,7 +1137,9 @@ async function applyGlobalPayment(params:any, collection:'cxc'|'cxp'){
     }
     docs = docs.filter((d:any)=>(Number(d?.saldoUSD)||0)>0.001&&d?.estado!=='pagada');
     let remCents=Math.max(0,Math.round(Number(amountUSD)*100));
-    let remBS=Number(amountBS)>0?Number(amountBS):Number(amountUSD)*(Number(payment?.tasaAplicada)||0);
+    let remBS=collection==='cxp'
+      ? (Number(amountBS)>0?Math.round((Number(amountBS)+Number.EPSILON)*100)/100:Number(amountUSD)*tasaAplicada)
+      : (Number(amountBS)>0?Number(amountBS):Number(amountUSD)*tasaAplicada);
     let appliedUSD=0, appliedBS=0; const debts:any[]=[]; const statements:TursoStatement[]=[];
     for(const d of docs){
       if(remCents<=0) break;
@@ -1145,7 +1147,10 @@ async function applyGlobalPayment(params:any, collection:'cxc'|'cxp'){
       const pagoCents=Math.min(debtCents,remCents); if(pagoCents<=0) continue;
       const pago=pagoCents/100;
       const tasa=Number(payment?.tasaAplicada)||0; const pagoBS=Math.min(remBS,pago*tasa);
-      remCents-=pagoCents; remBS=Math.max(0,remBS-pagoBS);
+      remCents-=pagoCents;
+      remBS=collection==='cxp'
+        ? Math.max(0,Math.round((remBS-pagoBS+Number.EPSILON)*100)/100)
+        : Math.max(0,remBS-pagoBS);
       const h=[...(Array.isArray(d.historialPagos)?d.historialPagos:[])];
       h.push(clean({...payment,id:receiptId,reciboId:receiptId,terminalId:collection==='cxc'?(terminalForOperation||payment?.terminalId):undefined,montoUSD:pago,montoBS:pagoBS}));
       const updated={...d,abonadoUSD:(Number(d.abonadoUSD)||0)+pago,saldoUSD:Math.max(0,(Number(d.saldoUSD)||0)-pago),estado:(Number(d.saldoUSD)-pago)<=0.001?'pagada':'parcial',historialPagos:h};
