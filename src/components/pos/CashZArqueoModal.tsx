@@ -9,7 +9,6 @@ type Props = {
   report: any;
   onCancel: () => void;
   onConfirm: (real: Record<string, string>, diff: { bs: number; usd: number }) => void;
-  busy?: boolean;
 };
 
 const METHODS = [
@@ -37,7 +36,7 @@ const money = (value: number, currency: "BS" | "USD") =>
     ? "Bs. " + Number(value || 0).toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
     : "$" + Number(value || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-export default function CashZArqueoModal({ open, mode, report, onCancel, onConfirm, busy = false }: Props) {
+export default function CashZArqueoModal({ open, mode, report, onCancel, onConfirm }: Props) {
   const [real, setReal] = useState<Record<string, string>>({});
 
   const rows = useMemo(() => {
@@ -167,9 +166,9 @@ export default function CashZArqueoModal({ open, mode, report, onCancel, onConfi
         <div className="p-4 bg-surface-soft border-t border-line flex justify-end gap-2 shrink-0">
           <button onClick={onCancel} className="px-5 h-10 rounded-xl border border-line text-ink font-black uppercase text-[10px]">Cerrar</button>
           {mode === "Z" && (
-            <button disabled={!allAmountsEntered || busy} onClick={() => onConfirm(real, diff)}
+            <button disabled={!allAmountsEntered} onClick={() => onConfirm(real, diff)}
               className="px-5 h-10 rounded-xl bg-status-danger text-white font-black uppercase text-[10px] shadow-md disabled:opacity-40 disabled:cursor-not-allowed">
-              {busy ? "Guardando y cerrando…" : "Guardar y ejecutar Z"}
+              Guardar y ejecutar Z
             </button>
           )}
         </div>
