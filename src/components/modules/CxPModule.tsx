@@ -179,7 +179,7 @@ export default function CxPModule({ state, updateState, terminalId }: CxPModuleP
     const pago = {
       id: 'PAYS-' + Store.uid().toUpperCase().slice(0, 6),
       asientoId, fecha: ahoraStr, montoUSD: amount, montoBS,
-      metodo: paymentMethod, reciboId
+      metodo: paymentMethod, reciboId, tasaAplicada: state.tasa
     };
     const nuevoAsiento: LibroDiarioEntry = {
       id: asientoId, fecha: ahoraStr, tipo: 'egreso',
