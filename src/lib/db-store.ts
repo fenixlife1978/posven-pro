@@ -1320,7 +1320,7 @@ export const Store = {
     payment: any;
     journal?: any;
     terminalId?: string;
-  }): Promise<{ appliedUSD: number; debts: any[]; receiptId?: string; queuedOffline?: boolean }> {
+  }): Promise<{ appliedUSD: number; appliedBS?: number; debts: any[]; receiptId?: string; queuedOffline?: boolean }> {
     if (typeof window === 'undefined') return { appliedUSD: 0, debts: [] };
     const { operationId, provider, amountUSD, payment, journal, terminalId } = params;
     if (!(amountUSD > 0)) return { appliedUSD: 0, debts: [] };
