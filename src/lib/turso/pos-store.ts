@@ -938,6 +938,13 @@ export async function createZClosureTransaction(params: {
     if (!current) throw new Error('La terminal ya no existe en Turso.');
     assertTerminalAccess(params.user, current);
 
+    // El cierre solo se admite una vez por cada apertura confirmada.
+    // Esta validación vive en el servidor para impedir dobles clics, recargas
+    // o solicitudes concurrentes que intenten generar Z vacíos.
+    if (current.isCashOpen !== true || !current.cashData?.openDate || current.cashData?.closeDate) {
+      throw new Error('No existe una sesión de caja abierta. Debe realizar una nueva apertura antes de otro Corte Z.');
+    }
+
     const expectedNumber = Number(current.ultimoZ || 0) + 1;
     const requestedNumber = Number(params.report?.numeroZ || expectedNumber);
     if (requestedNumber !== expectedNumber) {
@@ -952,7 +959,27 @@ export async function createZClosureTransaction(params: {
     const canonical = await tx.execute(txSelect('reportesZ', report.id));
     if (canonical.rows.length) throw new Error('El corte Z de esta terminal ya fue registrado.');
 
-    const updatedTerminal = { ...current, ...clean(params.terminalPatch), ultimoZ: expectedNumber, id: params.terminalId };
+    const closeDate = String(report.fecha || new Date().toISOString());
+    const closedSession = {
+      ...current.cashData,
+      closeDate,
+      closeAmount: null,
+      closeAmountBs: null,
+      closeAmountUsd: null,
+      closeNotes: 'Cierre de caja mediante ' + report.id,
+    };
+    const updatedTerminal = {
+      ...current,
+      ...clean(params.terminalPatch),
+      ultimoZ: expectedNumber,
+      fechaUltimoZ: closeDate,
+      isCashOpen: false,
+      cashData: null,
+      fondoCajaHoyBS: 0,
+      fondoCajaHoyUSD: 0,
+      cashHistory: [closedSession, ...(Array.isArray(current.cashHistory) ? current.cashHistory : [])],
+      id: params.terminalId,
+    };
     await tx.execute(rowStatement('reportesZ', report));
     await tx.execute(rowStatement('terminales', updatedTerminal));
     return { report, terminal: updatedTerminal };

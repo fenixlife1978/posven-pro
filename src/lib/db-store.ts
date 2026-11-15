@@ -2221,11 +2221,19 @@ export const Store = {
             if (key === 'id') return;
             if (JSON.stringify(terminal[key]) !== JSON.stringify(previousTerminal[key])) terminalPatch[key] = terminal[key];
           });
-          const zResult = await tryTursoOperation('zClosure', {
-            terminalId,
-            report: newestReport,
-            terminalPatch,
-          });
+          let zResult: any;
+          try {
+            zResult = await tryTursoOperation('zClosure', {
+              terminalId,
+              report: newestReport,
+              terminalPatch,
+            });
+          } catch (error) {
+            // Revertir el eco optimista: si Turso no confirmó el Z, la UI debe
+            // conservar la caja abierta y el correlativo anterior.
+            applyPatch({ reportesZ: previousReports, terminales: prevTerminals });
+            throw error;
+          }
           if (zResult) {
             const canonicalReport = zResult.report;
             applyPatch({
