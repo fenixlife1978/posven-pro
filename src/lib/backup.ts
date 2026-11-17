@@ -35,16 +35,41 @@ export interface BackupFile {
   };
 }
 
-async function readTursoTable(table: string, limit = 10000): Promise<any[]> {
-  const response = await fetch('/api/turso/store?table=' + encodeURIComponent(table) + '&limit=' + limit, {
+async function readTursoTable(table: string): Promise<any[]> {
+  const pageSize = 5000;
+  const countResponse = await fetch('/api/turso/store?table=' + encodeURIComponent(table) + '&special=count', {
     credentials: 'include',
     cache: 'no-store',
   });
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok || body?.ok === false) {
-    throw new Error(body?.error || 'No se pudo leer la tabla ' + table + ' desde Turso.');
+  const countBody = await countResponse.json().catch(() => ({}));
+  if (!countResponse.ok || countBody?.ok !== true || !Number.isSafeInteger(Number(countBody.total)) || Number(countBody.total) < 0) {
+    throw new Error(countBody?.error || 'No se pudo verificar el total de registros de ' + table + ' en Turso.');
   }
-  return Array.isArray(body?.records) ? body.records : [];
+  const expected = Number(countBody.total);
+  const all: any[] = [];
+  for (let offset = 0; offset < expected; offset += pageSize) {
+    const params = new URLSearchParams({
+      table,
+      limit: String(pageSize),
+      offset: String(offset),
+    });
+    const response = await fetch('/api/turso/store?' + params.toString(), {
+      credentials: 'include',
+      cache: 'no-store',
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok || body?.ok !== true || !Array.isArray(body.records)) {
+      throw new Error(body?.error || 'No se pudo leer el bloque ' + (offset + 1) + ' de ' + table + ' desde Turso.');
+    }
+    if (body.records.length === 0) {
+      throw new Error('La tabla ' + table + ' cambió durante el respaldo: se esperaban ' + expected + ' registros y la lectura terminó en ' + all.length + '. Vuelva a generar el respaldo.');
+    }
+    all.push(...body.records);
+  }
+  if (all.length !== expected) {
+    throw new Error('Respaldo incompleto en ' + table + ': se esperaban ' + expected + ' registros y se leyeron ' + all.length + '. No se descargó una copia parcial.');
+  }
+  return all;
 }
 
 async function readTursoSpecial(kind: 'config' | 'catalog', name = ''): Promise<any> {
@@ -97,7 +122,7 @@ export async function crearRespaldo(): Promise<BackupFile> {
     version: 3,
     createdAt: new Date().toISOString(),
     data,
-    meta: { tursoTables, catalogs, source: 'turso' },
+    meta: { tursoTables, catalogs, source: 'turso', complete: true },
   };
 }
 
